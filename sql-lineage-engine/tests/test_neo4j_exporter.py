@@ -60,6 +60,45 @@ def test_star_columns_are_removed_from_table_relationship_column_lists():
     assert Neo4jClient._is_placeholder_column("*")
 
 
+def test_hive_distribution_relationship_types_are_not_downgraded():
+    client = Neo4jClient.__new__(Neo4jClient)
+    driver = RecordingDriver()
+    client.driver = driver
+    client.batch_size = 100
+    client.max_batch_bytes = 1024 * 1024
+
+    client.create_column_lineage_v2(
+        [
+            {
+                "source_table": "ODS.EVENTS",
+                "source_column": "USER_ID",
+                "target_table": "DWD.EVENTS",
+                "target_column": "*",
+                "dependency_type": "fdr",
+                "neo4j_type": "DISTRIBUTES",
+                "context": "DISTRIBUTE_BY",
+            },
+            {
+                "source_table": "ODS.EVENTS",
+                "source_column": "EVENT_TIME",
+                "target_table": "DWD.EVENTS",
+                "target_column": "*",
+                "dependency_type": "fdr",
+                "neo4j_type": "CLUSTERS",
+                "context": "CLUSTER_BY",
+            },
+        ],
+        version="test-version",
+    )
+
+    relation_types = {
+        args[1]
+        for call_name, args in driver.calls
+        if call_name == "_create_indirect_column_batch_safe"
+    }
+    assert relation_types == {"DISTRIBUTES", "CLUSTERS"}
+
+
 def test_write_batches_limit_count_and_serialized_bytes():
     client = Neo4jClient.__new__(Neo4jClient)
     client.batch_size = 3

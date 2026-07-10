@@ -8,6 +8,8 @@
 from typing import Dict, Any, Tuple, List
 import os
 
+from utils.dialect_registry import detect_path_dialect
+
 
 def parse_single_file(args: Tuple[str, str, str]) -> Dict[str, Any]:
     """
@@ -55,7 +57,6 @@ def parse_single_file(args: Tuple[str, str, str]) -> Dict[str, Any]:
         from parsers.sql_parser import LineageParser
         
         dialect = detected_dialect if detected_dialect else default_dialect
-        dialect = detected_dialect if detected_dialect else default_dialect
         parser = LineageParser(dialect=dialect, default_schema=default_schema, metadata_file=metadata_file)
         
         # 读取 SQL 文件 (尝试多种编码)
@@ -72,20 +73,18 @@ def parse_single_file(args: Tuple[str, str, str]) -> Dict[str, Any]:
         if sql_content is None:
             raise ValueError(f"Failed to decode file with any of: {encodings_to_try}")
         
-        # 解析表级别血缘
-        parse_result = parser.parse(sql_content, source_file=file_path)
-        
-        # 解析列级别血缘
-        col_dependencies = parser.get_column_lineage(sql_content, source_file=file_path)
+        analysis = parser.analyze(sql_content, source_file=file_path)
+        col_dependencies = analysis.get("columnDependencies", [])
         
         result["success"] = True
-        result["relationships"] = parse_result.get("relationships", [])
+        result["relationships"] = analysis.get("relationships", [])
         result["column_dependencies"] = col_dependencies
+        result["dialect_profile"] = analysis.get("dialectProfile")
         
         # 如果没有 relationships，尝试从 sources/targets 构建
-        if not result["relationships"] and "sources" in parse_result and "targets" in parse_result:
-            for source in parse_result.get("sources", []):
-                for target in parse_result.get("targets", []):
+        if not result["relationships"] and "sources" in analysis and "targets" in analysis:
+            for source in analysis.get("sources", []):
+                for target in analysis.get("targets", []):
                     result["relationships"].append({
                         "source": source,
                         "target": target,
@@ -117,22 +116,7 @@ def detect_dialect_from_path(file_path: str) -> str | None:
     Returns:
         检测到的方言，或 None
     """
-    path_parts = file_path.lower().split(os.sep)
-    
-    supported_dialects = {
-        'hive': 'hive',
-        'oracle': 'oracle',
-        'mysql': 'mysql',
-        'postgresql': 'postgresql',
-        'postgres': 'postgresql',
-        'sqlserver': 't-sql'
-    }
-    
-    for part in path_parts:
-        if part in supported_dialects:
-            return supported_dialects[part]
-    
-    return None
+    return detect_path_dialect(file_path)
 
 
 def prepare_file_tasks(sql_files: List[str], default_dialect: str, default_schema: str = None,

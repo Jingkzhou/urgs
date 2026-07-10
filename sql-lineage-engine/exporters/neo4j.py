@@ -22,7 +22,18 @@ RELATION_TYPE_MAP = {
 }
 
 # 所有血缘关系类型
-ALL_LINEAGE_RELATION_TYPES = ["DERIVES_TO", "FILTERS", "JOINS", "GROUPS", "ORDERS", "CALLS", "REFERENCES", "CASE_WHEN"]
+ALL_LINEAGE_RELATION_TYPES = [
+    "DERIVES_TO",
+    "FILTERS",
+    "JOINS",
+    "GROUPS",
+    "ORDERS",
+    "DISTRIBUTES",
+    "CLUSTERS",
+    "CALLS",
+    "REFERENCES",
+    "CASE_WHEN",
+]
 
 
 class Neo4jClient:

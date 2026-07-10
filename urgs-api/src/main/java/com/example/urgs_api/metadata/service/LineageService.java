@@ -29,7 +29,8 @@ public class LineageService {
 
     // 所有血缘关系类型
     private static final List<String> ALL_LINEAGE_RELATION_TYPES = Arrays.asList(
-            "DERIVES_TO", "FILTERS", "JOINS", "GROUPS", "ORDERS", "CALLS", "REFERENCES", "CASE_WHEN");
+            "DERIVES_TO", "FILTERS", "JOINS", "GROUPS", "ORDERS", "DISTRIBUTES", "CLUSTERS",
+            "CALLS", "REFERENCES", "CASE_WHEN");
 
     @Autowired
     private Driver driver;

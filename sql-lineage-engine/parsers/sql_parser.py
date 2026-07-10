@@ -4,6 +4,7 @@ from .indirect_flow_parser import IndirectFlowParser
 from utils.splitter import SqlSplitter
 from utils.metadata_resolver import MetadataResolver
 from utils.lineage_identity import parser_statement_uid, relation_uid, statement_hash
+from utils.dialect_registry import resolve_dialect_profile
 import logging
 import re
 
@@ -13,11 +14,42 @@ logging.getLogger("sqlglot").setLevel(logging.ERROR)
 
 class LineageParser:
     def __init__(self, dialect: str = "mysql", default_schema: str = None, metadata_file: str = None):
-        self.dialect = dialect
+        self.dialect_profile = resolve_dialect_profile(dialect)
+        self.dialect = self.dialect_profile.name
         self.default_schema = default_schema
         self.parser = GSPParser()
         self.resolver = MetadataResolver(metadata_file=metadata_file)
-        self.indirect_parser = IndirectFlowParser(dialect, resolver=self.resolver)  # 注入共享实例
+        self.indirect_parser = IndirectFlowParser(
+            self.dialect, resolver=self.resolver
+        )
+
+    def _effective_dialect_profile(self, sql: str):
+        """Resolve one profile per request without overriding an explicit dialect."""
+        if self.dialect_profile.name != "mysql":
+            return self.dialect_profile, False
+
+        from utils.dialect_detector import detect_dialect
+
+        detected = detect_dialect(sql)
+        if not detected:
+            return self.dialect_profile, False
+        return resolve_dialect_profile(detected), True
+
+    def analyze(self, sql: str, source_file: str = None) -> Dict[str, Any]:
+        """Return the complete, stable analysis contract used by CLI and workers."""
+        effective_profile, detected = self._effective_dialect_profile(sql)
+        result = self.parse(sql, source_file=source_file)
+        result["columnDependencies"] = self.get_column_lineage(
+            sql, source_file=source_file
+        )
+        result["dialectProfile"] = {
+            "requested": self.dialect_profile.name,
+            "effective": effective_profile.name,
+            "sqlglot": effective_profile.sqlglot_dialect,
+            "gsp": effective_profile.gsp_dialect,
+            "detected": detected,
+        }
+        return result
 
     def _statement_meta(self, sql: str, source_file: str, statement_index: int) -> Dict[str, Any]:
         stmt_hash = statement_hash(sql)
@@ -174,18 +206,8 @@ class LineageParser:
         # Safest is to always split, or split if length > threshold.
         # Let's split always for "script" support.
 
-        # Auto-detect dialect if default 'mysql' is used but content looks like specific dialect
-        from utils.dialect_detector import detect_dialect
-
-        current_dialect = self.dialect
-        detected_dialect = detect_dialect(sql)
-        detected_switch = False
-
-        if current_dialect == "mysql" and detected_dialect:
-            import logging
-
-            current_dialect = detected_dialect
-            detected_switch = True
+        current_profile, detected_switch = self._effective_dialect_profile(sql)
+        current_dialect = current_profile.name
 
         statements = SqlSplitter.split(sql)
         self._register_table_field_context(sql)
@@ -250,7 +272,9 @@ class LineageParser:
                         self._build_cte_registry(final_stmt, current_dialect),
                     )
 
-                    result = self.parser.parse(final_stmt, current_dialect, source_file)
+                    result = self.parser.parse(
+                        final_stmt, current_profile.gsp_dialect, source_file
+                    )
 
                     # Check if GSP failed to produce lineage for a huge statement
                     if is_huge and not result.get("targets"):
@@ -350,7 +374,11 @@ class LineageParser:
                         "source_file": dep.get("source_file"),
                         "snippet": dep.get("snippet"),
                         "lineage_origin": "sqlglot_table",
+                        "column_lineage_origin": dep.get("lineage_origin"),
                         "relation_level": "table_from_column",
+                        "context": dep.get("context"),
+                        "mutationIndex": dep.get("mutationIndex") if dep.get("mutationIndex") is not None else dep.get("mutation_index"),
+                        "mutation_index": dep.get("mutation_index") if dep.get("mutation_index") is not None else dep.get("mutationIndex"),
                         "confidence": dep.get("confidence", "MEDIUM"),
                         "validation_note": dep.get("validation_note"),
                         "ambiguityCode": dep.get("ambiguityCode") or dep.get("ambiguity_code"),
@@ -490,20 +518,10 @@ class LineageParser:
             [{source_table, source_column, target_table, target_column, dependency_type, source_file}, ...]
         """
         # Import normalization utility
-        from utils.normalize import normalize_table_name
+        from utils.normalize import normalize_column_name, normalize_table_name
 
-        # Auto-detect dialect if default 'mysql' is used but content looks like specific dialect
-        from utils.dialect_detector import detect_dialect
-
-        current_dialect = self.dialect
-        detected_dialect = detect_dialect(sql)
-        detected_switch = False
-
-        if current_dialect == "mysql" and detected_dialect:
-            import logging
-
-            current_dialect = detected_dialect
-            detected_switch = True
+        current_profile, detected_switch = self._effective_dialect_profile(sql)
+        current_dialect = current_profile.name
 
         statements = SqlSplitter.split(sql)
         self._register_table_field_context(sql)
@@ -588,14 +606,23 @@ class LineageParser:
                                     "source_expression": dep.get("source_expression") or dep.get("sourceExpression"),
                                     "targetExpression": dep.get("targetExpression") or dep.get("target_expression"),
                                     "target_expression": dep.get("target_expression") or dep.get("targetExpression"),
+                                    "mutationIndex": dep.get("mutationIndex") if dep.get("mutationIndex") is not None else dep.get("mutation_index"),
+                                    "mutation_index": dep.get("mutation_index") if dep.get("mutation_index") is not None else dep.get("mutationIndex"),
                                 }
                             self._attach_statement_meta(new_dep, stmt_meta, overwrite=True)
                             dependencies.append(new_dep)
                     except Exception as e:
-                        pass
+                        logging.warning(
+                            "SQLGlot column parsing failed for statement %s (%s): %s",
+                            statement_index - 1,
+                            current_dialect,
+                            e,
+                        )
 
                     # 2. Direct Dependencies (GSP)
-                    result = self.parser.parse(final_stmt, current_dialect, source_file)
+                    result = self.parser.parse(
+                        final_stmt, current_profile.gsp_dialect, source_file
+                    )
                     gsp_json = result.get("gsp_json")
                     if not gsp_json:
                         continue
@@ -655,6 +682,19 @@ class LineageParser:
             dependencies = self._resolve_cte_in_column_results(
                 dependencies, cte_registry
             )
+
+        for dep in dependencies:
+            dep["source_table"] = normalize_table_name(dep.get("source_table"))
+            dep["target_table"] = normalize_table_name(dep.get("target_table"))
+            dep["source_column"] = normalize_column_name(dep.get("source_column"))
+            dep["target_column"] = normalize_column_name(dep.get("target_column"))
+
+        if current_profile.name in {"oracle", "gbase_legacy_oracle"}:
+            dependencies = [
+                dep
+                for dep in dependencies
+                if not self._is_oracle_generated_source(dep)
+            ]
 
         dependencies = self._remove_set_operation_star_fallbacks(dependencies)
 
@@ -888,6 +928,19 @@ class LineageParser:
         score = min(left_score, right_score)
         return "HIGH" if score == 3 else ("MEDIUM" if score == 2 else "LOW")
 
+    @staticmethod
+    def _is_oracle_generated_source(dep: Dict[str, Any]) -> bool:
+        source_column = str(dep.get("source_column") or "").upper()
+        if source_column not in {"NEXTVAL", "CURRVAL"}:
+            return False
+        snippet = dep.get("snippet") or ""
+        return bool(
+            re.search(
+                rf"(?i)\.\s*{re.escape(source_column)}\b",
+                snippet,
+            )
+        )
+
     def _deduplicate_column_dependencies(self, dependencies: List[Dict[str, Any]]) -> List[Dict[str, Any]]:
         deduped = []
         seen = {}
@@ -975,14 +1028,9 @@ class LineageParser:
         if not re.search(r"(?i)\bWITH\b", sql):
             return {}
 
-        dialect_map = {
-            "mysql": "mysql",
-            "oracle": "oracle",
-            "hive": "hive",
-            "spark": "spark",
-            "postgresql": "postgres",
-        }
-        sg_dialect = dialect_map.get((dialect or self.dialect).lower())
+        sg_dialect = resolve_dialect_profile(
+            dialect or self.dialect
+        ).sqlglot_dialect
 
         registry = {}
         try:

@@ -7,6 +7,11 @@ import logging
 import signal
 from datetime import datetime
 import time
+
+PROJECT_ROOT = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
+if PROJECT_ROOT not in sys.path:
+    sys.path.insert(0, PROJECT_ROOT)
+
 # Updated imports for new structure
 from parsers.sql_parser import LineageParser
 from exporters.neo4j import Neo4jClient
@@ -153,8 +158,12 @@ def main():
         logger.info(f"Engine starting... Command: {args.command}")
         logger.info(f"Configuration: dialect={args.dialect}, output={args.output}, no-clear={args.no_clear}")
 
-        # lineage_parser instantiation DEFERRED to avoid JVM start in main process
-        neo4j = get_neo4j_client(args.default_user)
+        # JSON/CSV analysis must not require a live Neo4j connection.
+        neo4j = (
+            get_neo4j_client(args.default_user)
+            if args.output == "neo4j"
+            else None
+        )
         
         # 确保 Neo4j 索引存在（优化查询性能）
         if neo4j:
@@ -238,15 +247,10 @@ def main():
         def process_sql_content(content, parser, file_path=None):
             nonlocal csv_header_printed
             
-            # For table lineage
-            result = parser.parse(content, source_file=file_path)
-            
-            # For column lineage (with dependency_type and source_file)
-            col_dependencies = parser.get_column_lineage(content, source_file=file_path)
+            result = parser.analyze(content, source_file=file_path)
+            col_dependencies = result.get("columnDependencies", [])
             
             if args.output == "json":
-                # Add column dependencies to the result for JSON output
-                result["columnDependencies"] = col_dependencies
                 # Print to output stream
                 print(json.dumps(result, indent=2, ensure_ascii=False), file=output_stream)
             
@@ -263,7 +267,7 @@ def main():
                             "", # Source Column (not in table relations)
                             rel.get("target", ""),
                             "", # Target Column
-                            rel.get("type", "")
+                            rel.get("dependency_type") or rel.get("type", "")
                         ])
                 else:
                     # Fallback to old cross-product logic if no relationships found (or old parser version)
@@ -392,6 +396,7 @@ def main():
                         # 收集所有结果
                         all_relationships = []
                         all_column_deps = []
+                        all_dialect_profiles = []
                         success_count = 0
                         error_count = 0
                         
@@ -414,6 +419,11 @@ def main():
                                         success_count += 1
                                         all_relationships.extend(result.get("relationships", []))
                                         all_column_deps.extend(result.get("column_dependencies", []))
+                                        if result.get("dialect_profile"):
+                                            all_dialect_profiles.append({
+                                                "file": file_path,
+                                                **result["dialect_profile"],
+                                            })
                                         logger.info(f"[{progress}] Processed {f_name} - OK ({duration:.2f}s)")
                                     else:
                                         error_count += 1
@@ -438,7 +448,8 @@ def main():
                         elif args.output == "json":
                             combined_result = {
                                 "relationships": all_relationships,
-                                "columnDependencies": all_column_deps
+                                "columnDependencies": all_column_deps,
+                                "dialectProfiles": all_dialect_profiles,
                             }
                             print(json.dumps(combined_result, indent=2, ensure_ascii=False), file=output_stream)
                         
@@ -447,7 +458,13 @@ def main():
                                 csv_writer.writerow(["SourceTable", "SourceColumn", "TargetTable", "TargetColumn", "Type"])
                                 csv_header_printed = True
                             for rel in all_relationships:
-                                csv_writer.writerow([rel.get("source", ""), "", rel.get("target", ""), "", rel.get("type", "")])
+                                csv_writer.writerow([
+                                    rel.get("source", ""),
+                                    "",
+                                    rel.get("target", ""),
+                                    "",
+                                    rel.get("dependency_type") or rel.get("type", ""),
+                                ])
                             for dep in all_column_deps:
                                 csv_writer.writerow([
                                     dep.get("source_table", ""),

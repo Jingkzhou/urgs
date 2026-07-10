@@ -1,7 +1,7 @@
 langchain
 langchain-community
 langchain-openai
-sqlglot
+sqlglot==27.27.0
 neo4j
 python-dotenv
 requests

@@ -159,20 +159,23 @@ def discover_golden_cases() -> List[Tuple[str, str, str]]:
     if not os.path.isdir(GOLDEN_DIR):
         return cases
 
-    expected_files = glob.glob(os.path.join(GOLDEN_DIR, "*.expected.json"))
+    expected_files = glob.glob(
+        os.path.join(GOLDEN_DIR, "**", "*.expected.json"), recursive=True
+    )
     for expected_path in sorted(expected_files):
-        basename = os.path.basename(expected_path).replace(".expected.json", "")
+        case_stem = expected_path[: -len(".expected.json")]
+        test_id = os.path.relpath(case_stem, GOLDEN_DIR).replace(os.sep, "/")
 
         # 查找对应的 SQL 文件
         sql_path = None
         for ext in [".sql", ".prc", ".ddl"]:
-            candidate = os.path.join(GOLDEN_DIR, basename + ext)
+            candidate = case_stem + ext
             if os.path.exists(candidate):
                 sql_path = candidate
                 break
 
         if sql_path:
-            cases.append((basename, sql_path, expected_path))
+            cases.append((test_id, sql_path, expected_path))
 
     return cases
 
@@ -293,14 +296,26 @@ def test_column_lineage(test_id, sql_path, expected_path, mock_metadata_resolver
     actual_other = actual_all - actual_fdd
     other_metrics = calculate_metrics(actual_other, expected_other)
 
-    # 6. 断言（对直接流有较高要求）
+    # 6. 断言（新语料可通过 quality_gates 使用更严格的门禁）
     diff_msg_fdd = format_diff(fdd_metrics, "字段级-直接流(fdd)")
     diff_msg_other = format_diff(other_metrics, "字段级-间接流(fdr/join)")
+    quality_gates = expected_data.get("quality_gates", {})
+    direct_f1_gate = quality_gates.get("direct_f1", 0.5)
 
-    # 直接流要求 F1 >= 0.6（初始基线可能较低）
     assert (
-        fdd_metrics["f1"] >= 0.5
+        fdd_metrics["f1"] >= direct_f1_gate
     ), f"字段级直接流 F1 分数过低: {fdd_metrics['f1']:.2%}\n{diff_msg_fdd}\n{diff_msg_other}"
+
+    if expected_other:
+        control_precision_gate = quality_gates.get("control_precision", 0.5)
+        control_recall_gate = quality_gates.get("control_recall", 0.8)
+        assert (
+            other_metrics["precision"] >= control_precision_gate
+            and other_metrics["recall"] >= control_recall_gate
+        ), (
+            f"字段级控制流门禁未通过: P={other_metrics['precision']:.2%}, "
+            f"R={other_metrics['recall']:.2%}\n{diff_msg_other}"
+        )
 
 
 def _read_sql_file(path: str) -> str:

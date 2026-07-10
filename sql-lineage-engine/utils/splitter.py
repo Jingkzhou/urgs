@@ -26,6 +26,7 @@ class SqlSplitter:
         in_backtick = False
         in_block_comment = False
         in_line_comment = False 
+        oracle_q_quote_end = None
         
         delimiter = ";"
         
@@ -34,6 +35,27 @@ class SqlSplitter:
         
         while i < n:
             char = sql[i]
+
+            if oracle_q_quote_end:
+                if sql.startswith(oracle_q_quote_end, i):
+                    current_stmt.append(oracle_q_quote_end)
+                    i += len(oracle_q_quote_end)
+                    oracle_q_quote_end = None
+                else:
+                    current_stmt.append(char)
+                    i += 1
+                continue
+
+            if not (in_single_quote or in_double_quote or in_backtick or in_block_comment or in_line_comment):
+                if char in {"q", "Q"} and i + 2 < n and sql[i + 1] == "'":
+                    opening = sql[i + 2]
+                    closing = {"[": "]", "{": "}", "(": ")", "<": ">"}.get(
+                        opening, opening
+                    )
+                    oracle_q_quote_end = f"{closing}'"
+                    current_stmt.extend([char, "'", opening])
+                    i += 3
+                    continue
             
             # Check for comments start
             if not (in_single_quote or in_double_quote or in_backtick or in_block_comment or in_line_comment):
@@ -584,9 +606,30 @@ class SqlSplitter:
         in_backtick = False
         in_block_comment = False
         in_line_comment = False 
+        oracle_q_quote_end = None
         
         while i < n:
             char = sql[i]
+            if oracle_q_quote_end:
+                if sql.startswith(oracle_q_quote_end, i):
+                    result.append(oracle_q_quote_end)
+                    i += len(oracle_q_quote_end)
+                    oracle_q_quote_end = None
+                else:
+                    result.append(char)
+                    i += 1
+                continue
+
+            if not (in_single_quote or in_double_quote or in_backtick or in_block_comment or in_line_comment):
+                if char in {"q", "Q"} and i + 2 < n and sql[i + 1] == "'":
+                    opening = sql[i + 2]
+                    closing = {"[": "]", "{": "}", "(": ")", "<": ">"}.get(
+                        opening, opening
+                    )
+                    oracle_q_quote_end = f"{closing}'"
+                    result.extend([char, "'", opening])
+                    i += 3
+                    continue
             
             # Check for comments start
             if not (in_single_quote or in_double_quote or in_backtick or in_block_comment or in_line_comment):

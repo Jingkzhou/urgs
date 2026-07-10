@@ -52,6 +52,20 @@ def make_table_pairs(sources, targets):
     return pairs
 
 
+def make_expected_table_pairs(table_lineage):
+    """Prefer annotated direct relationships over a Cartesian-product fallback."""
+    relationships = table_lineage.get("relationships") or []
+    if relationships:
+        return {
+            (normalize_name(item.get("source")), normalize_name(item.get("target")))
+            for item in relationships
+            if item.get("source") and item.get("target")
+        }
+    return make_table_pairs(
+        table_lineage.get("sources", []), table_lineage.get("targets", [])
+    )
+
+
 def make_column_set(column_lineage):
     result = set()
     for dep in column_lineage:
@@ -93,12 +107,14 @@ def discover_cases():
     cases = []
     if not os.path.isdir(GOLDEN_DIR):
         return cases
-    for ep in sorted(glob.glob(os.path.join(GOLDEN_DIR, "*.expected.json"))):
-        basename = os.path.basename(ep).replace(".expected.json", "")
+    pattern = os.path.join(GOLDEN_DIR, "**", "*.expected.json")
+    for ep in sorted(glob.glob(pattern, recursive=True)):
+        case_stem = ep[: -len(".expected.json")]
+        test_id = os.path.relpath(case_stem, GOLDEN_DIR).replace(os.sep, "/")
         for ext in [".sql", ".prc", ".ddl"]:
-            sp = os.path.join(GOLDEN_DIR, basename + ext)
+            sp = case_stem + ext
             if os.path.exists(sp):
-                cases.append((basename, sp, ep))
+                cases.append((test_id, sp, ep))
                 break
     return cases
 
@@ -125,6 +141,8 @@ def run_report(output_path=None):
     lines.append(f"|------|------|------|----|----|----|-----------:|-------:|----:|")
 
     t_tp_total, t_fp_total, t_fn_total = 0, 0, 0
+    direct_tp_total, direct_fp_total, direct_fn_total = 0, 0, 0
+    control_tp_total, control_fp_total, control_fn_total = 0, 0, 0
 
     detail_sections = []
 
@@ -150,9 +168,7 @@ def run_report(output_path=None):
             )
 
         etl = expected_data.get("table_lineage", {})
-        expected_pairs = make_table_pairs(
-            etl.get("sources", []), etl.get("targets", [])
-        )
+        expected_pairs = make_expected_table_pairs(etl)
         p, r, f1, tp, fp, fn = calc_metrics(actual_pairs, expected_pairs)
 
         t_tp_total += len(tp)
@@ -192,6 +208,18 @@ def run_report(output_path=None):
             actual_fdd = {e for e in actual_col if e[4] == "fdd"}
             expected_fdd = {e for e in expected_col if e[4] == "fdd"}
             cp, cr, cf1, ctp, cfp, cfn = calc_metrics(actual_fdd, expected_fdd)
+            direct_tp_total += len(ctp)
+            direct_fp_total += len(cfp)
+            direct_fn_total += len(cfn)
+
+            actual_control = actual_col - actual_fdd
+            expected_control = expected_col - expected_fdd
+            _, _, _, control_tp, control_fp, control_fn = calc_metrics(
+                actual_control, expected_control
+            )
+            control_tp_total += len(control_tp)
+            control_fp_total += len(control_fp)
+            control_fn_total += len(control_fn)
 
             detail.append(f"**字段级 (fdd)**: P={cp:.2%} R={cr:.2%} F1={cf1:.2%}")
             detail.append(f"")
@@ -228,6 +256,36 @@ def run_report(output_path=None):
         f"**{overall_p:.2%}** | **{overall_r:.2%}** | **{overall_f1:.2%}** |"
     )
     lines.append(f"")
+
+    def aggregate_metrics(tp, fp, fn):
+        precision = tp / (tp + fp) if tp + fp else 1.0
+        recall = tp / (tp + fn) if tp + fn else 1.0
+        f1 = (
+            2 * precision * recall / (precision + recall)
+            if precision + recall
+            else 0.0
+        )
+        return precision, recall, f1
+
+    direct_p, direct_r, direct_f1 = aggregate_metrics(
+        direct_tp_total, direct_fp_total, direct_fn_total
+    )
+    control_p, control_r, control_f1 = aggregate_metrics(
+        control_tp_total, control_fp_total, control_fn_total
+    )
+    lines.append("## 字段级血缘汇总")
+    lines.append("")
+    lines.append("| 类型 | TP | FP | FN | Precision | Recall | F1 |")
+    lines.append("|------|---:|---:|---:|----------:|-------:|---:|")
+    lines.append(
+        f"| 直接流 fdd | {direct_tp_total} | {direct_fp_total} | {direct_fn_total} | "
+        f"{direct_p:.2%} | {direct_r:.2%} | **{direct_f1:.2%}** |"
+    )
+    lines.append(
+        f"| 控制流 fdr/join | {control_tp_total} | {control_fp_total} | {control_fn_total} | "
+        f"{control_p:.2%} | {control_r:.2%} | **{control_f1:.2%}** |"
+    )
+    lines.append("")
 
     # 详情部分
     lines.append(f"## 用例详情")

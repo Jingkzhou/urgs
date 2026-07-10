@@ -1,0 +1,53 @@
+{
+  "dialect": "oracle",
+  "description": "Oracle MERGE 直接字段、匹配条件与 USING 过滤血缘",
+  "quality_gates": {
+    "direct_f1": 1.0,
+    "control_precision": 1.0,
+    "control_recall": 1.0
+  },
+  "table_lineage": {
+    "sources": ["ods.customer"],
+    "targets": ["dwh.customer_dim"],
+    "relationships": [
+      {"source": "ods.customer", "target": "dwh.customer_dim"}
+    ]
+  },
+  "column_lineage": [
+    {
+      "source_table": "ods.customer",
+      "source_column": "id",
+      "target_table": "dwh.customer_dim",
+      "target_column": "id",
+      "dependency_type": "fdd"
+    },
+    {
+      "source_table": "ods.customer",
+      "source_column": "name",
+      "target_table": "dwh.customer_dim",
+      "target_column": "name",
+      "dependency_type": "fdd"
+    },
+    {
+      "source_table": "ods.customer",
+      "source_column": "status",
+      "target_table": "dwh.customer_dim",
+      "target_column": "status",
+      "dependency_type": "fdd"
+    },
+    {
+      "source_table": "ods.customer",
+      "source_column": "id",
+      "target_table": "dwh.customer_dim",
+      "target_column": "*",
+      "dependency_type": "join"
+    },
+    {
+      "source_table": "ods.customer",
+      "source_column": "active_flag",
+      "target_table": "dwh.customer_dim",
+      "target_column": "*",
+      "dependency_type": "fdr"
+    }
+  ]
+}

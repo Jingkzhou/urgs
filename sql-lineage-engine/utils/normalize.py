@@ -4,6 +4,8 @@
 用于统一 GSP 和 sqlglot 解析器输出的表名格式
 """
 
+import re
+
 
 def normalize_table_name(name: str) -> str:
     """
@@ -34,3 +36,18 @@ def normalize_table_name(name: str) -> str:
     # 过滤空 part，重新组装
     parts = [p.strip() for p in clean.split('.') if p.strip()]
     return '.'.join(parts) if parts else name
+
+
+def normalize_column_name(name: str) -> str:
+    """Remove identifier quoting without rewriting expression-shaped columns."""
+    if not name or not isinstance(name, str):
+        return name
+    value = name.strip()
+    quoted_identifier = r'(?:`[^`]+`|"[^"]+"|\[[^\]]+\]|[A-Za-z_][\w$#]*)'
+    if not re.fullmatch(rf"{quoted_identifier}(?:\s*\.\s*{quoted_identifier})*", value):
+        return name
+    return ".".join(
+        part.strip().strip('`"[]')
+        for part in re.split(r"\s*\.\s*", value)
+        if part.strip().strip('`"[]')
+    )

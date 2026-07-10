@@ -1,36 +1,13 @@
-"""
-SQL方言检测工具模块
+"""SQL dialect detection backed by the canonical dialect registry."""
 
-用于启发式检测SQL语句的方言类型（Oracle、Hive等）
-"""
-
-import re
 from typing import Optional
 
-ORACLE_PATTERNS = [
-    r"\bNVL\s*\(",
-    r"\bDECODE\s*\(",
-    r"\bTO_CHAR\s*\(",
-    r"\bTO_DATE\s*\(",
-    r"\bSYSDATE\b",
-    r"\bFROM\s+DUAL\b",
-    r"CREATE\s+(?:OR\s+REPLACE\s+)?PROCEDURE",
-    r"\bVARCHAR2\b",
-    r"\bDBMS_OUTPUT\b",
-    r"\bBEGIN\s*$",
-    r"\bEND\s*;\s*$",
-]
+from utils.dialect_registry import DIALECT_PROFILES, detect_sql_dialect
 
-HIVE_PATTERNS = [
-    r"\bPARTITIONED\s+BY\b",
-    r"\bCLUSTERED\s+BY\b",
-    r"\bROW\s+FORMAT\b",
-    r"\bSTORED\s+AS\b",
-    r"\bLATERAL\s+VIEW\b",
-    r"\bEXPLODE\s*\(",
-    r"\bASC\s+NULLS\s+(?:FIRST|LAST)\b",
-    r"(?s)^\s*FROM\s+.*\bINSERT\s+INTO\b",
-]
+
+# Preserve these public constants for callers that import the legacy module directly.
+ORACLE_PATTERNS = list(DIALECT_PROFILES["oracle"].detection_patterns)
+HIVE_PATTERNS = list(DIALECT_PROFILES["hive"].detection_patterns)
 
 
 def detect_dialect(sql: str, default: str = "mysql") -> Optional[str]:
@@ -45,14 +22,4 @@ def detect_dialect(sql: str, default: str = "mysql") -> Optional[str]:
     Returns:
         检测到的方言名称，或None（表示使用default）
     """
-    sql_upper = sql.upper()
-
-    for pattern in ORACLE_PATTERNS:
-        if re.search(pattern, sql_upper):
-            return "oracle"
-
-    for pattern in HIVE_PATTERNS:
-        if re.search(pattern, sql_upper):
-            return "hive"
-
-    return None
+    return detect_sql_dialect(sql)

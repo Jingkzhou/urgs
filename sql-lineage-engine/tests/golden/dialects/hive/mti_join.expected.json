@@ -1,0 +1,54 @@
+{
+  "dialect": "hive",
+  "description": "Hive MTI 共享 JOIN 的直接字段与 JOIN USING 控制血缘",
+  "quality_gates": {
+    "direct_f1": 1.0,
+    "control_precision": 1.0,
+    "control_recall": 1.0
+  },
+  "table_lineage": {
+    "sources": ["ods.a", "ods.b"],
+    "targets": ["dwd.joined"],
+    "relationships": [
+      {"source": "ods.a", "target": "dwd.joined"},
+      {"source": "ods.b", "target": "dwd.joined"}
+    ]
+  },
+  "column_lineage": [
+    {
+      "source_table": "ods.a",
+      "source_column": "id",
+      "target_table": "dwd.joined",
+      "target_column": "id",
+      "dependency_type": "fdd"
+    },
+    {
+      "source_table": "ods.a",
+      "source_column": "v1",
+      "target_table": "dwd.joined",
+      "target_column": "v1",
+      "dependency_type": "fdd"
+    },
+    {
+      "source_table": "ods.b",
+      "source_column": "v2",
+      "target_table": "dwd.joined",
+      "target_column": "v2",
+      "dependency_type": "fdd"
+    },
+    {
+      "source_table": "ods.a",
+      "source_column": "id",
+      "target_table": "dwd.joined",
+      "target_column": "*",
+      "dependency_type": "join"
+    },
+    {
+      "source_table": "ods.b",
+      "source_column": "id",
+      "target_table": "dwd.joined",
+      "target_column": "*",
+      "dependency_type": "join"
+    }
+  ]
+}

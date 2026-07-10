@@ -25,40 +25,13 @@ _FULLWIDTH_TRANS = str.maketrans({
     '。': '.',
 })
 
-def _strip_inline_comment(line: str) -> str:
-    in_single = False
-    in_double = False
-    i = 0
-    length = len(line)
-    while i < length:
-        ch = line[i]
-        if ch == "'" and not in_double:
-            if in_single and i + 1 < length and line[i + 1] == "'":
-                i += 2
-                continue
-            in_single = not in_single
-            i += 1
-            continue
-        if ch == '"' and not in_single:
-            if in_double and i + 1 < length and line[i + 1] == '"':
-                i += 2
-                continue
-            in_double = not in_double
-            i += 1
-            continue
-        if not in_single and not in_double:
-            if ch == '-' and i + 1 < length and line[i + 1] == '-':
-                return line[:i]
-            if ch == '#' and line[:i].strip() == '':
-                return line[:i]
-        i += 1
-    return line
-
 def preprocess_sql(sql_content: str) -> str:
     if not sql_content:
         return ""
+    from utils.splitter import SqlSplitter
+
     sql_content = sql_content.translate(_FULLWIDTH_TRANS)
-    sql_content = re.sub(r'/\*.*?\*/', '', sql_content, flags=re.DOTALL)
+    sql_content = SqlSplitter.remove_comments(sql_content)
     sql_content = re.sub(r'\bNOLOGGING\b', '', sql_content, flags=re.IGNORECASE)
 
     lines = []
@@ -66,9 +39,7 @@ def preprocess_sql(sql_content: str) -> str:
         stripped = raw.strip()
         if not stripped:
             continue
-        if stripped.startswith('#'):
-            continue
-        cleaned = _strip_inline_comment(raw).strip()
+        cleaned = raw.strip()
         if cleaned:
             lines.append(cleaned)
     return "\n".join(lines)
@@ -327,6 +298,7 @@ class GSPParser:
             "hive":       "dbvhive",
             "oracle":     "dbvoracle",
             "gbase":      "dbvoracle",
+            "informix":   "dbvinformix",
             "postgresql": "dbvpostgresql",
             "sqlserver":  "dbvsqlserver",
             "tsql":       "dbvsqlserver",

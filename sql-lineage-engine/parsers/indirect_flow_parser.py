@@ -13,10 +13,14 @@ from sqlglot import exp
 from typing import List, Dict, Any, Set, Optional, Tuple
 import logging
 from .indirect_flow_helpers import IndirectFlowHelperMixin
+from .indirect_flow_mutation_helpers import IndirectFlowMutationHelperMixin
+from utils.dialect_registry import resolve_dialect_profile
+from utils.dialect_preprocessor import preprocess_for_sqlglot
 from utils.lineage_identity import parser_statement_uid, statement_hash
+from utils.splitter import SqlSplitter
 
 
-class IndirectFlowParser(IndirectFlowHelperMixin):
+class IndirectFlowParser(IndirectFlowMutationHelperMixin, IndirectFlowHelperMixin):
     """
     从 SQL 中提取间接数据流依赖：
     - WHERE/HAVING 条件
@@ -24,23 +28,10 @@ class IndirectFlowParser(IndirectFlowHelperMixin):
     - GROUP BY / ORDER BY 子句
     """
     
-    # 方言映射
-    DIALECT_MAP = {
-        "mysql": "mysql",
-        "postgresql": "postgres", 
-        "postgres": "postgres",
-        "oracle": "oracle",
-        "sqlserver": "tsql",
-        "hive": "hive",
-        "spark": "spark",
-        "presto": "presto",
-        "trino": "trino",
-        "bigquery": "bigquery",
-        "snowflake": "snowflake",
-    }
-    
     def __init__(self, dialect: str = "mysql", resolver=None):
-        self.dialect = self.DIALECT_MAP.get(dialect.lower(), None)
+        self.dialect_profile = resolve_dialect_profile(dialect)
+        self.dialect_name = self.dialect_profile.name
+        self.dialect = self.dialect_profile.sqlglot_dialect
         if resolver is not None:
             self.resolver = resolver
         else:
@@ -56,10 +47,8 @@ class IndirectFlowParser(IndirectFlowHelperMixin):
 
         dependencies = []
         
-        # 首先移除所有路径的注释
-        cleaned_sql = re.sub(r'/\*.*?\*/', '', sql, flags=re.DOTALL)
-        cleaned_sql = re.sub(r'--.*?$', '', cleaned_sql, flags=re.MULTILINE)
-        cleaned_sql = cleaned_sql.strip()
+        # 首先移除注释，同时保留引号和 Oracle q-quote 内的文本。
+        cleaned_sql = SqlSplitter.remove_comments(sql).strip()
         
         # 检查输入是否通过像是单个 DML 语句
         # 如果是，跳过基于正则的提取，直接解析 (除非是 MTI)
@@ -77,25 +66,38 @@ class IndirectFlowParser(IndirectFlowHelperMixin):
         statement_index = 0
         for stmt_sql in sql_statements:
             try:
-                stmt_sql = self._normalize_hive_insert_syntax(stmt_sql)
+                original_stmt_sql = stmt_sql
+                parser_sql = self._normalize_hive_insert_syntax(stmt_sql)
+                parser_sql = preprocess_for_sqlglot(
+                    parser_sql, self.dialect_name
+                )
                 stmt_meta = {
-                    "statementHash": statement_hash(stmt_sql),
-                    "statement_hash": statement_hash(stmt_sql),
-                    "parserStatementUid": parser_statement_uid(source_file, statement_index, stmt_sql),
-                    "statementUid": parser_statement_uid(source_file, statement_index, stmt_sql),
-                    "statement_uid": parser_statement_uid(source_file, statement_index, stmt_sql),
+                    "statementHash": statement_hash(original_stmt_sql),
+                    "statement_hash": statement_hash(original_stmt_sql),
+                    "parserStatementUid": parser_statement_uid(source_file, statement_index, original_stmt_sql),
+                    "statementUid": parser_statement_uid(source_file, statement_index, original_stmt_sql),
+                    "statement_uid": parser_statement_uid(source_file, statement_index, original_stmt_sql),
                     "statementIndex": statement_index,
                     "statement_index": statement_index,
                 }
                 statement_index += 1
                 # 解析单条语句
-                statements = sqlglot.parse(stmt_sql, dialect=self.dialect)
+                statements = sqlglot.parse(parser_sql, dialect=self.dialect)
                 
                 for stmt in statements:
                     if stmt is None: continue
                     
                     if isinstance(stmt, exp.Create):
                         self._register_ctas(stmt)
+
+                    mutation_deps = self._extract_mutation_dependencies(
+                        stmt, source_file, original_stmt_sql
+                    )
+                    if mutation_deps is not None:
+                        for dep in mutation_deps:
+                            dep.update(stmt_meta)
+                        dependencies.extend(mutation_deps)
+                        continue
                     
                     target_info = self._get_target_table(stmt)
                     if not target_info:
@@ -113,48 +115,48 @@ class IndirectFlowParser(IndirectFlowHelperMixin):
                     all_scopes = self._traverse_all_scopes(root)
                     for scope in all_scopes:
                         # Pass the SQL statement for snippet storage
-                        scope_deps = self._process_scope(scope, target_info, source_file, stmt_sql, stmt_obj=stmt)
+                        scope_deps = self._process_scope(scope, target_info, source_file, original_stmt_sql, stmt_obj=stmt)
                         for dep in scope_deps:
                             dep.update(stmt_meta)
                         dependencies.extend(scope_deps)
                     star_deps = self._extract_set_operation_star_dependencies(
-                        stmt, target_info, source_file, stmt_sql
+                        stmt, target_info, source_file, original_stmt_sql
                     )
                     for dep in star_deps:
                         dep.update(stmt_meta)
                     dependencies.extend(star_deps)
                     set_direct_deps = self._extract_set_operation_direct_dependencies(
-                        stmt, target_info, source_file, stmt_sql
+                        stmt, target_info, source_file, original_stmt_sql
                     )
                     for dep in set_direct_deps:
                         dep.update(stmt_meta)
                     dependencies.extend(set_direct_deps)
                     star_select_deps = self._extract_select_star_dependencies(
-                        stmt, target_info, source_file, stmt_sql
+                        stmt, target_info, source_file, original_stmt_sql
                     )
                     for dep in star_select_deps:
                         dep.update(stmt_meta)
                     dependencies.extend(star_select_deps)
                     filter_subquery_deps = self._extract_filter_subquery_dependencies(
-                        stmt, target_info, source_file, stmt_sql
+                        stmt, target_info, source_file, original_stmt_sql
                     )
                     for dep in filter_subquery_deps:
                         dep.update(stmt_meta)
                     dependencies.extend(filter_subquery_deps)
                     having_deps = self._extract_having_dependencies(
-                        stmt, target_info, source_file, stmt_sql
+                        stmt, target_info, source_file, original_stmt_sql
                     )
                     for dep in having_deps:
                         dep.update(stmt_meta)
                     dependencies.extend(having_deps)
                     clause_alias_deps = self._extract_clause_alias_dependencies(
-                        stmt, target_info, source_file, stmt_sql
+                        stmt, target_info, source_file, original_stmt_sql
                     )
                     for dep in clause_alias_deps:
                         dep.update(stmt_meta)
                     dependencies.extend(clause_alias_deps)
                     join_using_deps = self._extract_join_using_dependencies(
-                        stmt, target_info, source_file, stmt_sql
+                        stmt, target_info, source_file, original_stmt_sql
                     )
                     for dep in join_using_deps:
                         dep.update(stmt_meta)
@@ -258,6 +260,21 @@ class IndirectFlowParser(IndirectFlowHelperMixin):
             curr = col
             while curr and curr is not scope.expression:
                 ancestor = curr.parent
+                if isinstance(ancestor, exp.Connect):
+                    start_expression = ancestor.args.get("start")
+                    is_start_with = bool(
+                        start_expression
+                        and any(
+                            candidate is col
+                            for candidate in start_expression.find_all(exp.Column)
+                        )
+                    )
+                    if is_start_with:
+                        context_found = ("fdr", "FILTERS", "START_WITH")
+                    else:
+                        context_found = ("join", "JOINS", "CONNECT_BY")
+                    dep_type, neo4j_type, context_name = context_found
+                    break
                 if type(ancestor) in context_map:
                     # CASE/IF 的细化处理
                     # 仅当在条件部分（'this'）时才视为 'CASE_WHEN'
@@ -467,6 +484,19 @@ class IndirectFlowParser(IndirectFlowHelperMixin):
         """Resolve a SQL column to physical (table, column) pairs."""
         refs = set()
         self._last_resolution = {}
+
+        if (
+            self.dialect == "oracle"
+            and not col.table
+            and col.name.upper() in {"ROWNUM", "ROWID", "LEVEL"}
+        ):
+            self._last_resolution = {
+                "confidence": "HIGH",
+                "validation_note": f"Oracle pseudocolumn {col.name} is not a physical field",
+                "ambiguityCode": "GENERATED_PSEUDOCOLUMN",
+                "metadataMatched": False,
+            }
+            return refs
         
         table_alias = col.table
         
@@ -476,6 +506,10 @@ class IndirectFlowParser(IndirectFlowHelperMixin):
             if source:
                 refs.update(self._resolve_column_from_source_refs(col.name, source))
             elif self.dialect in ["hive", "spark"]:
+                lateral_refs = self._resolve_lateral_qualifier_refs(table_alias, scope)
+                if lateral_refs:
+                    refs.update(lateral_refs)
+                    return refs
                 physical_tables = self._physical_tables_excluding_laterals(scope)
                 if len(physical_tables) == 1:
                     refs.update((table_name, table_alias) for table_name in physical_tables)

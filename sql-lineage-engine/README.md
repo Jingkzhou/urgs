@@ -4,13 +4,16 @@ SQL Lineage Engine 是一款高性能、双引擎驱动的 SQL 血缘解析工�
 
 ## 核心架构
 
-项目采用 **GSP (General SQL Parser)** + **SQLGlot** 的双引擎驱动架构：
-- **GSP (核心引擎)**：利用成熟的商业解析能力，专注于复杂语法的深度血缘提取和存储过程解析。
-- **SQLGlot (辅助引擎)**：用于轻量级的方言探测、SQL 拆分以及作为 GSP 解析失败时的健壮性降级方案。
+项目采用 **方言注册表 + GSP + SQLGlot + metadata-pack** 的双引擎架构：
+- **DialectProfile**：统一外部方言名、SQLGlot 方言、GSP vendor 和路径探测，避免同一 SQL 在不同阶段使用不同语法假设。
+- **GSP**：负责复杂存储过程、表级证据和兼容兜底。
+- **SQLGlot**：负责可验证的字段直接流、条件流，以及 UPDATE、MERGE、INSERT ALL/FIRST 等 mutation 解析。
+- **MetadataResolver**：使用 `metadata-pack.json` 完成 schema 补全、字段消歧和 `SELECT *` 展开。
 
 ## 关键特性
 
-- **多方言自探测**：自动识别 Oracle, GBase, Hive, MySQL, SparkSQL 等方言特征，动态切换解析策略。
+- **多方言策略**：显式方言优先；支持 Oracle、GBase 8a、Hive、MySQL、SparkSQL 等，默认 MySQL 模式下才启用内容探测。
+- **复杂 DML**：支持 Oracle/Hive MERGE、UPDATE、Oracle INSERT ALL/FIRST 和 Hive Multi-Table Insert。
 - **存储过程支持**：能够自动提取并解析 `CREATE PROCEDURE` 中的主体逻辑，透视复杂流程中的数据流向。
 - **智能 SQL 拆分**：针对超长脚本（如 10,000+ 字符），自动平衡性能与准确性，进行语义化拆分处理。
 - **高性能并行解析**：在目录扫描模式下，利用多进程（ProcessPool）并行解析数千个 SQL 文件，显著提升吞吐量。
@@ -29,9 +32,12 @@ sql-lineage-engine/
 ├── parsers/            # 核心解析器
 │   ├── sql_parser.py   # 顶层调度解析器 (Parser Manager)
 │   ├── gsp.py          # GSP 引擎封装
-│   ├── indirect_parser.py # SQLGlot 间接血缘提取
+│   ├── indirect_flow_parser.py # SQLGlot 字段与控制血缘提取
+│   ├── indirect_flow_mutation_helpers.py # UPDATE/MERGE/多目标 INSERT
 │   └── parallel_parser.py # 多进程并行调度逻辑
 ├── utils/              # 通用组件
+│   ├── dialect_registry.py # 方言注册表
+│   ├── dialect_preprocessor.py # 方言解析视图预处理
 │   ├── splitter.py     # 智能 SQL 拆分器
 │   └── normalize.py    # 表名/字段名标准化工具
 ├── requirements.txt    # Python 依赖清单
@@ -42,7 +48,7 @@ sql-lineage-engine/
 
 ### 环境依赖
 
-- **Python**: 3.8+
+- **Python**: 3.10+
 - **Java**: 推荐使用 Java 8 (Corretto/OpenJDK)。
 - **GSP 引擎库**: 
     - 必须手动下载 `gudusoft.gsqlparser.jar` 及相关依赖。
@@ -57,12 +63,17 @@ sql-lineage-engine/
    ./run.sh parse-sql --sql "INSERT INTO B SELECT * FROM A" --dialect mysql --output neo4j
    ```
 
+   GBase 8a 使用 `--dialect gbase`（等价于 `gbase_8a`），不会映射为 Oracle：
+
+   ```bash
+   ./run.sh parse-sql --sql "INSERT INTO \`B\` SELECT * FROM \`A\`" --dialect gbase --output json
+   ```
+
 2. **批量并行解析整个 SQL 目录**:
    ```bash
    ./run.sh parse-sql --file ./path/to/sql_files/ --output json --output-file results.json
-   ```
    ./run.sh parse-sql --file ./tests/sql/ --output neo4j
-- **Web UI 适配**：提供与 URGS 平台深度集成的血缘可视化面板。
+   ```
 
 ---
 
@@ -73,33 +84,33 @@ sql-lineage-engine/
 ### 运行全部测试
 
 ```bash
-python -m pytest tests/test_golden_lineage.py -v
+.venv/bin/python -m pytest tests -q
 ```
 
 ### 运行单个用例
 
 ```bash
 # 按用例名筛选
-python -m pytest tests/test_golden_lineage.py -k "04_subquery_cte" -v
+.venv/bin/python -m pytest tests/test_golden_lineage.py -k "04_subquery_cte" -v
 
 # 只跑表级 / 字段级
-python -m pytest tests/test_golden_lineage.py::test_table_lineage -v
-python -m pytest tests/test_golden_lineage.py::test_column_lineage -v
+.venv/bin/python -m pytest tests/test_golden_lineage.py::test_table_lineage -v
+.venv/bin/python -m pytest tests/test_golden_lineage.py::test_column_lineage -v
 ```
 
 ### 生成准确率报告
 
 ```bash
 # 输出到终端（Markdown 格式，含 Precision / Recall / F1）
-python scripts/run_golden_tests.py
+.venv/bin/python scripts/run_golden_tests.py
 
 # 保存到文件
-python scripts/run_golden_tests.py -o report.md
+.venv/bin/python scripts/run_golden_tests.py -o report.md
 ```
 
 ### 添加新的测试用例
 
-在 `tests/golden/` 下添加一对文件即可自动发现：
+在 `tests/golden/` 或其方言子目录下添加一对文件即可递归发现：
 
 - `xxx.sql` 或 `xxx.prc` — 待测试的 SQL
 - `xxx.expected.json` — 人工标注的预期血缘
@@ -127,6 +138,8 @@ python scripts/run_golden_tests.py -o report.md
 ```
 
 > `dependency_type` 可选值：`fdd`（直接数据流）、`fdr`（WHERE/HAVING 条件）、`join`（JOIN 关联）
+
+可通过 `quality_gates` 为新语料设置直接流和控制流门禁。架构与扩展约束见 [方言血缘架构](docs/design/dialect_lineage_architecture.md)。
 
 ---
 

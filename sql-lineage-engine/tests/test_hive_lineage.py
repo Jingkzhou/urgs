@@ -996,3 +996,155 @@ def test_hive_insert_select_star_from_cte_expands_to_physical_source(mock_metada
     assert ("ods.orders", "amount", "dwd.orders", "amount", "fdd", "star_projection") in actual
     assert ("ods.orders", "dt", "dwd.orders", "dt", "fdd", "star_projection") in actual
     assert not any(dep.get("source_table") == "base" for dep in deps)
+
+
+def test_hive_mti_join_preserves_shared_source_aliases(mock_metadata_resolver):
+    """Hive MTI branches must retain aliases and JOIN USING from the shared FROM."""
+    sql = """
+    FROM ods.a a
+    JOIN ods.b b USING (id)
+    INSERT OVERWRITE TABLE dwd.joined
+    SELECT a.id, a.v1, b.v2
+    """
+
+    deps = IndirectFlowParser("hive").parse(sql)
+    actual = {
+        (
+            dep.get("source_table"),
+            dep.get("source_column"),
+            dep.get("target_table"),
+            dep.get("target_column"),
+            dep.get("dependency_type"),
+            dep.get("context"),
+        )
+        for dep in deps
+    }
+
+    assert ("ods.a", "id", "dwd.joined", "id", "fdd", "SELECT") in actual
+    assert ("ods.a", "v1", "dwd.joined", "v1", "fdd", "SELECT") in actual
+    assert ("ods.b", "v2", "dwd.joined", "v2", "fdd", "SELECT") in actual
+    assert ("ods.a", "id", "dwd.joined", "*", "join", "JOIN_USING") in actual
+    assert ("ods.b", "id", "dwd.joined", "*", "join", "JOIN_USING") in actual
+
+
+def test_hive_mti_lateral_view_preserves_udtf_lineage(mock_metadata_resolver):
+    """Hive MTI shared LATERAL VIEW output must trace to its physical input."""
+    sql = """
+    FROM ods.orders o
+    LATERAL VIEW explode(items) e AS item
+    INSERT OVERWRITE TABLE dwd.out
+    SELECT id, item
+    """
+
+    deps = IndirectFlowParser("hive").parse(sql)
+    actual = {
+        (
+            dep.get("source_table"),
+            dep.get("source_column"),
+            dep.get("target_table"),
+            dep.get("target_column"),
+            dep.get("dependency_type"),
+        )
+        for dep in deps
+    }
+
+    assert ("ods.orders", "id", "dwd.out", "id", "fdd") in actual
+    assert ("ods.orders", "items", "dwd.out", "item", "fdd") in actual
+
+
+def test_hive_join_using_inside_cte_is_preserved(mock_metadata_resolver):
+    """JOIN USING evidence inside a CTE must be attached to the final target."""
+    sql = """
+    WITH joined AS (
+      SELECT a.id, a.v1, b.v2
+        FROM ods.a a
+        JOIN ods.b b USING (id)
+    )
+    INSERT OVERWRITE TABLE dwd.joined (id, v1, v2)
+    SELECT id, v1, v2 FROM joined
+    """
+
+    deps = IndirectFlowParser("hive").parse(sql)
+    actual = {
+        (
+            dep.get("source_table"),
+            dep.get("source_column"),
+            dep.get("target_table"),
+            dep.get("dependency_type"),
+            dep.get("context"),
+        )
+        for dep in deps
+    }
+
+    assert ("ods.a", "id", "dwd.joined", "join", "JOIN_USING") in actual
+    assert ("ods.b", "id", "dwd.joined", "join", "JOIN_USING") in actual
+
+
+def test_hive_chained_lateral_view_traces_to_root_column(mock_metadata_resolver):
+    """A lateral output used by another lateral view must resolve recursively."""
+    sql = """
+    INSERT OVERWRITE TABLE dwd.out (id, tag)
+    SELECT id, tag
+      FROM ods.orders o
+      LATERAL VIEW explode(items) e AS item
+      LATERAL VIEW explode(item.tags) t AS tag
+    """
+
+    deps = IndirectFlowParser("hive").parse(sql)
+    actual = {
+        (
+            dep.get("source_table"),
+            dep.get("source_column"),
+            dep.get("target_table"),
+            dep.get("target_column"),
+            dep.get("dependency_type"),
+        )
+        for dep in deps
+    }
+
+    assert ("ods.orders", "items", "dwd.out", "tag", "fdd") in actual
+    assert ("ods.orders", "item", "dwd.out", "tag", "fdd") not in actual
+
+
+def test_hive_clause_function_literal_is_not_projection_position(mock_metadata_resolver):
+    """Numeric literals inside clause functions are values, not ordinal references."""
+    sql = """
+    INSERT OVERWRITE TABLE dwd.out (a, c)
+    SELECT a, c
+      FROM ods.t
+     ORDER BY coalesce(c, 1)
+    """
+
+    deps = IndirectFlowParser("hive").parse(sql)
+    order_refs = {
+        (dep.get("source_table"), dep.get("source_column"), dep.get("lineage_origin"))
+        for dep in deps
+        if dep.get("context") == "ORDER_BY"
+    }
+
+    assert ("ods.t", "a", "clause_position") not in order_refs
+    assert any(table == "ods.t" and column == "c" for table, column, _ in order_refs)
+
+
+def test_hive_clause_position_expands_select_star(mock_metadata_resolver):
+    """Ordinal clauses after SELECT * use the expanded metadata-backed position."""
+    sql = """
+    INSERT OVERWRITE TABLE dwd.out (a, b, c, x)
+    SELECT t.*, t.x
+      FROM ods.t t
+     ORDER BY 4
+    """
+
+    with patch(
+        "utils.metadata_resolver.MetadataResolver.get_table_fields",
+        return_value=["a", "b", "c"],
+    ):
+        deps = IndirectFlowParser("hive").parse(sql)
+
+    assert any(
+        dep.get("source_table") == "ods.t"
+        and dep.get("source_column") == "x"
+        and dep.get("context") == "ORDER_BY"
+        and dep.get("lineage_origin") == "clause_position"
+        for dep in deps
+    )

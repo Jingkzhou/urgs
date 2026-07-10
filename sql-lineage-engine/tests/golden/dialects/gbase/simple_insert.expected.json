@@ -1,0 +1,30 @@
+{
+  "dialect": "gbase",
+  "description": "GBase 8a MySQL 协议反引号与 IFNULL 字段血缘",
+  "quality_gates": {
+    "direct_f1": 1.0
+  },
+  "table_lineage": {
+    "sources": ["src"],
+    "targets": ["tgt"],
+    "relationships": [
+      {"source": "src", "target": "tgt"}
+    ]
+  },
+  "column_lineage": [
+    {
+      "source_table": "src",
+      "source_column": "id",
+      "target_table": "tgt",
+      "target_column": "id",
+      "dependency_type": "fdd"
+    },
+    {
+      "source_table": "src",
+      "source_column": "val",
+      "target_table": "tgt",
+      "target_column": "val",
+      "dependency_type": "fdd"
+    }
+  ]
+}

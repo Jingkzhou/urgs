@@ -179,7 +179,7 @@ class IndirectFlowConditionHelperMixin:
                             "targetExpression": self._safe_sql(clause),
                             "target_expression": self._safe_sql(clause),
                         })
-                for literal in clause.find_all(exp.Literal):
+                for literal in self._clause_position_literals(clause):
                     refs = self._projection_position_refs(literal, scope)
                     if not refs:
                         continue
@@ -213,6 +213,13 @@ class IndirectFlowConditionHelperMixin:
                         })
         return deps
 
+    @staticmethod
+    def _clause_position_literals(clause):
+        for expression in clause.expressions:
+            candidate = expression.this if isinstance(expression, exp.Ordered) else expression
+            if isinstance(candidate, exp.Literal):
+                yield candidate
+
     def _projection_alias_refs(self, column_name: str, scope):
         if not isinstance(getattr(scope, "expression", None), exp.Select):
             return set()
@@ -233,25 +240,46 @@ class IndirectFlowConditionHelperMixin:
         except (TypeError, ValueError):
             return set()
         index = position - 1
-        if index < 0 or index >= len(scope.expression.expressions):
+        if index < 0:
             return set()
-        return self._resolve_expression_to_physical_refs(
-            scope.expression.expressions[index],
-            scope,
-        )
+
+        projection_refs = []
+        for projection in scope.expression.expressions:
+            if not self._is_star_projection(projection):
+                projection_refs.append(
+                    self._resolve_expression_to_physical_refs(projection, scope)
+                )
+                continue
+
+            source = self._star_projection_source(projection, scope)
+            expanded_groups = self._expand_star_source_ref_groups(source) if source else []
+            if expanded_groups:
+                projection_refs.extend(refs for _, refs in expanded_groups)
+            else:
+                projection_refs.append(set())
+
+        if index >= len(projection_refs):
+            return set()
+        return projection_refs[index]
 
     def _extract_join_using_dependencies(
         self, stmt, target_info, source_file, stmt_sql: str = None
     ) -> List[Dict]:
         from sqlglot.optimizer.scope import build_scope
 
-        scope = build_scope(stmt)
-        if not scope or not isinstance(scope.expression, exp.Select):
+        root = build_scope(stmt)
+        if not root:
             return []
 
         deps = []
         seen = set()
-        for join in scope.expression.find_all(exp.Join):
+        scope_joins = (
+            (scope, join)
+            for scope in self._traverse_all_scopes(root)
+            if isinstance(scope.expression, exp.Select)
+            for join in scope.expression.args.get("joins") or []
+        )
+        for scope, join in scope_joins:
             using_columns = join.args.get("using") or []
             if not using_columns:
                 continue

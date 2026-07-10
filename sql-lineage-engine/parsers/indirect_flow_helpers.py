@@ -279,6 +279,20 @@ class IndirectFlowHelperMixin(IndirectFlowConditionHelperMixin):
                 refs.update(self._resolve_lateral_column_refs(column_name, source))
         return refs
 
+    def _resolve_lateral_qualifier_refs(
+        self, qualifier: str, scope
+    ) -> Set[Tuple[str, str]]:
+        """Resolve a struct qualifier that is an output of an earlier lateral view."""
+        refs = set()
+        for source in scope.sources.values():
+            if not self._is_lateral_scope(source):
+                continue
+            output_names = self._lateral_output_names(source.expression)
+            if qualifier.upper() not in {name.upper() for name in output_names}:
+                continue
+            refs.update(self._resolve_lateral_column_refs(qualifier, source))
+        return refs
+
     def _physical_tables_excluding_laterals(self, scope) -> Set[str]:
         tables = set()
         for source in scope.sources.values():
@@ -573,73 +587,121 @@ class IndirectFlowHelperMixin(IndirectFlowConditionHelperMixin):
 
     def _convert_mti_to_cte(self, sql: str) -> List[str]:
         """
-        Convert Hive Multi-Table Insert to multiple CTE-based statements.
+        Normalize a Hive Multi-Table Insert into independent INSERT statements.
+
+        The shared FROM clause is copied into every branch. Keeping the original
+        source scope is important: wrapping it in a CTE hides table aliases used by
+        branch projections and breaks JOIN/LATERAL VIEW lineage.
         """
-        match = re.search(r"(?i)\s+INSERT\s+(?:INTO|OVERWRITE)\s+(?:TABLE\s+)?", sql)
-        if not match:
+        insert_pattern = re.compile(
+            r"(?i)\bINSERT\s+(?:INTO|OVERWRITE)\s+(?:TABLE\s+)?"
+        )
+        insert_matches = list(self._iter_top_level_matches(sql, insert_pattern))
+        if not insert_matches:
             return [sql]
 
-        split_index = match.start()
+        split_index = insert_matches[0].start()
         from_part = sql[:split_index].strip()
         inserts_part = sql[split_index:].strip()
 
         if not from_part.upper().startswith("FROM"):
             return [sql]
 
-        from_body = from_part[4:].strip()
-        cte_def = from_body
-        alias = "source_view"
-
-        last_space = from_body.rfind(" ")
-        if last_space != -1:
-            candidate_alias = from_body[last_space + 1:]
-            if re.match(r"^[a-zA-Z0-9_$]+$", candidate_alias):
-                alias = candidate_alias
-                cte_def = from_body[:last_space].strip()
-
-        if not cte_def.startswith("("):
-            cte_def = f"(SELECT * FROM {cte_def})"
-
-        parts = re.split(
-            r"(?i)(INSERT\s+(?:INTO|OVERWRITE)\s+(?:TABLE\s+)?)",
-            inserts_part,
-        )
-
-        statements = []
-        current_stmt = ""
-        start_idx = 1 if len(parts) > 1 else 0
-
-        for i in range(start_idx, len(parts)):
-            p = parts[i]
-            if re.match(r"(?i)INSERT\s+(?:INTO|OVERWRITE)\s+(?:TABLE\s+)?", p):
-                if current_stmt:
-                    statements.append(current_stmt)
-                current_stmt = p
-            else:
-                current_stmt += p
-        if current_stmt:
-            statements.append(current_stmt)
+        shared_source = from_part[4:].strip()
+        branch_matches = list(self._iter_top_level_matches(inserts_part, insert_pattern))
+        statements = [
+            inserts_part[match.start(): (
+                branch_matches[index + 1].start()
+                if index + 1 < len(branch_matches)
+                else len(inserts_part)
+            )].strip()
+            for index, match in enumerate(branch_matches)
+        ]
 
         final_sqls = []
         for stmt in statements:
             stmt = stmt.strip()
             if stmt.endswith(";"):
                 stmt = stmt[:-1]
-            if not re.search(r"(?i)\bFROM\b", stmt):
-                stmt = self._append_mti_source(stmt, alias)
-            final_sqls.append(f"WITH {alias} AS {cte_def} {stmt}")
+            from_pattern = re.compile(r"(?i)\bFROM\b")
+            if not next(self._iter_top_level_matches(stmt, from_pattern), None):
+                stmt = self._append_mti_source(stmt, shared_source)
+            final_sqls.append(stmt)
 
         return final_sqls
 
-    def _append_mti_source(self, stmt: str, alias: str) -> str:
+    def _append_mti_source(self, stmt: str, source_sql: str) -> str:
         """Insert the implicit Hive MTI source before WHERE/GROUP/HAVING clauses."""
-        clause_match = re.search(
+        clause_pattern = re.compile(
             r"(?i)\b(WHERE|GROUP\s+BY|HAVING|ORDER\s+BY|SORT\s+BY|DISTRIBUTE\s+BY|CLUSTER\s+BY|LIMIT|UNION|EXCEPT|INTERSECT)\b",
-            stmt,
         )
+        clause_match = next(self._iter_top_level_matches(stmt, clause_pattern), None)
         if clause_match:
             return (
-                f"{stmt[:clause_match.start()].rstrip()} FROM {alias} "
+                f"{stmt[:clause_match.start()].rstrip()} FROM {source_sql} "
                 f"{stmt[clause_match.start():].lstrip()}"
             )
-        return f"{stmt} FROM {alias}"
+        return f"{stmt} FROM {source_sql}"
+
+    @staticmethod
+    def _iter_top_level_matches(sql: str, pattern):
+        """Yield regex matches outside quotes, comments, and parenthesized expressions."""
+        depth = 0
+        quote = None
+        in_line_comment = False
+        in_block_comment = False
+        index = 0
+
+        while index < len(sql):
+            char = sql[index]
+            next_char = sql[index + 1] if index + 1 < len(sql) else ""
+
+            if in_line_comment:
+                if char == "\n":
+                    in_line_comment = False
+                index += 1
+                continue
+            if in_block_comment:
+                if char == "*" and next_char == "/":
+                    in_block_comment = False
+                    index += 2
+                else:
+                    index += 1
+                continue
+            if quote:
+                if char == quote:
+                    if next_char == quote:
+                        index += 2
+                        continue
+                    quote = None
+                index += 1
+                continue
+
+            if char == "-" and next_char == "-":
+                in_line_comment = True
+                index += 2
+                continue
+            if char == "/" and next_char == "*":
+                in_block_comment = True
+                index += 2
+                continue
+            if char in {"'", '"', "`"}:
+                quote = char
+                index += 1
+                continue
+            if char == "(":
+                depth += 1
+                index += 1
+                continue
+            if char == ")":
+                depth = max(depth - 1, 0)
+                index += 1
+                continue
+
+            if depth == 0:
+                match = pattern.match(sql, index)
+                if match:
+                    yield match
+                    index = match.end()
+                    continue
+            index += 1
