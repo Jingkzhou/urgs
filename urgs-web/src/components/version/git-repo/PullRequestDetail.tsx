@@ -19,7 +19,8 @@ import {
     AICodeReview,
     getAICodeReviewByCommit,
     getAICodeReviewDetail,
-    askAICodeReview
+    askAICodeReview,
+    getRepoFileContent
 } from '@/api/version';
 import {
     AuditIssue,
@@ -53,6 +54,11 @@ const PullRequestDetail: React.FC<PullRequestDetailProps> = ({ repoId, prId, onB
     const [auditQuestion, setAuditQuestion] = useState('');
     const [auditAnswer, setAuditAnswer] = useState('');
     const [auditAskLoading, setAuditAskLoading] = useState(false);
+    const [auditFileModalOpen, setAuditFileModalOpen] = useState(false);
+    const [auditFilePath, setAuditFilePath] = useState('');
+    const [auditFileCode, setAuditFileCode] = useState('');
+    const [auditFileLoading, setAuditFileLoading] = useState(false);
+    const [auditFileError, setAuditFileError] = useState('');
 
     const formatReviewData = (data: AICodeReview): ParsedAICodeReview => parseAICodeReview(data);
 
@@ -168,6 +174,25 @@ const PullRequestDetail: React.FC<PullRequestDetailProps> = ({ repoId, prId, onB
             message.error(error?.message || '报告追问失败');
         } finally {
             setAuditAskLoading(false);
+        }
+    };
+
+    const handleOpenAuditFile = async (path?: string) => {
+        if (!path || !auditReview) {
+            return;
+        }
+        setAuditFilePath(path);
+        setAuditFileModalOpen(true);
+        setAuditFileLoading(true);
+        setAuditFileError('');
+        setAuditFileCode('');
+        try {
+            const data = await getRepoFileContent(auditReview.repoId, path, auditReview.commitSha);
+            setAuditFileCode(data?.content || '');
+        } catch (error: any) {
+            setAuditFileError(error?.message || '加载文件完整代码失败');
+        } finally {
+            setAuditFileLoading(false);
         }
     };
 
@@ -550,6 +575,43 @@ const PullRequestDetail: React.FC<PullRequestDetailProps> = ({ repoId, prId, onB
                                             <div className="bg-white rounded-xl border border-slate-200 shadow-sm overflow-hidden">
                                                 <div className="bg-slate-50/50 px-5 py-3 border-b border-slate-100 flex items-center justify-between">
                                                     <span className="text-xs font-bold text-slate-700 uppercase flex items-center gap-2 tracking-wide">
+                                                        <FileCode size={14} className="text-slate-500" />
+                                                        涉及文件
+                                                    </span>
+                                                    <span className="px-2 py-0.5 bg-slate-200 rounded-full text-[10px] font-bold text-slate-600">
+                                                        {auditReview.files.length}
+                                                    </span>
+                                                </div>
+                                                <div className="divide-y divide-slate-50">
+                                                    {auditReview.files.length > 0 ? auditReview.files.map((file) => (
+                                                        <button
+                                                            type="button"
+                                                            key={file.path}
+                                                            onClick={() => handleOpenAuditFile(file.path)}
+                                                            className="w-full p-3 text-left hover:bg-slate-50 transition-colors"
+                                                            title={file.path}
+                                                        >
+                                                            <div className="flex items-center justify-between gap-2">
+                                                                <span className="truncate font-mono text-[11px] font-semibold text-slate-700">{file.path}</span>
+                                                                <span className="flex-none rounded bg-slate-100 px-1.5 py-0.5 text-[10px] font-bold text-slate-500">
+                                                                    {file.issueCount}
+                                                                </span>
+                                                            </div>
+                                                            {file.summary && (
+                                                                <div className="mt-1 line-clamp-2 text-[11px] leading-5 text-slate-500">{file.summary}</div>
+                                                            )}
+                                                        </button>
+                                                    )) : (
+                                                        <div className="p-6 text-center text-xs text-slate-400">
+                                                            当前报告没有结构化文件路径，重新发起智查后会显示文件列表。
+                                                        </div>
+                                                    )}
+                                                </div>
+                                            </div>
+
+                                            <div className="bg-white rounded-xl border border-slate-200 shadow-sm overflow-hidden">
+                                                <div className="bg-slate-50/50 px-5 py-3 border-b border-slate-100 flex items-center justify-between">
+                                                    <span className="text-xs font-bold text-slate-700 uppercase flex items-center gap-2 tracking-wide">
                                                         <AlertTriangle size={14} className="text-amber-500" />
                                                         发现的问题
                                                     </span>
@@ -578,6 +640,11 @@ const PullRequestDetail: React.FC<PullRequestDetailProps> = ({ repoId, prId, onB
                                                             {issue.line && (
                                                                 <div className="flex items-center gap-1.5 ml-[54px] text-[10px] text-slate-400 font-mono">
                                                                     <Terminal size={10} /> Line {issue.line}
+                                                                </div>
+                                                            )}
+                                                            {issue.filePath && (
+                                                                <div className="flex items-center gap-1.5 ml-[54px] mt-1 text-[10px] text-slate-400 font-mono">
+                                                                    <FileCode size={10} /> {issue.filePath}
                                                                 </div>
                                                             )}
                                                         </div>
@@ -680,6 +747,21 @@ const PullRequestDetail: React.FC<PullRequestDetailProps> = ({ repoId, prId, onB
                                                         </div>
                                                     )}
 
+                                                    {selectedIssue.filePath && (
+                                                        <div>
+                                                            <h4 className="text-[11px] font-bold text-slate-400 uppercase tracking-widest mb-2 flex items-center gap-1.5">
+                                                                <FileCode size={12} /> 所属文件
+                                                            </h4>
+                                                            <button
+                                                                type="button"
+                                                                onClick={() => handleOpenAuditFile(selectedIssue.filePath)}
+                                                                className="w-full font-mono text-xs text-left text-slate-600 bg-white border border-slate-200 px-3 py-2 rounded-lg hover:border-slate-300"
+                                                            >
+                                                                {selectedIssue.filePath}
+                                                            </button>
+                                                        </div>
+                                                    )}
+
                                                     {selectedIssue.codeSnippet && (
                                                         <div>
                                                             <h4 className="text-[11px] font-bold text-slate-400 uppercase tracking-widest mb-2 flex items-center gap-1.5">
@@ -719,6 +801,15 @@ const PullRequestDetail: React.FC<PullRequestDetailProps> = ({ repoId, prId, onB
                                                     <Button
                                                         type="primary"
                                                         className="bg-slate-900 rounded-xl shadow-lg shadow-slate-200 text-xs font-bold flex items-center gap-1.5"
+                                                        disabled={!selectedIssue.filePath}
+                                                        onClick={() => handleOpenAuditFile(selectedIssue.filePath)}
+                                                    >
+                                                        <FileCode size={12} />
+                                                        查看完整文件
+                                                    </Button>
+                                                    <Button
+                                                        type="primary"
+                                                        className="bg-slate-900 rounded-xl shadow-lg shadow-slate-200 text-xs font-bold flex items-center gap-1.5"
                                                         loading={auditAskLoading}
                                                         onClick={() => {
                                                             setIsIssueModalOpen(false);
@@ -731,6 +822,32 @@ const PullRequestDetail: React.FC<PullRequestDetailProps> = ({ repoId, prId, onB
                                                 </div>
                                             </div>
                                         )}
+                                    </Modal>
+
+                                    <Modal
+                                        title={<span className="font-mono text-sm">{auditFilePath || '完整文件'}</span>}
+                                        open={auditFileModalOpen}
+                                        onCancel={() => setAuditFileModalOpen(false)}
+                                        footer={null}
+                                        width={900}
+                                        destroyOnHidden
+                                    >
+                                        <div className="max-h-[70vh] overflow-auto rounded-xl bg-slate-950">
+                                            {auditFileLoading ? (
+                                                <div className="flex items-center justify-center py-16 text-sm text-slate-400">
+                                                    <Loader2 size={18} className="mr-2 animate-spin" />
+                                                    加载完整代码
+                                                </div>
+                                            ) : auditFileError ? (
+                                                <div className="px-4 py-8 text-sm text-rose-200">{auditFileError}</div>
+                                            ) : auditFileCode ? (
+                                                <pre className="m-0 min-w-full p-4 text-xs leading-6 text-slate-200">
+                                                    <code>{auditFileCode}</code>
+                                                </pre>
+                                            ) : (
+                                                <div className="px-4 py-8 text-sm text-slate-400">暂无文件内容</div>
+                                            )}
+                                        </div>
                                     </Modal>
                                 </>
                             )}

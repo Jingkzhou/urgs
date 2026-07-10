@@ -90,8 +90,7 @@ public class AiCodeReviewServiceImpl extends ServiceImpl<AiCodeReviewMapper, AiC
             }
 
             // 4. Map-Reduce Analysis
-            List<String> fileSummaries = new ArrayList<>();
-            List<String> allFileIssuesJson = new ArrayList<>();
+            List<FileReviewResult> fileResults = new ArrayList<>();
 
             for (GitCommitDiff diff : diffs) {
                 // Skip deleted files or binaries
@@ -147,8 +146,8 @@ public class AiCodeReviewServiceImpl extends ServiceImpl<AiCodeReviewMapper, AiC
                     String fileReducePrompt = reviewPromptFactory.getReducePhasePrompt(getLanguage(path), joinedIssues);
                     String fileAnalysisJson = extractJson(callAiSafe(fileReducePrompt));
 
-                    allFileIssuesJson.add(fileAnalysisJson);
-                    fileSummaries.add(String.format("### %s\n%s", path, extractSummary(fileAnalysisJson)));
+                    String fileSummary = extractSummary(fileAnalysisJson);
+                    fileResults.add(new FileReviewResult(path, getLanguage(path), fileSummary, fileAnalysisJson));
                 } catch (Exception e) {
                     System.err.println("DEBUG: Failed to analyze file: " + path + " - " + e.getMessage());
                     e.printStackTrace();
@@ -159,15 +158,20 @@ public class AiCodeReviewServiceImpl extends ServiceImpl<AiCodeReviewMapper, AiC
             // Simple aggregation for now: Average score, combine issues
             System.out.println("DEBUG: Final aggregation...");
             // Ideally we could do one last AI Reduce pass here if needed.
+            List<String> allFileIssuesJson = fileResults.stream()
+                    .map(FileReviewResult::json)
+                    .collect(Collectors.toList());
             int finalScore = calculateAverageScore(allFileIssuesJson);
-            String finalSummary = "AI 代码智能审查完成。包含 " + allFileIssuesJson.size() + " 个文件的深度分析。";
-            String finalContent = fileSummaries.isEmpty()
+            String finalSummary = "AI 代码智能审查完成。包含 " + fileResults.size() + " 个文件的深度分析。";
+            String finalContent = fileResults.isEmpty()
                     ? "暂无详细分析内容。"
-                    : String.join("\n\n---\n\n", fileSummaries);
+                    : fileResults.stream()
+                            .map(file -> String.format("### %s\n%s", file.path(), file.summary()))
+                            .collect(Collectors.joining("\n\n---\n\n"));
 
             // Construct Client-Friendly JSON Structure
             // Merging all "issues" arrays from files
-            String finalJson = mergeJsonResults(allFileIssuesJson, finalScore, finalContent, finalSummary);
+            String finalJson = mergeJsonResults(fileResults, finalScore, finalContent, finalSummary);
 
             markAsCompleted(review, finalScore, finalSummary, finalContent, finalJson);
             System.out.println("DEBUG: Review completed successfully for " + commitSha);
@@ -254,24 +258,49 @@ public class AiCodeReviewServiceImpl extends ServiceImpl<AiCodeReviewMapper, AiC
         return s.substring(0, len) + "...";
     }
 
-    private String mergeJsonResults(List<String> jsons, int overallScore, String overallContent,
+    private String mergeJsonResults(List<FileReviewResult> fileResults, int overallScore, String overallContent,
             String overallSummary) {
         try {
             com.fasterxml.jackson.databind.node.ObjectNode root = objectMapper.createObjectNode();
             com.fasterxml.jackson.databind.node.ArrayNode combinedIssues = objectMapper.createArrayNode();
+            com.fasterxml.jackson.databind.node.ArrayNode files = objectMapper.createArrayNode();
 
             int sec = 0, rel = 0, maint = 0, perf = 0;
             int count = 0;
 
-            for (String json : jsons) {
+            for (FileReviewResult fileResult : fileResults) {
+                String json = fileResult.json();
                 if (json == null || json.isBlank())
                     continue;
                 try {
                     JsonNode node = objectMapper.readTree(json);
+                    com.fasterxml.jackson.databind.node.ObjectNode fileNode = files.addObject();
+                    fileNode.put("path", fileResult.path());
+                    fileNode.put("fileName", getFileName(fileResult.path()));
+                    fileNode.put("language", fileResult.language());
+                    fileNode.put("summary", fileResult.summary());
+                    if (node.has("score")) {
+                        fileNode.put("score", node.get("score").asInt());
+                    }
+
+                    int issueCount = 0;
                     JsonNode issuesNode = node.get("issues");
                     if (issuesNode != null && issuesNode.isArray()) {
-                        issuesNode.forEach(combinedIssues::add);
+                        for (JsonNode issue : issuesNode) {
+                            issueCount++;
+                            if (issue != null && issue.isObject()) {
+                                com.fasterxml.jackson.databind.node.ObjectNode enrichedIssue = issue.deepCopy();
+                                enrichedIssue.put("filePath", fileResult.path());
+                                enrichedIssue.put("fileName", getFileName(fileResult.path()));
+                                enrichedIssue.put("language", fileResult.language());
+                                combinedIssues.add(enrichedIssue);
+                            } else {
+                                combinedIssues.add(issue);
+                            }
+                        }
                     }
+                    fileNode.put("issueCount", issueCount);
+
                     JsonNode sb = node.get("scoreBreakdown");
                     if (sb != null && sb.isObject()) {
                         sec += sb.path("security").asInt(80);
@@ -297,6 +326,7 @@ public class AiCodeReviewServiceImpl extends ServiceImpl<AiCodeReviewMapper, AiC
             root.put("summary", overallSummary);
             root.put("content", overallContent);
             root.set("issues", combinedIssues);
+            root.set("files", files);
             com.fasterxml.jackson.databind.node.ObjectNode breakdown = root.putObject("scoreBreakdown");
             breakdown.put("security", sec / count);
             breakdown.put("reliability", rel / count);
@@ -435,5 +465,19 @@ public class AiCodeReviewServiceImpl extends ServiceImpl<AiCodeReviewMapper, AiC
             return normalized;
         }
         return normalized.substring(0, maxLength) + "...";
+    }
+
+    private String getFileName(String path) {
+        if (path == null || path.isBlank()) {
+            return "-";
+        }
+        int slashIndex = Math.max(path.lastIndexOf('/'), path.lastIndexOf('\\'));
+        if (slashIndex >= 0 && slashIndex < path.length() - 1) {
+            return path.substring(slashIndex + 1);
+        }
+        return path;
+    }
+
+    private record FileReviewResult(String path, String language, String summary, String json) {
     }
 }

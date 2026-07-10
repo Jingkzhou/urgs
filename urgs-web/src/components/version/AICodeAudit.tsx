@@ -1,8 +1,9 @@
-import React, { useEffect, useMemo, useState } from 'react';
+import React, { useEffect, useMemo, useRef, useState } from 'react';
 import {
     askAICodeReview,
     getAICodeReviewByCommit,
     getAICodeReviews,
+    getRepoFileContent,
     getRepoCommits,
     GitCommit,
     triggerAICodeReview,
@@ -16,6 +17,7 @@ import {
     FileCode,
     GitCommit as GitCommitIcon,
     Loader2,
+    Maximize2,
     MessageSquareText,
     RefreshCw,
     Search,
@@ -26,6 +28,8 @@ import {
     Zap,
 } from 'lucide-react';
 import ReactMarkdown from 'react-markdown';
+import { Prism as SyntaxHighlighter } from 'react-syntax-highlighter';
+import { oneDark } from 'react-syntax-highlighter/dist/esm/styles/prism';
 import { Button, Input, message, Modal, Progress, Select, Tag } from 'antd';
 import {
     AuditIssue,
@@ -82,6 +86,68 @@ const formatCommit = (sha?: string) => {
     return sha.length > 8 ? sha.substring(0, 8) : sha;
 };
 
+const resolveCodeLanguage = (filePath?: string, language?: string) => {
+    const declared = (language || '').trim().toLowerCase();
+    const extension = (filePath?.split('.').pop() || '').toLowerCase();
+    const value = declared || extension;
+
+    if (['java'].includes(value) || extension === 'java') {
+        return 'java';
+    }
+    if (['python', 'py'].includes(value) || extension === 'py') {
+        return 'python';
+    }
+    if (['shell', 'bash', 'sh', 'zsh', 'ksh'].includes(value) || ['sh', 'bash', 'zsh', 'ksh'].includes(extension)) {
+        return 'bash';
+    }
+    if (
+        ['sql', 'prc', 'plsql', 'pls', 'pkg', 'pck', 'fnc', 'trg'].includes(value) ||
+        ['sql', 'prc', 'pls', 'pkg', 'pck', 'fnc', 'trg'].includes(extension)
+    ) {
+        return 'sql';
+    }
+    if (['typescript', 'ts', 'tsx'].includes(value) || ['ts', 'tsx'].includes(extension)) {
+        return 'typescript';
+    }
+    if (['javascript', 'js', 'jsx'].includes(value) || ['js', 'jsx'].includes(extension)) {
+        return 'javascript';
+    }
+    if (['xml', 'html'].includes(value) || ['xml', 'html'].includes(extension)) {
+        return 'xml';
+    }
+    return 'text';
+};
+
+const renderCodeLines = (code: string, language: string, fontSize = '13px') => {
+    return (
+        <SyntaxHighlighter
+            language={language}
+            style={oneDark}
+            showLineNumbers
+            wrapLines={false}
+            wrapLongLines={false}
+            customStyle={{
+                margin: 0,
+                minWidth: 'max-content',
+                padding: '16px',
+                background: 'transparent',
+                fontSize,
+                lineHeight: '24px',
+            }}
+            lineNumberStyle={{
+                minWidth: '3.25rem',
+                paddingRight: '1rem',
+                color: '#64748b',
+                textAlign: 'right',
+                userSelect: 'none',
+            }}
+            codeTagProps={{ style: { fontFamily: 'var(--font-mono)' } }}
+        >
+            {code}
+        </SyntaxHighlighter>
+    );
+};
+
 const AICodeAudit: React.FC<Props> = ({ repoId }) => {
     const [reviews, setReviews] = useState<ParsedAICodeReview[]>([]);
     const [commits, setCommits] = useState<GitCommit[]>([]);
@@ -98,6 +164,14 @@ const AICodeAudit: React.FC<Props> = ({ repoId }) => {
     const [question, setQuestion] = useState('');
     const [questionLoading, setQuestionLoading] = useState(false);
     const [questionHistory, setQuestionHistory] = useState<Record<number, ReviewQuestion[]>>({});
+    const [selectedFilePath, setSelectedFilePath] = useState('');
+    const [fileCode, setFileCode] = useState('');
+    const [fileCodeLoading, setFileCodeLoading] = useState(false);
+    const [fileCodeError, setFileCodeError] = useState('');
+    const [isCodeModalOpen, setIsCodeModalOpen] = useState(false);
+    const fileCodeCacheRef = useRef<Record<string, string>>({});
+    const codeScrollRef = useRef<HTMLDivElement | null>(null);
+    const codeScrollTopRef = useRef<Record<string, number>>({});
     const [runTarget, setRunTarget] = useState({
         commitSha: '',
         branch: '',
@@ -174,6 +248,96 @@ const AICodeAudit: React.FC<Props> = ({ repoId }) => {
     const selectedIssues = selectedReview
         ? selectedReview.issues.filter((issue) => severityFilter === 'ALL' || issue.severity === severityFilter)
         : [];
+    const selectedFile = selectedReview?.files.find((file) => file.path === selectedFilePath);
+    const selectedFilePathsKey = selectedReview?.files.map((file) => file.path).join('\n') || '';
+    const selectedReviewRepoId = selectedReview?.repoId;
+    const selectedReviewCommitSha = selectedReview?.commitSha;
+    const selectedFileLanguage = resolveCodeLanguage(selectedFile?.path || selectedFilePath, selectedFile?.language);
+    const fileCodeCacheKey =
+        selectedReviewRepoId && selectedReviewCommitSha && selectedFilePath
+            ? `${selectedReviewRepoId}:${selectedReviewCommitSha}:${selectedFilePath}`
+            : '';
+
+    useEffect(() => {
+        const filePaths = selectedFilePathsKey ? selectedFilePathsKey.split('\n') : [];
+        if (!filePaths.length) {
+            setSelectedFilePath('');
+            return;
+        }
+        setSelectedFilePath((current) => {
+            if (current && filePaths.includes(current)) {
+                return current;
+            }
+            return filePaths[0];
+        });
+    }, [selectedFilePathsKey]);
+
+    useEffect(() => {
+        if (!isCodeModalOpen) {
+            setFileCodeLoading(false);
+            return;
+        }
+        if (!selectedReviewRepoId || !selectedReviewCommitSha || !selectedFilePath || !fileCodeCacheKey) {
+            setFileCode('');
+            setFileCodeError('');
+            return;
+        }
+        const cachedCode = fileCodeCacheRef.current[fileCodeCacheKey];
+        if (cachedCode !== undefined) {
+            setFileCode(cachedCode);
+            setFileCodeError('');
+            setFileCodeLoading(false);
+            return;
+        }
+        let cancelled = false;
+        const loadFileCode = async () => {
+            setFileCodeLoading(true);
+            setFileCodeError('');
+            try {
+                const data = await getRepoFileContent(selectedReviewRepoId, selectedFilePath, selectedReviewCommitSha);
+                if (!cancelled) {
+                    const content = data?.content || '';
+                    fileCodeCacheRef.current[fileCodeCacheKey] = content;
+                    setFileCode(content);
+                }
+            } catch (error: any) {
+                if (!cancelled) {
+                    setFileCode('');
+                    setFileCodeError(error?.message || '加载文件完整代码失败');
+                }
+            } finally {
+                if (!cancelled) {
+                    setFileCodeLoading(false);
+                }
+            }
+        };
+        loadFileCode();
+        return () => {
+            cancelled = true;
+        };
+    }, [isCodeModalOpen, selectedReviewRepoId, selectedReviewCommitSha, selectedFilePath, fileCodeCacheKey]);
+
+    const handleCodeScroll = () => {
+        if (!fileCodeCacheKey || !codeScrollRef.current) {
+            return;
+        }
+        codeScrollTopRef.current[fileCodeCacheKey] = codeScrollRef.current.scrollTop;
+    };
+
+    useEffect(() => {
+        if (!isCodeModalOpen || !fileCodeCacheKey || !codeScrollRef.current) {
+            return;
+        }
+        const savedScrollTop = codeScrollTopRef.current[fileCodeCacheKey];
+        if (savedScrollTop === undefined) {
+            return;
+        }
+        window.requestAnimationFrame(() => {
+            if (codeScrollRef.current) {
+                codeScrollRef.current.scrollTop = savedScrollTop;
+            }
+        });
+    }, [isCodeModalOpen, fileCodeCacheKey, fileCode]);
 
     const pollTriggeredReview = (commitSha: string) => {
         let attempts = 0;
@@ -377,7 +541,7 @@ const AICodeAudit: React.FC<Props> = ({ repoId }) => {
                                                     <GitCommitIcon size={11} />
                                                     <span className="truncate">{review.branch || '未记录分支'}</span>
                                                 </span>
-                                                <span>{review.issues.length} 个问题</span>
+                                                <span>{review.files.length} 个文件 / {review.issues.length} 个问题</span>
                                             </div>
                                         </button>
                                     );
@@ -463,6 +627,72 @@ const AICodeAudit: React.FC<Props> = ({ repoId }) => {
                                     <div className="overflow-hidden rounded-xl border border-slate-200 bg-white">
                                         <div className="flex items-center justify-between border-b border-slate-100 px-4 py-3">
                                             <div className="flex items-center gap-2 text-sm font-bold text-slate-900">
+                                                <FileCode size={16} className="text-slate-500" />
+                                                对应文件完整代码
+                                            </div>
+                                            <span className="rounded-full bg-slate-100 px-2 py-0.5 text-[11px] font-bold text-slate-600">
+                                                {selectedReview.files.length} 个文件
+                                            </span>
+                                        </div>
+                                        {selectedReview.files.length > 0 ? (
+                                            <>
+                                                <div className="flex gap-2 overflow-x-auto border-b border-slate-100 p-3">
+                                                    {selectedReview.files.map((file) => (
+                                                        <button
+                                                            key={file.path}
+                                                            type="button"
+                                                            title={file.path}
+                                                            onClick={() => setSelectedFilePath(file.path)}
+                                                            className={`flex max-w-[260px] flex-none items-center gap-2 rounded-lg border px-3 py-2 text-left transition-colors ${
+                                                                selectedFilePath === file.path
+                                                                    ? 'border-slate-900 bg-slate-900 text-white'
+                                                                    : 'border-slate-200 bg-slate-50 text-slate-600 hover:border-slate-300'
+                                                            }`}
+                                                        >
+                                                            <FileCode size={13} className="flex-none" />
+                                                            <span className="truncate font-mono text-[11px] font-semibold">{file.path}</span>
+                                                            <span className={`rounded px-1.5 py-0.5 text-[10px] ${
+                                                                selectedFilePath === file.path ? 'bg-white/15 text-white' : 'bg-white text-slate-500'
+                                                            }`}>
+                                                                {file.issueCount}
+                                                            </span>
+                                                        </button>
+                                                    ))}
+                                                </div>
+                                                <div className="bg-slate-50 px-4 py-3">
+                                                    <div className="flex flex-col gap-3 sm:flex-row sm:items-center sm:justify-between">
+                                                        <div className="min-w-0">
+                                                            <div className="flex flex-wrap items-center gap-2 text-[11px] text-slate-500">
+                                                                <span className="truncate font-mono font-semibold text-slate-700">{selectedFile?.path || selectedFilePath}</span>
+                                                                <span className="rounded bg-white px-1.5 py-0.5">{selectedFileLanguage}</span>
+                                                                {selectedFile?.score !== undefined && <span className="rounded bg-white px-1.5 py-0.5">文件评分 {selectedFile.score}</span>}
+                                                            </div>
+                                                            {selectedFile?.summary && (
+                                                                <div className="mt-1 line-clamp-2 text-xs leading-5 text-slate-600">{selectedFile.summary}</div>
+                                                            )}
+                                                        </div>
+                                                        <Button
+                                                            type="primary"
+                                                            className="bg-slate-900"
+                                                            icon={<Maximize2 size={14} />}
+                                                            disabled={!selectedFilePath}
+                                                            onClick={() => setIsCodeModalOpen(true)}
+                                                        >
+                                                            全屏查看完整代码
+                                                        </Button>
+                                                    </div>
+                                                </div>
+                                            </>
+                                        ) : (
+                                            <div className="px-6 py-10 text-center text-sm text-slate-400">
+                                                当前报告没有结构化文件路径。重新发起一次智查后，会展示每个文件的完整代码。
+                                            </div>
+                                        )}
+                                    </div>
+
+                                    <div className="overflow-hidden rounded-xl border border-slate-200 bg-white">
+                                        <div className="flex items-center justify-between border-b border-slate-100 px-4 py-3">
+                                            <div className="flex items-center gap-2 text-sm font-bold text-slate-900">
                                                 <Bot size={16} className="text-slate-500" />
                                                 AI 分析报告
                                             </div>
@@ -519,6 +749,9 @@ const AICodeAudit: React.FC<Props> = ({ repoId }) => {
                                                         type="button"
                                                         key={`${issue.title}-${index}`}
                                                         onClick={() => {
+                                                            if (issue.filePath) {
+                                                                setSelectedFilePath(issue.filePath);
+                                                            }
                                                             setSelectedIssue(issue);
                                                             setIsIssueModalOpen(true);
                                                         }}
@@ -536,6 +769,12 @@ const AICodeAudit: React.FC<Props> = ({ repoId }) => {
                                                             <div className="flex items-center gap-1 text-[11px] text-slate-500">
                                                                 <Terminal size={11} />
                                                                 Line {issue.line}
+                                                            </div>
+                                                        )}
+                                                        {issue.filePath && (
+                                                            <div className="mt-1 flex items-center gap-1 text-[11px] text-slate-500">
+                                                                <FileCode size={11} />
+                                                                <span className="truncate font-mono">{issue.filePath}</span>
                                                             </div>
                                                         )}
                                                     </button>
@@ -704,6 +943,12 @@ const AICodeAudit: React.FC<Props> = ({ repoId }) => {
                                         Line {selectedIssue.line}
                                     </div>
                                 )}
+                                {selectedIssue.filePath && (
+                                    <div className="mt-1 flex items-center gap-1 text-xs text-slate-500">
+                                        <FileCode size={12} />
+                                        <span className="font-mono">{selectedIssue.filePath}</span>
+                                    </div>
+                                )}
                             </div>
                         </div>
 
@@ -715,9 +960,13 @@ const AICodeAudit: React.FC<Props> = ({ repoId }) => {
                         {selectedIssue.codeSnippet && (
                             <div className="overflow-hidden rounded-xl border border-slate-800 bg-slate-950">
                                 <div className="border-b border-white/10 px-3 py-2 font-mono text-[11px] text-slate-400">source</div>
-                                <pre className="m-0 overflow-x-auto p-4 text-xs leading-6 text-slate-200">
-                                    <code>{selectedIssue.codeSnippet}</code>
-                                </pre>
+                                <div className="overflow-x-auto font-mono">
+                                    {renderCodeLines(
+                                        selectedIssue.codeSnippet,
+                                        resolveCodeLanguage(selectedIssue.filePath, selectedIssue.language),
+                                        '12px',
+                                    )}
+                                </div>
                             </div>
                         )}
 
@@ -728,6 +977,22 @@ const AICodeAudit: React.FC<Props> = ({ repoId }) => {
                             </div>
                             <p className="m-0 text-sm leading-6 text-slate-700">{selectedIssue.recommendation || '暂无修复建议。'}</p>
                         </div>
+
+                        <Button
+                            type="primary"
+                            className="w-full bg-slate-900"
+                            icon={<FileCode size={14} />}
+                            onClick={() => {
+                                if (selectedIssue.filePath) {
+                                    setSelectedFilePath(selectedIssue.filePath);
+                                    setIsCodeModalOpen(true);
+                                }
+                                setIsIssueModalOpen(false);
+                            }}
+                            disabled={!selectedIssue.filePath}
+                        >
+                            查看对应完整文件
+                        </Button>
 
                         <Button
                             type="primary"
@@ -743,6 +1008,60 @@ const AICodeAudit: React.FC<Props> = ({ repoId }) => {
                         </Button>
                     </div>
                 )}
+            </Modal>
+
+            <Modal
+                title={
+                    <div className="flex min-w-0 items-center gap-2">
+                        <FileCode size={16} className="text-slate-500" />
+                        <span className="truncate font-mono text-sm">{selectedFile?.path || selectedFilePath || '完整代码'}</span>
+                    </div>
+                }
+                open={isCodeModalOpen}
+                onCancel={() => setIsCodeModalOpen(false)}
+                footer={null}
+                width="100vw"
+                className="[&_.ant-modal-content]:h-screen [&_.ant-modal-content]:rounded-none [&_.ant-modal-content]:p-0"
+                style={{ top: 0, maxWidth: '100vw', paddingBottom: 0 }}
+                styles={{
+                    header: { margin: 0, padding: '12px 16px', borderBottom: '1px solid #e2e8f0' },
+                    body: { padding: 0 },
+                }}
+                destroyOnClose
+            >
+                <div className="flex h-[calc(100vh-53px)] flex-col overflow-hidden bg-slate-950">
+                    <div className="flex flex-none items-center justify-between border-b border-white/10 bg-slate-900 px-4 py-2">
+                        <div className="min-w-0">
+                            <div className="truncate font-mono text-xs font-semibold text-slate-100">
+                                {selectedFile?.path || selectedFilePath}
+                            </div>
+                            <div className="mt-0.5 flex gap-2 text-[11px] text-slate-400">
+                                <span>{selectedFileLanguage}</span>
+                                {selectedFile?.score !== undefined && <span>评分 {selectedFile.score}</span>}
+                                <span>{fileCode ? `${fileCode.split('\n').length} 行` : '未加载'}</span>
+                            </div>
+                        </div>
+                        <Button size="small" onClick={() => setIsCodeModalOpen(false)}>
+                            关闭
+                        </Button>
+                    </div>
+                    <div ref={codeScrollRef} onScroll={handleCodeScroll} className="min-h-0 flex-1 overflow-auto">
+                        {fileCodeLoading ? (
+                            <div className="flex h-full items-center justify-center text-sm text-slate-400">
+                                <Loader2 size={18} className="mr-2 animate-spin" />
+                                加载完整代码
+                            </div>
+                        ) : fileCodeError ? (
+                            <div className="px-4 py-8 text-sm text-rose-200">{fileCodeError}</div>
+                        ) : fileCode ? (
+                            <div className="min-w-max font-mono">
+                                {renderCodeLines(fileCode, selectedFileLanguage)}
+                            </div>
+                        ) : (
+                            <div className="px-4 py-8 text-sm text-slate-400">暂无文件内容</div>
+                        )}
+                    </div>
+                </div>
             </Modal>
         </div>
     );

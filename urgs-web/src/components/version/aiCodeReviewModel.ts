@@ -5,10 +5,22 @@ export type AuditSeverity = 'critical' | 'major' | 'minor';
 export interface AuditIssue {
     severity: AuditSeverity;
     title: string;
+    filePath?: string;
+    fileName?: string;
+    language?: string;
     line?: number;
     description?: string;
     recommendation?: string;
     codeSnippet?: string;
+}
+
+export interface AuditReviewFile {
+    path: string;
+    fileName: string;
+    language?: string;
+    summary?: string;
+    score?: number;
+    issueCount: number;
 }
 
 export interface AuditScoreBreakdown {
@@ -21,6 +33,7 @@ export interface AuditScoreBreakdown {
 export interface ParsedAICodeReview extends AICodeReview {
     scoreBreakdown: AuditScoreBreakdown;
     issues: AuditIssue[];
+    files: AuditReviewFile[];
     reportContent: string;
     displaySummary: string;
 }
@@ -60,6 +73,11 @@ const normalizeSeverity = (value: unknown): AuditSeverity => {
         return 'major';
     }
     return 'minor';
+};
+
+const getFileName = (path: string) => {
+    const parts = path.split(/[\\/]/).filter(Boolean);
+    return parts[parts.length - 1] || path;
 };
 
 const stripMarkdownFence = (content: string) => {
@@ -104,9 +122,14 @@ const normalizeIssues = (issues: unknown): AuditIssue[] => {
                 return null;
             }
             const lineValue = Number(raw.line);
+            const filePath = String(raw.filePath || raw.path || raw.sourcePath || '').trim();
+            const fileName = String(raw.fileName || '').trim() || (filePath ? getFileName(filePath) : undefined);
             return {
                 severity: normalizeSeverity(raw.severity),
                 title,
+                filePath: filePath || undefined,
+                fileName,
+                language: raw.language ? String(raw.language) : undefined,
                 line: Number.isFinite(lineValue) ? lineValue : undefined,
                 description: raw.description ? String(raw.description) : undefined,
                 recommendation: raw.recommendation ? String(raw.recommendation) : undefined,
@@ -114,6 +137,76 @@ const normalizeIssues = (issues: unknown): AuditIssue[] => {
             };
         })
         .filter((issue): issue is AuditIssue => Boolean(issue));
+};
+
+const extractFilesFromMarkdown = (content: string): AuditReviewFile[] => {
+    const files: AuditReviewFile[] = [];
+    const seen = new Set<string>();
+    const headingPattern = /^###\s+(.+)$/gm;
+    let match: RegExpExecArray | null;
+    while ((match = headingPattern.exec(content))) {
+        const path = match[1]?.trim();
+        if (!path || seen.has(path)) {
+            continue;
+        }
+        seen.add(path);
+        files.push({
+            path,
+            fileName: getFileName(path),
+            issueCount: 0,
+        });
+    }
+    return files;
+};
+
+const normalizeFiles = (files: unknown, issues: AuditIssue[], content: string): AuditReviewFile[] => {
+    const normalized: AuditReviewFile[] = [];
+    const seen = new Set<string>();
+
+    if (Array.isArray(files)) {
+        files.forEach((file) => {
+            if (!file || typeof file !== 'object') {
+                return;
+            }
+            const raw = file as Record<string, unknown>;
+            const path = String(raw.path || raw.filePath || '').trim();
+            if (!path || seen.has(path)) {
+                return;
+            }
+            seen.add(path);
+            normalized.push({
+                path,
+                fileName: String(raw.fileName || '').trim() || getFileName(path),
+                language: raw.language ? String(raw.language) : undefined,
+                summary: raw.summary ? String(raw.summary) : undefined,
+                score: raw.score === undefined || raw.score === null ? undefined : normalizeScore(raw.score),
+                issueCount: Number(raw.issueCount) || issues.filter((issue) => issue.filePath === path).length,
+            });
+        });
+    }
+
+    issues.forEach((issue) => {
+        if (!issue.filePath || seen.has(issue.filePath)) {
+            return;
+        }
+        seen.add(issue.filePath);
+        normalized.push({
+            path: issue.filePath,
+            fileName: issue.fileName || getFileName(issue.filePath),
+            language: issue.language,
+            issueCount: issues.filter((item) => item.filePath === issue.filePath).length,
+        });
+    });
+
+    extractFilesFromMarkdown(content).forEach((file) => {
+        if (seen.has(file.path)) {
+            return;
+        }
+        seen.add(file.path);
+        normalized.push(file);
+    });
+
+    return normalized;
 };
 
 export const parseAICodeReview = (review: AICodeReview): ParsedAICodeReview => {
@@ -133,6 +226,7 @@ export const parseAICodeReview = (review: AICodeReview): ParsedAICodeReview => {
     };
     const issues = normalizeIssues(parsed?.issues);
     const reportContent = String(parsed?.content || review.content || '').trim();
+    const files = normalizeFiles(parsed?.files, issues, reportContent);
     const displaySummary = String(parsed?.summary || review.summary || reportContent || '等待 AI 完成报告').trim();
 
     return {
@@ -141,6 +235,7 @@ export const parseAICodeReview = (review: AICodeReview): ParsedAICodeReview => {
         summary: parsed?.summary || review.summary,
         scoreBreakdown: review.status === 'COMPLETED' ? scoreBreakdown : DEFAULT_BREAKDOWN,
         issues,
+        files,
         reportContent,
         displaySummary,
     };
