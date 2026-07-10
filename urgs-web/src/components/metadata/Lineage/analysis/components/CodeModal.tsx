@@ -14,6 +14,7 @@ interface CodeModalProps {
     code: string;
     title?: string;
     searchTerm?: string;
+    highlightTerms?: string[];
     linkType?: string;
     sourceFile?: string;
 }
@@ -24,6 +25,7 @@ const CodeModal: React.FC<CodeModalProps> = ({
     code,
     title = '源码预览',
     searchTerm = '',
+    highlightTerms = [],
     linkType,
     sourceFile
 }) => {
@@ -32,21 +34,29 @@ const CodeModal: React.FC<CodeModalProps> = ({
         return string.replace(/[.*+?^${}()|[\]\\]/g, '\\$&');
     };
 
+    const normalizedHighlightTerms = useMemo(() => Array.from(new Set([
+        ...highlightTerms,
+        searchTerm,
+    ].map(term => term.trim()).filter(Boolean))).sort((a, b) => b.length - a.length), [highlightTerms, searchTerm]);
+
     const highlightedCode = useMemo(() => {
         if (!code) return '';
 
-        // 1. Basic Syntax Highlighting
+        // 先完成 SQL 语法高亮，再仅在文本节点中处理字段名，避免破坏 HTML 标签。
         let html = hljs.highlight(code, { language: 'sql' }).value;
-
-        // 2. Search Term Highlighting (if exists)
-        if (searchTerm.trim()) {
-            const escapedTerm = escapeRegExp(searchTerm.trim());
-            const regex = new RegExp(`(${escapedTerm})(?![^<]*>)`, 'gi');
-            html = html.replace(regex, '<mark class="search-current" style="background: #fcd34d; color: #000; padding: 0 2px; border-radius: 2px;">$1</mark>');
+        if (normalizedHighlightTerms.length > 0) {
+            const escapedTerms = normalizedHighlightTerms.map(escapeRegExp).join('|');
+            // 字段两侧不能是标识符字符，避免把 order_id 中的 id 或 customer_id 中的 customer 误标出来。
+            const regex = new RegExp(`(^|[^\\p{L}\\p{N}_$])(${escapedTerms})(?=$|[^\\p{L}\\p{N}_$])`, 'giu');
+            html = html.split(/(<[^>]+>)/g).map(part => (
+                part.startsWith('<')
+                    ? part
+                    : part.replace(regex, '$1<mark class="search-current" style="background: #fcd34d; color: #000; padding: 0 2px; border-radius: 2px;">$2</mark>')
+            )).join('');
         }
 
         return html;
-    }, [code, searchTerm]);
+    }, [code, normalizedHighlightTerms]);
 
     const handleCopy = () => {
         navigator.clipboard.writeText(code);
@@ -83,6 +93,11 @@ const CodeModal: React.FC<CodeModalProps> = ({
             }}
         >
             <div style={{ padding: '20px', maxHeight: '60vh', overflow: 'auto' }}>
+                {normalizedHighlightTerms.length > 0 ? (
+                    <div style={{ marginBottom: 12, color: '#d1d5db', fontSize: 12 }}>
+                        精确定位字段：{normalizedHighlightTerms.join('、')}
+                    </div>
+                ) : null}
                 <pre style={{ margin: 0 }}>
                     <code
                         className="hljs sql"

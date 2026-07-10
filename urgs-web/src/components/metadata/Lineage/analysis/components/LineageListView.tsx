@@ -63,7 +63,7 @@ const LineageListView: React.FC<LineageListViewProps> = ({
         code: string;
         sourceFile?: string;
         linkType?: string;
-        searchTerm?: string;
+        highlightTerms?: string[];
     } | null>(null);
 
     const endToEndTableData = useMemo(() => endToEndRelations.map((relation) => ({
@@ -164,7 +164,7 @@ const LineageListView: React.FC<LineageListViewProps> = ({
             code: record.snippet,
             sourceFile: record.sourceFile,
             linkType: record.relationType,
-            searchTerm: record.sourceColumn
+            highlightTerms: [record.sourceColumn, record.targetColumn].filter(Boolean)
         });
         setCodeModalVisible(true);
     };
@@ -421,7 +421,7 @@ const LineageListView: React.FC<LineageListViewProps> = ({
                     code={selectedCode.code}
                     sourceFile={selectedCode.sourceFile}
                     linkType={selectedCode.linkType}
-                    searchTerm={selectedCode.searchTerm}
+                    highlightTerms={selectedCode.highlightTerms}
                 />
             )}
             <style>{`

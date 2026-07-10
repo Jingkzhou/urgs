@@ -48,7 +48,7 @@ interface SelectedCode {
     code: string;
     sourceFile?: string;
     linkType?: string;
-    searchTerm?: string;
+    highlightTerms?: string[];
 }
 
 interface SelectedRelation {
@@ -128,15 +128,21 @@ const getRelationLevelLabel = (level?: string) => {
     }
 };
 
-const getSourceColumnSearchTerm = (link: LinkData, nodes: NodeData[]) => {
+const getLinkHighlightTerms = (link: LinkData, nodes: NodeData[]) => {
     const sourceNode = nodes.find(node => node.id === link.sourceNodeId);
+    const targetNode = nodes.find(node => node.id === link.targetNodeId);
     const sourceCol = sourceNode?.columns.find(col => col.id === link.sourceColumnId);
-    const relationCount = Number(link.properties?.relationCount || 0);
-    const sourceColumns = normalizeArray(link.properties?.sourceColumns);
-    return sourceCol?.name
-        || link.properties?.sourceColumn
-        || link.properties?.sourceColumnName
-        || formatColumnSummary(sourceColumns, link.sourceColumnId || `表级关系(${relationCount || 1})`);
+    const targetCol = targetNode?.columns.find(col => col.id === link.targetColumnId);
+    return Array.from(new Set([
+        sourceCol?.name,
+        targetCol?.name,
+        link.properties?.sourceColumn,
+        link.properties?.sourceColumnName,
+        link.properties?.targetColumn,
+        link.properties?.targetColumnName,
+        ...normalizeArray(link.properties?.sourceColumns),
+        ...normalizeArray(link.properties?.targetColumns),
+    ].filter((value): value is string => typeof value === 'string' && value.trim().length > 0)));
 };
 
 const buildColumnUsage = (links: LinkData[]) => {
@@ -511,9 +517,32 @@ const ColumnLineageDiagram: React.FC<ColumnLineageDiagramProps> = ({
         setFieldTraceEnabled(true);
     };
 
+    const handleAnalyzeTableRelation = async () => {
+        if (!fieldDetailsLoaded) {
+            await onLoadFieldDetails?.();
+        }
+        setFieldTraceEnabled(true);
+        setRelationModalVisible(false);
+    };
+
     const handleLinkClick = (link: LinkData) => {
         setFocusedLinkId(link.id);
         setFocusedNodeId(null);
+        const isTableLevelRelation = !link.sourceColumnId && !link.targetColumnId;
+        if (isTableLevelRelation) {
+            const sourceNode = displayNodes.find(node => node.id === link.sourceNodeId) || nodes.find(node => node.id === link.sourceNodeId);
+            const targetNode = displayNodes.find(node => node.id === link.targetNodeId) || nodes.find(node => node.id === link.targetNodeId);
+            setSelectedRelation({
+                link,
+                sourceTable: sourceNode?.title || link.properties?.sourceTable || '-',
+                targetTable: targetNode?.title || link.properties?.targetTable || '-',
+                sourceColumns: normalizeArray(link.properties?.sourceColumns),
+                targetColumns: normalizeArray(link.properties?.targetColumns),
+                sourceFile: getSourceFile(link),
+            });
+            setRelationModalVisible(true);
+            return;
+        }
         const code = getLinkCode(link);
         if (!code) {
             const sourceNode = displayNodes.find(node => node.id === link.sourceNodeId) || nodes.find(node => node.id === link.sourceNodeId);
@@ -533,7 +562,7 @@ const ColumnLineageDiagram: React.FC<ColumnLineageDiagramProps> = ({
             code,
             sourceFile: getSourceFile(link),
             linkType: normalizeRelationType(link.type),
-            searchTerm: getSourceColumnSearchTerm(link, displayNodes),
+            highlightTerms: getLinkHighlightTerms(link, displayNodes),
         });
         setCodeModalVisible(true);
     };
@@ -835,14 +864,18 @@ const ColumnLineageDiagram: React.FC<ColumnLineageDiagramProps> = ({
                     title="逻辑/源码"
                     sourceFile={selectedCode.sourceFile}
                     linkType={selectedCode.linkType}
-                    searchTerm={selectedCode.searchTerm}
+                    highlightTerms={selectedCode.highlightTerms}
                 />
             ) : null}
             {selectedRelation ? (
                 <Modal
                     open={relationModalVisible}
                     title="关系来源详情"
-                    footer={null}
+                    footer={(
+                        <Button type="primary" onClick={() => void handleAnalyzeTableRelation()} loading={fieldLoading}>
+                            字段级分析该表关系
+                        </Button>
+                    )}
                     width={720}
                     onCancel={() => setRelationModalVisible(false)}
                 >
@@ -879,7 +912,7 @@ const ColumnLineageDiagram: React.FC<ColumnLineageDiagramProps> = ({
                             {formatDetailList(normalizeArray(selectedRelation.link.properties?.lineageOrigins))}
                         </Descriptions.Item>
                         <Descriptions.Item label="说明">
-                            数据库中存在该血缘关系，但该关系没有保存可打开的 SQL snippet。若证据层级为表级兜底，表示解析器识别到了表到表影响，但没有拿到字段级映射。
+                            当前是表级归并关系，不能用任意一段 SQL 对字段做模糊匹配。请进入字段级分析，查看这两张表之间的实际字段边及其 SQL 证据。
                         </Descriptions.Item>
                     </Descriptions>
                 </Modal>

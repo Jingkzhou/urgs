@@ -125,6 +125,8 @@ public class LineageController {
      * @param tableName  表名
      * @param columnName 字段名 (可选)
      * @param depth      深度 (-1表示全部)
+     * @param direction  查询方向（upstream/downstream/both）
+     * @param relationLevel 血缘层级（table/column）
      * @param response   HttpServletResponse
      * @throws IOException
      */
@@ -133,7 +135,9 @@ public class LineageController {
             @RequestParam(required = false) String qualifiedName,
             @RequestParam(required = false) String columnName,
             @RequestParam(defaultValue = "-1") int depth,
+            @RequestParam(defaultValue = "both") String direction,
+            @RequestParam(defaultValue = "table") String relationLevel,
             HttpServletResponse response) throws IOException {
-        lineageService.exportLineage(tableName, qualifiedName, columnName, depth, response);
+        lineageService.exportLineage(tableName, qualifiedName, columnName, depth, direction, relationLevel, response);
     }
 }

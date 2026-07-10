@@ -158,7 +158,13 @@ export const searchTables = (keyword: string, page: number = 1, size: number = 2
 /**
  * 导出血缘 Excel
  */
-export const exportLineage = async (tableName: string, columnName?: string, qualifiedName?: string) => {
+export const exportLineage = async (
+    tableName: string,
+    columnName?: string,
+    qualifiedName?: string,
+    direction: LineageGraphDirection = 'both',
+    relationLevel: LineageGraphRelationLevel = columnName ? 'column' : 'table'
+) => {
     const token = localStorage.getItem('auth_token');
     const headers: HeadersInit = {};
     if (token) {
@@ -172,6 +178,8 @@ export const exportLineage = async (tableName: string, columnName?: string, qual
     if (columnName) {
         params.append('columnName', columnName);
     }
+    params.append('direction', direction);
+    params.append('relationLevel', relationLevel);
 
     const response = await fetch(`/api/metadata/lineage/export?${params.toString()}`, {
         method: 'GET',

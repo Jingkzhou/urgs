@@ -752,11 +752,11 @@ public class LineageService {
      * @param response   HttpServletResponse
      * @throws IOException
      */
-    public void exportLineage(String tableName, String qualifiedName, String columnName, int depth, HttpServletResponse response)
+    public void exportLineage(String tableName, String qualifiedName, String columnName, int depth, String direction,
+            String relationLevel, HttpServletResponse response)
             throws IOException {
-        // 1. 获取血缘数据 (Use provided depth, or safe max if -1 is handled inside
-        // getGraphData)
-        Map<String, Object> graph = getGraphData(tableName, qualifiedName, columnName, depth);
+        // 使用与当前画布一致的方向和层级，避免导出结果与页面显示不一致。
+        Map<String, Object> graph = getGraphData(tableName, qualifiedName, columnName, depth, direction, 5000, relationLevel);
         List<Map<String, Object>> nodes = (List<Map<String, Object>>) graph.get("nodes");
         List<Map<String, Object>> edges = (List<Map<String, Object>>) graph.get("edges");
 

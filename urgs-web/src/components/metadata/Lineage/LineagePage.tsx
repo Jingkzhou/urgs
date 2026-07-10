@@ -1,5 +1,6 @@
 import React, { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import { Layout, Input, Button, Drawer, message, Empty, Tag, Pagination, Tooltip } from 'antd';
+import * as XLSX from 'xlsx';
 import {
     SearchOutlined,
     TableOutlined,
@@ -22,7 +23,8 @@ import LineageGraphContent from './analysis/components/LineageGraphContent';
 import LineagePageActionBar, { LineageDirectionOption, LineageViewMode } from './analysis/components/LineagePageActionBar';
 import { useLineageEngineController } from './analysis/hooks/useLineageEngineController';
 import { useLineageGraphLoader } from './analysis/hooks/useLineageGraphLoader';
-import type { LineageDisplayMode } from './analysis/utils/endToEndLineage';
+import { buildEndToEndRelations, type LineageDisplayMode } from './analysis/utils/endToEndLineage';
+import { LinkData, NodeData, RELATION_STYLES } from './analysis/types';
 import { hasPermission } from '@/utils/permission';
 import AICodeReport from '@/components/version/AICodeReport';
 
@@ -82,6 +84,7 @@ const LineagePage: React.FC<LineagePageProps> = () => {
         }
         return selectedColumnName ? `${selectedQualifiedName}.${selectedColumnName}` : selectedQualifiedName;
     }, [selectedColumnName, selectedQualifiedName]);
+    const exportDataLoading = (displayMode === 'endToEnd' || viewMode === 'list') && listLoading;
 
     const toggleTableExpand = (qualifiedName: string) => {
         setExpandedTables(prev => {
@@ -289,14 +292,19 @@ const LineagePage: React.FC<LineagePageProps> = () => {
         handleSearch(1, null);
     };
 
-    const handleExport = async (tableName: string, e: React.MouseEvent, columnName?: string, qualifiedName?: string) => {
-        e.stopPropagation();
+    const downloadLineage = async (tableName: string, columnName?: string, qualifiedName?: string) => {
         if (!canExport) {
             return;
         }
         try {
             message.loading({ content: '正在导出...', key: 'export' });
-            const blob = await exportLineage(tableName, columnName, qualifiedName);
+            const blob = await exportLineage(
+                tableName,
+                columnName,
+                qualifiedName,
+                queryDirection,
+                columnName ? 'column' : 'table'
+            );
             const url = window.URL.createObjectURL(blob);
             const a = document.createElement('a');
             a.href = url;
@@ -314,6 +322,58 @@ const LineagePage: React.FC<LineagePageProps> = () => {
         } catch (error) {
             message.error({ content: '导出失败', key: 'export' });
         }
+    };
+
+    const handleExport = (tableName: string, e: React.MouseEvent, columnName?: string, qualifiedName?: string) => {
+        e.stopPropagation();
+        void downloadLineage(tableName, columnName, qualifiedName);
+    };
+
+    const getColumnName = (node: NodeData | undefined, columnId: string) => (
+        node?.columns.find(column => column.id === columnId)?.name || (columnId || '-')
+    );
+
+    const handleExportVisibleRelations = () => {
+        if (!selectedTable) {
+            return;
+        }
+
+        const sourceNodes = listDetailsLoaded ? listNodes : nodes;
+        const sourceLinks = listDetailsLoaded ? listLinks : links;
+        const nodeMap = new Map(sourceNodes.map(node => [node.id, node]));
+        const rows = displayMode === 'endToEnd'
+            ? buildEndToEndRelations(sourceNodes, sourceLinks, selectedTable, selectedField).map(relation => ({
+                '源对象': `${relation.source.tableName}.${relation.source.columnName}`,
+                '目标对象': `${relation.target.tableName}.${relation.target.columnName}`,
+                '关系类型': relation.relationTypeSummary,
+                '路径数量': relation.pathCount,
+                '层级范围': `${relation.minLevel}-${relation.maxLevel}`,
+                '涉及表数': relation.tableCount,
+                '涉及字段数': relation.fieldCount,
+                'Schema 路径': relation.schemaPath,
+            }))
+            : (viewMode === 'canvas' ? links : listLinks).map((link: LinkData) => {
+                const sourceNode = nodeMap.get(link.sourceNodeId);
+                const targetNode = nodeMap.get(link.targetNodeId);
+                return {
+                    '源表': sourceNode?.title || link.sourceNodeId,
+                    '源字段': getColumnName(sourceNode, link.sourceColumnId),
+                    '关系类型': RELATION_STYLES[link.type || 'DERIVES_TO']?.label || link.type || '数据流',
+                    '目标表': targetNode?.title || link.targetNodeId,
+                    '目标字段': getColumnName(targetNode, link.targetColumnId),
+                };
+            });
+
+        if (rows.length === 0) {
+            message.info('当前筛选条件下没有可导出的血缘关系');
+            return;
+        }
+
+        const workbook = XLSX.utils.book_new();
+        const worksheet = XLSX.utils.json_to_sheet(rows);
+        XLSX.utils.book_append_sheet(workbook, worksheet, displayMode === 'endToEnd' ? '端到端关系' : '血缘明细');
+        XLSX.writeFile(workbook, `${selectedDisplayName || selectedTable}_${displayMode === 'endToEnd' ? '端到端' : '完整'}血缘导出.xlsx`);
+        message.success('导出成功');
     };
 
     const renderSearchPanel = (inDrawer = false) => (
@@ -977,6 +1037,21 @@ const LineagePage: React.FC<LineagePageProps> = () => {
                             >
                                 切换表/字段
                             </Button>
+                            <Tooltip title={
+                                !selectedTable
+                                    ? '请先选择表或字段'
+                                    : exportDataLoading
+                                        ? '正在加载当前筛选数据'
+                                        : '导出当前筛选后的血缘关系 Excel'
+                            }>
+                                <Button
+                                    icon={<DownloadOutlined />}
+                                    disabled={!selectedTable || exportDataLoading}
+                                    onClick={handleExportVisibleRelations}
+                                >
+                                    导出 Excel
+                                </Button>
+                            </Tooltip>
                         </div>
                     ) : null}
                 </div>
