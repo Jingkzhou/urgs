@@ -28,6 +28,10 @@ interface ChatSession {
 
 const ChatWidget: React.FC = () => {
     const [isOpen, setIsOpen] = useState(false);
+    const [chatIconTop, setChatIconTop] = useState<number | null>(null);
+    const [chatIconLeft, setChatIconLeft] = useState<number | null>(null);
+    const [chatIconSide, setChatIconSide] = useState<'left' | 'right'>('right');
+    const [isDraggingChatIcon, setIsDraggingChatIcon] = useState(false);
     const [activeSessionKey, setActiveSessionKey] = useState<string | null>(null);
     const [sessions, setSessions] = useState<ChatSession[]>([]);
     const [messages, setMessages] = useState<Record<string, any[]>>({});
@@ -39,6 +43,63 @@ const ChatWidget: React.FC = () => {
         0
     );
     const baseDocumentTitleRef = useRef(document.title);
+    const chatIconDragStartRef = useRef<{ offsetX: number; offsetY: number }>({ offsetX: 0, offsetY: 0 });
+    const chatIconPositionRef = useRef({ left: 0, top: 0 });
+    const didDragChatIconRef = useRef(false);
+
+    useEffect(() => {
+        if (!isDraggingChatIcon) return;
+
+        const handleMouseMove = (event: MouseEvent) => {
+            const maxLeft = Math.max(0, window.innerWidth - 56);
+            const maxTop = Math.max(0, window.innerHeight - 56);
+            const nextPosition = {
+                left: Math.min(maxLeft, Math.max(0, event.clientX - chatIconDragStartRef.current.offsetX)),
+                top: Math.min(maxTop, Math.max(0, event.clientY - chatIconDragStartRef.current.offsetY))
+            };
+
+            if (Math.abs(nextPosition.left - chatIconPositionRef.current.left) > 3
+                || Math.abs(nextPosition.top - chatIconPositionRef.current.top) > 3) {
+                didDragChatIconRef.current = true;
+            }
+            chatIconPositionRef.current = nextPosition;
+            setChatIconLeft(nextPosition.left);
+            setChatIconTop(nextPosition.top);
+        };
+
+        const handleMouseUp = () => {
+            const { left, top } = chatIconPositionRef.current;
+            const snapToLeft = left + 28 < window.innerWidth / 2;
+            const sidebarRight = document.querySelector('aside')?.getBoundingClientRect().right ?? 0;
+            setChatIconSide(snapToLeft ? 'left' : 'right');
+            setChatIconLeft(snapToLeft ? sidebarRight : null);
+            setChatIconTop(top);
+            setIsDraggingChatIcon(false);
+        };
+
+        window.addEventListener('mousemove', handleMouseMove);
+        window.addEventListener('mouseup', handleMouseUp);
+        return () => {
+            window.removeEventListener('mousemove', handleMouseMove);
+            window.removeEventListener('mouseup', handleMouseUp);
+        };
+    }, [isDraggingChatIcon]);
+
+    const handleChatIconMouseDown = (event: React.MouseEvent<HTMLButtonElement>) => {
+        if (event.button !== 0) return;
+
+        const iconRect = event.currentTarget.getBoundingClientRect();
+        chatIconDragStartRef.current = {
+            offsetX: event.clientX - iconRect.left,
+            offsetY: event.clientY - iconRect.top
+        };
+        chatIconPositionRef.current = { left: iconRect.left, top: iconRect.top };
+        didDragChatIconRef.current = false;
+        setChatIconLeft(iconRect.left);
+        setChatIconTop(iconRect.top);
+        setIsDraggingChatIcon(true);
+        event.preventDefault();
+    };
 
     useEffect(() => {
         const baseTitle = baseDocumentTitleRef.current;
@@ -711,7 +772,10 @@ const ChatWidget: React.FC = () => {
     };
 
     return (
-        <div className="fixed bottom-8 right-8 z-50 flex flex-col items-end print:hidden font-sans antialiased">
+        <div
+            className={`fixed z-50 flex flex-col print:hidden font-sans antialiased ${chatIconSide === 'left' ? 'items-start' : 'items-end'} ${chatIconTop === null ? 'bottom-8 right-8' : ''} ${isDraggingChatIcon ? '' : chatIconTop !== null && chatIconSide === 'right' ? 'right-0' : ''}`}
+            style={chatIconTop === null ? undefined : { top: chatIconTop, left: isDraggingChatIcon || chatIconSide === 'left' ? chatIconLeft ?? 0 : undefined }}
+        >
             {/* Chat Window */}
             <AnimatePresence>
                 {isOpen && (
@@ -720,8 +784,9 @@ const ChatWidget: React.FC = () => {
                         animate={{ opacity: 1, scale: 1, y: 0 }}
                         exit={{ opacity: 0, scale: 0.96, y: 15 }}
                         transition={{ duration: 0.2, ease: "easeOut" }}
-                        className="mb-6 bg-white rounded-2xl shadow-[0_20px_60px_-15px_rgba(0,0,0,0.15)] border border-slate-200 w-[940px] h-[min(650px,calc(100vh-140px))] flex overflow-hidden ring-1 ring-black/[0.03]"
+                        className="fixed inset-0 flex items-center justify-center pointer-events-none"
                     >
+                        <div className="pointer-events-auto bg-white rounded-2xl shadow-[0_20px_60px_-15px_rgba(0,0,0,0.15)] border border-slate-200 w-[940px] h-[min(650px,calc(100vh-140px))] flex overflow-hidden ring-1 ring-black/[0.03]">
 
                             {/* 1. Left Navigation Bar (Slim) */}
                             <div className="w-[68px] bg-white border-r border-slate-200 flex flex-col items-center py-6 flex-shrink-0 z-30 rounded-l-2xl relative">
@@ -854,6 +919,7 @@ const ChatWidget: React.FC = () => {
                                     </p>
                                 </div>
                             )}
+                        </div>
                         </div>
                     </motion.div>
                 )}
@@ -1187,7 +1253,12 @@ const ChatWidget: React.FC = () => {
                 layout
                 whileHover={{ scale: 1.05 }}
                 whileTap={{ scale: 0.95 }}
+                onMouseDown={handleChatIconMouseDown}
                 onClick={() => {
+                    if (didDragChatIconRef.current) {
+                        didDragChatIconRef.current = false;
+                        return;
+                    }
                     const newState = !isOpen;
                     setIsOpen(newState);
                     if (!newState) setActiveSessionKey(null);

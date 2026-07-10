@@ -73,7 +73,7 @@ const OWNER_HEIGHT = 28;
 const ROW_HEIGHT = 28;
 const RANK_GAP = 190;
 const NODE_GAP = 56;
-const PADDING = 72;
+const PADDING = 120;
 const MIN_ZOOM = 0.35, MAX_ZOOM = 2.5, ZOOM_STEP = 0.15;
 const clampZoom = (value: number) => Math.max(MIN_ZOOM, Math.min(MAX_ZOOM, value));
 const elk = new ELK();
@@ -229,12 +229,70 @@ const getVisibleColumns = (
     return result;
 };
 
-const buildPath = (source: { x: number; y: number }, target: { x: number; y: number }) => {
-    const forward = source.x <= target.x;
-    const distance = Math.max(80, Math.abs(target.x - source.x) * 0.45);
-    const c1x = forward ? source.x + distance : source.x - distance;
-    const c2x = forward ? target.x - distance : target.x + distance;
-    return `M ${source.x} ${source.y} C ${c1x} ${source.y}, ${c2x} ${target.y}, ${target.x} ${target.y}`;
+const buildLinkLaneOffsets = (links: LinkData[]) => {
+    const directions = new Set<string>();
+    const endpointGroups = new Map<string, { sourceNodeId: string; targetNodeId: string; links: LinkData[] }>();
+    links.forEach(link => {
+        directions.add(`${link.sourceNodeId}=>${link.targetNodeId}`);
+        const endpointKey = [
+            link.sourceNodeId,
+            link.sourceColumnId || TABLE_LEVEL_COLUMN,
+            link.targetNodeId,
+            link.targetColumnId || TABLE_LEVEL_COLUMN,
+        ].join('=>');
+        const group = endpointGroups.get(endpointKey) || {
+            sourceNodeId: link.sourceNodeId,
+            targetNodeId: link.targetNodeId,
+            links: [],
+        };
+        group.links.push(link);
+        endpointGroups.set(endpointKey, group);
+    });
+
+    const offsets = new Map<string, number>();
+    endpointGroups.forEach(({ sourceNodeId, targetNodeId, links: group }) => {
+        const hasReverse = directions.has(`${targetNodeId}=>${sourceNodeId}`);
+        const directionOffset = hasReverse ? (sourceNodeId.localeCompare(targetNodeId) <= 0 ? -18 : 18) : 0;
+        const orderedGroup = group.slice().sort((a, b) => (
+            (a.sourceColumnId || '').localeCompare(b.sourceColumnId || '')
+            || (a.targetColumnId || '').localeCompare(b.targetColumnId || '')
+            || normalizeRelationType(a.type).localeCompare(normalizeRelationType(b.type))
+            || a.id.localeCompare(b.id)
+        ));
+        orderedGroup.forEach((link, index) => {
+            const sameDirectionOffset = (index - (orderedGroup.length - 1) / 2) * 9;
+            offsets.set(link.id, directionOffset + sameDirectionOffset);
+        });
+    });
+    return offsets;
+};
+
+const buildPath = (
+    source: { x: number; y: number },
+    target: { x: number; y: number },
+    laneOffset = 0,
+    sameRankSide: 'left' | 'right' | null = null
+) => {
+    if (sameRankSide) {
+        const sideDirection = sameRankSide === 'right' ? 1 : -1;
+        const corridorX = source.x + sideDirection * (72 + Math.abs(laneOffset));
+        return [
+            `M ${source.x} ${source.y}`,
+            `C ${corridorX} ${source.y}, ${corridorX} ${target.y}, ${target.x} ${target.y}`,
+        ].join(' ');
+    }
+
+    const direction = source.x <= target.x ? 1 : -1;
+    const gap = Math.abs(target.x - source.x);
+    const lead = Math.max(42, Math.min(96, gap * 0.24));
+    const middleX = (source.x + target.x) / 2;
+    const middleY = (source.y + target.y) / 2 + laneOffset;
+    const middleControl = lead * 0.35;
+    return [
+        `M ${source.x} ${source.y}`,
+        `C ${source.x + direction * lead} ${source.y}, ${middleX - direction * middleControl} ${middleY}, ${middleX} ${middleY}`,
+        `C ${middleX + direction * middleControl} ${middleY}, ${target.x - direction * lead} ${target.y}, ${target.x} ${target.y}`,
+    ].join(' ');
 };
 
 const ColumnLineageDiagram: React.FC<ColumnLineageDiagramProps> = ({
@@ -314,6 +372,10 @@ const ColumnLineageDiagram: React.FC<ColumnLineageDiagramProps> = ({
 
     const displayNodes = densityGraph.nodes;
     const displayLinks = densityGraph.links;
+    const linkLaneOffsets = useMemo(() => buildLinkLaneOffsets(displayLinks), [displayLinks]);
+    const linkDirections = useMemo(() => new Set(
+        displayLinks.map(link => `${link.sourceNodeId}=>${link.targetNodeId}`)
+    ), [displayLinks]);
     const impactRows = useMemo(() => (
         buildImpactRows(nodes, links, selectedTable, selectedField)
     ), [links, nodes, selectedField, selectedTable]);
@@ -450,6 +512,7 @@ const ColumnLineageDiagram: React.FC<ColumnLineageDiagramProps> = ({
         buildLineageHighlight(focusColumnKey, displayLinks)
     ), [displayLinks, focusColumnKey]);
     const hasColumnFocus = !!focusColumnKey;
+    const hasPinnedColumnFocus = !!pinnedColumnKey;
     const relationLegend = useMemo(() => {
         const order = new Map(Object.keys(RELATION_STYLES).map((type, index) => [type, index]));
         return Array.from(new Set(displayLinks.map(link => normalizeRelationType(link.type))))
@@ -642,14 +705,14 @@ const ColumnLineageDiagram: React.FC<ColumnLineageDiagramProps> = ({
                             <marker
                                 key={type}
                                 id={getRelationMarkerId(type)}
-                                markerWidth="10"
-                                markerHeight="8"
-                                refX="9"
-                                refY="4"
+                                markerWidth="8"
+                                markerHeight="6"
+                                refX="7"
+                                refY="3"
                                 orient="auto"
                                 markerUnits="strokeWidth"
                             >
-                                <path d="M 0 0 L 10 4 L 0 8 z" fill={style.highlightColor} />
+                                <path d="M 0 0 L 8 3 L 0 6 z" fill={style.highlightColor} />
                             </marker>
                         ))}
                     </defs>
@@ -670,29 +733,59 @@ const ColumnLineageDiagram: React.FC<ColumnLineageDiagramProps> = ({
                         if (!sourceAnchor || !targetAnchor) {
                             return null;
                         }
-                        const source = sourceAnchor.right.x <= targetAnchor.left.x ? sourceAnchor.right : sourceAnchor.left;
-                        const target = sourceAnchor.right.x <= targetAnchor.left.x ? targetAnchor.left : targetAnchor.right;
-                        const isActive = activeLinkId === link.id
-                            || highlighted.activeLinks.has(link.id)
-                            || sourceKey === selectedFieldKey
-                            || targetKey === selectedFieldKey;
+                        const sameRank = Math.abs(sourceAnchor.left.x - targetAnchor.left.x) < 1;
+                        const hasReverse = linkDirections.has(`${link.targetNodeId}=>${link.sourceNodeId}`);
+                        const sameRankSide = sameRank
+                            ? (!hasReverse || link.sourceNodeId.localeCompare(link.targetNodeId) <= 0 ? 'right' : 'left')
+                            : null;
+                        const source = sameRank
+                            ? (sameRankSide === 'right' ? sourceAnchor.right : sourceAnchor.left)
+                            : (sourceAnchor.right.x <= targetAnchor.left.x ? sourceAnchor.right : sourceAnchor.left);
+                        const target = sameRank
+                            ? (sameRankSide === 'right' ? targetAnchor.right : targetAnchor.left)
+                            : (sourceAnchor.right.x <= targetAnchor.left.x ? targetAnchor.left : targetAnchor.right);
+                        const isActive = highlighted.activeLinks.has(link.id)
+                            || (!hasPinnedColumnFocus && activeLinkId === link.id)
+                            || (!hasColumnFocus && focusedLinkId === link.id)
+                            || (!hasColumnFocus && (sourceKey === selectedFieldKey || targetKey === selectedFieldKey));
                         const relationType = normalizeRelationType(link.type);
                         const style = getRelationStyle(relationType);
+                        const path = buildPath(source, target, linkLaneOffsets.get(link.id) || 0, sameRankSide);
+                        const opacity = (activeLinkId || hasColumnFocus) && !isActive ? 0.1 : (isActive ? 1 : 0.72);
                         return (
-                            <path
-                                key={link.id}
-                                d={buildPath(source, target)}
-                                fill="none"
-                                stroke={isActive ? style.highlightColor : style.color}
-                                strokeWidth={isActive ? 3 : 1.6}
-                                strokeDasharray={style.strokeDasharray}
-                                markerEnd={`url(#${getRelationMarkerId(relationType)})`}
-                                opacity={(activeLinkId || hasColumnFocus) && !isActive ? 0.12 : (isActive ? 1 : 0.62)}
-                                style={{ cursor: 'pointer', pointerEvents: 'stroke' }}
-                                onMouseEnter={() => setActiveLinkId(link.id)}
-                                onMouseLeave={() => setActiveLinkId(null)}
-                                onClick={() => handleLinkClick(link)}
-                            />
+                            <g key={link.id}>
+                                <title>{`${getRelationLabel(relationType)}：${sourceKey} → ${targetKey}`}</title>
+                                <path
+                                    d={path}
+                                    fill="none"
+                                    stroke="#f8fafc"
+                                    strokeWidth={isActive ? 7 : 5}
+                                    strokeLinecap="round"
+                                    opacity={opacity}
+                                    pointerEvents="none"
+                                />
+                                <path
+                                    d={path}
+                                    fill="none"
+                                    stroke={isActive ? style.highlightColor : style.color}
+                                    strokeWidth={isActive ? 3.2 : 1.8}
+                                    strokeLinecap="round"
+                                    strokeDasharray={style.strokeDasharray}
+                                    markerEnd={`url(#${getRelationMarkerId(relationType)})`}
+                                    opacity={opacity}
+                                    pointerEvents="none"
+                                />
+                                <path
+                                    d={path}
+                                    fill="none"
+                                    stroke="transparent"
+                                    strokeWidth={14}
+                                    style={{ cursor: 'pointer', pointerEvents: 'stroke' }}
+                                    onMouseEnter={() => setActiveLinkId(link.id)}
+                                    onMouseLeave={() => setActiveLinkId(null)}
+                                    onClick={() => handleLinkClick(link)}
+                                />
+                            </g>
                         );
                     })}
                 </svg>
@@ -746,8 +839,9 @@ const ColumnLineageDiagram: React.FC<ColumnLineageDiagramProps> = ({
                             <div>
                                 {item.columns.map(col => {
                                     const rowKey = getColumnKey(item.node.id, col.id);
-                                    const isSelected = rowKey === selectedFieldKey;
-                                    const isLinkActive = displayLinks.some(link => (
+                                    const isPinned = rowKey === pinnedColumnKey;
+                                    const isSelected = !hasColumnFocus && rowKey === selectedFieldKey;
+                                    const isLinkActive = !hasPinnedColumnFocus && displayLinks.some(link => (
                                         link.id === activeLinkId
                                         && ((link.sourceNodeId === item.node.id && (link.sourceColumnId || TABLE_LEVEL_COLUMN) === col.id)
                                             || (link.targetNodeId === item.node.id && (link.targetColumnId || TABLE_LEVEL_COLUMN) === col.id))
@@ -758,8 +852,8 @@ const ColumnLineageDiagram: React.FC<ColumnLineageDiagramProps> = ({
                                             key={rowKey}
                                             className="flex h-7 items-center border-b border-slate-100 px-3 text-sm text-slate-800 last:border-b-0"
                                             style={{
-                                                background: isSelected ? '#fdebd3' : (isActive ? '#e5e7eb' : '#ffffff'),
-                                                fontWeight: isSelected || isActive ? 600 : 400,
+                                                background: isPinned ? '#dbeafe' : (isSelected ? '#fdebd3' : (isActive ? '#eff6ff' : '#ffffff')),
+                                                fontWeight: isPinned || isSelected || isActive ? 600 : 400,
                                                 opacity: hasColumnFocus && !isActive ? 0.46 : 1,
                                                 cursor: 'pointer',
                                             }}
