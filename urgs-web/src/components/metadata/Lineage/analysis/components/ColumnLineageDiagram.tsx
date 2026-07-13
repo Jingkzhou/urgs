@@ -1,6 +1,6 @@
-import React, { useEffect, useMemo, useRef, useState } from 'react';
+import React, { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import ELK from 'elkjs/lib/elk.bundled.js';
-import type { ElkNode } from 'elkjs/lib/elk-api';
+import type { ElkEdgeSection, ElkNode, ElkPoint } from 'elkjs/lib/elk-api';
 import { Button, Descriptions, Empty, Modal, Tag, Tooltip } from 'antd';
 import { Maximize2, ZoomIn, ZoomOut } from 'lucide-react';
 import { LinkData, NodeData, RELATION_STYLES } from '../types';
@@ -65,6 +65,13 @@ interface NodeMetric {
     columns: { id: string; name: string; synthetic?: boolean }[];
     height: number;
     rank: number;
+}
+
+interface ElkLayoutState {
+    nodePositions: Map<string, { x: number; y: number }>;
+    edgePaths: Map<string, string>;
+    width: number;
+    height: number;
 }
 
 const CARD_WIDTH = 290;
@@ -162,6 +169,18 @@ const buildColumnUsage = (links: LinkData[]) => {
 };
 
 const getColumnKey = (nodeId: string, colId?: string) => `${nodeId}::${colId || TABLE_LEVEL_COLUMN}`;
+const getPortId = (nodeId: string, colId: string | undefined, side: 'left' | 'right') => (
+    `${getColumnKey(nodeId, colId)}::${side}`
+);
+const getEdgePortId = (
+    linkId: string,
+    nodeId: string,
+    colId: string | undefined,
+    side: 'left' | 'right',
+    role: 'source' | 'target'
+) => (
+    `${getPortId(nodeId, colId, side)}::${linkId}::${role}`
+);
 
 const buildLineageHighlight = (startKey: string | null, links: LinkData[]) => {
     const activeLinks = new Set<string>();
@@ -267,47 +286,57 @@ const buildLinkLaneOffsets = (links: LinkData[]) => {
     return offsets;
 };
 
+const buildRoundedPath = (points: ElkPoint[]) => {
+    const compactPoints = points.filter((point, index) => (
+        index === 0
+        || point.x !== points[index - 1].x
+        || point.y !== points[index - 1].y
+    ));
+    if (compactPoints.length < 2) {
+        return '';
+    }
+
+    const commands = [`M ${compactPoints[0].x} ${compactPoints[0].y}`];
+    for (let index = 1; index < compactPoints.length - 1; index += 1) {
+        const previous = compactPoints[index - 1];
+        const current = compactPoints[index];
+        const next = compactPoints[index + 1];
+        const incomingLength = Math.hypot(current.x - previous.x, current.y - previous.y);
+        const outgoingLength = Math.hypot(next.x - current.x, next.y - current.y);
+        const radius = Math.min(12, incomingLength / 2, outgoingLength / 2);
+        const incomingRatio = incomingLength === 0 ? 0 : radius / incomingLength;
+        const outgoingRatio = outgoingLength === 0 ? 0 : radius / outgoingLength;
+        const cornerStart = {
+            x: current.x - (current.x - previous.x) * incomingRatio,
+            y: current.y - (current.y - previous.y) * incomingRatio,
+        };
+        const cornerEnd = {
+            x: current.x + (next.x - current.x) * outgoingRatio,
+            y: current.y + (next.y - current.y) * outgoingRatio,
+        };
+        commands.push(`L ${cornerStart.x} ${cornerStart.y}`);
+        commands.push(`Q ${current.x} ${current.y} ${cornerEnd.x} ${cornerEnd.y}`);
+    }
+    const lastPoint = compactPoints[compactPoints.length - 1];
+    commands.push(`L ${lastPoint.x} ${lastPoint.y}`);
+    return commands.join(' ');
+};
+
+const buildElkEdgePath = (sections: ElkEdgeSection[] = []) => sections
+    .map(section => buildRoundedPath([
+        section.startPoint,
+        ...(section.bendPoints || []),
+        section.endPoint,
+    ]))
+    .filter(Boolean)
+    .join(' ');
+
 const buildPath = (
-    source: { x: number; y: number },
-    target: { x: number; y: number },
+    source: ElkPoint,
+    target: ElkPoint,
     laneOffset = 0,
     sameRankSide: 'left' | 'right' | null = null
 ) => {
-    const buildRoundedPath = (points: { x: number; y: number }[]) => {
-        const compactPoints = points.filter((point, index) => (
-            index === 0
-            || point.x !== points[index - 1].x
-            || point.y !== points[index - 1].y
-        ));
-        if (compactPoints.length < 2) {
-            return '';
-        }
-
-        const commands = [`M ${compactPoints[0].x} ${compactPoints[0].y}`];
-        for (let index = 1; index < compactPoints.length - 1; index += 1) {
-            const previous = compactPoints[index - 1];
-            const current = compactPoints[index];
-            const next = compactPoints[index + 1];
-            const incomingLength = Math.hypot(current.x - previous.x, current.y - previous.y);
-            const outgoingLength = Math.hypot(next.x - current.x, next.y - current.y);
-            const radius = Math.min(12, incomingLength / 2, outgoingLength / 2);
-            const incomingRatio = incomingLength === 0 ? 0 : radius / incomingLength;
-            const outgoingRatio = outgoingLength === 0 ? 0 : radius / outgoingLength;
-            const cornerStart = {
-                x: current.x - (current.x - previous.x) * incomingRatio,
-                y: current.y - (current.y - previous.y) * incomingRatio,
-            };
-            const cornerEnd = {
-                x: current.x + (next.x - current.x) * outgoingRatio,
-                y: current.y + (next.y - current.y) * outgoingRatio,
-            };
-            commands.push(`L ${cornerStart.x} ${cornerStart.y}`);
-            commands.push(`Q ${current.x} ${current.y} ${cornerEnd.x} ${cornerEnd.y}`);
-        }
-        const lastPoint = compactPoints[compactPoints.length - 1];
-        commands.push(`L ${lastPoint.x} ${lastPoint.y}`);
-        return commands.join(' ');
-    };
 
     if (sameRankSide) {
         const sideDirection = sameRankSide === 'right' ? 1 : -1;
@@ -329,6 +358,24 @@ const buildPath = (
     ]);
 };
 
+const getLinkPortSides = (
+    link: LinkData,
+    ranks: Map<string, number>,
+    directions: Set<string>
+): { source: 'left' | 'right'; target: 'left' | 'right' } => {
+    const sourceRank = ranks.get(link.sourceNodeId) || 0;
+    const targetRank = ranks.get(link.targetNodeId) || 0;
+    if (sourceRank < targetRank) {
+        return { source: 'right', target: 'left' };
+    }
+    if (sourceRank > targetRank) {
+        return { source: 'left', target: 'right' };
+    }
+    const hasReverse = directions.has(`${link.targetNodeId}=>${link.sourceNodeId}`);
+    const side = !hasReverse || link.sourceNodeId.localeCompare(link.targetNodeId) <= 0 ? 'right' : 'left';
+    return { source: side, target: side };
+};
+
 const ColumnLineageDiagram: React.FC<ColumnLineageDiagramProps> = ({
     nodes,
     links,
@@ -344,6 +391,7 @@ const ColumnLineageDiagram: React.FC<ColumnLineageDiagramProps> = ({
 }) => {
     const scrollContainerRef = useRef<HTMLDivElement>(null);
     const panStartRef = useRef({ clientX: 0, clientY: 0, x: 0, y: 0 });
+    const lastAutoFitKeyRef = useRef('');
     const zoomRef = useRef(1);
     const panOffsetRef = useRef({ x: 0, y: 0 });
     const [activeLinkId, setActiveLinkId] = useState<string | null>(null);
@@ -355,7 +403,7 @@ const ColumnLineageDiagram: React.FC<ColumnLineageDiagramProps> = ({
     const [zoom, setZoom] = useState(1);
     const [panOffset, setPanOffset] = useState({ x: 0, y: 0 });
     const [isPanning, setIsPanning] = useState(false);
-    const [elkPositions, setElkPositions] = useState<Map<string, { y: number }> | null>(null);
+    const [elkLayout, setElkLayout] = useState<ElkLayoutState | null>(null);
     const relationOptions = useMemo(() => collectRelationOptions(links), [links]);
     const relationOptionsKey = relationOptions.join('|');
     const [selectedRelationTypes, setSelectedRelationTypes] = useState<string[]>([]);
@@ -433,12 +481,46 @@ const ColumnLineageDiagram: React.FC<ColumnLineageDiagramProps> = ({
 
     useEffect(() => {
         if (layoutInput.nodeMetrics.length === 0) {
-            setElkPositions(new Map());
+            setElkLayout({ nodePositions: new Map(), edgePaths: new Map(), width: 0, height: 0 });
             return;
         }
 
         let cancelled = false;
+        setElkLayout(null);
         const nodeIds = new Set(layoutInput.nodeMetrics.map(item => item.node.id));
+        const ranks = new Map(layoutInput.nodeMetrics.map(item => [item.node.id, item.rank]));
+        const metricsByNodeId = new Map(layoutInput.nodeMetrics.map(item => [item.node.id, item]));
+        const nodeColumnKeys = new Map(layoutInput.nodeMetrics.map(item => [
+            item.node.id,
+            new Set(item.columns.map(column => getColumnKey(item.node.id, column.id))),
+        ]));
+        const edgePortAssignments = new Map(displayLinks.flatMap(link => {
+            const sourceMetric = metricsByNodeId.get(link.sourceNodeId);
+            const targetMetric = metricsByNodeId.get(link.targetNodeId);
+            const sourceColumnId = link.sourceColumnId || TABLE_LEVEL_COLUMN;
+            const targetColumnId = link.targetColumnId || TABLE_LEVEL_COLUMN;
+            const sourceIndex = sourceMetric?.columns.findIndex(column => column.id === sourceColumnId) ?? -1;
+            const targetIndex = targetMetric?.columns.findIndex(column => column.id === targetColumnId) ?? -1;
+            if (!sourceMetric || !targetMetric || sourceIndex < 0 || targetIndex < 0) {
+                return [];
+            }
+            const sides = getLinkPortSides(link, ranks, linkDirections);
+            const laneOffset = Math.max(-8, Math.min(8, linkLaneOffsets.get(link.id) || 0));
+            const sourceOwnerHeight = resolveNodeTableIdentity(sourceMetric.node).owner ? OWNER_HEIGHT : 0;
+            const targetOwnerHeight = resolveNodeTableIdentity(targetMetric.node).owner ? OWNER_HEIGHT : 0;
+            return [[link.id, {
+                source: {
+                    id: getEdgePortId(link.id, link.sourceNodeId, link.sourceColumnId, sides.source, 'source'),
+                    side: sides.source,
+                    y: HEADER_HEIGHT + sourceOwnerHeight + sourceIndex * ROW_HEIGHT + ROW_HEIGHT / 2 + laneOffset,
+                },
+                target: {
+                    id: getEdgePortId(link.id, link.targetNodeId, link.targetColumnId, sides.target, 'target'),
+                    side: sides.target,
+                    y: HEADER_HEIGHT + targetOwnerHeight + targetIndex * ROW_HEIGHT + ROW_HEIGHT / 2 + laneOffset,
+                },
+            }] as const];
+        }));
         const graph: ElkNode = {
             id: 'column-lineage-root',
             layoutOptions: {
@@ -453,20 +535,63 @@ const ColumnLineageDiagram: React.FC<ColumnLineageDiagramProps> = ({
                 'elk.layered.nodePlacement.strategy': 'NETWORK_SIMPLEX',
                 'elk.layered.considerModelOrder.strategy': 'NODES_AND_EDGES',
                 'elk.layered.cycleBreaking.strategy': 'GREEDY',
+                'elk.layered.mergeEdges': 'false',
+                'elk.randomSeed': '1',
                 'elk.padding': `[top=${PADDING},left=${PADDING},bottom=${PADDING},right=${PADDING}]`,
             },
             children: layoutInput.nodeMetrics.map(item => ({
                 id: item.node.id,
                 width: CARD_WIDTH,
                 height: item.height,
+                layoutOptions: {
+                    'elk.portConstraints': 'FIXED_POS',
+                },
+                ports: displayLinks.flatMap(link => {
+                    const assignment = edgePortAssignments.get(link.id);
+                    if (!assignment) {
+                        return [];
+                    }
+                    const ports = [];
+                    if (link.sourceNodeId === item.node.id) {
+                        ports.push({
+                                id: assignment.source.id,
+                                x: assignment.source.side === 'right' ? CARD_WIDTH : 0,
+                                y: assignment.source.y,
+                                width: 1,
+                                height: 1,
+                                layoutOptions: { 'elk.port.side': assignment.source.side === 'right' ? 'EAST' : 'WEST' },
+                            });
+                    }
+                    if (link.targetNodeId === item.node.id) {
+                        ports.push({
+                                id: assignment.target.id,
+                                x: assignment.target.side === 'right' ? CARD_WIDTH : 0,
+                                y: assignment.target.y,
+                                width: 1,
+                                height: 1,
+                                layoutOptions: { 'elk.port.side': assignment.target.side === 'right' ? 'EAST' : 'WEST' },
+                            });
+                    }
+                    return ports;
+                }),
             })),
             edges: displayLinks
-                .filter(link => nodeIds.has(link.sourceNodeId) && nodeIds.has(link.targetNodeId))
-                .map(link => ({
-                    id: link.id,
-                    sources: [link.sourceNodeId],
-                    targets: [link.targetNodeId],
-                })),
+                .filter(link => {
+                    const sourceKey = getColumnKey(link.sourceNodeId, link.sourceColumnId);
+                    const targetKey = getColumnKey(link.targetNodeId, link.targetColumnId);
+                    return nodeIds.has(link.sourceNodeId)
+                        && nodeIds.has(link.targetNodeId)
+                        && nodeColumnKeys.get(link.sourceNodeId)?.has(sourceKey)
+                        && nodeColumnKeys.get(link.targetNodeId)?.has(targetKey);
+                })
+                .flatMap(link => {
+                    const assignment = edgePortAssignments.get(link.id);
+                    return assignment ? [{
+                        id: link.id,
+                        sources: [assignment.source.id],
+                        targets: [assignment.target.id],
+                    }] : [];
+                }),
         };
 
         elk.layout(graph)
@@ -474,28 +599,42 @@ const ColumnLineageDiagram: React.FC<ColumnLineageDiagramProps> = ({
                 if (cancelled) {
                     return;
                 }
-                const nextPositions = new Map<string, { y: number }>();
+                const nextPositions = new Map<string, { x: number; y: number }>();
                 result.children?.forEach(child => {
-                    nextPositions.set(child.id, { y: child.y || 0 });
+                    nextPositions.set(child.id, { x: child.x || 0, y: child.y || 0 });
                 });
-                setElkPositions(nextPositions);
+                const edgePaths = new Map<string, string>();
+                result.edges?.forEach(edge => {
+                    const path = buildElkEdgePath(edge.sections);
+                    if (path) {
+                        edgePaths.set(edge.id, path);
+                    }
+                });
+                setElkLayout({
+                    nodePositions: nextPositions,
+                    edgePaths,
+                    width: result.width || 0,
+                    height: result.height || 0,
+                });
             })
             .catch(() => {
                 if (!cancelled) {
-                    setElkPositions(new Map());
+                    setElkLayout({ nodePositions: new Map(), edgePaths: new Map(), width: 0, height: 0 });
                 }
             });
 
         return () => {
             cancelled = true;
         };
-    }, [displayLinks, layoutInput]);
+    }, [displayLinks, layoutInput, linkDirections, linkLaneOffsets]);
 
     const layout = useMemo(() => {
         const rowAnchors = new Map<string, { left: { x: number; y: number }; right: { x: number; y: number } }>();
+        const hasElkGeometry = elkLayout?.nodePositions.size === layoutInput.nodeMetrics.length;
         const rawLayoutNodes = layoutInput.nodeMetrics.map(({ node, columns, height, rank }, index) => {
-            const x = PADDING + (rank - layoutInput.minRank) * (CARD_WIDTH + RANK_GAP);
-            const y = elkPositions?.get(node.id)?.y ?? PADDING + index * (height + NODE_GAP);
+            const elkPosition = elkLayout?.nodePositions.get(node.id);
+            const x = elkPosition?.x ?? PADDING + (rank - layoutInput.minRank) * (CARD_WIDTH + RANK_GAP);
+            const y = elkPosition?.y ?? PADDING + index * (height + NODE_GAP);
             const ownerHeight = resolveNodeTableIdentity(node).owner ? OWNER_HEIGHT : 0;
             return { node, x, y, height, rank, columns, ownerHeight };
         });
@@ -504,7 +643,7 @@ const ColumnLineageDiagram: React.FC<ColumnLineageDiagramProps> = ({
             nodesByRank.set(item.rank, [...(nodesByRank.get(item.rank) || []), item]);
         });
 
-        const stackedLayoutNodes = Array.from(nodesByRank.entries()).flatMap(([, rankNodes]) => {
+        const stackedLayoutNodes = hasElkGeometry ? rawLayoutNodes : Array.from(nodesByRank.entries()).flatMap(([, rankNodes]) => {
             let nextY = PADDING;
             return rankNodes
                 .slice()
@@ -517,7 +656,7 @@ const ColumnLineageDiagram: React.FC<ColumnLineageDiagramProps> = ({
         });
 
         const minY = Math.min(PADDING, ...stackedLayoutNodes.map(item => item.y));
-        const yShift = PADDING - minY;
+        const yShift = hasElkGeometry ? 0 : PADDING - minY;
         const layoutNodes: LayoutNode[] = stackedLayoutNodes
             .map(({ ownerHeight, ...item }) => ({
                 ...item,
@@ -537,10 +676,43 @@ const ColumnLineageDiagram: React.FC<ColumnLineageDiagramProps> = ({
             });
         });
 
-        const width = Math.max(1200, ...layoutNodes.map(item => item.x + CARD_WIDTH + PADDING));
-        const height = Math.max(640, ...layoutNodes.map(item => item.y + item.height + PADDING));
+        const width = Math.max(1200, elkLayout?.width || 0, ...layoutNodes.map(item => item.x + CARD_WIDTH + PADDING));
+        const height = Math.max(640, elkLayout?.height || 0, ...layoutNodes.map(item => item.y + item.height + PADDING));
         return { layoutNodes, rowAnchors, width, height };
-    }, [elkPositions, layoutInput]);
+    }, [elkLayout, layoutInput]);
+
+    const fitViewport = useCallback(() => {
+        const container = scrollContainerRef.current;
+        if (!container || layout.width <= 0 || layout.height <= 0) {
+            return;
+        }
+        const viewportWidth = Math.max(320, container.clientWidth - 420);
+        const viewportHeight = Math.max(320, container.clientHeight);
+        const margin = 48;
+        const nextZoom = clampZoom(Math.min(
+            1,
+            (viewportWidth - margin * 2) / layout.width,
+            (viewportHeight - margin * 2) / layout.height
+        ));
+        setZoom(nextZoom);
+        setPanOffset({
+            x: Math.max(margin, (viewportWidth - layout.width * nextZoom) / 2),
+            y: Math.max(margin, (viewportHeight - layout.height * nextZoom) / 2),
+        });
+    }, [layout.height, layout.width]);
+
+    useEffect(() => {
+        if (!elkLayout || elkLayout.nodePositions.size === 0) {
+            return;
+        }
+        const autoFitKey = `${displayNodes.map(node => node.id).join('|')}::${displayLinks.map(link => link.id).join('|')}::${layout.width}x${layout.height}`;
+        if (lastAutoFitKeyRef.current === autoFitKey) {
+            return;
+        }
+        lastAutoFitKeyRef.current = autoFitKey;
+        const frame = window.requestAnimationFrame(fitViewport);
+        return () => window.cancelAnimationFrame(frame);
+    }, [displayLinks, displayNodes, elkLayout, fitViewport, layout.height, layout.width]);
 
     const selectedFieldKey = selectedField ? `${selectedField.nodeId}::${selectedField.colId}` : '';
     const focusColumnKey = pinnedColumnKey || activeColumnKey;
@@ -709,10 +881,7 @@ const ColumnLineageDiagram: React.FC<ColumnLineageDiagramProps> = ({
         setIsPanning(true);
     };
 
-    const handleResetViewport = () => {
-        setZoom(1);
-        setPanOffset({ x: 0, y: 0 });
-    };
+    const handleResetViewport = fitViewport;
 
     return (
         <div className="relative h-full w-full bg-[#f1f2f4]" style={{ minHeight: 640 }}>
@@ -786,7 +955,8 @@ const ColumnLineageDiagram: React.FC<ColumnLineageDiagramProps> = ({
                             || (!hasColumnFocus && (sourceKey === selectedFieldKey || targetKey === selectedFieldKey));
                         const relationType = normalizeRelationType(link.type);
                         const style = getRelationStyle(relationType);
-                        const path = buildPath(source, target, linkLaneOffsets.get(link.id) || 0, sameRankSide);
+                        const path = elkLayout?.edgePaths.get(link.id)
+                            || buildPath(source, target, linkLaneOffsets.get(link.id) || 0, sameRankSide);
                         const opacity = (activeLinkId || hasColumnFocus) && !isActive ? 0.1 : (isActive ? 1 : 0.72);
                         return (
                             <g key={link.id}>
@@ -968,7 +1138,7 @@ const ColumnLineageDiagram: React.FC<ColumnLineageDiagramProps> = ({
                         onClick={() => updateZoom(currentZoom => currentZoom - ZOOM_STEP)}
                     />
                 </Tooltip>
-                <Tooltip title="重置视图" placement="top">
+                <Tooltip title="适应画布" placement="top">
                     <Button
                         shape="circle"
                         icon={<Maximize2 size={16} />}
