@@ -1,6 +1,6 @@
 import React, { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import ELK from 'elkjs/lib/elk.bundled.js';
-import type { ElkEdgeSection, ElkNode, ElkPoint } from 'elkjs/lib/elk-api';
+import type { ElkNode, ElkPoint } from 'elkjs/lib/elk-api';
 import { Button, Descriptions, Empty, Modal, Tag, Tooltip } from 'antd';
 import { Maximize2, ZoomIn, ZoomOut } from 'lucide-react';
 import { LinkData, NodeData, RELATION_STYLES } from '../types';
@@ -69,9 +69,13 @@ interface NodeMetric {
 
 interface ElkLayoutState {
     nodePositions: Map<string, { x: number; y: number }>;
-    edgePaths: Map<string, string>;
     width: number;
     height: number;
+}
+
+interface CurveGeometry {
+    path: string;
+    midpoint: ElkPoint;
 }
 
 const CARD_WIDTH = 290;
@@ -286,76 +290,62 @@ const buildLinkLaneOffsets = (links: LinkData[]) => {
     return offsets;
 };
 
-const buildRoundedPath = (points: ElkPoint[]) => {
-    const compactPoints = points.filter((point, index) => (
-        index === 0
-        || point.x !== points[index - 1].x
-        || point.y !== points[index - 1].y
-    ));
-    if (compactPoints.length < 2) {
-        return '';
-    }
-
-    const commands = [`M ${compactPoints[0].x} ${compactPoints[0].y}`];
-    for (let index = 1; index < compactPoints.length - 1; index += 1) {
-        const previous = compactPoints[index - 1];
-        const current = compactPoints[index];
-        const next = compactPoints[index + 1];
-        const incomingLength = Math.hypot(current.x - previous.x, current.y - previous.y);
-        const outgoingLength = Math.hypot(next.x - current.x, next.y - current.y);
-        const radius = Math.min(12, incomingLength / 2, outgoingLength / 2);
-        const incomingRatio = incomingLength === 0 ? 0 : radius / incomingLength;
-        const outgoingRatio = outgoingLength === 0 ? 0 : radius / outgoingLength;
-        const cornerStart = {
-            x: current.x - (current.x - previous.x) * incomingRatio,
-            y: current.y - (current.y - previous.y) * incomingRatio,
-        };
-        const cornerEnd = {
-            x: current.x + (next.x - current.x) * outgoingRatio,
-            y: current.y + (next.y - current.y) * outgoingRatio,
-        };
-        commands.push(`L ${cornerStart.x} ${cornerStart.y}`);
-        commands.push(`Q ${current.x} ${current.y} ${cornerEnd.x} ${cornerEnd.y}`);
-    }
-    const lastPoint = compactPoints[compactPoints.length - 1];
-    commands.push(`L ${lastPoint.x} ${lastPoint.y}`);
-    return commands.join(' ');
+const getCubicPoint = (
+    start: ElkPoint,
+    control1: ElkPoint,
+    control2: ElkPoint,
+    end: ElkPoint,
+    t: number
+): ElkPoint => {
+    const inverse = 1 - t;
+    return {
+        x: inverse ** 3 * start.x
+            + 3 * inverse ** 2 * t * control1.x
+            + 3 * inverse * t ** 2 * control2.x
+            + t ** 3 * end.x,
+        y: inverse ** 3 * start.y
+            + 3 * inverse ** 2 * t * control1.y
+            + 3 * inverse * t ** 2 * control2.y
+            + t ** 3 * end.y,
+    };
 };
 
-const buildElkEdgePath = (sections: ElkEdgeSection[] = []) => sections
-    .map(section => buildRoundedPath([
-        section.startPoint,
-        ...(section.bendPoints || []),
-        section.endPoint,
-    ]))
-    .filter(Boolean)
-    .join(' ');
-
-const buildPath = (
+const buildCurveGeometry = (
     source: ElkPoint,
     target: ElkPoint,
     laneOffset = 0,
     sameRankSide: 'left' | 'right' | null = null
-) => {
-
+): CurveGeometry => {
+    const laneBend = laneOffset * 2.4;
+    let control1: ElkPoint;
+    let control2: ElkPoint;
     if (sameRankSide) {
         const sideDirection = sameRankSide === 'right' ? 1 : -1;
-        const corridorX = source.x + sideDirection * (72 + Math.abs(laneOffset));
-        return buildRoundedPath([
-            source,
-            { x: corridorX, y: source.y },
-            { x: corridorX, y: target.y },
-            target,
-        ]);
+        const controlDistance = 88 + Math.min(160, Math.abs(target.y - source.y) * 0.35) + Math.abs(laneOffset);
+        control1 = {
+            x: source.x + sideDirection * controlDistance,
+            y: source.y + laneBend,
+        };
+        control2 = {
+            x: target.x + sideDirection * controlDistance,
+            y: target.y + laneBend,
+        };
+    } else {
+        const direction = target.x >= source.x ? 1 : -1;
+        const controlDistance = Math.max(72, Math.abs(target.x - source.x) * 0.42);
+        control1 = {
+            x: source.x + direction * controlDistance,
+            y: source.y + laneBend,
+        };
+        control2 = {
+            x: target.x - direction * controlDistance,
+            y: target.y + laneBend,
+        };
     }
-
-    const corridorX = (source.x + target.x) / 2 + laneOffset;
-    return buildRoundedPath([
-        source,
-        { x: corridorX, y: source.y },
-        { x: corridorX, y: target.y },
-        target,
-    ]);
+    return {
+        path: `M ${source.x} ${source.y} C ${control1.x} ${control1.y}, ${control2.x} ${control2.y}, ${target.x} ${target.y}`,
+        midpoint: getCubicPoint(source, control1, control2, target, 0.5),
+    };
 };
 
 const getLinkPortSides = (
@@ -391,6 +381,8 @@ const ColumnLineageDiagram: React.FC<ColumnLineageDiagramProps> = ({
 }) => {
     const scrollContainerRef = useRef<HTMLDivElement>(null);
     const panStartRef = useRef({ clientX: 0, clientY: 0, x: 0, y: 0 });
+    const nodeDragStartRef = useRef<{ nodeId: string; clientX: number; clientY: number; x: number; y: number } | null>(null);
+    const suppressNodeClickRef = useRef(false);
     const lastAutoFitKeyRef = useRef('');
     const zoomRef = useRef(1);
     const panOffsetRef = useRef({ x: 0, y: 0 });
@@ -403,6 +395,8 @@ const ColumnLineageDiagram: React.FC<ColumnLineageDiagramProps> = ({
     const [zoom, setZoom] = useState(1);
     const [panOffset, setPanOffset] = useState({ x: 0, y: 0 });
     const [isPanning, setIsPanning] = useState(false);
+    const [draggingNodeId, setDraggingNodeId] = useState<string | null>(null);
+    const [manualNodePositions, setManualNodePositions] = useState<Map<string, { x: number; y: number }>>(new Map());
     const [elkLayout, setElkLayout] = useState<ElkLayoutState | null>(null);
     const relationOptions = useMemo(() => collectRelationOptions(links), [links]);
     const relationOptionsKey = relationOptions.join('|');
@@ -481,7 +475,7 @@ const ColumnLineageDiagram: React.FC<ColumnLineageDiagramProps> = ({
 
     useEffect(() => {
         if (layoutInput.nodeMetrics.length === 0) {
-            setElkLayout({ nodePositions: new Map(), edgePaths: new Map(), width: 0, height: 0 });
+            setElkLayout({ nodePositions: new Map(), width: 0, height: 0 });
             return;
         }
 
@@ -526,7 +520,7 @@ const ColumnLineageDiagram: React.FC<ColumnLineageDiagramProps> = ({
             layoutOptions: {
                 'elk.algorithm': 'layered',
                 'elk.direction': 'RIGHT',
-                'elk.edgeRouting': 'ORTHOGONAL',
+                'elk.edgeRouting': 'SPLINES',
                 'elk.spacing.nodeNode': String(NODE_GAP),
                 'elk.spacing.edgeEdge': '12',
                 'elk.layered.spacing.nodeNodeBetweenLayers': String(RANK_GAP),
@@ -554,23 +548,23 @@ const ColumnLineageDiagram: React.FC<ColumnLineageDiagramProps> = ({
                     const ports = [];
                     if (link.sourceNodeId === item.node.id) {
                         ports.push({
-                                id: assignment.source.id,
-                                x: assignment.source.side === 'right' ? CARD_WIDTH : 0,
-                                y: assignment.source.y,
-                                width: 1,
-                                height: 1,
-                                layoutOptions: { 'elk.port.side': assignment.source.side === 'right' ? 'EAST' : 'WEST' },
-                            });
+                            id: assignment.source.id,
+                            x: assignment.source.side === 'right' ? CARD_WIDTH : 0,
+                            y: assignment.source.y,
+                            width: 1,
+                            height: 1,
+                            layoutOptions: { 'elk.port.side': assignment.source.side === 'right' ? 'EAST' : 'WEST' },
+                        });
                     }
                     if (link.targetNodeId === item.node.id) {
                         ports.push({
-                                id: assignment.target.id,
-                                x: assignment.target.side === 'right' ? CARD_WIDTH : 0,
-                                y: assignment.target.y,
-                                width: 1,
-                                height: 1,
-                                layoutOptions: { 'elk.port.side': assignment.target.side === 'right' ? 'EAST' : 'WEST' },
-                            });
+                            id: assignment.target.id,
+                            x: assignment.target.side === 'right' ? CARD_WIDTH : 0,
+                            y: assignment.target.y,
+                            width: 1,
+                            height: 1,
+                            layoutOptions: { 'elk.port.side': assignment.target.side === 'right' ? 'EAST' : 'WEST' },
+                        });
                     }
                     return ports;
                 }),
@@ -603,23 +597,15 @@ const ColumnLineageDiagram: React.FC<ColumnLineageDiagramProps> = ({
                 result.children?.forEach(child => {
                     nextPositions.set(child.id, { x: child.x || 0, y: child.y || 0 });
                 });
-                const edgePaths = new Map<string, string>();
-                result.edges?.forEach(edge => {
-                    const path = buildElkEdgePath(edge.sections);
-                    if (path) {
-                        edgePaths.set(edge.id, path);
-                    }
-                });
                 setElkLayout({
                     nodePositions: nextPositions,
-                    edgePaths,
                     width: result.width || 0,
                     height: result.height || 0,
                 });
             })
             .catch(() => {
                 if (!cancelled) {
-                    setElkLayout({ nodePositions: new Map(), edgePaths: new Map(), width: 0, height: 0 });
+                    setElkLayout({ nodePositions: new Map(), width: 0, height: 0 });
                 }
             });
 
@@ -633,8 +619,9 @@ const ColumnLineageDiagram: React.FC<ColumnLineageDiagramProps> = ({
         const hasElkGeometry = elkLayout?.nodePositions.size === layoutInput.nodeMetrics.length;
         const rawLayoutNodes = layoutInput.nodeMetrics.map(({ node, columns, height, rank }, index) => {
             const elkPosition = elkLayout?.nodePositions.get(node.id);
-            const x = elkPosition?.x ?? PADDING + (rank - layoutInput.minRank) * (CARD_WIDTH + RANK_GAP);
-            const y = elkPosition?.y ?? PADDING + index * (height + NODE_GAP);
+            const manualPosition = manualNodePositions.get(node.id);
+            const x = manualPosition?.x ?? elkPosition?.x ?? PADDING + (rank - layoutInput.minRank) * (CARD_WIDTH + RANK_GAP);
+            const y = manualPosition?.y ?? elkPosition?.y ?? PADDING + index * (height + NODE_GAP);
             const ownerHeight = resolveNodeTableIdentity(node).owner ? OWNER_HEIGHT : 0;
             return { node, x, y, height, rank, columns, ownerHeight };
         });
@@ -679,7 +666,7 @@ const ColumnLineageDiagram: React.FC<ColumnLineageDiagramProps> = ({
         const width = Math.max(1200, elkLayout?.width || 0, ...layoutNodes.map(item => item.x + CARD_WIDTH + PADDING));
         const height = Math.max(640, elkLayout?.height || 0, ...layoutNodes.map(item => item.y + item.height + PADDING));
         return { layoutNodes, rowAnchors, width, height };
-    }, [elkLayout, layoutInput]);
+    }, [elkLayout, layoutInput, manualNodePositions]);
 
     const fitViewport = useCallback(() => {
         const container = scrollContainerRef.current;
@@ -702,7 +689,7 @@ const ColumnLineageDiagram: React.FC<ColumnLineageDiagramProps> = ({
     }, [layout.height, layout.width]);
 
     useEffect(() => {
-        if (!elkLayout || elkLayout.nodePositions.size === 0) {
+        if (!elkLayout || elkLayout.nodePositions.size === 0 || manualNodePositions.size > 0) {
             return;
         }
         const autoFitKey = `${displayNodes.map(node => node.id).join('|')}::${displayLinks.map(link => link.id).join('|')}::${layout.width}x${layout.height}`;
@@ -712,7 +699,7 @@ const ColumnLineageDiagram: React.FC<ColumnLineageDiagramProps> = ({
         lastAutoFitKeyRef.current = autoFitKey;
         const frame = window.requestAnimationFrame(fitViewport);
         return () => window.cancelAnimationFrame(frame);
-    }, [displayLinks, displayNodes, elkLayout, fitViewport, layout.height, layout.width]);
+    }, [displayLinks, displayNodes, elkLayout, fitViewport, layout.height, layout.width, manualNodePositions.size]);
 
     const selectedFieldKey = selectedField ? `${selectedField.nodeId}::${selectedField.colId}` : '';
     const focusColumnKey = pinnedColumnKey || activeColumnKey;
@@ -727,21 +714,6 @@ const ColumnLineageDiagram: React.FC<ColumnLineageDiagramProps> = ({
             .sort((a, b) => (order.get(a) ?? 99) - (order.get(b) ?? 99) || a.localeCompare(b))
             .map(type => ({ type, style: getRelationStyle(type), label: getRelationLabel(type) }));
     }, [displayLinks]);
-
-    useEffect(() => {
-        if (!focusedNodeId || !scrollContainerRef.current) {
-            return;
-        }
-        const item = layout.layoutNodes.find(node => node.node.id === focusedNodeId);
-        if (!item) {
-            return;
-        }
-        const currentZoom = zoomRef.current;
-        setPanOffset({
-            x: 120 - item.x * currentZoom,
-            y: 120 - item.y * currentZoom,
-        });
-    }, [focusedNodeId, layout]);
 
     useEffect(() => {
         if (!isPanning) {
@@ -766,6 +738,43 @@ const ColumnLineageDiagram: React.FC<ColumnLineageDiagramProps> = ({
             window.removeEventListener('mouseup', handleMouseUp);
         };
     }, [isPanning]);
+
+    useEffect(() => {
+        if (!draggingNodeId) {
+            return;
+        }
+
+        const handleMouseMove = (event: MouseEvent) => {
+            const start = nodeDragStartRef.current;
+            if (!start) {
+                return;
+            }
+            const deltaX = (event.clientX - start.clientX) / zoomRef.current;
+            const deltaY = (event.clientY - start.clientY) / zoomRef.current;
+            if (Math.abs(deltaX) > 2 || Math.abs(deltaY) > 2) {
+                suppressNodeClickRef.current = true;
+            }
+            setManualNodePositions(current => {
+                const next = new Map(current);
+                next.set(start.nodeId, {
+                    x: Math.max(PADDING / 2, start.x + deltaX),
+                    y: Math.max(PADDING / 2, start.y + deltaY),
+                });
+                return next;
+            });
+        };
+        const handleMouseUp = () => {
+            nodeDragStartRef.current = null;
+            setDraggingNodeId(null);
+        };
+
+        window.addEventListener('mousemove', handleMouseMove);
+        window.addEventListener('mouseup', handleMouseUp);
+        return () => {
+            window.removeEventListener('mousemove', handleMouseMove);
+            window.removeEventListener('mouseup', handleMouseUp);
+        };
+    }, [draggingNodeId]);
 
     if (nodes.length === 0) {
         return <Empty description="暂无流程图数据" style={{ marginTop: 100 }} />;
@@ -881,6 +890,28 @@ const ColumnLineageDiagram: React.FC<ColumnLineageDiagramProps> = ({
         setIsPanning(true);
     };
 
+    const handleNodeMouseDown = (event: React.MouseEvent<HTMLDivElement>, item: LayoutNode) => {
+        if (event.button !== 0) {
+            return;
+        }
+        event.preventDefault();
+        event.stopPropagation();
+        suppressNodeClickRef.current = false;
+        nodeDragStartRef.current = {
+            nodeId: item.node.id,
+            clientX: event.clientX,
+            clientY: event.clientY,
+            x: item.x,
+            y: item.y,
+        };
+        setManualNodePositions(current => {
+            const next = new Map(current);
+            next.set(item.node.id, { x: item.x, y: item.y });
+            return next;
+        });
+        setDraggingNodeId(item.node.id);
+    };
+
     const handleResetViewport = fitViewport;
 
     return (
@@ -888,7 +919,11 @@ const ColumnLineageDiagram: React.FC<ColumnLineageDiagramProps> = ({
             <div
                 ref={scrollContainerRef}
                 className="h-full w-full overflow-hidden pr-[420px]"
-                style={{ minHeight: 640, cursor: isPanning ? 'grabbing' : undefined, userSelect: isPanning ? 'none' : undefined }}
+                style={{
+                    minHeight: 640,
+                    cursor: isPanning ? 'grabbing' : undefined,
+                    userSelect: isPanning || draggingNodeId ? 'none' : undefined,
+                }}
             >
             <div
                 className="relative"
@@ -955,36 +990,42 @@ const ColumnLineageDiagram: React.FC<ColumnLineageDiagramProps> = ({
                             || (!hasColumnFocus && (sourceKey === selectedFieldKey || targetKey === selectedFieldKey));
                         const relationType = normalizeRelationType(link.type);
                         const style = getRelationStyle(relationType);
-                        const path = elkLayout?.edgePaths.get(link.id)
-                            || buildPath(source, target, linkLaneOffsets.get(link.id) || 0, sameRankSide);
-                        const opacity = (activeLinkId || hasColumnFocus) && !isActive ? 0.1 : (isActive ? 1 : 0.72);
+                        const geometry = buildCurveGeometry(
+                            source,
+                            target,
+                            linkLaneOffsets.get(link.id) || 0,
+                            sameRankSide
+                        );
+                        const hasRelationshipFocus = Boolean(activeLinkId || hasColumnFocus || focusedLinkId || selectedFieldKey);
+                        const strokeColor = isActive ? style.highlightColor : style.color;
+                        const markerId = getRelationMarkerId(relationType);
+                        const opacity = hasRelationshipFocus && !isActive ? 0.3 : 1;
                         return (
                             <g key={link.id}>
                                 <title>{`${getRelationLabel(relationType)}：${sourceKey} → ${targetKey}`}</title>
                                 <path
-                                    d={path}
+                                    d={geometry.path}
                                     fill="none"
-                                    stroke="#f8fafc"
-                                    strokeWidth={isActive ? 7 : 5}
+                                    stroke={strokeColor}
+                                    strokeWidth={isActive ? 2.6 : 1.7}
                                     strokeLinecap="round"
-                                    strokeLinejoin="round"
-                                    opacity={opacity}
-                                    pointerEvents="none"
-                                />
-                                <path
-                                    d={path}
-                                    fill="none"
-                                    stroke={isActive ? style.highlightColor : style.color}
-                                    strokeWidth={isActive ? 3.2 : 1.8}
-                                    strokeLinecap="round"
-                                    strokeLinejoin="round"
                                     strokeDasharray={style.strokeDasharray}
-                                    markerEnd={`url(#${getRelationMarkerId(relationType)})`}
+                                    markerEnd={`url(#${markerId})`}
+                                    opacity={opacity}
+                                    pointerEvents="none"
+                                />
+                                <circle
+                                    cx={geometry.midpoint.x}
+                                    cy={geometry.midpoint.y}
+                                    r={isActive ? 5 : 4}
+                                    fill={strokeColor}
+                                    stroke="#f1f2f4"
+                                    strokeWidth={2}
                                     opacity={opacity}
                                     pointerEvents="none"
                                 />
                                 <path
-                                    d={path}
+                                    d={geometry.path}
                                     fill="none"
                                     stroke="transparent"
                                     strokeWidth={14}
@@ -1018,14 +1059,26 @@ const ColumnLineageDiagram: React.FC<ColumnLineageDiagramProps> = ({
                                 minHeight: item.height,
                                 borderColor: isFocusedTable ? '#1677ff' : headerColor,
                                 boxShadow: isFocusedTable ? '0 0 0 3px rgba(22, 119, 255, 0.18)' : undefined,
+                                zIndex: draggingNodeId === item.node.id ? 30 : 10,
                             }}
                         >
                             <div
                                 className="flex h-9 items-center justify-center px-3 text-base font-semibold text-white"
-                                style={{ background: headerColor, cursor: item.node.isGroupNode ? 'default' : 'pointer' }}
-                                title={item.node.isGroupNode ? item.node.title : `${item.node.title}（单击定位，双击切换为当前表）`}
+                                style={{
+                                    background: headerColor,
+                                    cursor: draggingNodeId === item.node.id ? 'grabbing' : 'grab',
+                                    userSelect: 'none',
+                                }}
+                                title={item.node.isGroupNode
+                                    ? `${item.node.title}（拖动调整位置）`
+                                    : `${item.node.title}（拖动调整位置，单击高亮，双击切换为当前表）`}
+                                onMouseDown={event => handleNodeMouseDown(event, item)}
                                 onClick={(event) => {
                                     event.stopPropagation();
+                                    if (suppressNodeClickRef.current) {
+                                        suppressNodeClickRef.current = false;
+                                        return;
+                                    }
                                     if (!item.node.isGroupNode) {
                                         handleFocusNode(item.node.id);
                                     }
