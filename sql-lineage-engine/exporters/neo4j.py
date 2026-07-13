@@ -9,6 +9,7 @@ from utils.lineage_identity import (
     relation_uid,
     scoped_statement_uid,
     statement_hash,
+    stable_hash,
 )
 
 # GSP 关系类型到 Neo4j 关系类型的映射
@@ -37,11 +38,12 @@ ALL_LINEAGE_RELATION_TYPES = [
 
 
 class Neo4jClient:
-    def __init__(self, uri=None, username=None, password=None, default_schema=None):
+    def __init__(self, uri=None, username=None, password=None, default_schema=None, metadata_file=None):
         self.uri = uri or settings.NEO4J_URI
         self.username = username or settings.NEO4J_USERNAME
         self.password = password or settings.NEO4J_PASSWORD
         self.default_schema = (default_schema or "").strip().upper()
+        self.data_source_id = self._load_data_source_id(metadata_file)
         self.batch_size = max(1, settings.NEO4J_BATCH_SIZE)
         self.max_batch_bytes = max(1024, settings.NEO4J_MAX_BATCH_BYTES)
         self.driver = GraphDatabase.driver(self.uri, auth=(self.username, self.password))
@@ -63,10 +65,27 @@ class Neo4jClient:
         if chunk:
             yield chunk
 
-    def _table_identity(self, qualified_name: str) -> dict:
+    @staticmethod
+    def _load_data_source_id(metadata_file):
+        if not metadata_file:
+            return None
+        try:
+            with open(metadata_file, "r", encoding="utf-8") as file:
+                value = json.load(file).get("dataSourceId")
+                return str(value) if value is not None else None
+        except (OSError, ValueError, TypeError):
+            return None
+
+    def _table_identity(self, qualified_name: str, namespace: str = None) -> dict:
         normalized = (qualified_name or "").strip().upper()
         if not normalized:
-            return {"owner": "", "table_name": "", "qualified_name": ""}
+            return {
+                "owner": "",
+                "table_name": "",
+                "qualified_name": "",
+                "object_uid": "",
+                "data_source_id": getattr(self, "data_source_id", None),
+            }
 
         default_schema = getattr(self, "default_schema", "")
         default_prefix = f"{default_schema}." if default_schema else ""
@@ -78,10 +97,15 @@ class Neo4jClient:
         else:
             owner, table_name = default_schema, normalized
 
+        qualified_name = f"{owner}.{table_name}" if owner else table_name
+        data_source_id = getattr(self, "data_source_id", None)
+        scope = data_source_id or str(namespace or "DEFAULT")
         return {
             "owner": owner,
             "table_name": table_name,
-            "qualified_name": f"{owner}.{table_name}" if owner else table_name,
+            "qualified_name": qualified_name,
+            "object_uid": stable_hash(scope, qualified_name),
+            "data_source_id": data_source_id,
         }
 
     @staticmethod
@@ -125,10 +149,13 @@ class Neo4jClient:
         索引会显著提升查询性能。
         """
         index_statements = [
-            # Table 节点唯一性约束（MERGE 操作会利用约束快速定位）
-            "CREATE CONSTRAINT constraint_table_name IF NOT EXISTS FOR (t:Table) REQUIRE t.name IS UNIQUE",
-            # Column 节点复合唯一性约束 (name + table)
-            "CREATE CONSTRAINT constraint_column_name_table IF NOT EXISTS FOR (c:Column) REQUIRE (c.name, c.table) IS UNIQUE",
+            "DROP CONSTRAINT constraint_table_name IF EXISTS",
+            "DROP CONSTRAINT constraint_column_name_table IF EXISTS",
+            "MATCH (t:Table) WHERE t.objectUid IS NULL SET t.objectUid = 'LEGACY|' + coalesce(t.name, elementId(t))",
+            "MATCH (c:Column) WHERE c.objectUid IS NULL SET c.objectUid = 'LEGACY|' + coalesce(c.table, '') + '|' + coalesce(c.name, elementId(c))",
+            "CREATE CONSTRAINT constraint_table_object_uid IF NOT EXISTS FOR (t:Table) REQUIRE t.objectUid IS UNIQUE",
+            "CREATE CONSTRAINT constraint_column_object_uid IF NOT EXISTS FOR (c:Column) REQUIRE c.objectUid IS UNIQUE",
+            "CREATE INDEX idx_table_name IF NOT EXISTS FOR (t:Table) ON (t.name)",
             # Column 单字段索引（用于按 table 查询）
             "CREATE INDEX idx_column_table IF NOT EXISTS FOR (c:Column) ON (c.table)",
             # LineageVersion 节点唯一性约束
@@ -139,6 +166,10 @@ class Neo4jClient:
             "CREATE INDEX idx_sql_statement_version IF NOT EXISTS FOR (s:SqlStatement) ON (s.version)",
             "CREATE INDEX idx_lineage_fact_statement_uid IF NOT EXISTS FOR (f:LineageFact) ON (f.statementUid)",
             "CREATE INDEX idx_lineage_fact_version IF NOT EXISTS FOR (f:LineageFact) ON (f.version)",
+            "CREATE CONSTRAINT constraint_lineage_analysis_uid IF NOT EXISTS FOR (a:LineageAnalysis) REQUIRE a.analysisUid IS UNIQUE",
+            "CREATE INDEX idx_lineage_analysis_status IF NOT EXISTS FOR (a:LineageAnalysis) ON (a.status)",
+            "CREATE INDEX idx_lineage_analysis_source_file IF NOT EXISTS FOR (a:LineageAnalysis) ON (a.sourceFile)",
+            "CREATE FULLTEXT INDEX lineage_node_search IF NOT EXISTS FOR (n:Table|Column|SqlStatement|LineageAnalysis) ON EACH [n.name, n.qualifiedName, n.owner, n.table, n.sqlText, n.sourceFile]",
         ]
         
         with self.driver.session() as session:
@@ -202,6 +233,65 @@ class Neo4jClient:
             )
             return [dict(r) for r in result]
 
+    def create_analysis_results_batch(self, results: list, version: str, repo_id: str = None):
+        """Persist file-level parse outcomes, including failures with no lineage facts."""
+        if not results:
+            return
+        normalized = []
+        for result in results:
+            quality = result.get("analysis_quality") or result.get("quality") or {}
+            dialect = result.get("dialect_profile") or result.get("dialectProfile") or {}
+            source_file = result.get("file_path") or result.get("source_file") or ""
+            normalized.append({
+                "analysis_uid": stable_hash(version, repo_id, source_file),
+                "version": version,
+                "repo_id": repo_id,
+                "source_file": source_file,
+                "status": quality.get("status") or ("FAILED" if result.get("error") else "INCOMPLETE"),
+                "confidence": quality.get("confidence") or "LOW",
+                "inferred": bool(quality.get("inferred")),
+                "ambiguous": bool(quality.get("ambiguous")),
+                "table_relation_count": quality.get("tableRelationCount", len(result.get("relationships", []))),
+                "column_relation_count": quality.get("columnRelationCount", len(result.get("column_dependencies", []))),
+                "diagnostics_json": json.dumps(quality.get("diagnostics", []), ensure_ascii=False),
+                "error": result.get("error"),
+                "requested_dialect": dialect.get("requested"),
+                "effective_dialect": dialect.get("effective"),
+            })
+        with self.driver.session() as session:
+            for chunk in self._iter_write_batches(normalized):
+                session.execute_write(self._create_analysis_results_batch, chunk)
+
+    @staticmethod
+    def _create_analysis_results_batch(tx, results):
+        tx.run(
+            """
+            UNWIND $batch AS item
+            MERGE (a:LineageAnalysis {analysisUid: item.analysis_uid})
+            SET a.version = item.version,
+                a.repoId = item.repo_id,
+                a.sourceFile = item.source_file,
+                a.status = item.status,
+                a.confidence = item.confidence,
+                a.inferred = item.inferred,
+                a.ambiguous = item.ambiguous,
+                a.tableRelationCount = item.table_relation_count,
+                a.columnRelationCount = item.column_relation_count,
+                a.diagnosticsJson = item.diagnostics_json,
+                a.error = item.error,
+                a.requestedDialect = item.requested_dialect,
+                a.effectiveDialect = item.effective_dialect,
+                a.updatedAt = datetime(),
+                a.createdAt = CASE WHEN a.createdAt IS NULL THEN datetime() ELSE a.createdAt END
+            WITH a, item
+            OPTIONAL MATCH (v:LineageVersion {id: item.version})
+            FOREACH (_ IN CASE WHEN v IS NULL THEN [] ELSE [1] END |
+                MERGE (v)-[:HAS_ANALYSIS]->(a)
+            )
+            """,
+            batch=results,
+        )
+
     def clear_all_lineage_data(self):
         """
         清除所有血缘相关数据，包括：
@@ -214,6 +304,7 @@ class Neo4jClient:
         """
         print("正在清除血缘数据...")
         with self.driver.session() as session:
+            session.run("MATCH (a:LineageAnalysis) DETACH DELETE a")
             # 使用 CALL IN TRANSACTIONS 批量删除，避免大数据量时内存溢出
             # 每批删除 10000 个节点/关系
             session.run("""
@@ -288,6 +379,11 @@ class Neo4jClient:
                       AND ANY(file IN coalesce(s.sourceFiles, []) WHERE file IN $files)
                     DETACH DELETE s
                 """, repoId=repo_id, files=file_batch)
+                session.run("""
+                    MATCH (a:LineageAnalysis)
+                    WHERE a.repoId = $repoId AND a.sourceFile IN $files
+                    DETACH DELETE a
+                """, repoId=repo_id, files=file_batch)
                 
                 # 智能删除：先过滤 sourceFiles，再根据结果决定删除或更新
                 session.run("""
@@ -343,6 +439,10 @@ class Neo4jClient:
                 WHERE s.version = $version
                 DETACH DELETE s
                 """,
+                version=version,
+            )
+            session.run(
+                "MATCH (a:LineageAnalysis) WHERE a.version = $version DETACH DELETE a",
                 version=version,
             )
             session.run(
@@ -438,8 +538,9 @@ class Neo4jClient:
             }
             parser_relation_uid = rel.get("parserRelationUid") or rel.get("parser_relation_uid") or rel.get("relationUid") or rel.get("relation_uid")
             scoped_relation_uid = relation_uid(version, repo_id, normalized_for_uid)
-            source_identity = self._table_identity(source)
-            target_identity = self._table_identity(target)
+            identity_namespace = repo_id or rel.get("repo_id") or rel.get("repoId")
+            source_identity = self._table_identity(source, identity_namespace)
+            target_identity = self._table_identity(target, identity_namespace)
 
             normalized.append({
                 "source": source,
@@ -447,9 +548,12 @@ class Neo4jClient:
                 "source_owner": source_identity["owner"],
                 "source_table_name": source_identity["table_name"],
                 "source_qualified_name": source_identity["qualified_name"],
+                "source_object_uid": source_identity["object_uid"],
                 "target_owner": target_identity["owner"],
                 "target_table_name": target_identity["table_name"],
                 "target_qualified_name": target_identity["qualified_name"],
+                "target_object_uid": target_identity["object_uid"],
+                "data_source_id": source_identity["data_source_id"],
                 "dependency_type": dependency_type,
                 "neo4j_rel_type": neo4j_rel_type,
                 "snippet": snippet,
@@ -479,6 +583,10 @@ class Neo4jClient:
                 "ambiguity_code": rel.get("ambiguityCode") or rel.get("ambiguity_code"),
                 "metadata_matched": rel.get("metadataMatched") if rel.get("metadataMatched") is not None else rel.get("metadata_matched"),
                 "metadata_pack_hash": rel.get("metadataPackHash") or rel.get("metadata_pack_hash"),
+                "parse_status": rel.get("parseStatus") or rel.get("parse_status"),
+                "parse_confidence": rel.get("parseConfidence") or rel.get("parse_confidence"),
+                "is_inferred": bool(rel.get("isInferred") or rel.get("is_inferred")),
+                "has_ambiguity": bool(rel.get("hasAmbiguity") or rel.get("has_ambiguity")),
             })
         return normalized
 
@@ -517,16 +625,20 @@ class Neo4jClient:
     def _create_tables_batch(tx, relationships, rel_type):
         query = f"""
         UNWIND $batch AS item
-        MERGE (s:Table {{name: item.source}})
-        MERGE (t:Table {{name: item.target}})
-        SET s.owner = item.source_owner,
+        MERGE (s:Table {{objectUid: item.source_object_uid}})
+        MERGE (t:Table {{objectUid: item.target_object_uid}})
+        SET s.name = item.source,
+            s.owner = item.source_owner,
             s.schema = item.source_owner,
             s.tableName = item.source_table_name,
             s.qualifiedName = item.source_qualified_name,
+            s.dataSourceId = item.data_source_id,
+            t.name = item.target,
             t.owner = item.target_owner,
             t.schema = item.target_owner,
             t.tableName = item.target_table_name,
-            t.qualifiedName = item.target_qualified_name
+            t.qualifiedName = item.target_qualified_name,
+            t.dataSourceId = item.data_source_id
         MERGE (s)-[r:{rel_type}]->(t)
         SET r.version = CASE WHEN item.version IS NOT NULL THEN item.version ELSE r.version END,
             r.repoId = CASE WHEN item.repo_id IS NOT NULL THEN item.repo_id ELSE r.repoId END,
@@ -540,6 +652,10 @@ class Neo4jClient:
             r.ambiguityCode = CASE WHEN item.ambiguity_code IS NOT NULL THEN item.ambiguity_code ELSE r.ambiguityCode END,
             r.metadataMatched = CASE WHEN item.metadata_matched IS NOT NULL THEN item.metadata_matched ELSE r.metadataMatched END,
             r.metadataPackHash = CASE WHEN item.metadata_pack_hash IS NOT NULL THEN item.metadata_pack_hash ELSE r.metadataPackHash END,
+            r.parseStatus = CASE WHEN item.parse_status IS NOT NULL THEN item.parse_status ELSE r.parseStatus END,
+            r.parseConfidence = CASE WHEN item.parse_confidence IS NOT NULL THEN item.parse_confidence ELSE r.parseConfidence END,
+            r.isInferred = item.is_inferred,
+            r.hasAmbiguity = item.has_ambiguity,
             r.statementUid = CASE WHEN item.statement_uid IS NOT NULL THEN item.statement_uid ELSE r.statementUid END,
             r.relationUid = CASE WHEN item.relation_uid IS NOT NULL THEN item.relation_uid ELSE r.relationUid END,
             r.projectionIndex = CASE WHEN item.projection_index IS NOT NULL THEN item.projection_index ELSE r.projectionIndex END,
@@ -634,6 +750,10 @@ class Neo4jClient:
             stmt.version = item.version,
             stmt.repoId = item.repo_id,
             stmt.sourceFiles = sourceFiles,
+            stmt.parseStatus = item.parse_status,
+            stmt.parseConfidence = item.parse_confidence,
+            stmt.isInferred = item.is_inferred,
+            stmt.hasAmbiguity = item.has_ambiguity,
             stmt.createdAt = CASE WHEN stmt.createdAt IS NULL THEN datetime() ELSE stmt.createdAt END,
             stmt.updatedAt = datetime()
         MERGE (fact:LineageFact {relationUid: item.relation_uid})
@@ -660,6 +780,10 @@ class Neo4jClient:
             fact.metadataMatched = item.metadata_matched,
             fact.metadataPackHash = item.metadata_pack_hash,
             fact.isExpanded = item.is_expanded,
+            fact.parseStatus = item.parse_status,
+            fact.parseConfidence = item.parse_confidence,
+            fact.isInferred = item.is_inferred,
+            fact.hasAmbiguity = item.has_ambiguity,
             fact.version = item.version,
             fact.repoId = item.repo_id,
             fact.sourceFiles = sourceFiles,
@@ -668,18 +792,24 @@ class Neo4jClient:
             fact.createdAt = CASE WHEN fact.createdAt IS NULL THEN datetime() ELSE fact.createdAt END,
             fact.updatedAt = datetime()
         MERGE (fact)-[:IN_STATEMENT]->(stmt)
-        MERGE (st:Table {name: sourceTable})
-        MERGE (tt:Table {name: targetTable})
-        SET st.owner = item.source_owner,
+        MERGE (st:Table {objectUid: item.source_object_uid})
+        MERGE (tt:Table {objectUid: item.target_object_uid})
+        SET st.name = sourceTable,
+            st.owner = item.source_owner,
             st.schema = item.source_owner,
             st.tableName = item.source_table_name,
             st.qualifiedName = item.source_qualified_name,
+            st.dataSourceId = item.data_source_id,
+            tt.name = targetTable,
             tt.owner = item.target_owner,
             tt.schema = item.target_owner,
             tt.tableName = item.target_table_name,
-            tt.qualifiedName = item.target_qualified_name
+            tt.qualifiedName = item.target_qualified_name,
+            tt.dataSourceId = item.data_source_id
         FOREACH (_ IN CASE WHEN sourceColumn <> '' AND sourceColumn <> '*' THEN [1] ELSE [] END |
-            MERGE (sc:Column {name: sourceColumn, table: sourceTable})
+            MERGE (sc:Column {objectUid: item.source_column_uid})
+            SET sc.name = sourceColumn, sc.table = sourceTable, sc.tableObjectUid = item.source_object_uid,
+                sc.dataSourceId = item.data_source_id
             MERGE (sc)-[:BELONGS_TO]->(st)
             MERGE (fact)-[:FROM_COLUMN]->(sc)
         )
@@ -687,7 +817,9 @@ class Neo4jClient:
             MERGE (fact)-[:FROM_TABLE]->(st)
         )
         FOREACH (_ IN CASE WHEN targetColumn <> '' AND targetColumn <> '*' THEN [1] ELSE [] END |
-            MERGE (tc:Column {name: targetColumn, table: targetTable})
+            MERGE (tc:Column {objectUid: item.target_column_uid})
+            SET tc.name = targetColumn, tc.table = targetTable, tc.tableObjectUid = item.target_object_uid,
+                tc.dataSourceId = item.data_source_id
             MERGE (tc)-[:BELONGS_TO]->(tt)
             MERGE (fact)-[:TO_COLUMN]->(tc)
         )
@@ -726,12 +858,24 @@ class Neo4jClient:
     @staticmethod
     def _create_and_link_columns_batch(tx, dependencies):
         # 预处理：统一转换为大写
-        normalized_deps = [{
-            "source_table": (d.get("source_table") or "").upper(),
-            "source_column": (d.get("source_column") or "").upper(),
-            "target_table": (d.get("target_table") or "").upper(),
-            "target_column": (d.get("target_column") or "").upper()
-        } for d in dependencies]
+        normalized_deps = []
+        for dependency in dependencies:
+            source_table = (dependency.get("source_table") or "").upper()
+            source_column = (dependency.get("source_column") or "").upper()
+            target_table = (dependency.get("target_table") or "").upper()
+            target_column = (dependency.get("target_column") or "").upper()
+            source_object_uid = stable_hash("DEFAULT", source_table)
+            target_object_uid = stable_hash("DEFAULT", target_table)
+            normalized_deps.append({
+                "source_table": source_table,
+                "source_column": source_column,
+                "target_table": target_table,
+                "target_column": target_column,
+                "source_object_uid": source_object_uid,
+                "target_object_uid": target_object_uid,
+                "source_column_uid": stable_hash(source_object_uid, source_column),
+                "target_column_uid": stable_hash(target_object_uid, target_column),
+            })
         normalized_deps = [
             dep for dep in normalized_deps
             if dep["source_table"]
@@ -744,11 +888,11 @@ class Neo4jClient:
         
         query = (
             "UNWIND $batch AS dep "
-            "MERGE (st:Table {name: dep.source_table}) "
-            "MERGE (tt:Table {name: dep.target_table}) "
-            "MERGE (sc:Column {name: dep.source_column, table: dep.source_table}) "
+            "MERGE (st:Table {objectUid: dep.source_object_uid}) SET st.name = dep.source_table "
+            "MERGE (tt:Table {objectUid: dep.target_object_uid}) SET tt.name = dep.target_table "
+            "MERGE (sc:Column {objectUid: dep.source_column_uid}) SET sc.name = dep.source_column, sc.table = dep.source_table "
             "MERGE (sc)-[:BELONGS_TO]->(st) "
-            "MERGE (tc:Column {name: dep.target_column, table: dep.target_table}) "
+            "MERGE (tc:Column {objectUid: dep.target_column_uid}) SET tc.name = dep.target_column, tc.table = dep.target_table "
             "MERGE (tc)-[:BELONGS_TO]->(tt) "
             "MERGE (sc)-[:DERIVES_TO]->(tc)"
         )
@@ -819,17 +963,26 @@ class Neo4jClient:
                 "ambiguity_code": dep.get("ambiguityCode") or dep.get("ambiguity_code"),
                 "metadata_matched": dep.get("metadataMatched") if dep.get("metadataMatched") is not None else dep.get("metadata_matched"),
                 "metadata_pack_hash": dep.get("metadataPackHash") or dep.get("metadata_pack_hash"),
-                "is_expanded": dep.get("is_expanded", False)
+                "is_expanded": dep.get("is_expanded", False),
+                "parse_status": dep.get("parseStatus") or dep.get("parse_status"),
+                "parse_confidence": dep.get("parseConfidence") or dep.get("parse_confidence"),
+                "is_inferred": bool(dep.get("isInferred") or dep.get("is_inferred")),
+                "has_ambiguity": bool(dep.get("hasAmbiguity") or dep.get("has_ambiguity")),
             }
-            source_identity = self._table_identity(source_table)
-            target_identity = self._table_identity(target_table)
+            source_identity = self._table_identity(source_table, repo_id)
+            target_identity = self._table_identity(target_table, repo_id)
             item.update({
                 "source_owner": source_identity["owner"],
                 "source_table_name": source_identity["table_name"],
                 "source_qualified_name": source_identity["qualified_name"],
+                "source_object_uid": source_identity["object_uid"],
+                "source_column_uid": stable_hash(source_identity["object_uid"], source_column),
                 "target_owner": target_identity["owner"],
                 "target_table_name": target_identity["table_name"],
                 "target_qualified_name": target_identity["qualified_name"],
+                "target_object_uid": target_identity["object_uid"],
+                "target_column_uid": stable_hash(target_identity["object_uid"], target_column),
+                "data_source_id": source_identity["data_source_id"],
             })
             
             # 查找 Neo4j 关系类型，优先保留解析器已经细分出的 GROUPS/ORDERS 等类型。
@@ -922,19 +1075,27 @@ class Neo4jClient:
         # 安全版本，其中 rel_type 在批次中是常量
         query = f"""
         UNWIND $batch AS item
-        MERGE (st:Table {{name: item.source_table}})
-        MERGE (tt:Table {{name: item.target_table}})
-        SET st.owner = item.source_owner,
+        MERGE (st:Table {{objectUid: item.source_object_uid}})
+        MERGE (tt:Table {{objectUid: item.target_object_uid}})
+        SET st.name = item.source_table,
+            st.owner = item.source_owner,
             st.schema = item.source_owner,
             st.tableName = item.source_table_name,
             st.qualifiedName = item.source_qualified_name,
+            st.dataSourceId = item.data_source_id,
+            tt.name = item.target_table,
             tt.owner = item.target_owner,
             tt.schema = item.target_owner,
             tt.tableName = item.target_table_name,
-            tt.qualifiedName = item.target_qualified_name
-        MERGE (sc:Column {{name: item.source_column, table: item.source_table}})
+            tt.qualifiedName = item.target_qualified_name,
+            tt.dataSourceId = item.data_source_id
+        MERGE (sc:Column {{objectUid: item.source_column_uid}})
+        SET sc.name = item.source_column, sc.table = item.source_table,
+            sc.tableObjectUid = item.source_object_uid, sc.dataSourceId = item.data_source_id
         MERGE (sc)-[:BELONGS_TO]->(st)
-        MERGE (tc:Column {{name: item.target_column, table: item.target_table}})
+        MERGE (tc:Column {{objectUid: item.target_column_uid}})
+        SET tc.name = item.target_column, tc.table = item.target_table,
+            tc.tableObjectUid = item.target_object_uid, tc.dataSourceId = item.data_source_id
         MERGE (tc)-[:BELONGS_TO]->(tt)
         MERGE (sc)-[r:{rel_type}]->(tc)
         SET r.version = item.version,
@@ -947,6 +1108,10 @@ class Neo4jClient:
             r.metadataMatched = item.metadata_matched,
             r.metadataPackHash = item.metadata_pack_hash,
             r.isExpanded = item.is_expanded,
+            r.parseStatus = item.parse_status,
+            r.parseConfidence = item.parse_confidence,
+            r.isInferred = item.is_inferred,
+            r.hasAmbiguity = item.has_ambiguity,
             r.statementUid = item.statement_uid,
             r.relationUid = item.relation_uid,
             r.projectionIndex = item.projection_index,
@@ -1007,17 +1172,23 @@ class Neo4jClient:
     def _create_indirect_column_batch_safe(tx, batch, rel_type):
         query = f"""
         UNWIND $batch AS item
-        MERGE (st:Table {{name: item.source_table}})
-        MERGE (tt:Table {{name: item.target_table}})
-        SET st.owner = item.source_owner,
+        MERGE (st:Table {{objectUid: item.source_object_uid}})
+        MERGE (tt:Table {{objectUid: item.target_object_uid}})
+        SET st.name = item.source_table,
+            st.owner = item.source_owner,
             st.schema = item.source_owner,
             st.tableName = item.source_table_name,
             st.qualifiedName = item.source_qualified_name,
+            st.dataSourceId = item.data_source_id,
+            tt.name = item.target_table,
             tt.owner = item.target_owner,
             tt.schema = item.target_owner,
             tt.tableName = item.target_table_name,
-            tt.qualifiedName = item.target_qualified_name
-        MERGE (sc:Column {{name: item.source_column, table: item.source_table}})
+            tt.qualifiedName = item.target_qualified_name,
+            tt.dataSourceId = item.data_source_id
+        MERGE (sc:Column {{objectUid: item.source_column_uid}})
+        SET sc.name = item.source_column, sc.table = item.source_table,
+            sc.tableObjectUid = item.source_object_uid, sc.dataSourceId = item.data_source_id
         MERGE (sc)-[:BELONGS_TO]->(st)
         MERGE (sc)-[r:{rel_type}]->(tt)
         SET r.version = item.version,
@@ -1030,6 +1201,10 @@ class Neo4jClient:
             r.metadataMatched = item.metadata_matched,
             r.metadataPackHash = item.metadata_pack_hash,
             r.isExpanded = item.is_expanded,
+            r.parseStatus = item.parse_status,
+            r.parseConfidence = item.parse_confidence,
+            r.isInferred = item.is_inferred,
+            r.hasAmbiguity = item.has_ambiguity,
             r.statementUid = item.statement_uid,
             r.relationUid = item.relation_uid,
             r.projectionIndex = item.projection_index,

@@ -15,7 +15,7 @@ interface LineageImpactPanelProps {
     onRelationTypesChange: (types: string[]) => void;
     onToggleFieldTrace: () => void;
     onFocusTable: (nodeId: string) => void;
-    onOpenTable?: (tableName: string, qualifiedName: string) => void;
+    onOpenTable?: (tableName: string, qualifiedName: string, objectUid?: string) => void;
 }
 
 const directionLabel: Record<ImpactRow['direction'], string> = {
@@ -224,7 +224,7 @@ const LineageImpactPanel: React.FC<LineageImpactPanelProps> = ({
                         pagination={{ pageSize: 10, size: 'small', showSizeChanger: false }}
                         onRow={(record) => ({
                             onClick: () => onFocusTable(record.nodeId),
-                            onDoubleClick: () => onOpenTable?.(record.tableName, record.qualifiedName),
+                            onDoubleClick: () => onOpenTable?.(record.tableName, record.qualifiedName, record.objectUid),
                         })}
                     />
                 ) : (

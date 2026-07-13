@@ -123,8 +123,55 @@ def test_default_schema_preserves_dots_inside_quoted_table_name():
 
     identity = client._table_identity("pm_rsdata.S75_1.1.A")
 
-    assert identity == {
-        "owner": "PM_RSDATA",
-        "table_name": "S75_1.1.A",
-        "qualified_name": "PM_RSDATA.S75_1.1.A",
-    }
+    assert identity["owner"] == "PM_RSDATA"
+    assert identity["table_name"] == "S75_1.1.A"
+    assert identity["qualified_name"] == "PM_RSDATA.S75_1.1.A"
+    assert identity["object_uid"]
+
+
+def test_same_qualified_table_is_isolated_by_data_source():
+    first = Neo4jClient.__new__(Neo4jClient)
+    first.default_schema = "ODS"
+    first.data_source_id = "100"
+    second = Neo4jClient.__new__(Neo4jClient)
+    second.default_schema = "ODS"
+    second.data_source_id = "200"
+
+    first_identity = first._table_identity("ODS.CUSTOMER")
+    second_identity = second._table_identity("ODS.CUSTOMER")
+
+    assert first_identity["qualified_name"] == second_identity["qualified_name"]
+    assert first_identity["object_uid"] != second_identity["object_uid"]
+
+
+def test_file_level_analysis_results_preserve_failed_parse_evidence():
+    client = Neo4jClient.__new__(Neo4jClient)
+    driver = RecordingDriver()
+    client.driver = driver
+    client.batch_size = 100
+    client.max_batch_bytes = 1024 * 1024
+
+    client.create_analysis_results_batch(
+        [{
+            "file_path": "broken.sql",
+            "error": None,
+            "analysis_quality": {
+                "status": "FAILED",
+                "confidence": "LOW",
+                "inferred": False,
+                "ambiguous": False,
+                "diagnostics": [{"code": "PARSER_ERROR", "message": "bad syntax"}],
+                "tableRelationCount": 0,
+                "columnRelationCount": 0,
+            },
+            "dialect_profile": {"requested": "oracle", "effective": "oracle"},
+        }],
+        version="v1",
+        repo_id="repo-1",
+    )
+
+    assert [name for name, _ in driver.calls] == ["_create_analysis_results_batch"]
+    item = driver.calls[0][1][0][0]
+    assert item["status"] == "FAILED"
+    assert item["source_file"] == "broken.sql"
+    assert '"PARSER_ERROR"' in item["diagnostics_json"]

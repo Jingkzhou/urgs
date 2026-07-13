@@ -31,8 +31,8 @@ interface ColumnLineageDiagramProps {
     selectedTable: string | null;
     selectedField: { nodeId: string; colId: string } | null;
     onLoadFieldDetails?: () => Promise<void>;
-    onTableDoubleClick?: (tableName: string, qualifiedName: string) => void;
-    onFieldDoubleClick?: (tableName: string, qualifiedName: string, columnName: string) => void;
+    onTableDoubleClick?: (tableName: string, qualifiedName: string, objectUid?: string) => void;
+    onFieldDoubleClick?: (tableName: string, qualifiedName: string, columnName: string, objectUid?: string) => void;
 }
 
 interface LayoutNode {
@@ -273,26 +273,60 @@ const buildPath = (
     laneOffset = 0,
     sameRankSide: 'left' | 'right' | null = null
 ) => {
+    const buildRoundedPath = (points: { x: number; y: number }[]) => {
+        const compactPoints = points.filter((point, index) => (
+            index === 0
+            || point.x !== points[index - 1].x
+            || point.y !== points[index - 1].y
+        ));
+        if (compactPoints.length < 2) {
+            return '';
+        }
+
+        const commands = [`M ${compactPoints[0].x} ${compactPoints[0].y}`];
+        for (let index = 1; index < compactPoints.length - 1; index += 1) {
+            const previous = compactPoints[index - 1];
+            const current = compactPoints[index];
+            const next = compactPoints[index + 1];
+            const incomingLength = Math.hypot(current.x - previous.x, current.y - previous.y);
+            const outgoingLength = Math.hypot(next.x - current.x, next.y - current.y);
+            const radius = Math.min(12, incomingLength / 2, outgoingLength / 2);
+            const incomingRatio = incomingLength === 0 ? 0 : radius / incomingLength;
+            const outgoingRatio = outgoingLength === 0 ? 0 : radius / outgoingLength;
+            const cornerStart = {
+                x: current.x - (current.x - previous.x) * incomingRatio,
+                y: current.y - (current.y - previous.y) * incomingRatio,
+            };
+            const cornerEnd = {
+                x: current.x + (next.x - current.x) * outgoingRatio,
+                y: current.y + (next.y - current.y) * outgoingRatio,
+            };
+            commands.push(`L ${cornerStart.x} ${cornerStart.y}`);
+            commands.push(`Q ${current.x} ${current.y} ${cornerEnd.x} ${cornerEnd.y}`);
+        }
+        const lastPoint = compactPoints[compactPoints.length - 1];
+        commands.push(`L ${lastPoint.x} ${lastPoint.y}`);
+        return commands.join(' ');
+    };
+
     if (sameRankSide) {
         const sideDirection = sameRankSide === 'right' ? 1 : -1;
         const corridorX = source.x + sideDirection * (72 + Math.abs(laneOffset));
-        return [
-            `M ${source.x} ${source.y}`,
-            `C ${corridorX} ${source.y}, ${corridorX} ${target.y}, ${target.x} ${target.y}`,
-        ].join(' ');
+        return buildRoundedPath([
+            source,
+            { x: corridorX, y: source.y },
+            { x: corridorX, y: target.y },
+            target,
+        ]);
     }
 
-    const direction = source.x <= target.x ? 1 : -1;
-    const gap = Math.abs(target.x - source.x);
-    const lead = Math.max(42, Math.min(96, gap * 0.24));
-    const middleX = (source.x + target.x) / 2;
-    const middleY = (source.y + target.y) / 2 + laneOffset;
-    const middleControl = lead * 0.35;
-    return [
-        `M ${source.x} ${source.y}`,
-        `C ${source.x + direction * lead} ${source.y}, ${middleX - direction * middleControl} ${middleY}, ${middleX} ${middleY}`,
-        `C ${middleX + direction * middleControl} ${middleY}, ${target.x - direction * lead} ${target.y}, ${target.x} ${target.y}`,
-    ].join(' ');
+    const corridorX = (source.x + target.x) / 2 + laneOffset;
+    return buildRoundedPath([
+        source,
+        { x: corridorX, y: source.y },
+        { x: corridorX, y: target.y },
+        target,
+    ]);
 };
 
 const ColumnLineageDiagram: React.FC<ColumnLineageDiagramProps> = ({
@@ -410,9 +444,11 @@ const ColumnLineageDiagram: React.FC<ColumnLineageDiagramProps> = ({
             layoutOptions: {
                 'elk.algorithm': 'layered',
                 'elk.direction': 'RIGHT',
-                'elk.edgeRouting': 'SPLINES',
+                'elk.edgeRouting': 'ORTHOGONAL',
                 'elk.spacing.nodeNode': String(NODE_GAP),
+                'elk.spacing.edgeEdge': '12',
                 'elk.layered.spacing.nodeNodeBetweenLayers': String(RANK_GAP),
+                'elk.layered.spacing.edgeNodeBetweenLayers': '28',
                 'elk.layered.crossingMinimization.strategy': 'LAYER_SWEEP',
                 'elk.layered.nodePlacement.strategy': 'NETWORK_SIMPLEX',
                 'elk.layered.considerModelOrder.strategy': 'NODES_AND_EDGES',
@@ -761,6 +797,7 @@ const ColumnLineageDiagram: React.FC<ColumnLineageDiagramProps> = ({
                                     stroke="#f8fafc"
                                     strokeWidth={isActive ? 7 : 5}
                                     strokeLinecap="round"
+                                    strokeLinejoin="round"
                                     opacity={opacity}
                                     pointerEvents="none"
                                 />
@@ -770,6 +807,7 @@ const ColumnLineageDiagram: React.FC<ColumnLineageDiagramProps> = ({
                                     stroke={isActive ? style.highlightColor : style.color}
                                     strokeWidth={isActive ? 3.2 : 1.8}
                                     strokeLinecap="round"
+                                    strokeLinejoin="round"
                                     strokeDasharray={style.strokeDasharray}
                                     markerEnd={`url(#${getRelationMarkerId(relationType)})`}
                                     opacity={opacity}
@@ -825,7 +863,7 @@ const ColumnLineageDiagram: React.FC<ColumnLineageDiagramProps> = ({
                                 onDoubleClick={(event) => {
                                     event.stopPropagation();
                                     if (!item.node.isGroupNode) {
-                                        onTableDoubleClick?.(table, item.node.title);
+                                        onTableDoubleClick?.(table, item.node.title, item.node.objectUid);
                                     }
                                 }}
                             >
@@ -875,7 +913,7 @@ const ColumnLineageDiagram: React.FC<ColumnLineageDiagramProps> = ({
                                             onDoubleClick={(event) => {
                                                 event.stopPropagation();
                                                 if (!item.node.isGroupNode && !col.synthetic) {
-                                                    onFieldDoubleClick?.(table, item.node.title, col.name);
+                                                    onFieldDoubleClick?.(table, item.node.title, col.name, item.node.objectUid);
                                                 }
                                             }}
                                         >

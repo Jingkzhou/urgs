@@ -127,6 +127,8 @@ const buildTableGraph = (
             title: tableName,
             owner: node.properties.owner || node.properties.schema,
             tableName: node.properties.tableName,
+            objectUid: node.properties.objectUid,
+            dataSourceId: node.properties.dataSourceId,
             columns: [],
             x: 0,
             y: 0,

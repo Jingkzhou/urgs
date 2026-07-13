@@ -32,6 +32,7 @@ public class LineageController {
     public Map<String, Object> getLineageGraph(
             @RequestParam(required = false) String tableName,
             @RequestParam(required = false) String qualifiedName,
+            @RequestParam(required = false) String objectUid,
             @RequestParam(required = false) String columnName,
             @RequestParam(defaultValue = "2") int depth,
             @RequestParam(defaultValue = "both") String direction,
@@ -46,7 +47,7 @@ public class LineageController {
             return Map.of("nodes", java.util.Collections.emptyList(), "edges", java.util.Collections.emptyList());
         }
 
-        return lineageService.getGraphData(tableName, qualifiedName, columnName, depth, direction, limit, relationLevel);
+        return lineageService.getGraphData(tableName, qualifiedName, objectUid, columnName, depth, direction, limit, relationLevel);
     }
 
     /**
@@ -67,6 +68,26 @@ public class LineageController {
         return lineageService.searchTables(keyword, page, size, ownerName);
     }
 
+    @GetMapping("/search/nodes")
+    public Map<String, Object> searchNodes(
+            @RequestParam(required = false) String keyword,
+            @RequestParam(defaultValue = "1") int page,
+            @RequestParam(defaultValue = "20") int size,
+            @RequestParam(required = false) List<String> nodeTypes,
+            @RequestParam(required = false) String status) {
+        return lineageService.searchNodes(keyword, page, size, nodeTypes, status);
+    }
+
+    @GetMapping("/nodes/{elementId}")
+    public Map<String, Object> getNodeDetails(@PathVariable String elementId) {
+        return lineageService.getNodeDetails(elementId);
+    }
+
+    @GetMapping("/relations/{elementId}")
+    public Map<String, Object> getRelationDetails(@PathVariable String elementId) {
+        return lineageService.getRelationDetails(elementId);
+    }
+
     /**
      * 影响分析 API - 返回所有类型的下游影响
      *
@@ -81,11 +102,13 @@ public class LineageController {
     public Map<String, Object> getImpactAnalysis(
             @RequestParam String tableName,
             @RequestParam String columnName,
+            @RequestParam(required = false) String objectUid,
             @RequestParam(required = false) String version,
             @RequestParam(defaultValue = "5") int depth,
+            @RequestParam(defaultValue = "1000") int limit,
             @RequestParam(required = false) List<String> types) {
         System.out.println("Impact analysis request for " + tableName + "." + columnName);
-        return lineageService.getImpactAnalysis(tableName, columnName, version, depth, types);
+        return lineageService.getImpactAnalysis(tableName, columnName, objectUid, version, depth, limit, types);
     }
 
     /**
@@ -102,11 +125,13 @@ public class LineageController {
     public Map<String, Object> getLineageTrace(
             @RequestParam String tableName,
             @RequestParam String columnName,
+            @RequestParam(required = false) String objectUid,
             @RequestParam(defaultValue = "upstream") String direction,
             @RequestParam(required = false) String version,
-            @RequestParam(defaultValue = "5") int depth) {
+            @RequestParam(defaultValue = "5") int depth,
+            @RequestParam(defaultValue = "1000") int limit) {
         System.out.println("Lineage trace request for " + tableName + "." + columnName);
-        return lineageService.getLineageTrace(tableName, columnName, direction, version, depth);
+        return lineageService.getLineageTrace(tableName, columnName, objectUid, direction, version, depth, limit);
     }
 
     /**

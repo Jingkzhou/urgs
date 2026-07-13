@@ -111,6 +111,9 @@ const getTableName = (node: any) => String(node?.properties?.name || node?.label
 const getRelationStyle = (type?: string) => RELATION_STYLES[type || 'DERIVES_TO'] || RELATION_STYLES.DERIVES_TO;
 
 const formatRelationLabel = (count: number) => `${count} 个字段关系`;
+const formatPropertyList = (value: unknown) => (
+    Array.isArray(value) ? value.join(', ') : String(value || '')
+);
 
 const parseTableGraph = (response: LineageGraphResponse) => {
     const parsedNodes: NodeData[] = (response.nodes || [])
@@ -124,6 +127,8 @@ const parseTableGraph = (response: LineageGraphResponse) => {
             title: getTableName(node),
             owner: node.properties?.owner || node.properties?.schema,
             tableName: node.properties?.tableName,
+            objectUid: node.properties?.objectUid,
+            dataSourceId: node.properties?.dataSourceId,
             isCollapsed: true,
             columns: [],
         }));
@@ -388,6 +393,23 @@ const G6LineageDiagram: React.FC<G6LineageDiagramProps> = ({
         () => buildNodeSummary(selectedNodeId, displayLinks),
         [displayLinks, selectedNodeId]
     );
+    const selectedEdgeSummary = useMemo(() => {
+        if (!selectedEdgeId) {
+            return null;
+        }
+        const edgeLinks = displayLinks.filter(link => `${link.sourceNodeId}::${link.targetNodeId}` === selectedEdgeId);
+        const firstLink = edgeLinks[0];
+        if (!firstLink) {
+            return null;
+        }
+        return {
+            links: edgeLinks,
+            source: nodeMap.get(firstLink.sourceNodeId),
+            target: nodeMap.get(firstLink.targetNodeId),
+            properties: firstLink.properties || {},
+            style: getRelationStyle(firstLink.type),
+        };
+    }, [displayLinks, nodeMap, selectedEdgeId]);
     const overviewStats = useMemo(() => {
         const relationCounts = new Map<string, number>();
         displayLinks.forEach(link => {
@@ -437,8 +459,12 @@ const G6LineageDiagram: React.FC<G6LineageDiagramProps> = ({
         try {
             const response = await getLineageGraph(selectedNode.title, undefined, {
                 depth: 1,
+                qualifiedName: selectedNodeTitle
+                    ? `${selectedNodeTitle.owner}.${selectedNodeTitle.table}`
+                    : undefined,
+                objectUid: selectedNode.objectUid,
                 direction,
-                limit: 1000,
+                limit: 400,
                 relationLevel: 'table',
             });
             const parsedGraph = parseTableGraph(response);
@@ -632,12 +658,78 @@ const G6LineageDiagram: React.FC<G6LineageDiagramProps> = ({
                                 <PanelRight size={16} className="text-blue-600" />
                                 图谱详情
                             </div>
-                            <Tag color={selectedNode ? 'blue' : 'default'}>{selectedNode ? '已选中' : '总览'}</Tag>
+                            <Tag color={selectedNode || selectedEdgeSummary ? 'blue' : 'default'}>
+                                {selectedNode || selectedEdgeSummary ? '已选中' : '总览'}
+                            </Tag>
                         </div>
                     </div>
 
                     <div className="min-h-0 flex-1 overflow-auto px-4 py-4">
-                        {selectedNode && selectedNodeTitle ? (
+                        {selectedEdgeSummary ? (
+                            <>
+                                <div className="rounded-lg border border-blue-100 bg-blue-50/70 p-3">
+                                    <div className="text-xs font-medium text-blue-700">{selectedEdgeSummary.style.label}</div>
+                                    <div className="mt-1 break-words text-sm font-semibold text-slate-900">
+                                        {selectedEdgeSummary.source?.title || '-'} → {selectedEdgeSummary.target?.title || '-'}
+                                    </div>
+                                    <div className="mt-2 flex flex-wrap gap-1.5">
+                                        <Tag color="blue">{selectedEdgeSummary.links.length} 条关系</Tag>
+                                        <Tag color={selectedEdgeSummary.properties.parseStatus === 'EXACT' ? 'green' : 'gold'}>
+                                            {selectedEdgeSummary.properties.parseStatus || '状态未知'}
+                                        </Tag>
+                                        <Tag color={selectedEdgeSummary.properties.confidence === 'HIGH' ? 'green' : 'orange'}>
+                                            置信度 {selectedEdgeSummary.properties.confidence || selectedEdgeSummary.properties.parseConfidence || '未知'}
+                                        </Tag>
+                                    </div>
+                                </div>
+
+                                <div className="mt-4 space-y-3 text-xs">
+                                    <div className="rounded-lg border border-slate-200 p-3">
+                                        <div className="text-slate-500">字段映射</div>
+                                        <div className="mt-1 break-words font-medium text-slate-800">
+                                            {formatPropertyList(selectedEdgeSummary.properties.sourceColumns) || '-'}
+                                            {' → '}
+                                            {formatPropertyList(selectedEdgeSummary.properties.targetColumns) || '-'}
+                                        </div>
+                                    </div>
+                                    <div className="rounded-lg border border-slate-200 p-3">
+                                        <div className="text-slate-500">加工表达式</div>
+                                        <div className="mt-1 whitespace-pre-wrap break-words font-mono text-slate-800">
+                                            {selectedEdgeSummary.properties.sourceExpression
+                                                || selectedEdgeSummary.properties.targetExpression
+                                                || selectedEdgeSummary.properties.context
+                                                || '未记录表达式'}
+                                        </div>
+                                    </div>
+                                    {(selectedEdgeSummary.properties.ambiguityCode || selectedEdgeSummary.properties.validationNote) && (
+                                        <div className="rounded-lg border border-amber-200 bg-amber-50 p-3 text-amber-800">
+                                            <div className="font-semibold">不完整说明</div>
+                                            <div className="mt-1 break-words">
+                                                {selectedEdgeSummary.properties.ambiguityCode || selectedEdgeSummary.properties.validationNote}
+                                            </div>
+                                        </div>
+                                    )}
+                                </div>
+
+                                {selectedEdgeSummary.properties.snippet && (
+                                    <Button
+                                        className="mt-4"
+                                        block
+                                        icon={<FileTextOutlined />}
+                                        onClick={() => {
+                                            setSelectedCode({
+                                                code: selectedEdgeSummary.properties.snippet,
+                                                sourceFile: getSourceFile(selectedEdgeSummary.links[0]),
+                                                linkType: selectedEdgeSummary.links[0].type,
+                                            });
+                                            setCodeModalVisible(true);
+                                        }}
+                                    >
+                                        查看原始 SQL
+                                    </Button>
+                                )}
+                            </>
+                        ) : selectedNode && selectedNodeTitle ? (
                             <>
                                 <div className="rounded-lg border border-blue-100 bg-blue-50/70 p-3">
                                     <div className="text-xs font-medium text-blue-700">{selectedNodeTitle.owner}</div>

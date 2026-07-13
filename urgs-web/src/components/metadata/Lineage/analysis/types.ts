@@ -13,6 +13,8 @@ export interface NodeData {
     title: string;
     owner?: string;
     tableName?: string;
+    objectUid?: string;
+    dataSourceId?: string | number;
     isCollapsed?: boolean;
     isGroupNode?: boolean;
     groupDirection?: 'upstream' | 'downstream' | 'same';

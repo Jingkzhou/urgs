@@ -69,8 +69,8 @@ def get_parser():
     return LineageParser()
 
 # Helper function to get neo4j client
-def get_neo4j_client(default_schema=None):
-    return Neo4jClient(default_schema=default_schema)
+def get_neo4j_client(default_schema=None, metadata_file=None):
+    return Neo4jClient(default_schema=default_schema, metadata_file=metadata_file)
 
 # Modified parallel parser to include duration in result
 def parse_single_file_with_timing(task_args):
@@ -160,7 +160,7 @@ def main():
 
         # JSON/CSV analysis must not require a live Neo4j connection.
         neo4j = (
-            get_neo4j_client(args.default_user)
+            get_neo4j_client(args.default_user, args.metadata_file)
             if args.output == "neo4j"
             else None
         )
@@ -289,6 +289,15 @@ def main():
                      
             elif args.output == "neo4j":
                 if neo4j:
+                    neo4j.create_analysis_results_batch(
+                        [{
+                            "file_path": file_path or "<inline-sql>",
+                            "quality": result.get("quality"),
+                            "dialectProfile": result.get("dialectProfile"),
+                        }],
+                        version=version_id,
+                        repo_id=args.repo_id,
+                    )
                     inserted_any = False
                     
                     # Store relationships if available
@@ -397,6 +406,7 @@ def main():
                         all_relationships = []
                         all_column_deps = []
                         all_dialect_profiles = []
+                        all_analysis_results = []
                         success_count = 0
                         error_count = 0
                         
@@ -417,6 +427,7 @@ def main():
                                     duration = result.get("duration", 0)
                                     if result["success"]:
                                         success_count += 1
+                                        all_analysis_results.append(result)
                                         all_relationships.extend(result.get("relationships", []))
                                         all_column_deps.extend(result.get("column_dependencies", []))
                                         if result.get("dialect_profile"):
@@ -427,6 +438,7 @@ def main():
                                         logger.info(f"[{progress}] Processed {f_name} - OK ({duration:.2f}s)")
                                     else:
                                         error_count += 1
+                                        all_analysis_results.append(result)
                                         logger.error(f"[{progress}] Processed {f_name} - FAILED ({duration:.2f}s): {result['error']}")
                                 except Exception as e:
                                     error_count += 1
@@ -441,6 +453,7 @@ def main():
                                 start_sync = time.time()
                                 neo4j.create_lineage_batch(all_relationships, version=version_id, repo_id=args.repo_id)
                                 neo4j.create_column_lineage_v2(all_column_deps, version=version_id, repo_id=args.repo_id)
+                                neo4j.create_analysis_results_batch(all_analysis_results, version=version_id, repo_id=args.repo_id)
                                 logger.info(f"Sync completed in {time.time() - start_sync:.2f}s")
                             except Exception as e:
                                 logger.error(f"Sync failed: {e}")
@@ -450,6 +463,16 @@ def main():
                                 "relationships": all_relationships,
                                 "columnDependencies": all_column_deps,
                                 "dialectProfiles": all_dialect_profiles,
+                                "analysisResults": [
+                                    {
+                                        "file": item.get("file_path"),
+                                        "success": item.get("success"),
+                                        "error": item.get("error"),
+                                        "quality": item.get("analysis_quality"),
+                                        "dialectProfile": item.get("dialect_profile"),
+                                    }
+                                    for item in all_analysis_results
+                                ],
                             }
                             print(json.dumps(combined_result, indent=2, ensure_ascii=False), file=output_stream)
                         

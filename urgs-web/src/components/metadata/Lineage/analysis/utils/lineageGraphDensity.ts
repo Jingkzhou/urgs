@@ -17,6 +17,7 @@ export interface LineageGraphStats {
 export interface ImpactRow {
     key: string;
     nodeId: string;
+    objectUid?: string;
     qualifiedName: string;
     owner: string;
     tableName: string;
@@ -203,6 +204,7 @@ export const buildImpactRows = (
             return {
                 key: node.id,
                 nodeId: node.id,
+                objectUid: node.objectUid,
                 qualifiedName: node.title,
                 owner,
                 tableName: table,

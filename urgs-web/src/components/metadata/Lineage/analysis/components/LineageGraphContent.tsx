@@ -22,8 +22,8 @@ interface LineageGraphContentProps {
     selectedTable: string | null;
     selectedField: { nodeId: string; colId: string } | null;
     onLoadFieldDetails?: () => Promise<void>;
-    onTableDoubleClick?: (tableName: string, qualifiedName: string) => void;
-    onFieldDoubleClick?: (tableName: string, qualifiedName: string, columnName: string) => void;
+    onTableDoubleClick?: (tableName: string, qualifiedName: string, objectUid?: string) => void;
+    onFieldDoubleClick?: (tableName: string, qualifiedName: string, columnName: string, objectUid?: string) => void;
 }
 
 const LineageGraphContent: React.FC<LineageGraphContentProps> = ({

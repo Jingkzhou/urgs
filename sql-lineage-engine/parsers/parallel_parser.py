@@ -43,7 +43,8 @@ def parse_single_file(args: Tuple[str, str, str]) -> Dict[str, Any]:
         "success": False,
         "error": None,
         "relationships": [],
-        "column_dependencies": []
+        "column_dependencies": [],
+        "analysis_quality": None,
     }
     
     try:
@@ -76,10 +77,17 @@ def parse_single_file(args: Tuple[str, str, str]) -> Dict[str, Any]:
         analysis = parser.analyze(sql_content, source_file=file_path)
         col_dependencies = analysis.get("columnDependencies", [])
         
-        result["success"] = True
         result["relationships"] = analysis.get("relationships", [])
         result["column_dependencies"] = col_dependencies
         result["dialect_profile"] = analysis.get("dialectProfile")
+        result["analysis_quality"] = analysis.get("quality")
+        result["success"] = analysis.get("quality", {}).get("status") != "FAILED"
+        if not result["success"]:
+            diagnostics = analysis.get("quality", {}).get("diagnostics", [])
+            result["error"] = next(
+                (item.get("message") for item in diagnostics if item.get("severity") == "ERROR"),
+                "SQL lineage analysis failed",
+            )
         
         # 如果没有 relationships，尝试从 sources/targets 构建
         if not result["relationships"] and "sources" in analysis and "targets" in analysis:

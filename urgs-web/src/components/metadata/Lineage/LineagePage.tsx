@@ -1,5 +1,5 @@
 import React, { useCallback, useEffect, useMemo, useRef, useState } from 'react';
-import { Layout, Input, Button, Drawer, message, Empty, Tag, Pagination, Tooltip } from 'antd';
+import { Layout, Input, Button, Drawer, message, Empty, Tag, Pagination, Tooltip, Checkbox, Space } from 'antd';
 import * as XLSX from 'xlsx';
 import {
     SearchOutlined,
@@ -18,6 +18,9 @@ import {
     LineageSearchOwnerGroup,
     LineageSearchTableItem,
     LineageGraphDirection,
+    LineageSearchNodeItem,
+    LineageSearchNodeType,
+    searchLineageNodes,
 } from '@/api/lineage';
 import LineageGraphContent from './analysis/components/LineageGraphContent';
 import LineagePageActionBar, { LineageDirectionOption, LineageViewMode } from './analysis/components/LineagePageActionBar';
@@ -48,6 +51,10 @@ const LineagePage: React.FC<LineagePageProps> = () => {
     const [selectedOwnerTotal, setSelectedOwnerTotal] = useState(0);
     const [selectedOwnerName, setSelectedOwnerName] = useState<string | null>(null);
     const [loading, setLoading] = useState(false);
+    const [quickNodeTypes, setQuickNodeTypes] = useState<LineageSearchNodeType[]>(['TABLE', 'COLUMN', 'SQL_TASK', 'ANALYSIS']);
+    const [quickResults, setQuickResults] = useState<LineageSearchNodeItem[]>([]);
+    const [quickResultTotal, setQuickResultTotal] = useState(0);
+    const [selectedQuickNode, setSelectedQuickNode] = useState<LineageSearchNodeItem | null>(null);
     const [expandedTables, setExpandedTables] = useState<Set<string>>(new Set());
     const [searchDrawerOpen, setSearchDrawerOpen] = useState(false);
     const [workspaceMode, setWorkspaceMode] = useState<'catalog' | 'canvas'>('catalog');
@@ -66,6 +73,7 @@ const LineagePage: React.FC<LineagePageProps> = () => {
     const {
         selectedTable,
         selectedQualifiedName,
+        selectedObjectUid,
         selectedColumnName,
         selectedField,
         nodes,
@@ -114,9 +122,15 @@ const LineagePage: React.FC<LineagePageProps> = () => {
         }
         lastDirectionRef.current = queryDirection;
         if (selectedTable) {
-            handleSelectTable(selectedTable, selectedQualifiedName || undefined, selectedColumnName || undefined);
+            handleSelectTable(
+                selectedTable,
+                selectedQualifiedName || undefined,
+                selectedColumnName || undefined,
+                undefined,
+                selectedObjectUid || undefined,
+            );
         }
-    }, [handleSelectTable, queryDirection, selectedColumnName, selectedQualifiedName, selectedTable]);
+    }, [handleSelectTable, queryDirection, selectedColumnName, selectedObjectUid, selectedQualifiedName, selectedTable]);
 
     useEffect(() => {
         const handleFullscreenChange = () => {
@@ -156,23 +170,23 @@ const LineagePage: React.FC<LineagePageProps> = () => {
         }
     };
 
-    const handleGraphTableDoubleClick = useCallback((tableName: string, qualifiedName: string) => {
+    const handleGraphTableDoubleClick = useCallback((tableName: string, qualifiedName: string, objectUid?: string) => {
         setWorkspaceMode('canvas');
         setViewMode('canvas');
-        handleSelectTable(tableName, qualifiedName);
+        handleSelectTable(tableName, qualifiedName, undefined, undefined, objectUid);
     }, [handleSelectTable]);
 
-    const handleGraphFieldDoubleClick = useCallback((tableName: string, qualifiedName: string, columnName: string) => {
+    const handleGraphFieldDoubleClick = useCallback((tableName: string, qualifiedName: string, columnName: string, objectUid?: string) => {
         setWorkspaceMode('canvas');
         setViewMode('canvas');
-        handleSelectTable(tableName, qualifiedName, columnName);
+        handleSelectTable(tableName, qualifiedName, columnName, undefined, objectUid);
     }, [handleSelectTable]);
 
-    const handleLineageSelect = useCallback((tableName: string, qualifiedName: string, columnName?: string) => {
+    const handleLineageSelect = useCallback((tableName: string, qualifiedName: string, columnName?: string, objectUid?: string) => {
         setWorkspaceMode('canvas');
         setViewMode('canvas');
         setSearchDrawerOpen(false);
-        handleSelectTable(tableName, qualifiedName, columnName);
+        handleSelectTable(tableName, qualifiedName, columnName, undefined, objectUid);
     }, [handleSelectTable]);
 
     useEffect(() => {
@@ -241,7 +255,14 @@ const LineagePage: React.FC<LineagePageProps> = () => {
     const handleSearch = async (page: number = 1, ownerName: string | null = selectedOwnerName) => {
         setLoading(true);
         try {
-            const res = await searchTables(searchText, page, pageSize, ownerName || undefined);
+            const [res, nodeRes] = await Promise.all([
+                searchTables(searchText, page, pageSize, ownerName || undefined),
+                searchText.trim()
+                    ? searchLineageNodes(searchText, 1, 20, quickNodeTypes)
+                    : Promise.resolve({ total: 0, page: 1, size: 20, list: [] as LineageSearchNodeItem[] }),
+            ]);
+            setQuickResults(nodeRes.list || []);
+            setQuickResultTotal(nodeRes.total || 0);
             if (res && res.groupedList) {
                 setSearchResults(res.groupedList);
                 setTotal(res.total || 0);
@@ -264,6 +285,32 @@ const LineagePage: React.FC<LineagePageProps> = () => {
         } finally {
             setLoading(false);
         }
+    };
+
+    const handleQuickNodeSelect = (item: LineageSearchNodeItem) => {
+        if (item.nodeType === 'TABLE') {
+            handleLineageSelect(
+                item.properties.tableName || item.displayName,
+                item.properties.qualifiedName || item.qualifiedName || item.displayName,
+                undefined,
+                item.properties.objectUid,
+            );
+            return;
+        }
+        if (item.nodeType === 'COLUMN') {
+            const qualifiedTable = String(item.properties.table || '');
+            const tableName = qualifiedTable.includes('.')
+                ? qualifiedTable.slice(qualifiedTable.lastIndexOf('.') + 1)
+                : qualifiedTable;
+            handleLineageSelect(
+                tableName,
+                qualifiedTable || tableName,
+                item.properties.name || item.displayName,
+                item.properties.tableObjectUid,
+            );
+            return;
+        }
+        setSelectedQuickNode(item);
     };
 
     const handleKeywordSearch = () => {
@@ -421,6 +468,34 @@ const LineagePage: React.FC<LineagePageProps> = () => {
                     查询
                 </Button>
             </div>
+            <div style={{ marginTop: 12, display: 'flex', alignItems: 'center', justifyContent: 'space-between', gap: 12, flexWrap: 'wrap' }}>
+                <Checkbox.Group
+                    value={quickNodeTypes}
+                    options={[
+                        { label: '表', value: 'TABLE' },
+                        { label: '字段', value: 'COLUMN' },
+                        { label: 'SQL 任务', value: 'SQL_TASK' },
+                        { label: '解析记录', value: 'ANALYSIS' },
+                    ]}
+                    onChange={values => setQuickNodeTypes(values as LineageSearchNodeType[])}
+                />
+                {searchText.trim() ? <span style={{ color: '#64748b', fontSize: 12 }}>匹配 {quickResultTotal} 个对象</span> : null}
+            </div>
+            {searchText.trim() && quickResults.length > 0 ? (
+                <div style={{ marginTop: 12, padding: 10, border: '1px solid #e2e8f0', borderRadius: 8, background: '#f8fafc' }}>
+                    <div style={{ marginBottom: 8, color: '#475569', fontSize: 12, fontWeight: 600 }}>快速定位</div>
+                    <Space size={[8, 8]} wrap>
+                        {quickResults.map(item => (
+                            <Button key={item.id} size="small" onClick={() => handleQuickNodeSelect(item)}>
+                                <Tag color={item.nodeType === 'ANALYSIS' && item.properties.status !== 'EXACT' ? 'gold' : 'blue'} style={{ marginInlineEnd: 6 }}>
+                                    {item.nodeType}
+                                </Tag>
+                                {item.displayName}
+                            </Button>
+                        ))}
+                    </Space>
+                </div>
+            ) : null}
             <div className="lineage-catalog-layout">
                 <aside className="lineage-owner-rail">
                     <div className="lineage-section-label">用户 / Schema</div>
@@ -479,7 +554,7 @@ const LineagePage: React.FC<LineagePageProps> = () => {
                                                 </button>
                                                 <button
                                                     type="button"
-                                                    onClick={() => handleLineageSelect(item.tableName, item.qualifiedName)}
+                                                    onClick={() => handleLineageSelect(item.tableName, item.qualifiedName, undefined, item.objectUid)}
                                                     className="lineage-table-main"
                                                 >
                                                     <span className="lineage-table-icon"><TableOutlined /></span>
@@ -488,7 +563,7 @@ const LineagePage: React.FC<LineagePageProps> = () => {
                                                         <span className="lineage-table-qualified">{item.qualifiedName}</span>
                                                     </span>
                                                 </button>
-                                                <Button type="primary" size="small" onClick={() => handleLineageSelect(item.tableName, item.qualifiedName)}>
+                                                <Button type="primary" size="small" onClick={() => handleLineageSelect(item.tableName, item.qualifiedName, undefined, item.objectUid)}>
                                                     打开画布
                                                 </Button>
                                                 {canExport ? (
@@ -509,7 +584,7 @@ const LineagePage: React.FC<LineagePageProps> = () => {
                                                             key={`${item.qualifiedName}.${col}`}
                                                             onClick={(e) => {
                                                                 e.stopPropagation();
-                                                                handleLineageSelect(item.tableName, item.qualifiedName, col);
+                                                                handleLineageSelect(item.tableName, item.qualifiedName, col, item.objectUid);
                                                             }}
                                                             className="lineage-column-tag group hover:text-blue-500 hover:border-blue-500"
                                                             style={searchText && col.toLowerCase().includes(searchText.toLowerCase()) ? {
@@ -1126,6 +1201,47 @@ const LineagePage: React.FC<LineagePageProps> = () => {
                     styles={{ body: { padding: 16, background: '#f8fafc' } }}
                 >
                     <AICodeReport />
+                </Drawer>
+                <Drawer
+                    title={selectedQuickNode?.nodeType === 'ANALYSIS' ? '解析结果详情' : 'SQL 任务详情'}
+                    open={!!selectedQuickNode}
+                    onClose={() => setSelectedQuickNode(null)}
+                    width={620}
+                    destroyOnHidden
+                >
+                    {selectedQuickNode ? (
+                        <div style={{ display: 'grid', gap: 16 }}>
+                            <div>
+                                <div style={{ color: '#64748b', fontSize: 12 }}>对象</div>
+                                <div style={{ marginTop: 4, fontSize: 16, fontWeight: 600, wordBreak: 'break-all' }}>
+                                    {selectedQuickNode.displayName}
+                                </div>
+                            </div>
+                            <Space wrap>
+                                <Tag color="blue">{selectedQuickNode.nodeType}</Tag>
+                                <Tag color={selectedQuickNode.properties.status === 'EXACT' || selectedQuickNode.properties.parseStatus === 'EXACT' ? 'green' : 'gold'}>
+                                    {selectedQuickNode.properties.status || selectedQuickNode.properties.parseStatus || '状态未知'}
+                                </Tag>
+                                <Tag>置信度 {selectedQuickNode.properties.confidence || selectedQuickNode.properties.parseConfidence || '未知'}</Tag>
+                            </Space>
+                            {selectedQuickNode.properties.sqlText ? (
+                                <div>
+                                    <div style={{ marginBottom: 6, color: '#64748b', fontSize: 12 }}>原始 SQL</div>
+                                    <pre style={{ margin: 0, maxHeight: 360, overflow: 'auto', padding: 12, borderRadius: 8, background: '#0f172a', color: '#e2e8f0', whiteSpace: 'pre-wrap' }}>
+                                        {selectedQuickNode.properties.sqlText}
+                                    </pre>
+                                </div>
+                            ) : null}
+                            {selectedQuickNode.properties.diagnosticsJson ? (
+                                <div>
+                                    <div style={{ marginBottom: 6, color: '#64748b', fontSize: 12 }}>失败或不完整说明</div>
+                                    <pre style={{ margin: 0, maxHeight: 300, overflow: 'auto', padding: 12, borderRadius: 8, background: '#fff7e6', color: '#92400e', whiteSpace: 'pre-wrap' }}>
+                                        {selectedQuickNode.properties.diagnosticsJson}
+                                    </pre>
+                                </div>
+                            ) : null}
+                        </div>
+                    ) : null}
                 </Drawer>
             </Layout>
         </div>

@@ -62,6 +62,11 @@ CLI / 并行 Worker
 - 表级：`source`、`target`、`dependency_type`、`neo4j_type`。
 - 字段级：`source_table`、`source_column`、`target_table`、`target_column`、`dependency_type`。
 - 证据：`statementUid`、`relationUid`、`sourceExpression`、`targetExpression`、`confidence`、`ambiguityCode`、`metadataPackHash`。
+- 质量：顶层 `quality.status` 明确区分 `EXACT`、`INFERRED`、`INCOMPLETE`、`FAILED`，同时返回诊断、关系计数、歧义和推断标记。
+
+文件级结果写入 `LineageAnalysis` 节点，解析失败且没有生成关系时也保留方言、错误和诊断；关系、`SqlStatement` 与 `LineageFact` 同步保存解析状态和置信度，前端不得把缺少事实的 SQL 展示为成功血缘。
+
+表和字段节点使用稳定 `objectUid` 唯一标识：优先以 metadata-pack 的 `dataSourceId` 作为命名空间，没有物理数据源上下文时使用仓库 ID；再组合规范化 qualifiedName 和字段名。`name`、`owner`、`tableName` 只用于展示和查询，不再作为跨数据源唯一键。
 
 Neo4j 关系类型包含 `DERIVES_TO`、`FILTERS`、`JOINS`、`GROUPS`、`ORDERS`、`DISTRIBUTES`、`CLUSTERS`、`CALLS`、`REFERENCES`、`CASE_WHEN`。未知类型不得静默降成直接数据流。
 

@@ -143,6 +143,9 @@ def run_report(output_path=None):
     t_tp_total, t_fp_total, t_fn_total = 0, 0, 0
     direct_tp_total, direct_fp_total, direct_fn_total = 0, 0, 0
     control_tp_total, control_fp_total, control_fn_total = 0, 0, 0
+    strict_direct_tp, strict_direct_fp, strict_direct_fn = 0, 0, 0
+    strict_direct_case_count = 0
+    strict_control_case_count = 0
 
     detail_sections = []
 
@@ -212,14 +215,23 @@ def run_report(output_path=None):
             direct_fp_total += len(cfp)
             direct_fn_total += len(cfn)
 
+            quality_gates = expected_data.get("quality_gates", {})
+            if "direct_f1" in quality_gates:
+                strict_direct_tp += len(ctp)
+                strict_direct_fp += len(cfp)
+                strict_direct_fn += len(cfn)
+                strict_direct_case_count += 1
+
             actual_control = actual_col - actual_fdd
             expected_control = expected_col - expected_fdd
             _, _, _, control_tp, control_fp, control_fn = calc_metrics(
                 actual_control, expected_control
             )
-            control_tp_total += len(control_tp)
-            control_fp_total += len(control_fp)
-            control_fn_total += len(control_fn)
+            if "control_precision" in quality_gates and "control_recall" in quality_gates:
+                control_tp_total += len(control_tp)
+                control_fp_total += len(control_fp)
+                control_fn_total += len(control_fn)
+                strict_control_case_count += 1
 
             detail.append(f"**字段级 (fdd)**: P={cp:.2%} R={cr:.2%} F1={cf1:.2%}")
             detail.append(f"")
@@ -270,6 +282,9 @@ def run_report(output_path=None):
     direct_p, direct_r, direct_f1 = aggregate_metrics(
         direct_tp_total, direct_fp_total, direct_fn_total
     )
+    strict_direct_p, strict_direct_r, strict_direct_f1 = aggregate_metrics(
+        strict_direct_tp, strict_direct_fp, strict_direct_fn
+    )
     control_p, control_r, control_f1 = aggregate_metrics(
         control_tp_total, control_fp_total, control_fn_total
     )
@@ -278,13 +293,19 @@ def run_report(output_path=None):
     lines.append("| 类型 | TP | FP | FN | Precision | Recall | F1 |")
     lines.append("|------|---:|---:|---:|----------:|-------:|---:|")
     lines.append(
-        f"| 直接流 fdd | {direct_tp_total} | {direct_fp_total} | {direct_fn_total} | "
+        f"| 严格标注直接流 fdd ({strict_direct_case_count} 用例) | {strict_direct_tp} | {strict_direct_fp} | {strict_direct_fn} | "
+        f"{strict_direct_p:.2%} | {strict_direct_r:.2%} | **{strict_direct_f1:.2%}** |"
+    )
+    lines.append(
+        f"| 旧语料严格集合差异 (诊断) | {direct_tp_total} | {direct_fp_total} | {direct_fn_total} | "
         f"{direct_p:.2%} | {direct_r:.2%} | **{direct_f1:.2%}** |"
     )
     lines.append(
-        f"| 控制流 fdr/join | {control_tp_total} | {control_fp_total} | {control_fn_total} | "
+        f"| 严格标注控制流 fdr/join ({strict_control_case_count} 用例) | {control_tp_total} | {control_fp_total} | {control_fn_total} | "
         f"{control_p:.2%} | {control_r:.2%} | **{control_f1:.2%}** |"
     )
+    lines.append("")
+    lines.append("> 旧存储过程语料中的 `*` 和表达式字段是部分标注，不具备完整负样本，故仅作为差异诊断；Precision/Recall 门禁只统计显式配置 `quality_gates` 的完整标注用例。")
     lines.append("")
 
     # 详情部分

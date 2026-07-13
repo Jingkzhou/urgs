@@ -5,12 +5,15 @@ import { LinkData, NodeData } from '../types';
 import { processLayoutTrace } from '../utils/lineageLayout';
 import { sameTableLoose } from '../utils/lineageGraphDensity';
 
-const TRACE_GRAPH_DEPTH = -1;
-const TRACE_GRAPH_LIMIT = 5000;
+const INITIAL_GRAPH_DEPTH = 2;
+const INITIAL_GRAPH_LIMIT = 400;
+const DETAIL_GRAPH_DEPTH = 4;
+const DETAIL_GRAPH_LIMIT = 1200;
 
 export const useLineageGraphLoader = (direction: LineageGraphDirection) => {
     const [selectedTable, setSelectedTable] = useState<string | null>(null);
     const [selectedQualifiedName, setSelectedQualifiedName] = useState<string | null>(null);
+    const [selectedObjectUid, setSelectedObjectUid] = useState<string | null>(null);
     const [selectedColumnName, setSelectedColumnName] = useState<string | null>(null);
     const [selectedField, setSelectedField] = useState<{ nodeId: string; colId: string } | null>(null);
     const [nodes, setNodes] = useState<NodeData[]>([]);
@@ -25,19 +28,27 @@ export const useLineageGraphLoader = (direction: LineageGraphDirection) => {
         processLayoutTrace(response.nodes, response.edges, tableName, qualifiedName || undefined)
     ), []);
 
-    const handleSelectTable = useCallback(async (tableName: string, qualifiedName?: string, targetColName?: string, directionOverride?: LineageGraphDirection) => {
+    const handleSelectTable = useCallback(async (
+        tableName: string,
+        qualifiedName?: string,
+        targetColName?: string,
+        directionOverride?: LineageGraphDirection,
+        objectUid?: string,
+    ) => {
         setGraphLoading(true);
         setSelectedTable(tableName);
         setSelectedQualifiedName(qualifiedName || tableName);
+        setSelectedObjectUid(objectUid || null);
         setSelectedColumnName(targetColName || null);
         try {
             const graphDirection = directionOverride || direction;
             const response = await getLineageGraph(tableName, targetColName, {
-                depth: TRACE_GRAPH_DEPTH,
+                depth: INITIAL_GRAPH_DEPTH,
                 qualifiedName,
                 direction: graphDirection,
-                limit: TRACE_GRAPH_LIMIT,
+                limit: INITIAL_GRAPH_LIMIT,
                 relationLevel: targetColName ? 'column' : 'table',
+                objectUid,
             });
 
             if (!response) {
@@ -89,11 +100,12 @@ export const useLineageGraphLoader = (direction: LineageGraphDirection) => {
         setListLoading(true);
         try {
             const response = await getLineageGraph(selectedTable, undefined, {
-                depth: TRACE_GRAPH_DEPTH,
+                depth: DETAIL_GRAPH_DEPTH,
                 qualifiedName: selectedQualifiedName || undefined,
                 direction,
-                limit: TRACE_GRAPH_LIMIT,
+                limit: DETAIL_GRAPH_LIMIT,
                 relationLevel: 'column',
+                objectUid: selectedObjectUid || undefined,
             });
             if (!response || !response.nodes || response.nodes.length === 0) {
                 setListNodes([]);
@@ -110,11 +122,12 @@ export const useLineageGraphLoader = (direction: LineageGraphDirection) => {
         } finally {
             setListLoading(false);
         }
-    }, [direction, layoutGraph, selectedQualifiedName, selectedTable]);
+    }, [direction, layoutGraph, selectedObjectUid, selectedQualifiedName, selectedTable]);
 
     return {
         selectedTable,
         selectedQualifiedName,
+        selectedObjectUid,
         selectedColumnName,
         selectedField,
         nodes,

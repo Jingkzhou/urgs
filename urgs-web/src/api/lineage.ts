@@ -5,6 +5,8 @@ export interface LineageSearchTableItem {
     tableName: string;
     qualifiedName: string;
     columns: string[];
+    objectUid?: string;
+    dataSourceId?: string | number;
 }
 
 export interface LineageSearchOwnerGroup {
@@ -22,6 +24,25 @@ export interface LineageSearchResponse {
     groupedList: LineageSearchOwnerGroup[];
 }
 
+export type LineageSearchNodeType = 'TABLE' | 'COLUMN' | 'SQL_TASK' | 'ANALYSIS';
+
+export interface LineageSearchNodeItem {
+    id: string;
+    nodeType: LineageSearchNodeType;
+    displayName: string;
+    qualifiedName: string;
+    ownerName: string;
+    labels: string[];
+    properties: Record<string, any>;
+}
+
+export interface LineageSearchNodeResponse {
+    total: number;
+    page: number;
+    size: number;
+    list: LineageSearchNodeItem[];
+}
+
 export type LineageGraphDirection = 'upstream' | 'downstream' | 'both';
 export type LineageGraphRelationLevel = 'table' | 'column';
 
@@ -31,6 +52,7 @@ export interface LineageGraphOptions {
     direction?: LineageGraphDirection;
     limit?: number;
     relationLevel?: LineageGraphRelationLevel;
+    objectUid?: string;
 }
 
 export interface LineageGraphResponse {
@@ -69,6 +91,9 @@ export const getLineageGraph = (
     if (options.qualifiedName) {
         params.qualifiedName = options.qualifiedName;
     }
+    if (options.objectUid) {
+        params.objectUid = options.objectUid;
+    }
     if (columnName) {
         params.columnName = columnName;
     }
@@ -88,7 +113,8 @@ export const getImpactAnalysis = (
     columnName: string,
     version?: string,
     depth: number = 5,
-    types?: string[]
+    types?: string[],
+    objectUid?: string,
 ) => {
     const params: Record<string, string> = {
         tableName,
@@ -97,6 +123,7 @@ export const getImpactAnalysis = (
     };
     if (version) params.version = version;
     if (types && types.length > 0) params.types = types.join(',');
+    if (objectUid) params.objectUid = objectUid;
 
     return get('/api/metadata/lineage/impact', params);
 };
@@ -114,7 +141,8 @@ export const getLineageTrace = (
     columnName: string,
     direction: 'upstream' | 'downstream' = 'upstream',
     version?: string,
-    depth: number = 5
+    depth: number = 5,
+    objectUid?: string,
 ) => {
     const params: Record<string, string> = {
         tableName,
@@ -123,6 +151,7 @@ export const getLineageTrace = (
         depth: String(depth),
     };
     if (version) params.version = version;
+    if (objectUid) params.objectUid = objectUid;
 
     return get('/api/metadata/lineage/trace', params);
 };
@@ -153,6 +182,29 @@ export const searchTables = (keyword: string, page: number = 1, size: number = 2
         ...params
     }) as Promise<LineageSearchResponse>;
 };
+
+export const searchLineageNodes = (
+    keyword: string,
+    page: number = 1,
+    size: number = 20,
+    nodeTypes?: LineageSearchNodeType[],
+    status?: string,
+) => {
+    const params: Record<string, string> = {
+        keyword,
+        page: String(page),
+        size: String(size),
+    };
+    if (nodeTypes?.length) params.nodeTypes = nodeTypes.join(',');
+    if (status) params.status = status;
+    return get('/api/metadata/lineage/search/nodes', params) as Promise<LineageSearchNodeResponse>;
+};
+
+export const getLineageNodeDetails = (elementId: string) =>
+    get(`/api/metadata/lineage/nodes/${encodeURIComponent(elementId)}`);
+
+export const getLineageRelationDetails = (elementId: string) =>
+    get(`/api/metadata/lineage/relations/${encodeURIComponent(elementId)}`);
 
 
 /**

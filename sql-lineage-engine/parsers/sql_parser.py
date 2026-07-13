@@ -22,6 +22,7 @@ class LineageParser:
         self.indirect_parser = IndirectFlowParser(
             self.dialect, resolver=self.resolver
         )
+        self._analysis_diagnostics = []
 
     def _effective_dialect_profile(self, sql: str):
         """Resolve one profile per request without overriding an explicit dialect."""
@@ -37,6 +38,7 @@ class LineageParser:
 
     def analyze(self, sql: str, source_file: str = None) -> Dict[str, Any]:
         """Return the complete, stable analysis contract used by CLI and workers."""
+        self._analysis_diagnostics = []
         effective_profile, detected = self._effective_dialect_profile(sql)
         result = self.parse(sql, source_file=source_file)
         result["columnDependencies"] = self.get_column_lineage(
@@ -49,7 +51,102 @@ class LineageParser:
             "gsp": effective_profile.gsp_dialect,
             "detected": detected,
         }
+        self._validate_unresolved_sql(sql, effective_profile, result)
+        quality = self._build_analysis_quality(sql, result)
+        result["quality"] = quality
+        for item in [
+            *result.get("relationships", []),
+            *result.get("columnDependencies", []),
+        ]:
+            item.setdefault("parseStatus", quality["status"])
+            item.setdefault("parseConfidence", quality["confidence"])
+            item.setdefault("isInferred", quality["inferred"])
+            item.setdefault("hasAmbiguity", quality["ambiguous"])
         return result
+
+    def _validate_unresolved_sql(self, sql: str, profile, result: Dict[str, Any]):
+        if not (sql or "").strip():
+            return
+        if result.get("relationships") or result.get("columnDependencies"):
+            return
+        try:
+            import sqlglot
+
+            sqlglot.parse(sql, read=profile.sqlglot_dialect)
+        except Exception as exc:
+            self._record_diagnostic("syntax_validation", str(exc), code="SYNTAX_ERROR")
+
+    def _record_diagnostic(self, stage: str, message: str, statement_index=None,
+                           code: str = "PARSER_ERROR", severity: str = "ERROR"):
+        diagnostic = {
+            "stage": stage,
+            "code": code,
+            "severity": severity,
+            "message": str(message),
+        }
+        if statement_index is not None:
+            diagnostic["statementIndex"] = statement_index
+        if diagnostic not in self._analysis_diagnostics:
+            self._analysis_diagnostics.append(diagnostic)
+
+    def _build_analysis_quality(self, sql: str, result: Dict[str, Any]) -> Dict[str, Any]:
+        relationships = result.get("relationships", [])
+        column_dependencies = result.get("columnDependencies", [])
+        facts = [*relationships, *column_dependencies]
+        ambiguity_codes = sorted({
+            str(item.get("ambiguityCode") or item.get("ambiguity_code"))
+            for item in facts
+            if item.get("ambiguityCode") or item.get("ambiguity_code")
+        })
+        inferred = any(
+            "fallback" in str(item.get("lineage_origin") or item.get("lineageOrigin") or "").lower()
+            or "fallback" in str(item.get("relation_level") or item.get("relationLevel") or "").lower()
+            or item.get("isInferred") is True
+            for item in facts
+        )
+        diagnostics = list(self._analysis_diagnostics)
+        if not (sql or "").strip():
+            self._record_diagnostic("input", "SQL text is empty", code="EMPTY_SQL")
+            diagnostics = list(self._analysis_diagnostics)
+        elif not facts:
+            self._record_diagnostic(
+                "quality_gate",
+                "No verifiable table-level or column-level lineage was produced",
+                code="NO_LINEAGE_FACTS",
+                severity="WARNING",
+            )
+            diagnostics = list(self._analysis_diagnostics)
+
+        has_error = any(item.get("severity") == "ERROR" for item in diagnostics)
+        if not facts and has_error:
+            status = "FAILED"
+        elif not facts or has_error or ambiguity_codes:
+            status = "INCOMPLETE"
+        elif inferred:
+            status = "INFERRED"
+        else:
+            status = "EXACT"
+
+        confidence_values = {
+            str(item.get("confidence") or "MEDIUM").upper() for item in facts
+        }
+        if status == "FAILED" or "LOW" in confidence_values:
+            confidence = "LOW"
+        elif status in {"INCOMPLETE", "INFERRED"} or "MEDIUM" in confidence_values:
+            confidence = "MEDIUM"
+        else:
+            confidence = "HIGH"
+
+        return {
+            "status": status,
+            "confidence": confidence,
+            "inferred": inferred,
+            "ambiguous": bool(ambiguity_codes),
+            "ambiguityCodes": ambiguity_codes,
+            "diagnostics": diagnostics,
+            "tableRelationCount": len(relationships),
+            "columnRelationCount": len(column_dependencies),
+        }
 
     def _statement_meta(self, sql: str, source_file: str, statement_index: int) -> Dict[str, Any]:
         stmt_hash = statement_hash(sql)
@@ -275,6 +372,12 @@ class LineageParser:
                     result = self.parser.parse(
                         final_stmt, current_profile.gsp_dialect, source_file
                     )
+                    if result.get("error"):
+                        self._record_diagnostic(
+                            "gsp_table",
+                            result["error"],
+                            statement_index=statement_index - 1,
+                        )
 
                     # Check if GSP failed to produce lineage for a huge statement
                     if is_huge and not result.get("targets"):
@@ -406,8 +509,7 @@ class LineageParser:
                 sources.add(dep_source)
                 targets.add(dep_target)
         except Exception as e:
-            import logging
-
+            self._record_diagnostic("sqlglot_table", str(e))
             logging.warning(f"Indirect flow parsing failed: {e}")
 
         # ===== 2.5. CTE Resolution - Resolve CTE aliases to physical tables =====
@@ -612,6 +714,11 @@ class LineageParser:
                             self._attach_statement_meta(new_dep, stmt_meta, overwrite=True)
                             dependencies.append(new_dep)
                     except Exception as e:
+                        self._record_diagnostic(
+                            "sqlglot_column",
+                            str(e),
+                            statement_index=statement_index - 1,
+                        )
                         logging.warning(
                             "SQLGlot column parsing failed for statement %s (%s): %s",
                             statement_index - 1,
@@ -623,6 +730,12 @@ class LineageParser:
                     result = self.parser.parse(
                         final_stmt, current_profile.gsp_dialect, source_file
                     )
+                    if result.get("error"):
+                        self._record_diagnostic(
+                            "gsp_column",
+                            result["error"],
+                            statement_index=statement_index - 1,
+                        )
                     gsp_json = result.get("gsp_json")
                     if not gsp_json:
                         continue

@@ -87,99 +87,219 @@ public class LineageService {
      * @return Map containing owner summaries and paginated table list
      */
     public Map<String, Object> searchTables(String keyword, int page, int size, String ownerName) {
-        int skip = Math.max(0, (page - 1) * size);
+        int queryPage = Math.max(1, page);
+        int querySize = Math.min(Math.max(1, size), 100);
+        int skip = (queryPage - 1) * querySize;
+        String normalizedKeyword = keyword == null ? "" : keyword.trim().toUpperCase(Locale.ROOT);
+        String normalizedOwner = ownerName == null ? "" : ownerName.trim().toUpperCase(Locale.ROOT);
+        String ownerExpression = "toUpper(coalesce(n.owner, coalesce(n.schema, coalesce(n.user, coalesce(n.default_user, 'DEFAULT')))))";
+        String keywordFilter = "($keyword = '' OR "
+                + "toUpper(coalesce(n.name, '')) CONTAINS $keyword OR "
+                + "toUpper(coalesce(n.qualifiedName, '')) CONTAINS $keyword OR "
+                + ownerExpression + " CONTAINS $keyword OR EXISTS { "
+                + "MATCH (matchedColumn:Column)-[:BELONGS_TO]->(n) "
+                + "WHERE toUpper(coalesce(matchedColumn.name, '')) CONTAINS $keyword })";
+        String ownerFilter = "($ownerName = '' OR " + ownerExpression + " = $ownerName)";
+        Map<String, Object> queryParams = Map.of(
+                "keyword", normalizedKeyword,
+                "ownerName", normalizedOwner,
+                "skip", skip,
+                "size", querySize);
 
-        // 预处理关键词为大写，以匹配索引（数据导入时已统一转大写）
-        String normalizedKeyword = (keyword != null) ? keyword.toUpperCase() : "";
-        String normalizedOwner = (ownerName != null) ? ownerName.trim().toUpperCase() : "";
-
-        String matchClause = "MATCH (n:Table) " +
-                "WHERE ($keyword = '' " +
-                "OR toUpper(coalesce(n.name, '')) CONTAINS $keyword " +
-                "OR toUpper(coalesce(n.qualifiedName, '')) CONTAINS $keyword " +
-                "OR toUpper(coalesce(n.owner, coalesce(n.schema, coalesce(n.user, coalesce(n.default_user, ''))))) CONTAINS $keyword) ";
-
-        String dataQuery = matchClause +
-                "OPTIONAL MATCH (c:Column)-[:BELONGS_TO]->(n) " +
-                "RETURN properties(n) AS tableProps, " +
-                "coalesce(n.owner, coalesce(n.schema, coalesce(n.user, coalesce(n.default_user, '')))) AS ownerSort, " +
-                "n.name AS tableSort, " +
-                "collect(c.name) AS columns " +
-                "ORDER BY ownerSort, tableSort";
+        String ownerSummaryQuery = "MATCH (n:Table) WHERE " + keywordFilter + " "
+                + "WITH " + ownerExpression + " AS ownerName, count(DISTINCT n) AS tableCount "
+                + "RETURN ownerName, tableCount ORDER BY ownerName";
+        String countQuery = "MATCH (n:Table) WHERE " + keywordFilter + " AND " + ownerFilter + " "
+                + "RETURN count(DISTINCT n) AS total";
+        String dataQuery = "MATCH (n:Table) WHERE " + keywordFilter + " AND " + ownerFilter + " "
+                + "WITH n, " + ownerExpression + " AS ownerSort, toUpper(coalesce(n.name, '')) AS tableSort "
+                + "ORDER BY ownerSort, tableSort SKIP $skip LIMIT $size "
+                + "OPTIONAL MATCH (c:Column)-[:BELONGS_TO]->(n) "
+                + "RETURN properties(n) AS tableProps, ownerSort, tableSort, collect(DISTINCT c.name) AS columns "
+                + "ORDER BY ownerSort, tableSort";
 
         List<Map<String, Object>> list = new ArrayList<>();
-        Map<String, Map<String, Object>> groupedOwners = new LinkedHashMap<>();
-        List<Map<String, Object>> selectedOwnerItems = new ArrayList<>();
-        long total = 0;
-        long selectedOwnerTotal = 0;
-
-        Map<String, Object> queryParams = new HashMap<>();
-        queryParams.put("keyword", normalizedKeyword);
-
+        List<Map<String, Object>> groupedOwners = new ArrayList<>();
+        long total;
+        long allOwnerTotal = 0;
         try (Session session = driver.session()) {
-            Result result = session.run(dataQuery, queryParams);
-            while (result.hasNext()) {
-                var record = result.next();
+            Result ownerResult = session.run(ownerSummaryQuery, queryParams);
+            while (ownerResult.hasNext()) {
+                var record = ownerResult.next();
+                long tableCount = record.get("tableCount").asLong();
+                allOwnerTotal += tableCount;
+                Map<String, Object> group = new LinkedHashMap<>();
+                group.put("ownerName", record.get("ownerName").asString("DEFAULT"));
+                group.put("tableCount", tableCount);
+                group.put("tables", Collections.emptyList());
+                groupedOwners.add(group);
+            }
+            total = session.run(countQuery, queryParams).single().get("total").asLong();
+            Result dataResult = session.run(dataQuery, queryParams);
+            while (dataResult.hasNext()) {
+                var record = dataResult.next();
                 Map<String, Object> tableProps = record.get("tableProps").asMap();
                 String rawName = toSafeUpperString(tableProps.get("name"));
                 String itemOwnerName = resolveOwnerName(tableProps, rawName);
-                String tableName = resolveTableName(tableProps, rawName);
-
+                String itemTableName = resolveTableName(tableProps, rawName);
                 Map<String, Object> item = new LinkedHashMap<>();
                 item.put("ownerName", itemOwnerName);
-                item.put("tableName", tableName);
-                item.put("qualifiedName", buildQualifiedName(itemOwnerName, tableName));
-                item.put("columns", record.get("columns").asList(v -> v.isNull() ? null : v.asString()).stream()
-                        .filter(Objects::nonNull)
-                        .sorted()
-                        .toList());
-                total++;
-
-                Map<String, Object> ownerGroup = groupedOwners.computeIfAbsent(itemOwnerName, key -> {
-                    Map<String, Object> group = new LinkedHashMap<>();
-                    group.put("ownerName", key);
-                    group.put("tableCount", 0);
-                    group.put("tables", new ArrayList<Map<String, Object>>());
-                    return group;
-                });
-                @SuppressWarnings("unchecked")
-                List<Map<String, Object>> tables = (List<Map<String, Object>>) ownerGroup.get("tables");
-                ownerGroup.put("tableCount", ((Number) ownerGroup.get("tableCount")).longValue() + 1);
-
-                if (normalizedOwner.isEmpty() || normalizedOwner.equals(itemOwnerName)) {
-                    selectedOwnerItems.add(item);
-                    tables.add(item);
-                }
+                item.put("tableName", itemTableName);
+                item.put("qualifiedName", buildQualifiedName(itemOwnerName, itemTableName));
+                item.put("objectUid", tableProps.get("objectUid"));
+                item.put("dataSourceId", tableProps.get("dataSourceId"));
+                item.put("columns", record.get("columns").asList(value -> value.isNull() ? null : value.asString()).stream()
+                        .filter(Objects::nonNull).sorted().toList());
+                list.add(item);
             }
         }
-
-        selectedOwnerTotal = selectedOwnerItems.size();
-        int fromIndex = Math.min(skip, selectedOwnerItems.size());
-        int toIndex = Math.min(fromIndex + size, selectedOwnerItems.size());
-        list.addAll(selectedOwnerItems.subList(fromIndex, toIndex));
-
         if (!normalizedOwner.isEmpty()) {
-            groupedOwners.values().forEach(group -> {
-                if (!normalizedOwner.equals(group.get("ownerName"))) {
-                    group.put("tables", new ArrayList<Map<String, Object>>());
-                } else {
-                    @SuppressWarnings("unchecked")
-                    List<Map<String, Object>> ownerTables = (List<Map<String, Object>>) group.get("tables");
-                    group.put("tables", ownerTables.subList(fromIndex, toIndex));
-                }
-            });
-        } else {
-            groupedOwners.values().forEach(group -> group.put("tables", new ArrayList<Map<String, Object>>()));
+            groupedOwners.stream()
+                    .filter(group -> normalizedOwner.equals(group.get("ownerName")))
+                    .findFirst()
+                    .ifPresent(group -> group.put("tables", list));
         }
 
-        Map<String, Object> response = new HashMap<>();
-        response.put("total", total);
-        response.put("selectedOwnerTotal", selectedOwnerTotal);
+        Map<String, Object> response = new LinkedHashMap<>();
+        response.put("total", allOwnerTotal);
+        response.put("selectedOwnerTotal", total);
         response.put("list", list);
-        response.put("groupedList", new ArrayList<>(groupedOwners.values()));
+        response.put("groupedList", groupedOwners);
         response.put("totalOwners", groupedOwners.size());
         response.put("selectedOwner", normalizedOwner);
+        response.put("page", queryPage);
+        response.put("size", querySize);
         return response;
+    }
+
+    public Map<String, Object> searchNodes(String keyword, int page, int size,
+            List<String> nodeTypes, String status) {
+        int queryPage = Math.max(1, page);
+        int querySize = Math.min(Math.max(1, size), 100);
+        List<String> normalizedTypes = normalizeNodeTypes(nodeTypes);
+        Map<String, Object> params = Map.of(
+                "keyword", keyword == null ? "" : keyword.trim().toUpperCase(Locale.ROOT),
+                "status", status == null ? "" : status.trim().toUpperCase(Locale.ROOT),
+                "types", normalizedTypes,
+                "skip", (queryPage - 1) * querySize,
+                "size", querySize);
+        String unionQuery = buildNodeSearchUnion();
+        String filteredQuery = "CALL { " + unionQuery + " } "
+                + "WITH n, nodeType, displayName, qualifiedName, ownerName "
+                + "WHERE ($status = '' OR toUpper(coalesce(n.status, coalesce(n.parseStatus, ''))) = $status) ";
+        String countQuery = filteredQuery + "RETURN count(*) AS total";
+        String dataQuery = filteredQuery
+                + "RETURN elementId(n) AS id, nodeType, displayName, qualifiedName, ownerName, "
+                + "labels(n) AS labels, properties(n) AS properties "
+                + "ORDER BY nodeType, displayName SKIP $skip LIMIT $size";
+
+        List<Map<String, Object>> items = new ArrayList<>();
+        long total;
+        try (Session session = driver.session()) {
+            total = session.run(countQuery, params).single().get("total").asLong();
+            Result result = session.run(dataQuery, params);
+            while (result.hasNext()) {
+                var record = result.next();
+                Map<String, Object> item = new LinkedHashMap<>();
+                item.put("id", record.get("id").asString());
+                item.put("nodeType", record.get("nodeType").asString());
+                item.put("displayName", record.get("displayName").asString(""));
+                item.put("qualifiedName", record.get("qualifiedName").asString(""));
+                item.put("ownerName", record.get("ownerName").asString(""));
+                item.put("labels", record.get("labels").asList(value -> value.asString()));
+                item.put("properties", record.get("properties").asMap());
+                items.add(item);
+            }
+        }
+        return Map.of(
+                "total", total,
+                "page", queryPage,
+                "size", querySize,
+                "list", items);
+    }
+
+    public Map<String, Object> getNodeDetails(String elementId) {
+        String relationTypes = String.join("|", ALL_LINEAGE_RELATION_TYPES);
+        String query = "MATCH (n) WHERE elementId(n) = $elementId "
+                + "OPTIONAL MATCH (n)-[out:" + relationTypes + "]->() "
+                + "WITH n, count(DISTINCT out) AS downstreamCount "
+                + "OPTIONAL MATCH ()-[incoming:" + relationTypes + "]->(n) "
+                + "RETURN elementId(n) AS id, labels(n) AS labels, properties(n) AS properties, "
+                + "downstreamCount, count(DISTINCT incoming) AS upstreamCount";
+        try (Session session = driver.session()) {
+            Result result = session.run(query, Map.of("elementId", elementId));
+            if (!result.hasNext()) {
+                return Collections.emptyMap();
+            }
+            var record = result.next();
+            return Map.of(
+                    "id", record.get("id").asString(),
+                    "labels", record.get("labels").asList(value -> value.asString()),
+                    "properties", record.get("properties").asMap(),
+                    "upstreamCount", record.get("upstreamCount").asLong(),
+                    "downstreamCount", record.get("downstreamCount").asLong());
+        }
+    }
+
+    public Map<String, Object> getRelationDetails(String elementId) {
+        String query = "MATCH (source)-[r]->(target) WHERE elementId(r) = $elementId "
+                + "OPTIONAL MATCH (fact:LineageFact {relationUid: r.relationUid})-[:IN_STATEMENT]->(stmt:SqlStatement) "
+                + "RETURN elementId(r) AS id, type(r) AS type, properties(r) AS properties, "
+                + "elementId(source) AS sourceId, properties(source) AS sourceProperties, "
+                + "elementId(target) AS targetId, properties(target) AS targetProperties, "
+                + "properties(fact) AS fact, properties(stmt) AS statement LIMIT 1";
+        try (Session session = driver.session()) {
+            Result result = session.run(query, Map.of("elementId", elementId));
+            if (!result.hasNext()) {
+                return Collections.emptyMap();
+            }
+            var record = result.next();
+            Map<String, Object> details = new LinkedHashMap<>();
+            details.put("id", record.get("id").asString());
+            details.put("type", record.get("type").asString());
+            details.put("properties", record.get("properties").asMap());
+            details.put("sourceId", record.get("sourceId").asString());
+            details.put("sourceProperties", record.get("sourceProperties").asMap());
+            details.put("targetId", record.get("targetId").asString());
+            details.put("targetProperties", record.get("targetProperties").asMap());
+            details.put("fact", record.get("fact").isNull() ? Collections.emptyMap() : record.get("fact").asMap());
+            details.put("statement", record.get("statement").isNull() ? Collections.emptyMap() : record.get("statement").asMap());
+            return details;
+        }
+    }
+
+    private List<String> normalizeNodeTypes(List<String> nodeTypes) {
+        Set<String> allowed = Set.of("TABLE", "COLUMN", "SQL_TASK", "ANALYSIS");
+        if (nodeTypes == null || nodeTypes.isEmpty()) {
+            return new ArrayList<>(allowed);
+        }
+        List<String> normalized = nodeTypes.stream()
+                .filter(Objects::nonNull)
+                .map(value -> value.trim().toUpperCase(Locale.ROOT))
+                .filter(allowed::contains)
+                .distinct()
+                .toList();
+        return normalized.isEmpty() ? new ArrayList<>(allowed) : normalized;
+    }
+
+    private String buildNodeSearchUnion() {
+        return "MATCH (n:Table) WHERE 'TABLE' IN $types AND ($keyword = '' OR "
+                + "toUpper(coalesce(n.name, '')) CONTAINS $keyword OR toUpper(coalesce(n.qualifiedName, '')) CONTAINS $keyword) "
+                + "RETURN n, 'TABLE' AS nodeType, coalesce(n.name, '') AS displayName, "
+                + "coalesce(n.qualifiedName, n.name, '') AS qualifiedName, coalesce(n.owner, n.schema, '') AS ownerName "
+                + "UNION ALL MATCH (n:Column) WHERE 'COLUMN' IN $types AND ($keyword = '' OR "
+                + "toUpper(coalesce(n.name, '')) CONTAINS $keyword OR toUpper(coalesce(n.table, '')) CONTAINS $keyword) "
+                + "RETURN n, 'COLUMN' AS nodeType, coalesce(n.name, '') AS displayName, "
+                + "coalesce(n.table, '') + '.' + coalesce(n.name, '') AS qualifiedName, '' AS ownerName "
+                + "UNION ALL MATCH (n:SqlStatement) WHERE 'SQL_TASK' IN $types AND ($keyword = '' OR "
+                + "toUpper(coalesce(n.sqlText, '')) CONTAINS $keyword OR "
+                + "any(file IN coalesce(n.sourceFiles, []) WHERE toUpper(file) CONTAINS $keyword)) "
+                + "RETURN n, 'SQL_TASK' AS nodeType, coalesce(n.sourceFiles[0], n.statementUid, '') AS displayName, "
+                + "coalesce(n.statementUid, '') AS qualifiedName, '' AS ownerName "
+                + "UNION ALL MATCH (n:LineageAnalysis) WHERE 'ANALYSIS' IN $types AND ($keyword = '' OR "
+                + "toUpper(coalesce(n.sourceFile, '')) CONTAINS $keyword OR toUpper(coalesce(n.error, '')) CONTAINS $keyword) "
+                + "RETURN n, 'ANALYSIS' AS nodeType, coalesce(n.sourceFile, n.analysisUid, '') AS displayName, "
+                + "coalesce(n.analysisUid, '') AS qualifiedName, '' AS ownerName";
     }
 
     /**
@@ -204,6 +324,11 @@ public class LineageService {
 
     public Map<String, Object> getGraphData(String tableName, String qualifiedName, String columnName, int depth,
             String direction, int limit, String relationLevel) {
+        return getGraphData(tableName, qualifiedName, null, columnName, depth, direction, limit, relationLevel);
+    }
+
+    public Map<String, Object> getGraphData(String tableName, String qualifiedName, String objectUid,
+            String columnName, int depth, String direction, int limit, String relationLevel) {
         String baseStart;
         Map<String, Object> params = new HashMap<>();
 
@@ -226,6 +351,7 @@ public class LineageService {
         params.put("tableName", resolvedTableName);
         params.put("ownerName", resolvedOwnerName);
         params.put("qualifiedName", buildQualifiedName(resolvedOwnerName, resolvedTableName));
+        params.put("objectUid", objectUid == null ? "" : objectUid.trim());
 
         int queryDepth = normalizeDepth(depth);
         int queryLimit = normalizeLimit(limit);
@@ -454,9 +580,19 @@ public class LineageService {
      * @return 路径图数据
      */
     public Map<String, Object> getImpactAnalysis(String tableName, String columnName,
-            String version, int depth, List<String> types) {
-        List<String> relationTypes = (types != null && !types.isEmpty()) ? types : ALL_LINEAGE_RELATION_TYPES;
+            String objectUid, String version, int depth, int limit, List<String> types) {
+        List<String> relationTypes = types == null ? Collections.emptyList() : types.stream()
+                .filter(Objects::nonNull)
+                .map(value -> value.trim().toUpperCase(Locale.ROOT))
+                .filter(ALL_LINEAGE_RELATION_TYPES::contains)
+                .distinct()
+                .toList();
+        if (relationTypes.isEmpty()) {
+            relationTypes = ALL_LINEAGE_RELATION_TYPES;
+        }
         String relTypesStr = String.join("|", relationTypes);
+        int queryDepth = normalizeDepth(depth);
+        int queryLimit = normalizeLimit(limit);
 
         // 预处理表名和列名为大写，以匹配索引
         String normalizedTableName = (tableName != null) ? tableName.toUpperCase() : "";
@@ -465,6 +601,8 @@ public class LineageService {
         Map<String, Object> params = new HashMap<>();
         params.put("tableName", normalizedTableName);
         params.put("columnName", normalizedColumnName);
+        params.put("objectUid", objectUid == null ? "" : objectUid.trim());
+        params.put("pathLimit", queryLimit + 1);
 
         // 构建版本过滤条件
         String versionFilter = "";
@@ -473,12 +611,12 @@ public class LineageService {
             params.put("version", version);
         }
 
-        String query = String.format(
-                "MATCH path = (c:Column {name: $columnName, table: $tableName})-[:%s*1..%d]->(downstream:Column) " +
-                        "%s RETURN path",
-                relTypesStr, depth, versionFilter);
+        String query = buildColumnStartClause(objectUid) + String.format(
+                "MATCH path = (c)-[:%s*1..%d]->(downstream:Column) " +
+                        "%s RETURN path LIMIT $pathLimit",
+                relTypesStr, queryDepth, versionFilter);
 
-        return executePathQuery(query, params);
+        return executePathQuery(query, params, queryLimit);
     }
 
     /**
@@ -492,7 +630,7 @@ public class LineageService {
      * @return 路径图数据
      */
     public Map<String, Object> getLineageTrace(String tableName, String columnName,
-            String direction, String version, int depth) {
+            String objectUid, String direction, String version, int depth, int limit) {
         // 预处理表名和列名为大写，以匹配索引
         String normalizedTableName = (tableName != null) ? tableName.toUpperCase() : "";
         String normalizedColumnName = (columnName != null) ? columnName.toUpperCase() : "";
@@ -500,6 +638,10 @@ public class LineageService {
         Map<String, Object> params = new HashMap<>();
         params.put("tableName", normalizedTableName);
         params.put("columnName", normalizedColumnName);
+        params.put("objectUid", objectUid == null ? "" : objectUid.trim());
+        int queryDepth = normalizeDepth(depth);
+        int queryLimit = normalizeLimit(limit);
+        params.put("pathLimit", queryLimit + 1);
 
         String versionFilter = "";
         if (version != null && !version.isEmpty()) {
@@ -508,22 +650,31 @@ public class LineageService {
         }
 
         String query;
+        String startClause = buildColumnStartClause(objectUid);
         if ("downstream".equals(direction)) {
-            query = String.format(
-                    "MATCH path = (c:Column {name: $columnName, table: $tableName})-[:DERIVES_TO*1..%d]->(downstream:Column) "
+            query = startClause + String.format(
+                    "MATCH path = (c)-[:DERIVES_TO*1..%d]->(downstream:Column) "
                             +
-                            "%s RETURN path",
-                    depth, versionFilter);
+                            "%s RETURN path LIMIT $pathLimit",
+                    queryDepth, versionFilter);
         } else {
             // 上游 (默认)
-            query = String.format(
-                    "MATCH path = (upstream:Column)-[:DERIVES_TO*1..%d]->(c:Column {name: $columnName, table: $tableName}) "
+            query = startClause + String.format(
+                    "MATCH path = (upstream:Column)-[:DERIVES_TO*1..%d]->(c) "
                             +
-                            "%s RETURN path",
-                    depth, versionFilter);
+                            "%s RETURN path LIMIT $pathLimit",
+                    queryDepth, versionFilter);
         }
 
-        return executePathQuery(query, params);
+        return executePathQuery(query, params, queryLimit);
+    }
+
+    private String buildColumnStartClause(String objectUid) {
+        if (objectUid != null && !objectUid.isBlank()) {
+            return "MATCH (centerTable:Table {objectUid: $objectUid})<-[:BELONGS_TO]-(c:Column) "
+                    + "WHERE toUpper(coalesce(c.name, '')) = $columnName WITH c ";
+        }
+        return "MATCH (c:Column {name: $columnName, table: $tableName}) ";
     }
 
     /**
@@ -555,16 +706,21 @@ public class LineageService {
     /**
      * 执行路径查询并返回图数据
      */
-    private Map<String, Object> executePathQuery(String query, Map<String, Object> params) {
+    private Map<String, Object> executePathQuery(String query, Map<String, Object> params, int limit) {
         Map<String, Object> graph = new HashMap<>();
         List<Map<String, Object>> nodes = new ArrayList<>();
         List<Map<String, Object>> edges = new ArrayList<>();
         Set<String> seenNodes = new HashSet<>();
         Set<String> seenEdges = new HashSet<>();
+        boolean truncated = false;
 
         try (Session session = driver.session()) {
             Result result = session.run(query, params);
             while (result.hasNext()) {
+                if (seenEdges.size() >= limit) {
+                    truncated = true;
+                    break;
+                }
                 org.neo4j.driver.types.Path path = result.next().get("path").asPath();
                 path.nodes().forEach(node -> addNode(node, nodes, seenNodes));
                 path.relationships().forEach(rel -> addEdge(rel, edges, seenEdges));
@@ -573,6 +729,8 @@ public class LineageService {
 
         graph.put("nodes", nodes);
         graph.put("edges", edges);
+        graph.put("truncated", truncated);
+        graph.put("limit", limit);
         return graph;
     }
 
@@ -643,7 +801,7 @@ public class LineageService {
         if (depth == -1) {
             return 30;
         }
-        return Math.max(1, depth);
+        return Math.min(30, Math.max(1, depth));
     }
 
     private int normalizeLimit(int limit) {
@@ -672,13 +830,14 @@ public class LineageService {
 
     private String buildTableMatchClause(String alias) {
         return "MATCH (" + alias + ":Table) " +
-                "WHERE (($qualifiedName <> '' AND (" +
+                "WHERE (($objectUid <> '' AND coalesce(" + alias + ".objectUid, '') = $objectUid) " +
+                "OR ($objectUid = '' AND (( $qualifiedName <> '' AND (" +
                 "toUpper(coalesce(" + alias + ".qualifiedName, '')) = $qualifiedName " +
                 "OR toUpper(coalesce(" + alias + ".name, '')) = $qualifiedName " +
                 "OR (toUpper(coalesce(" + alias + ".owner, coalesce(" + alias + ".schema, coalesce(" + alias + ".user, coalesce(" + alias + ".default_user, ''))))) = $ownerName " +
                 "AND toUpper(coalesce(" + alias + ".name, '')) = $tableName)" +
                 ")) " +
-                "OR ($qualifiedName = '' AND toUpper(coalesce(" + alias + ".name, '')) = $tableName)) ";
+                "OR ($qualifiedName = '' AND toUpper(coalesce(" + alias + ".name, '')) = $tableName)))) ";
     }
 
     private String resolveOwnerName(Map<String, Object> props, String rawName) {
