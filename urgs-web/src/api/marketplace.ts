@@ -356,6 +356,16 @@ export interface WorkStatisticsAttentionItem {
     riskNote?: string;
 }
 
+export interface WorkCalendarTask {
+    workId: string;
+    workTitle: string;
+    taskId: string;
+    taskTitle: string;
+    assigneeId?: string;
+    status: string;
+    deadline: string;
+}
+
 export interface WorkStatistics {
     startDate: string;
     endDate: string;
@@ -448,6 +458,8 @@ export const listWorks = (params: {
     get('/api/marketplace/works', params);
 export const getWorkStatistics = (params: { startDate: string; endDate: string }) =>
     get<WorkStatistics>('/api/marketplace/works/statistics', params);
+export const getIncompleteWorkCalendarTasks = (params: { startDate: string; endDate: string }) =>
+    get<WorkCalendarTask[]>('/api/marketplace/works/calendar-tasks', params);
 export const getWorkDetail = (id: string) => get<Work>(`/api/marketplace/works/${id}`);
 export const getWorkTasks = (workId: string) => get(`/api/marketplace/tasks/work/${workId}`);
 export const addTaskToWork = (workId: string, data: WorkTaskCreateDTO) => post(`/api/marketplace/tasks/work/${workId}`, data);

@@ -163,6 +163,23 @@ public class WorkController {
         return workStatisticsService.getStatistics(publisherId, startDate, endDate);
     }
 
+    @GetMapping("/calendar-tasks")
+    public List<WorkStatisticsDTO.CalendarTaskItem> getIncompleteCalendarTasks(
+            @RequestHeader(value = "X-User-Id", required = false) String headerUserId,
+            @RequestAttribute(value = "userId", required = false) Long attrUserId,
+            @RequestParam @DateTimeFormat(iso = DateTimeFormat.ISO.DATE) LocalDate startDate,
+            @RequestParam @DateTimeFormat(iso = DateTimeFormat.ISO.DATE) LocalDate endDate) {
+        if (startDate.isAfter(endDate)) {
+            throw new IllegalArgumentException("开始日期不能晚于结束日期");
+        }
+        if (ChronoUnit.DAYS.between(startDate, endDate) > 366) {
+            throw new IllegalArgumentException("日历时间范围不能超过366天");
+        }
+        String userId = getEffectiveUserId(headerUserId, attrUserId);
+        String publisherId = isRegTechAdmin(userId) ? null : userId;
+        return workStatisticsService.getIncompleteCalendarTasks(publisherId, startDate, endDate);
+    }
+
     @PutMapping("/{id}/publish")
     public ResponseEntity<Void> publishWork(
             @RequestHeader(value = "X-User-Id", required = false) String headerUserId,

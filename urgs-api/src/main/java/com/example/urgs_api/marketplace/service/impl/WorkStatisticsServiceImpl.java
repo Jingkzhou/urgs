@@ -113,6 +113,57 @@ public class WorkStatisticsServiceImpl implements WorkStatisticsService {
         return statistics;
     }
 
+    @Override
+    public List<WorkStatisticsDTO.CalendarTaskItem> getIncompleteCalendarTasks(
+            String publisherId,
+            LocalDate startDate,
+            LocalDate endDate) {
+        LocalDateTime startAt = startDate.atStartOfDay();
+        LocalDateTime endExclusive = endDate.plusDays(1).atStartOfDay();
+        List<WorkTask> tasks = workTaskService.lambdaQuery()
+                .isNotNull(WorkTask::getDeadline)
+                .ge(WorkTask::getDeadline, startAt)
+                .lt(WorkTask::getDeadline, endExclusive)
+                .list();
+        if (tasks.isEmpty()) {
+            return List.of();
+        }
+
+        Set<String> workIds = tasks.stream()
+                .map(WorkTask::getWorkId)
+                .filter(workId -> !isBlank(workId))
+                .collect(Collectors.toSet());
+        if (workIds.isEmpty()) {
+            return List.of();
+        }
+        var workQuery = workService.lambdaQuery().in(Work::getId, workIds);
+        if (publisherId != null) {
+            workQuery.eq(Work::getPublisherId, publisherId);
+        }
+        Map<String, Work> workById = workQuery.list().stream()
+                .collect(Collectors.toMap(Work::getId, work -> work));
+
+        return tasks.stream()
+                .filter(task -> !CLOSED_TASK_STATUSES.contains(normalizeStatus(task.getStatus())))
+                .filter(task -> workById.containsKey(task.getWorkId()))
+                .sorted(Comparator
+                        .comparing(WorkTask::getDeadline)
+                        .thenComparing(WorkTask::getTitle, Comparator.nullsLast(Comparator.naturalOrder())))
+                .map(task -> {
+                    Work work = workById.get(task.getWorkId());
+                    WorkStatisticsDTO.CalendarTaskItem item = new WorkStatisticsDTO.CalendarTaskItem();
+                    item.setWorkId(task.getWorkId());
+                    item.setWorkTitle(work.getTitle());
+                    item.setTaskId(task.getId());
+                    item.setTaskTitle(task.getTitle());
+                    item.setAssigneeId(task.getAssigneeId());
+                    item.setStatus(task.getStatus());
+                    item.setDeadline(task.getDeadline());
+                    return item;
+                })
+                .collect(Collectors.toList());
+    }
+
     private List<WorkStatisticsDTO.GroupCount> buildStatusDistribution(
             List<String> sourceStatuses,
             List<String> statusOrder) {

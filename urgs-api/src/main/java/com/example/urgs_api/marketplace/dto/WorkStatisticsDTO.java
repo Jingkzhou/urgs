@@ -71,4 +71,15 @@ public class WorkStatisticsDTO {
         private Boolean riskReported;
         private String riskNote;
     }
+
+    @Data
+    public static class CalendarTaskItem {
+        private String workId;
+        private String workTitle;
+        private String taskId;
+        private String taskTitle;
+        private String assigneeId;
+        private String status;
+        private LocalDateTime deadline;
+    }
 }

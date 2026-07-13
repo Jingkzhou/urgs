@@ -16,6 +16,8 @@ import {
     YAxis,
 } from 'recharts';
 import ReactMarkdown from 'react-markdown';
+import { Calendar, ConfigProvider, Modal } from 'antd';
+import zhCN from 'antd/locale/zh_CN';
 import {
     BarChart3,
     Bot,
@@ -32,7 +34,9 @@ import {
 } from 'lucide-react';
 import dayjs from 'dayjs';
 import {
+    getIncompleteWorkCalendarTasks,
     getWorkStatistics,
+    WorkCalendarTask,
     WorkStatistics as WorkStatisticsData,
     WorkStatisticsAssigneeWorkload,
     WorkStatisticsSystemTask,
@@ -64,6 +68,11 @@ const WorkStatistics: React.FC = () => {
     const [aiGenerating, setAiGenerating] = useState(false);
     const [aiError, setAiError] = useState('');
     const [aiGeneratedAt, setAiGeneratedAt] = useState('');
+    const [isAiSummaryOpen, setIsAiSummaryOpen] = useState(false);
+    const [calendarDate, setCalendarDate] = useState(() => dayjs());
+    const [calendarTasks, setCalendarTasks] = useState<WorkCalendarTask[]>([]);
+    const [calendarLoading, setCalendarLoading] = useState(true);
+    const [calendarLoadError, setCalendarLoadError] = useState('');
     const aiAbortControllerRef = useRef<AbortController | null>(null);
     const minStartDate = useMemo(() => dayjs(endDate).subtract(366, 'day').format('YYYY-MM-DD'), [endDate]);
     const maxEndDate = useMemo(() => {
@@ -110,9 +119,33 @@ const WorkStatistics: React.FC = () => {
         }
     };
 
+    const fetchIncompleteCalendarTasks = async () => {
+        setCalendarLoading(true);
+        setCalendarLoadError('');
+        try {
+            const tasks = await getIncompleteWorkCalendarTasks({
+                startDate: calendarDate.startOf('month').format('YYYY-MM-DD'),
+                endDate: calendarDate.endOf('month').format('YYYY-MM-DD'),
+            });
+            setCalendarTasks(tasks || []);
+        } catch (error) {
+            console.error('Failed to fetch incomplete calendar tasks', error);
+            setCalendarTasks([]);
+            setCalendarLoadError('日历任务加载失败，请稍后重试');
+        } finally {
+            setCalendarLoading(false);
+        }
+    };
+
     useEffect(() => {
         fetchStatistics();
     }, [startDate, endDate]);
+
+    const calendarMonth = calendarDate.format('YYYY-MM');
+
+    useEffect(() => {
+        fetchIncompleteCalendarTasks();
+    }, [calendarMonth]);
 
     useEffect(() => () => aiAbortControllerRef.current?.abort(), []);
 
@@ -140,6 +173,13 @@ const WorkStatistics: React.FC = () => {
         () => statistics?.systemTaskStats || [],
         [statistics]
     );
+    const calendarTasksByDate = useMemo(() => calendarTasks.reduce<Record<string, WorkCalendarTask[]>>((tasksByDate, task) => {
+        const date = dayjs(task.deadline).format('YYYY-MM-DD');
+        tasksByDate[date] = [...(tasksByDate[date] || []), task];
+        return tasksByDate;
+    }, {}), [calendarTasks]);
+    const selectedCalendarDate = calendarDate.format('YYYY-MM-DD');
+    const selectedCalendarTasks = calendarTasksByDate[selectedCalendarDate] || [];
 
     const buildAiPrompt = (data: WorkStatisticsData) => {
         const workStatuses = data.workStatusDistribution
@@ -206,6 +246,13 @@ ${attentionItems}
             setAiError('AI 暂未返回总结，请稍后重试');
         } else {
             setAiGeneratedAt(dayjs().format('YYYY-MM-DD HH:mm:ss'));
+        }
+    };
+
+    const openAiSummary = () => {
+        setIsAiSummaryOpen(true);
+        if (!aiSummary && !aiGenerating) {
+            generateAiSummary();
         }
     };
 
@@ -284,7 +331,18 @@ ${attentionItems}
                 >
                     <RefreshCw size={14} />刷新
                 </button>
-                <span className="ml-auto text-xs text-slate-400">统计口径：按工作创建时间筛选，展示当前任务状态</span>
+                <div className="ml-auto flex flex-wrap items-center gap-3">
+                    <span className="text-xs text-slate-400">统计口径：按工作创建时间筛选，展示当前任务状态</span>
+                    <button
+                        type="button"
+                        onClick={openAiSummary}
+                        disabled={statistics.totalWorks === 0}
+                        className="inline-flex items-center gap-1.5 rounded-lg bg-indigo-600 px-3 py-1.5 text-xs font-bold text-white transition-colors hover:bg-indigo-500 disabled:cursor-not-allowed disabled:opacity-50"
+                    >
+                        {aiGenerating ? <Loader2 size={14} className="animate-spin" /> : <Sparkles size={14} />}
+                        {aiGenerating ? '正在生成' : 'AI 工作概要'}
+                    </button>
+                </div>
             </div>
 
             <div className="grid grid-cols-2 gap-3 md:grid-cols-3 xl:grid-cols-5">
@@ -424,46 +482,58 @@ ${attentionItems}
             </div>
 
             <div className="grid grid-cols-1 gap-4 xl:grid-cols-[minmax(0,1.1fr)_minmax(420px,.9fr)]">
-                <section className="overflow-hidden rounded-xl border border-indigo-100 bg-white shadow-sm">
-                    <div className="flex flex-wrap items-center justify-between gap-3 border-b border-indigo-100 bg-indigo-50/60 px-4 py-3">
+                <section className="overflow-hidden rounded-xl border border-blue-100 bg-white shadow-sm">
+                    <div className="border-b border-blue-100 bg-blue-50/60 px-4 py-3">
                         <div>
                             <div className="flex items-center gap-2 text-sm font-bold text-slate-800">
-                                <Bot size={17} className="text-indigo-600" />
-                                AI 工作概要
+                                <CalendarRange size={17} className="text-blue-600" />
+                                工作日历
                             </div>
-                            <div className="mt-1 text-xs text-slate-500">基于当前统计数据生成进展、亮点、风险和建议</div>
+                            <div className="mt-1 text-xs text-slate-500">按任务截止日期展示未完成事项，点击日期查看明细</div>
                         </div>
-                        <button
-                            type="button"
-                            onClick={generateAiSummary}
-                            disabled={aiGenerating || statistics.totalWorks === 0}
-                            className="inline-flex items-center gap-2 rounded-lg bg-indigo-600 px-3 py-2 text-xs font-bold text-white transition-colors hover:bg-indigo-500 disabled:cursor-not-allowed disabled:opacity-50"
-                        >
-                            {aiGenerating ? <Loader2 size={14} className="animate-spin" /> : <Sparkles size={14} />}
-                            {aiGenerating ? '正在生成' : aiSummary ? '重新生成' : '生成 AI 总结'}
-                        </button>
                     </div>
-                    <div className="min-h-[280px] p-5">
-                        {aiError ? (
-                            <div className="rounded-lg bg-rose-50 px-4 py-3 text-sm text-rose-600">{aiError}</div>
-                        ) : aiSummary ? (
-                            <div className="prose prose-sm max-w-none text-slate-700 prose-headings:mb-2 prose-headings:mt-4 prose-headings:text-sm prose-headings:text-slate-900 prose-li:my-1">
-                                <ReactMarkdown>{aiSummary}</ReactMarkdown>
-                                {aiGeneratedAt && (
-                                    <div className="mt-5 border-t border-slate-100 pt-3 text-xs text-slate-400">
-                                        生成时间：{aiGeneratedAt}
-                                    </div>
-                                )}
+                    <div className="p-3">
+                        <ConfigProvider locale={zhCN}>
+                            <Calendar
+                                fullscreen={false}
+                                value={calendarDate}
+                                onSelect={setCalendarDate}
+                                onPanelChange={setCalendarDate}
+                                dateCellRender={date => {
+                                    const taskCount = calendarTasksByDate[date.format('YYYY-MM-DD')]?.length || 0;
+                                    return taskCount > 0 ? (
+                                        <div className="mt-0.5 truncate rounded bg-rose-50 px-1 text-center text-[10px] font-bold leading-4 text-rose-600">
+                                            {taskCount}
+                                        </div>
+                                    ) : null;
+                                }}
+                            />
+                        </ConfigProvider>
+                    </div>
+                    <div className="border-t border-slate-100 px-4 py-3">
+                        <div className="mb-2 flex items-center justify-between gap-3 text-xs">
+                            <span className="font-bold text-slate-700">{selectedCalendarDate} 截止任务</span>
+                            <span className="rounded-full bg-rose-50 px-2 py-0.5 font-bold text-rose-600">{selectedCalendarTasks.length}</span>
+                        </div>
+                        {calendarLoading ? (
+                            <div className="flex h-20 items-center justify-center text-xs text-slate-400">
+                                <Loader2 size={15} className="mr-2 animate-spin" />加载中...
                             </div>
+                        ) : calendarLoadError ? (
+                            <div className="py-3 text-xs text-rose-600">{calendarLoadError}</div>
+                        ) : selectedCalendarTasks.length === 0 ? (
+                            <div className="py-3 text-xs text-slate-400">当天没有未完成任务</div>
                         ) : (
-                            <div className="flex min-h-[240px] flex-col items-center justify-center text-center">
-                                <div className="mb-3 rounded-xl bg-indigo-50 p-3 text-indigo-500">
-                                    <Bot size={24} />
-                                </div>
-                                <div className="text-sm font-bold text-slate-700">尚未生成工作概要</div>
-                                <div className="mt-1 max-w-sm text-xs leading-5 text-slate-400">
-                                    AI 将严格基于本页统计数据归纳，不会改动工作或任务信息。
-                                </div>
+                            <div className="max-h-36 space-y-2 overflow-y-auto pr-1">
+                                {selectedCalendarTasks.map(task => (
+                                    <div key={task.taskId} className="rounded-md bg-slate-50 px-2.5 py-2">
+                                        <div className="truncate text-xs font-bold text-slate-700">{task.taskTitle}</div>
+                                        <div className="mt-1 flex items-center justify-between gap-2 text-[11px] text-slate-400">
+                                            <span className="truncate">{task.workTitle}</span>
+                                            <span className="shrink-0">{getTaskStatusLabel(task.status)} · {dayjs(task.deadline).format('HH:mm')}</span>
+                                        </div>
+                                    </div>
+                                ))}
                             </div>
                         )}
                     </div>
@@ -521,6 +591,51 @@ ${attentionItems}
                     )}
                 </section>
             </div>
+            <Modal
+                open={isAiSummaryOpen}
+                title={(
+                    <span className="flex items-center gap-2 text-slate-800">
+                        <Bot size={18} className="text-indigo-600" />
+                        AI 工作概要
+                    </span>
+                )}
+                footer={null}
+                width={640}
+                onCancel={() => setIsAiSummaryOpen(false)}
+            >
+                <div className="mb-4 flex items-center justify-between gap-3 rounded-lg bg-indigo-50 px-3 py-2 text-xs text-indigo-700">
+                    <span>{statistics.startDate} 至 {statistics.endDate}</span>
+                    <button
+                        type="button"
+                        onClick={generateAiSummary}
+                        disabled={aiGenerating || statistics.totalWorks === 0}
+                        className="inline-flex items-center gap-1.5 rounded-md bg-indigo-600 px-2.5 py-1.5 font-bold text-white transition-colors hover:bg-indigo-500 disabled:cursor-not-allowed disabled:opacity-50"
+                    >
+                        {aiGenerating ? <Loader2 size={13} className="animate-spin" /> : <Sparkles size={13} />}
+                        {aiGenerating ? '正在生成' : aiSummary ? '重新生成' : '生成概要'}
+                    </button>
+                </div>
+                {aiError ? (
+                    <div className="rounded-lg bg-rose-50 px-4 py-3 text-sm text-rose-600">{aiError}</div>
+                ) : aiSummary ? (
+                    <div className="prose prose-sm max-h-[60vh] max-w-none overflow-y-auto pr-2 text-slate-700 prose-headings:mb-2 prose-headings:mt-4 prose-headings:text-sm prose-headings:text-slate-900 prose-li:my-1">
+                        <ReactMarkdown>{aiSummary}</ReactMarkdown>
+                        {aiGeneratedAt && (
+                            <div className="mt-5 border-t border-slate-100 pt-3 text-xs text-slate-400">
+                                生成时间：{aiGeneratedAt}
+                            </div>
+                        )}
+                    </div>
+                ) : (
+                    <div className="flex min-h-48 flex-col items-center justify-center text-center">
+                        <div className="mb-3 rounded-xl bg-indigo-50 p-3 text-indigo-500">
+                            <Bot size={24} />
+                        </div>
+                        <div className="text-sm font-bold text-slate-700">正在准备工作概要</div>
+                        <div className="mt-1 max-w-sm text-xs leading-5 text-slate-400">AI 将严格基于当前统计数据归纳，不会改动工作或任务信息。</div>
+                    </div>
+                )}
+            </Modal>
         </div>
     );
 };
