@@ -29,77 +29,6 @@ const sameTableName = (left: string, right: string) => (
     || unqualifiedTableName(left) === unqualifiedTableName(right)
 );
 
-const collectDownstreamGraph = (
-    rawNodes: RawLineageNode[],
-    rawEdges: RawLineageEdge[],
-    mainTableName: string
-) => {
-    const nodeIdToInfo = new Map<string, { type: 'Table' | 'Column'; tableName: string }>();
-    rawNodes.forEach(node => {
-        if (isTableNode(node)) {
-            nodeIdToInfo.set(node.id, { type: 'Table', tableName: node.properties.name });
-        } else if (isColumnNode(node)) {
-            nodeIdToInfo.set(node.id, { type: 'Column', tableName: node.properties.table || '' });
-        }
-    });
-
-    const edgesBySource = new Map<string, RawLineageEdge[]>();
-    rawEdges.forEach(edge => {
-        if (edge.type === 'BELONGS_TO') {
-            return;
-        }
-        const list = edgesBySource.get(edge.source) || [];
-        list.push(edge);
-        edgesBySource.set(edge.source, list);
-    });
-
-    const downstreamNodeIds = new Set<string>();
-    const downstreamEdges: RawLineageEdge[] = [];
-    const processedSources = new Set<string>();
-    const queue: string[] = [];
-
-    rawNodes.forEach(node => {
-        const info = nodeIdToInfo.get(node.id);
-        if (info && sameTableName(info.tableName, mainTableName)) {
-            queue.push(node.id);
-            downstreamNodeIds.add(node.id);
-        }
-    });
-
-    while (queue.length > 0) {
-        const currentId = queue.shift()!;
-        if (processedSources.has(currentId)) {
-            continue;
-        }
-        processedSources.add(currentId);
-
-        (edgesBySource.get(currentId) || []).forEach(edge => {
-            downstreamEdges.push(edge);
-            downstreamNodeIds.add(edge.target);
-            if (!processedSources.has(edge.target)) {
-                queue.push(edge.target);
-            }
-        });
-    }
-
-    downstreamNodeIds.forEach(nodeId => {
-        const info = nodeIdToInfo.get(nodeId);
-        if (info?.type !== 'Column') {
-            return;
-        }
-        rawEdges
-            .filter(edge => edge.type === 'BELONGS_TO' && edge.source === nodeId)
-            .forEach(edge => downstreamNodeIds.add(edge.target));
-    });
-
-    return {
-        nodes: rawNodes.filter(node => downstreamNodeIds.has(node.id)),
-        edges: [
-            ...downstreamEdges,
-            ...rawEdges.filter(edge => edge.type === 'BELONGS_TO' && downstreamNodeIds.has(edge.source)),
-        ],
-    };
-};
 
 const buildTableGraph = (
     rawNodes: RawLineageNode[],
@@ -310,10 +239,6 @@ const collectMainLineageLinkIds = (
     return lineageLinkIds;
 };
 
-export const processLayoutImpact = (rawNodes: any[], rawEdges: any[], mainTableName: string) => {
-    const downstreamGraph = collectDownstreamGraph(rawNodes, rawEdges, mainTableName);
-    return buildTableGraph(downstreamGraph.nodes, downstreamGraph.edges, mainTableName, true);
-};
 
 export const processLayoutTrace = (
     rawNodes: any[],

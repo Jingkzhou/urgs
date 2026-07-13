@@ -1,10 +1,9 @@
 import React, { useState, useEffect } from 'react';
-import { GitBranch, ShieldCheck, Megaphone, BarChart3, Folder, Terminal, Gauge, ChevronRight, LayoutGrid, GitPullRequest, Calendar } from 'lucide-react';
+import { GitBranch, ShieldCheck, BarChart3, Folder, Terminal, Gauge, ChevronRight, LayoutGrid, GitPullRequest, Calendar } from 'lucide-react';
 import { motion, AnimatePresence } from 'framer-motion';
 import { hasPermission } from '../utils/permission';
 import { BreadcrumbProvider, useBreadcrumbs } from '../context/BreadcrumbContext';
 import AppSystemList from './version/AppSystemList';
-import NoticeManagement from './version/NoticeManagement';
 import ReleaseStats from './version/ReleaseStats';
 import VersionOverview from './version/VersionOverview';
 import GitRepoManagement from './version/git-repo/GitRepoManagement';

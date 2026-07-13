@@ -79,9 +79,6 @@ export const listSpaceDocuments = (params: {
 
 export const toggleFavorite = (id: number) => post<OnlineDocument>(`/api/online-documents/${id}/favorite`, {});
 
-export const setSpaceType = (id: number, spaceType: 'personal' | 'shared') =>
-    put<OnlineDocument>(`/api/online-documents/${id}/space`, { spaceType });
-
 export const createOnlineDocument = (data: {
     title: string;
     fileUrl: string;

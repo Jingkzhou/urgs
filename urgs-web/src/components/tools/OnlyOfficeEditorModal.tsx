@@ -62,10 +62,6 @@ const loadOnlyOfficeScript = (documentServerUrl: string) => {
     return loader;
 };
 
-const getDocumentExtension = (fileName: string) => {
-    const extension = fileName.split('.').pop()?.toLowerCase();
-    return extension || '';
-};
 
 const restoreHostHash = (expectedHash: string) => {
     if (!expectedHash || window.location.hash === expectedHash) return;
@@ -78,10 +74,6 @@ const restoreHostHash = (expectedHash: string) => {
     window.dispatchEvent(new Event('hashchange'));
 };
 
-export const isOnlyOfficeSupported = (fileName: string) => {
-    const extension = getDocumentExtension(fileName);
-    return ['doc', 'docx', 'xls', 'xlsx', 'ppt', 'pptx', 'pdf'].includes(extension);
-};
 
 const OnlyOfficeEditorModal: React.FC<OnlyOfficeEditorModalProps> = ({
     open,

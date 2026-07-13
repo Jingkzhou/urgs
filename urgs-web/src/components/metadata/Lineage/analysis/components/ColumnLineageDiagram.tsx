@@ -112,15 +112,6 @@ const getSourceFile = (link: LinkData) => {
     return value ? String(value) : undefined;
 };
 
-const formatColumnSummary = (columns: string[], fallback: string) => {
-    if (columns.length === 0) {
-        return fallback;
-    }
-    if (columns.length <= 2) {
-        return columns.join('、');
-    }
-    return `${columns.slice(0, 2).join('、')} 等 ${columns.length} 个字段`;
-};
 
 const formatDetailList = (items: string[]) => (items.length > 0 ? items.join('、') : '-');
 

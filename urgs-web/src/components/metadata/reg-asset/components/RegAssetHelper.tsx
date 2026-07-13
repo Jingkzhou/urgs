@@ -1,5 +1,5 @@
 import React from 'react';
-import { CheckCircle, TrendingUp, CircleDashed, Table2 } from 'lucide-react';
+import { CheckCircle, TrendingUp, CircleDashed } from 'lucide-react';
 
 export const getAutoFetchStatusBadge = (status?: string) => {
     const map: Record<string, { bg: string; text: string; icon: React.ReactNode; color: string; label: string }> = {
@@ -12,43 +12,6 @@ export const getAutoFetchStatusBadge = (status?: string) => {
         <span className={`inline-flex items-center gap-1 px-2 py-0.5 rounded-full text-[11px] font-semibold tracking-wide uppercase ${s.bg} ${s.text} border border-transparent hover:border-${s.color}-200 transition-colors`}>
             {s.icon} {s.label}
         </span>
-    );
-};
-
-interface StatsCardProps {
-    title: string;
-    value: number | string;
-    icon: React.ReactNode;
-    color: 'indigo' | 'emerald' | 'amber' | 'blue' | 'purple';
-    loading?: boolean;
-}
-
-export const StatsCard: React.FC<StatsCardProps> = ({ title, value, icon, color, loading }) => {
-    const colorMap = {
-        indigo: 'bg-indigo-50 text-indigo-600 border-indigo-100',
-        emerald: 'bg-emerald-50 text-emerald-600 border-emerald-100',
-        amber: 'bg-amber-50 text-amber-600 border-amber-100',
-        blue: 'bg-blue-50 text-blue-600 border-blue-100',
-        purple: 'bg-purple-50 text-purple-600 border-purple-100'
-    };
-
-    return (
-        <div className="bg-white p-4 rounded-xl border border-slate-200 shadow-sm hover:shadow-md transition-all group overflow-hidden relative">
-            <div className="absolute -right-2 -top-2 opacity-[0.03] group-hover:scale-125 transition-transform duration-500">
-                {React.isValidElement(icon) ? React.cloneElement(icon as React.ReactElement, { size: 80 } as any) : icon}
-            </div>
-            <div className="flex items-center gap-4 relative z-10">
-                <div className={`p-2.5 rounded-lg border ${colorMap[color]} group-hover:scale-110 transition-transform duration-300`}>
-                    {icon}
-                </div>
-                <div>
-                    <div className="text-xs font-semibold text-slate-500 tracking-wider uppercase mb-1">{title}</div>
-                    <div className="text-2xl font-bold text-slate-800 tabular-nums">
-                        {loading ? <div className="h-8 w-16 bg-slate-100 animate-pulse rounded-md" /> : value}
-                    </div>
-                </div>
-            </div>
-        </div>
     );
 };
 
@@ -90,15 +53,6 @@ export const CardSkeleton = () => (
     </div>
 );
 
-export const DetailItem: React.FC<{ icon?: React.ReactNode; label: string; value: React.ReactNode; fullWidth?: boolean }> = ({ icon, label, value, fullWidth }) => (
-    <div className={`bg-slate-50 rounded-lg p-3 ${fullWidth ? 'col-span-2' : ''}`}>
-        <div className="flex items-center gap-1.5 text-xs text-slate-500 mb-1">
-            {icon}
-            {label}
-        </div>
-        <div className="text-sm text-slate-800 break-words">{value || '-'}</div>
-    </div>
-);
 
 export const FormField: React.FC<{ label: string; value?: string; onChange: (v: string) => void }> = ({ label, value, onChange }) => (
     <div>

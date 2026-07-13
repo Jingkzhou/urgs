@@ -42,9 +42,6 @@ export const getGitRepositories = (params?: { ssoId?: number; platform?: string 
 export const getRepoPrCounts = () =>
     get<Record<string, number>>('/api/version/repos/pr-counts');
 
-export const getGitRepository = (id: number) =>
-    get<GitRepository>(`/api/version/repos/${id}`);
-
 export const createGitRepository = (data: GitRepository) =>
     post<GitRepository>('/api/version/repos', data);
 
@@ -129,9 +126,6 @@ export const createRepoTag = (repoId: number, name: string, ref: string, message
 
 export const deleteRepoTag = (repoId: number, name: string) =>
     del<void>(`/api/version/repos/${repoId}/tags/${name}`);
-
-export const getDownloadArchiveUrl = (repoId: number, ref: string) =>
-    `/api/version/repos/${repoId}/archive?ref=${encodeURIComponent(ref)}`;
 
 export const downloadRepoArchive = (repoId: number, ref: string) =>
     get<Blob>(`/api/version/repos/${repoId}/archive`, { ref }, { isBlob: true });
@@ -299,9 +293,6 @@ export interface PipelineRun {
 export const getPipelines = (params?: { ssoId?: number; repoId?: number }) =>
     get<Pipeline[]>('/api/version/pipelines', params || {});
 
-export const getPipeline = (id: number) =>
-    get<Pipeline>(`/api/version/pipelines/${id}`);
-
 export const createPipeline = (data: Pipeline) =>
     post<Pipeline>('/api/version/pipelines', data);
 
@@ -314,14 +305,8 @@ export const deletePipeline = (id: number) =>
 export const getPipelineRuns = (pipelineId: number) =>
     get<PipelineRun[]>(`/api/version/pipelines/${pipelineId}/runs`);
 
-export const getPipelineRun = (runId: number) =>
-    get<PipelineRun>(`/api/version/pipelines/runs/${runId}`);
-
 export const triggerPipeline = (pipelineId: number, params?: { branch?: string; triggerType?: string }) =>
     post<PipelineRun>(`/api/version/pipelines/${pipelineId}/trigger`, params || {});
-
-export const cancelPipelineRun = (runId: number) =>
-    post<void>(`/api/version/pipelines/runs/${runId}/cancel`, {});
 
 // ===== 部署管理 API =====
 
@@ -460,30 +445,7 @@ export interface ProductionPackageBuildResult {
 export const getDeployEnvironments = (ssoId?: number) =>
     get<DeployEnvironment[]>('/api/version/deploy/environments', ssoId ? { ssoId } : {});
 
-export const getDeployEnvironment = (id: number) =>
-    get<DeployEnvironment>(`/api/version/deploy/environments/${id}`);
-
-export const createDeployEnvironment = (data: DeployEnvironment) =>
-    post<DeployEnvironment>('/api/version/deploy/environments', data);
-
-export const updateDeployEnvironment = (id: number, data: DeployEnvironment) =>
-    put<DeployEnvironment>(`/api/version/deploy/environments/${id}`, data);
-
-export const deleteDeployEnvironment = (id: number) =>
-    del(`/api/version/deploy/environments/${id}`);
-
 // 部署记录
-export const getDeployments = (params?: { ssoId?: number; envId?: number }) =>
-    get<Deployment[]>('/api/version/deploy/deployments', params || {});
-
-export const getDeployment = (id: number) =>
-    get<Deployment>(`/api/version/deploy/deployments/${id}`);
-
-export const executeDeploy = (data: { ssoId: number; envId: number; version: string; artifactUrl?: string }) =>
-    post<Deployment>('/api/version/deploy/execute', data);
-
-export const rollbackDeploy = (deploymentId: number) =>
-    post<Deployment>(`/api/version/deploy/deployments/${deploymentId}/rollback`, {});
 
 export const recordOfflineDeploymentResult = (data: {
     ssoId: number;
@@ -528,9 +490,6 @@ export interface ApprovalRecord {
 export const getReleaseRecords = (params?: { ssoId?: number; status?: string }) =>
     get<ReleaseRecord[]>('/api/version/releases', params || {});
 
-export const getReleaseRecord = (id: number) =>
-    get<ReleaseRecord>(`/api/version/releases/${id}`);
-
 export const createReleaseRecord = (data: ReleaseRecord) =>
     post<ReleaseRecord>('/api/version/releases', data);
 
@@ -558,33 +517,6 @@ export const getApprovalHistory = (releaseId: number) =>
 
 export const formatReleaseDescription = (description: string) =>
     post<string>('/api/version/releases/ai/format-description', { description });
-
-// ===== 发布策略 API =====
-
-export interface ReleaseStrategy {
-    id?: number;
-    name: string;
-    type: 'full' | 'canary' | 'gray' | 'blue_green';
-    trafficPercent?: number;
-    config?: string;
-    description?: string;
-    createdAt?: string;
-}
-
-export const getReleaseStrategies = () =>
-    get<ReleaseStrategy[]>('/api/version/strategies');
-
-export const getReleaseStrategy = (id: number) =>
-    get<ReleaseStrategy>(`/api/version/strategies/${id}`);
-
-export const createReleaseStrategy = (data: ReleaseStrategy) =>
-    post<ReleaseStrategy>('/api/version/strategies', data);
-
-export const updateReleaseStrategy = (id: number, data: ReleaseStrategy) =>
-    put<ReleaseStrategy>(`/api/version/strategies/${id}`, data);
-
-export const deleteReleaseStrategy = (id: number) =>
-    del(`/api/version/strategies/${id}`);
 
 // ===== AI Code Review API =====
 
@@ -630,7 +562,6 @@ export interface AICodeReviewAskResponse {
 export const askAICodeReview = (reviewId: number, data: AICodeReviewAskRequest) =>
     post<AICodeReviewAskResponse>(`/api/version/audit/${reviewId}/ask`, data);
 
-
 // ===== Developer KPI API =====
 
 export interface DeveloperKpiVO {
@@ -648,9 +579,6 @@ export interface DeveloperKpiVO {
 export const getDeveloperKpis = (systemId?: number) =>
     get<DeveloperKpiVO[]>('/api/version/stats/kpi', systemId ? { systemId } : {});
 
-export const getQualityTrend = (userId?: number) =>
-    get<any>('/api/version/stats/quality-trend', userId ? { userId } : {});
-
 export const getOverviewStats = () =>
     get<any>('/api/version/stats/overview');
 
@@ -659,8 +587,6 @@ export const getAppVersionMatrix = (systemId: string) =>
 
 export const getAppActiveBranches = (systemId: string) =>
     get<any[]>(`/api/version/app/${systemId}/branches`);
-
-
 
 // ========== 版本包管理 ==========
 
@@ -673,15 +599,6 @@ export const getVersionPackages = (ssoId: number) =>
 /**
  * 创建版本包
  */
-export const createVersionPackage = (params: {
-    repoId: number;
-    ssoId: number;
-    gitRef: string;
-    previousGitRef?: string;
-    description: string;
-    createdBy?: number;
-    envId?: number;
-}) => post<VersionPackage>('/api/version/deploy/packages', params);
 
 /**
  * 下载部署安装包
@@ -704,16 +621,7 @@ export const deleteVersionPackage = (packageId: number) =>
 /**
  * 回填版本包部署状态
  */
-export const updatePackageStatus = (packageId: number, status: string, operatorId?: number) =>
-    put<VersionPackage>(`/api/version/deploy/packages/${packageId}/status`, { status, operatorId });
 
 /**
  * 关联版本包执行部署 (记录)
  */
-export const deployWithPackage = (params: {
-    ssoId: number;
-    envId: number;
-    packageId: number;
-    deployedBy: number;
-    remark?: string;
-}) => post<Deployment>('/api/version/deploy/execute', params);

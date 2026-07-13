@@ -53,9 +53,6 @@ export const resolveNodeTableIdentity = (node: Pick<NodeData, 'title' | 'owner' 
 
 export const normalizeTableName = (value?: string | null) => String(value || '').trim().toLowerCase();
 
-export const sameTable = (left: string, right?: string | null) => (
-    !!right && normalizeTableName(left) === normalizeTableName(right)
-);
 
 export const sameTableLoose = (left: string, right?: string | null) => {
     const normalizedLeft = normalizeTableName(left);

@@ -62,10 +62,6 @@ const Sidebar: React.FC<SidebarProps> = ({ currentSessionId, onSessionSelect, on
         }
     };
 
-    const cancelEdit = (e: React.MouseEvent) => {
-        e.stopPropagation();
-        setEditingId(null);
-    };
 
     return (
         <motion.aside
@@ -168,15 +164,5 @@ const Sidebar: React.FC<SidebarProps> = ({ currentSessionId, onSessionSelect, on
 };
 
 // Helper Item with refined typography
-export const NavItem = ({ icon, label, active }: { icon: React.ReactNode, label: string, active?: boolean }) => (
-    <button className={`group flex w-full items-center gap-4 rounded-lg px-4 py-3 transition-all
-        ${active ? 'bg-white shadow-lg shadow-black/[0.03] text-slate-900' : 'text-slate-400 hover:text-slate-700 hover:bg-white/60'}
-    `}>
-        <div className={`transition-colors ${active ? 'text-red-600' : 'group-hover:text-red-500'}`}>
-            {icon}
-        </div>
-        <span className={`text-[12px] font-black uppercase tracking-wider truncate`}>{label}</span>
-    </button>
-);
 
 export default Sidebar;

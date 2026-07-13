@@ -126,10 +126,6 @@ export const deleteDocument = (id: number) =>
 export const toggleFavorite = (id: number) =>
     put<{ favorite: boolean }>(`/api/wiki/documents/${id}/favorite`);
 
-/** 获取最近访问的文档 */
-export const getRecentDocuments = (limit?: number) =>
-    get<KnowledgeDocument[]>('/api/wiki/documents/recent', { limit });
-
 /** 获取收藏的文档 */
 export const getFavoriteDocuments = () =>
     get<KnowledgeDocument[]>('/api/wiki/documents/favorites');
@@ -143,10 +139,6 @@ export const listTags = () =>
 /** 创建标签 */
 export const createTag = (data: { name: string; color?: string }) =>
     post<KnowledgeTag>('/api/wiki/tags', data);
-
-/** 更新标签 */
-export const updateTag = (id: number, data: { name?: string; color?: string }) =>
-    put<KnowledgeTag>(`/api/wiki/tags/${id}`, data);
 
 /** 删除标签 */
 export const deleteTag = (id: number) =>

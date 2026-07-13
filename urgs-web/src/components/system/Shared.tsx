@@ -1,6 +1,5 @@
 import React from 'react';
-import { Search, Plus, Edit, Trash2 } from 'lucide-react';
-import { TreeNode, FunctionPoint } from './types';
+import { Search, Plus } from 'lucide-react';
 import Auth from '../Auth';
 
 export const ActionToolbar: React.FC<{
@@ -41,82 +40,3 @@ export const ActionToolbar: React.FC<{
         </div>
     </div>
 );
-
-export const DataTable: React.FC<{ headers: string[]; rows: any[][] }> = ({ headers, rows }) => (
-    <div className="bg-white rounded-lg border border-slate-200 overflow-x-auto">
-        <table className="w-full text-sm text-left">
-            <thead className="bg-slate-50 text-slate-700 font-semibold border-b border-slate-200">
-                <tr>
-                    {headers.map((h, i) => (
-                        <th key={i} className="px-6 py-4 whitespace-nowrap">{h}</th>
-                    ))}
-                </tr>
-            </thead>
-            <tbody className="divide-y divide-slate-100">
-                {rows.map((row, idx) => (
-                    <tr key={idx} className="hover:bg-slate-50 transition-colors">
-                        {row.map((cell, cIdx) => (
-                            <td key={cIdx} className="px-6 py-4 text-slate-600">
-                                {cell === 'active' ? (
-                                    <span className="inline-flex items-center px-2 py-1 rounded-full text-xs font-medium bg-green-100 text-green-700">
-                                        正常
-                                    </span>
-                                ) : cell === 'inactive' ? (
-                                    <span className="inline-flex items-center px-2 py-1 rounded-full text-xs font-medium bg-slate-100 text-slate-500">
-                                        停用
-                                    </span>
-                                ) : cell === 'maintenance' ? (
-                                    <span className="inline-flex items-center px-2 py-1 rounded-full text-xs font-medium bg-amber-100 text-amber-700">
-                                        维护中
-                                    </span>
-                                ) : cell === 'actions' ? (
-                                    <div className="flex items-center gap-3">
-                                        <button className="text-slate-400 hover:text-blue-600"><Edit className="w-4 h-4" /></button>
-                                        <button className="text-slate-400 hover:text-red-600"><Trash2 className="w-4 h-4" /></button>
-                                    </div>
-                                ) : (
-                                    <span className="truncate max-w-[200px] block" title={cell.toString()}>{cell}</span>
-                                )}
-                            </td>
-                        ))}
-                    </tr>
-                ))}
-            </tbody>
-        </table>
-        <div className="px-6 py-4 border-t border-slate-100 flex items-center justify-between text-xs text-slate-500">
-            <span>共 {rows.length} 条数据</span>
-            <div className="flex gap-2">
-                <button className="px-2 py-1 border border-slate-200 rounded hover:bg-slate-50 disabled:opacity-50" disabled>上一页</button>
-                <button className="px-2 py-1 border border-slate-200 rounded hover:bg-slate-50">下一页</button>
-            </div>
-        </div>
-    </div>
-);
-
-// Helper function to convert flat list to tree
-export const buildTree = (items: FunctionPoint[]): TreeNode[] => {
-    const map = new Map<string, TreeNode>();
-    const roots: TreeNode[] = [];
-
-    // 1. Initialize nodes
-    items.forEach(item => {
-        map.set(item.id, { ...item, children: [] });
-    });
-
-    // 2. Build hierarchy
-    items.forEach(item => {
-        const node = map.get(item.id)!;
-        if (item.parentId === 'root') {
-            roots.push(node);
-        } else {
-            const parent = map.get(item.parentId);
-            if (parent) {
-                parent.children?.push(node);
-            } else {
-                // Fallback for safety if parent doesn't exist in dataset
-                roots.push(node);
-            }
-        }
-    });
-    return roots;
-};

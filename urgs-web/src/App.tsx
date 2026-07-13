@@ -1,13 +1,12 @@
 import React, { useEffect, useState } from 'react';
 import { hasPermission } from './utils/permission';
-import { LayoutDashboard, Bell, Search, UserCircle, LogOut, Settings, PanelTop, PanelLeft, Megaphone, Timer, Database, GitBranch, Activity, Lock, Palette, User, Sparkles, Award, BookOpen, ChevronDown, Wrench, BriefcaseBusiness, Code2 } from 'lucide-react';
+import { LayoutDashboard, Bell, UserCircle, LogOut, Settings, PanelTop, PanelLeft, Megaphone, Database, GitBranch, Activity, Lock, User, Sparkles, Award, BookOpen, ChevronDown, Wrench, BriefcaseBusiness, Code2 } from 'lucide-react';
 import { motion, AnimatePresence } from 'framer-motion';
 import { createPortal } from 'react-dom';
 import Login from './components/Login';
 import Dashboard from './components/home/Dashboard';
 import SystemManagement from './components/SystemManagement';
 import AnnouncementManagement from './components/announcement/AnnouncementManagement';
-import SqlConsole from './components/SqlConsole';
 import VersionManagement from './components/VersionManagement';
 import MetadataManagement from './components/MetadataManagement';
 import OpsManagement from './components/OpsManagement';

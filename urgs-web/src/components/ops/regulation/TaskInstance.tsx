@@ -479,17 +479,6 @@ const TaskInstance: React.FC<TaskInstanceProps> = ({ onStatsChange, initialFilte
         };
     };
 
-    const markInstanceStopped = (instance: QuartzTaskStatus) => {
-        const now = dayjs().format('YYYY-MM-DD HH:mm:ss');
-        return {
-            ...instance,
-            status: 4,
-            begin_time: instance.begin_time || now,
-            update_time: now,
-            end_time: now,
-            msg: '实例已被强制停止。',
-        };
-    };
 
     const markInstancePassed = (instance: QuartzTaskStatus) => {
         const now = dayjs().format('YYYY-MM-DD HH:mm:ss');

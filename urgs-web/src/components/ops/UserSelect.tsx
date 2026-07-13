@@ -72,20 +72,6 @@ const UserSelect: React.FC<UserSelectProps> = ({ value, onChange, placeholder, c
         return () => clearTimeout(timer);
     }, [query]);
 
-    const handleInputChange = (e: React.ChangeEvent<HTMLInputElement>) => {
-        const val = e.target.value;
-        setQuery(val);
-        onChange(val); // Update parent immediately as text
-        if (val.trim()) {
-            // Simple debounce here or use effect? 
-            // Let's call fetch directly with small valid check, but debouncing is better.
-            // For simplicity in this tool interaction, I'll use a timeout ref or just let it fire (if traffic low).
-            // Let's implementation proper debounce manually.
-        } else {
-            setUsers([]);
-            setShowDropdown(false);
-        }
-    };
 
     // Debounce implementation for input
     const timeoutRef = useRef<any>(null);

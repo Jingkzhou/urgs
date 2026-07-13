@@ -221,14 +221,6 @@ export interface TaskApplicationRequest {
     expectedCompletionTime?: string;
 }
 
-export interface TaskSubmissionDTO {
-    completionDescription?: string;
-    deliverables?: string;
-    impactScope?: string;
-    delayReported?: boolean;
-    delayReason?: string;
-}
-
 export interface TaskReviewDTO {
     decision: 'APPROVE' | 'REJECT' | 'CANCEL' | 'TRANSFER';
     qualityScore?: number;
@@ -268,24 +260,6 @@ export interface KpiSummaryDTO {
     highPriorityTaskCount: number;
     activeTaskCount: number;
     pausedTaskCount: number;
-}
-
-export interface KpiDetailDTO {
-    taskId: string;
-    taskTitle: string;
-    workId: string;
-    workTitle: string;
-    requirementNumber?: string;
-    assigneeId: string;
-    assigneeName: string;
-    basePoints: number;
-    finalPoints: number;
-    qualityScore?: number;
-    reworkCount: number;
-    onTime: boolean;
-    reviewerId?: string;
-    reviewComment?: string;
-    reviewedAt?: string;
 }
 
 export interface TeamKpiDTO {
@@ -507,15 +481,12 @@ export const getPendingReviewTasks = (params: any) => get<PageResponse<TaskMarke
 export const getReviewHistoryTasks = (params: any) => get<PageResponse<TaskReviewHistoryDTO>>('/api/marketplace/tasks/review/history', params);
 export const claimTask = (id: string) => post(`/api/marketplace/tasks/${id}/claim`);
 export const releaseTask = (id: string) => put(`/api/marketplace/tasks/${id}/release`);
-export const assignTask = (id: string, assigneeId: string) => put(`/api/marketplace/tasks/${id}/assign`, { assigneeId });
-export const updateTaskStatus = (id: string, status: string) => put(`/api/marketplace/tasks/${id}/status`, { status });
 export const reopenTask = (id: string) => put(`/api/marketplace/tasks/${id}/reopen`);
 export const advanceTaskStage = (id: string, data?: { assetReviewNote?: string }) =>
     put(`/api/marketplace/tasks/${id}/stage/advance`, data);
 export const reportTaskStageRisk = (id: string, data: { riskNote: string }) => put(`/api/marketplace/tasks/${id}/stage/risk`, data);
 export const appendTaskRiskTracking = (id: string, data: { trackingNote: string }) =>
     put(`/api/marketplace/tasks/${id}/stage/risk/tracking`, data);
-export const submitTaskForReview = (id: string, data: TaskSubmissionDTO) => put(`/api/marketplace/tasks/${id}/submit`, data);
 export const reviewTask = (id: string, data: TaskReviewDTO) => put(`/api/marketplace/tasks/${id}/review`, data);
 
 export const applyForTask = (data: TaskApplicationRequest) => post('/api/marketplace/applications/apply', data);
@@ -527,22 +498,15 @@ export const getMyTaskApplications = (params: any) => get('/api/marketplace/appl
 
 export const getKpiSummary = (params: { userId?: string; startDate?: string; endDate?: string }) =>
     get<KpiSummaryDTO>('/api/marketplace/kpi/summary', params);
-export const getKpiDetails = (params: { userId?: string; startDate?: string; endDate?: string }) =>
-    get<KpiDetailDTO[]>('/api/marketplace/kpi/details', params);
 export const getTeamKpi = (params: { startDate?: string; endDate?: string }) =>
     get<TeamKpiDTO>('/api/marketplace/kpi/team', params);
-export const getKpiLeaderboard = (params: { dimension?: string; startDate?: string; endDate?: string }) =>
-    get<KpiSummaryDTO[]>('/api/marketplace/kpi/leaderboard', params);
 export const getKpiSnapshots = (params: { period?: string }) =>
     get<KpiSnapshot[]>('/api/marketplace/kpi/snapshots', params);
 export const generateKpiSnapshot = (period: string) =>
     post<KpiSnapshot[]>('/api/marketplace/kpi/snapshots/generate', undefined, { params: { period } });
 export const createTaskAppeal = (taskId: string, data: { reason?: string; expectedResult?: string }) => post(`/api/marketplace/appeals/task/${taskId}`, data);
-export const resolveTaskAppeal = (id: string, data: { resolution?: string }) => put(`/api/marketplace/appeals/${id}/resolve`, data);
-export const listTaskAppeals = (params: any) => get('/api/marketplace/appeals', params);
 
 export const listPointRules = (params?: any) => get('/api/marketplace/point-rules', params);
-export const suggestPointRule = (params: { taskType: string; difficulty: string }) => get('/api/marketplace/point-rules/suggest', params);
 export const createPointRule = (data: MarketplacePointRule) => post('/api/marketplace/point-rules', data);
 export const updatePointRule = (id: string, data: MarketplacePointRule) => put(`/api/marketplace/point-rules/${id}`, data);
 export const deletePointRule = (id: string) => del(`/api/marketplace/point-rules/${id}`);
