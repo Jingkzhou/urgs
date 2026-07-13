@@ -1,4 +1,4 @@
-import React, { useCallback, useState } from 'react';
+import React, { ReactNode, useCallback, useState } from 'react';
 import { Server, Activity, CheckCircle, Cpu, AlertCircle, Clock, PieChart as PieChartIcon } from 'lucide-react';
 import { LineChart, Line, XAxis, YAxis, CartesianGrid, Tooltip, ResponsiveContainer, PieChart, Pie, Cell, AreaChart, Area, BarChart, Bar, LabelList } from 'recharts';
 import { fetchDailyStats, fetchHourlyThroughput, fetchWorkflowStats, TaskInstanceStatsVO, WorkflowStatsVO } from '../../api/stats';
@@ -26,9 +26,10 @@ const taskInstanceStatusMap: Record<string, string> = {
 
 interface BatchMonitoringProps {
     density?: 'default' | 'compact';
+    leadingContent?: ReactNode;
 }
 
-const BatchMonitoring: React.FC<BatchMonitoringProps> = ({ density = 'default' }) => {
+const BatchMonitoring: React.FC<BatchMonitoringProps> = ({ density = 'default', leadingContent }) => {
     const [stats, setStats] = useState<TaskInstanceStatsVO | null>(null);
     const [hourlyData, setHourlyData] = useState<any[]>([]);
     const [workflowStats, setWorkflowStats] = useState<WorkflowStatsVO[]>([]);
@@ -133,52 +134,55 @@ const BatchMonitoring: React.FC<BatchMonitoringProps> = ({ density = 'default' }
             {/* Header Removed to match Dashboard Section styling */}
 
             {/* KPI Grid (Bento Box Style) */}
-            <div className={`grid grid-cols-1 md:grid-cols-2 lg:grid-cols-5 ${isCompact ? 'gap-3 mb-4' : 'gap-5 mb-6'}`}>
-                <KpiCard
-                    title="总任务数"
-                    value={stats?.total || 0}
-                    icon={<Server className="w-6 h-6" />}
-                    color="gray"
-                    subValue="Total Tasks"
-                    compact={isCompact}
-                />
-                <KpiCard
-                    title="正在运行"
-                    value={stats?.running || 0}
-                    icon={<Activity className="w-6 h-6" />}
-                    color="blue"
-                    subValue="Running"
-                    animate
-                    onClick={() => navigateToTaskInstance('RUNNING')}
-                    compact={isCompact}
-                />
-                <KpiCard
-                    title="等待中"
-                    value={stats?.waiting || 0}
-                    icon={<Clock className="w-6 h-6" />}
-                    color="purple"
-                    subValue="Pending"
-                    onClick={() => navigateToTaskInstance('WAITING_GROUP')}
-                    compact={isCompact}
-                />
-                <KpiCard
-                    title="失败任务"
-                    value={stats?.failed || 0}
-                    icon={<AlertCircle className="w-6 h-6" />}
-                    color="red"
-                    subValue="Attention Needed"
-                    isAlert={stats?.failed > 0}
-                    onClick={() => navigateToTaskInstance('FAIL')}
-                    compact={isCompact}
-                />
-                <KpiCard
-                    title="成功率"
-                    value={`${(stats?.successRate || 0).toFixed(1)}%`}
-                    icon={<CheckCircle className="w-6 h-6" />}
-                    color="green"
-                    subValue="Success Rate"
-                    compact={isCompact}
-                />
+            <div className={`grid grid-cols-1 ${leadingContent ? 'xl:grid-cols-12' : ''} ${isCompact ? 'gap-2 mb-3' : 'gap-5 mb-6'}`}>
+                {leadingContent && <div className="xl:col-span-4">{leadingContent}</div>}
+                <div className={`grid grid-cols-1 md:grid-cols-2 lg:grid-cols-5 ${leadingContent ? 'xl:col-span-8' : ''} ${isCompact ? 'gap-2' : 'gap-5'}`}>
+                    <KpiCard
+                        title="总任务数"
+                        value={stats?.total || 0}
+                        icon={<Server className="w-6 h-6" />}
+                        color="gray"
+                        subValue="Total Tasks"
+                        compact={isCompact}
+                    />
+                    <KpiCard
+                        title="正在运行"
+                        value={stats?.running || 0}
+                        icon={<Activity className="w-6 h-6" />}
+                        color="blue"
+                        subValue="Running"
+                        animate
+                        onClick={() => navigateToTaskInstance('RUNNING')}
+                        compact={isCompact}
+                    />
+                    <KpiCard
+                        title="等待中"
+                        value={stats?.waiting || 0}
+                        icon={<Clock className="w-6 h-6" />}
+                        color="purple"
+                        subValue="Pending"
+                        onClick={() => navigateToTaskInstance('WAITING_GROUP')}
+                        compact={isCompact}
+                    />
+                    <KpiCard
+                        title="失败任务"
+                        value={stats?.failed || 0}
+                        icon={<AlertCircle className="w-6 h-6" />}
+                        color="red"
+                        subValue="Attention Needed"
+                        isAlert={stats?.failed > 0}
+                        onClick={() => navigateToTaskInstance('FAIL')}
+                        compact={isCompact}
+                    />
+                    <KpiCard
+                        title="成功率"
+                        value={`${(stats?.successRate || 0).toFixed(1)}%`}
+                        icon={<CheckCircle className="w-6 h-6" />}
+                        color="green"
+                        subValue="Success Rate"
+                        compact={isCompact}
+                    />
+                </div>
             </div>
 
             {/* Main Content Grid */}
@@ -392,13 +396,13 @@ const KpiCard = ({ title, value, icon, color, subValue, animate, isAlert, onClic
     return (
         <div
             onClick={onClick}
-            className={`relative bg-white/70 backdrop-blur-md ${compact ? 'rounded-[1.5rem] p-4' : 'rounded-[2rem] p-6'} shadow-[0_8px_30px_rgb(0,0,0,0.04)] border border-slate-200/50 hover:shadow-[0_20px_40px_rgba(0,0,0,0.06)] hover:-translate-y-1.5 transition-all duration-500 overflow-hidden group ${isAlert ? 'ring-2 ring-red-400/30' : ''} ${onClick ? 'cursor-pointer' : ''}`}
+            className={`relative bg-white/70 backdrop-blur-md ${compact ? 'rounded-2xl px-3 py-2.5' : 'rounded-[2rem] p-6'} shadow-[0_8px_30px_rgb(0,0,0,0.04)] border border-slate-200/50 hover:shadow-[0_20px_40px_rgba(0,0,0,0.06)] hover:-translate-y-1.5 transition-all duration-500 overflow-hidden group ${isAlert ? 'ring-2 ring-red-400/30' : ''} ${onClick ? 'cursor-pointer' : ''}`}
         >
             {/* Background Glow */}
             <div className={`absolute -inset-1 bg-gradient-to-br ${style.glow} to-transparent opacity-0 group-hover:opacity-100 transition-opacity duration-700`} />
 
-            <div className={`relative flex items-center justify-between ${compact ? 'mb-3' : 'mb-6'}`}>
-                <div className={`${compact ? 'p-2 rounded-xl' : 'p-3 rounded-2xl'} ${style.bgIcon} border border-white shadow-sm ring-4 ${style.ring} group-hover:rotate-12 transition-all duration-500`}>
+            <div className={`relative flex items-center justify-between ${compact ? 'mb-2' : 'mb-6'}`}>
+                <div className={`${compact ? 'p-1.5 rounded-lg' : 'p-3 rounded-2xl'} ${style.bgIcon} border border-white shadow-sm ${compact ? '' : `ring-4 ${style.ring}`} group-hover:rotate-12 transition-all duration-500`}>
                     {React.cloneElement(icon, { strokeWidth: 2.5, className: compact ? 'w-4 h-4' : 'w-5 h-5' })}
                 </div>
                 {animate && (
@@ -413,12 +417,12 @@ const KpiCard = ({ title, value, icon, color, subValue, animate, isAlert, onClic
             </div>
 
             <div className="relative flex flex-col">
-                <span className="text-[10px] font-black text-slate-400 mb-1 uppercase tracking-widest">{title}</span>
-                <span className={`${compact ? 'text-2xl' : 'text-3xl'} font-black text-slate-900 tracking-tighter tabular-nums ${isAlert && value > 0 ? 'text-red-600 animate-pulse' : ''}`}>{value}</span>
+                <span className={`${compact ? 'text-[9px]' : 'text-[10px]'} font-black text-slate-400 mb-0.5 uppercase tracking-widest`}>{title}</span>
+                <span className={`${compact ? 'text-xl' : 'text-3xl'} font-black text-slate-900 tracking-tighter tabular-nums ${isAlert && value > 0 ? 'text-red-600 animate-pulse' : ''}`}>{value}</span>
             </div>
 
-            <div className={`relative ${compact ? 'mt-2 pt-2' : 'mt-4 pt-4'} border-t border-slate-100/50 flex items-center justify-between`}>
-                <span className="text-[9px] font-bold text-slate-400 uppercase tracking-tight">{subValue}</span>
+            <div className={`relative ${compact ? 'mt-1.5 pt-1.5' : 'mt-4 pt-4'} border-t border-slate-100/50 flex items-center justify-between`}>
+                <span className={`${compact ? 'text-[8px]' : 'text-[9px]'} font-bold text-slate-400 uppercase tracking-tight`}>{subValue}</span>
                 <div className="w-1.5 h-1.5 rounded-full bg-slate-200 group-hover:bg-red-500 transition-colors duration-500" />
             </div>
         </div>

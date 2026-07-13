@@ -1,4 +1,4 @@
-import React, { useCallback, useState } from 'react';
+import React, { ReactNode, useCallback, useState } from 'react';
 import SystemLinks from '../SystemLinks';
 import { BatchStatusChart, TrendAnalysisChart } from '../StatsSection';
 import Notices from '../Notices';
@@ -22,6 +22,7 @@ interface DashboardViewLayoutProps {
   sectionGap?: DashboardSectionGap;
   fitViewport?: boolean;
   showFooter?: boolean;
+  batchMonitoringLeadingContent?: ReactNode;
 }
 
 const defaultOverviewSlots: DashboardOverviewSlotKey[] = ['notice', 'batchStatus', 'systems'];
@@ -34,6 +35,7 @@ const DashboardViewLayout: React.FC<DashboardViewLayoutProps> = ({
   sectionGap = 'default',
   fitViewport = false,
   showFooter = true,
+  batchMonitoringLeadingContent,
 }) => {
   const [batchData, setBatchData] = useState<TaskStatsVO[]>([]);
   const [loadingBatch, setLoadingBatch] = useState(false);
@@ -173,7 +175,7 @@ const DashboardViewLayout: React.FC<DashboardViewLayoutProps> = ({
         <Auth key="batchMonitoring" code="dash:Batch-monitoring">
           <section className="animate-fade-in-up" style={{ animationDelay }}>
             <div className="relative z-10">
-              <BatchMonitoring density={batchMonitoringDensity} />
+              <BatchMonitoring density={batchMonitoringDensity} leadingContent={batchMonitoringLeadingContent} />
             </div>
           </section>
         </Auth>

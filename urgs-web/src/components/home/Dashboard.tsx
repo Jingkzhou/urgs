@@ -1,18 +1,14 @@
 import React, { useEffect, useState } from 'react';
-import { Activity, BriefcaseBusiness, Code2, LayoutDashboard } from 'lucide-react';
+import { LayoutDashboard } from 'lucide-react';
 import { hasPermission } from '../../utils/permission';
-import { DashboardViewDefinition, DashboardViewKey, dashboardViewDefinitions } from './dashboardViews';
+import { DashboardViewKey, dashboardViewDefinitions } from './dashboardViews';
 
 const DASHBOARD_VIEW_STORAGE_KEY = 'urgs_dashboard_view';
 
-const dashboardViewIcons: Record<DashboardViewKey, React.ReactNode> = {
-  business: <BriefcaseBusiness size={14} strokeWidth={2.5} />,
-  dev: <Code2 size={14} strokeWidth={2.5} />,
-  ops: <Activity size={14} strokeWidth={2.5} />,
-};
-
 const getStoredDashboardView = (): DashboardViewKey | null => {
   if (typeof window === 'undefined') return null;
+  const viewFromHash = new URLSearchParams(window.location.hash.split('?')[1] || '').get('view');
+  if (dashboardViewDefinitions.some(view => view.key === viewFromHash)) return viewFromHash as DashboardViewKey;
   const stored = window.localStorage.getItem(DASHBOARD_VIEW_STORAGE_KEY);
   return dashboardViewDefinitions.some(view => view.key === stored) ? stored as DashboardViewKey : null;
 };
@@ -29,12 +25,11 @@ const Dashboard: React.FC = () => {
     }
   }, [activeView, selectedViewKey]);
 
-  const handleSelectView = (view: DashboardViewDefinition) => {
-    setSelectedViewKey(view.key);
-    if (typeof window !== 'undefined') {
-      window.localStorage.setItem(DASHBOARD_VIEW_STORAGE_KEY, view.key);
-    }
-  };
+  useEffect(() => {
+    const syncSelectedView = () => setSelectedViewKey(getStoredDashboardView());
+    window.addEventListener('hashchange', syncSelectedView);
+    return () => window.removeEventListener('hashchange', syncSelectedView);
+  }, []);
 
   if (!activeView) {
     return (
@@ -55,34 +50,7 @@ const Dashboard: React.FC = () => {
   const ActiveDashboardView = activeView.component;
 
   return (
-    <div className="space-y-6">
-      {allowedViews.length > 1 && (
-        <div className="flex justify-end">
-          <div className="inline-flex flex-wrap items-center gap-1 rounded-2xl border border-slate-200/70 bg-white/80 p-1 shadow-sm">
-            {allowedViews.map(view => {
-              const isActive = activeView.key === view.key;
-              return (
-                <button
-                  key={view.key}
-                  type="button"
-                  onClick={() => handleSelectView(view)}
-                  className={`flex items-center gap-2 rounded-xl px-3 py-2 text-xs font-black transition-all ${
-                    isActive
-                      ? 'bg-red-50 text-red-600 shadow-sm'
-                      : 'text-slate-500 hover:bg-slate-100 hover:text-slate-800'
-                  }`}
-                >
-                  {dashboardViewIcons[view.key]}
-                  <span>{view.label}</span>
-                </button>
-              );
-            })}
-          </div>
-        </div>
-      )}
-
-      <ActiveDashboardView />
-    </div>
+    <ActiveDashboardView />
   );
 };
 

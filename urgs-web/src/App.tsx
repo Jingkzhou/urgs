@@ -1,7 +1,8 @@
 import React, { useEffect, useState } from 'react';
 import { hasPermission } from './utils/permission';
-import { LayoutDashboard, Bell, Search, UserCircle, LogOut, Settings, PanelTop, PanelLeft, Megaphone, Timer, Database, GitBranch, Activity, Lock, Palette, User, Sparkles, Award, BookOpen, ChevronDown, Wrench } from 'lucide-react';
+import { LayoutDashboard, Bell, Search, UserCircle, LogOut, Settings, PanelTop, PanelLeft, Megaphone, Timer, Database, GitBranch, Activity, Lock, Palette, User, Sparkles, Award, BookOpen, ChevronDown, Wrench, BriefcaseBusiness, Code2 } from 'lucide-react';
 import { motion, AnimatePresence } from 'framer-motion';
+import { createPortal } from 'react-dom';
 import Login from './components/Login';
 import Dashboard from './components/home/Dashboard';
 import SystemManagement from './components/SystemManagement';
@@ -17,6 +18,7 @@ import ArkPage from './components/ark/ArkPage';
 import KnowledgeCenter from './components/knowledge/KnowledgeCenter';
 import MarketplacePage from './components/marketplace/MarketplacePage';
 import ToolsPage from './components/tools/ToolsPage';
+import { DashboardViewDefinition, DashboardViewKey, dashboardViewDefinitions } from './components/home/dashboardViews';
 import { LOGO_URL } from './constants';
 
 const NAV_ITEMS = [
@@ -31,6 +33,12 @@ const NAV_ITEMS = [
     { id: 'knowledge', label: '知识中心', icon: BookOpen, permission: 'knowledge' },
     { id: 'sys', label: '系统管理', icon: Settings, permission: 'sys' },
 ];
+
+const dashboardViewIcons: Record<DashboardViewKey, React.ReactNode> = {
+    business: <BriefcaseBusiness size={15} strokeWidth={2.5} />,
+    dev: <Code2 size={15} strokeWidth={2.5} />,
+    ops: <Activity size={15} strokeWidth={2.5} />,
+};
 
 const App: React.FC = () => {
     const initialToken = typeof localStorage !== 'undefined' ? localStorage.getItem('auth_token') : null;
@@ -221,6 +229,13 @@ const App: React.FC = () => {
         setShowUserMenu(false);
     };
 
+    const allowedDashboardViews = dashboardViewDefinitions.filter(view => hasPermission(view.permission));
+    const handleDashboardViewSelect = (view: DashboardViewDefinition) => {
+        localStorage.setItem('urgs_dashboard_view', view.key);
+        setActiveTab('dashboard');
+        window.location.hash = `#/dashboard?view=${view.key}`;
+    };
+
     if (!isAuthenticated) {
         return <Login onLogin={handleLogin} />;
     }
@@ -303,15 +318,22 @@ const App: React.FC = () => {
                     </div>
 
                     <nav className="flex-1 space-y-2.5 overflow-y-auto px-2 py-5 [&::-webkit-scrollbar]:hidden [-ms-overflow-style:none] [scrollbar-width:none]">
-                        {NAV_ITEMS.filter(item => hasPermission(item.permission)).map((item) => (
-                            <NavItem
-                                key={item.id}
-                                icon={<item.icon size={16} />}
-                                label={item.label}
-                                active={activeTab === item.id}
-                                onClick={() => { setActiveTab(item.id); window.location.hash = '#/' + item.id; }}
-                            />
-                        ))}
+                        {NAV_ITEMS.filter(item => hasPermission(item.permission)).map((item) => {
+                            const navItem = (
+                                <NavItem
+                                    icon={<item.icon size={16} />}
+                                    label={item.label}
+                                    active={activeTab === item.id}
+                                    onClick={() => { setActiveTab(item.id); window.location.hash = '#/' + item.id; }}
+                                />
+                            );
+
+                            return item.id === 'dashboard' && allowedDashboardViews.length > 1 ? (
+                                <DashboardViewMenu key={item.id} views={allowedDashboardViews} onSelect={handleDashboardViewSelect} placement="sidebar">
+                                    {navItem}
+                                </DashboardViewMenu>
+                            ) : <React.Fragment key={item.id}>{navItem}</React.Fragment>;
+                        })}
                     </nav>
 
                     <div className="flex shrink-0 flex-col items-center gap-3 border-t border-slate-100 px-2 py-4">
@@ -387,9 +409,8 @@ const App: React.FC = () => {
                                             <>
                                                 {visibleItems.map((item) => {
                                                     const isActive = activeTab === item.id;
-                                                    return (
+                                                    const navItem = (
                                                         <button
-                                                            key={item.id}
                                                             onClick={() => { setActiveTab(item.id); window.location.hash = '#/' + item.id; }}
                                                             className={`relative flex items-center gap-2 px-3.5 py-2.5 rounded-xl text-[12px] font-black uppercase tracking-wider transition-all duration-300 z-10
                                                             ${isActive ? 'text-red-600' : 'text-slate-500 hover:text-slate-900 hover:bg-slate-100/70'}
@@ -404,9 +425,15 @@ const App: React.FC = () => {
                                                                 )}
                                                                 <item.icon size={16} strokeWidth={isActive ? 3 : 2} />
                                                                 <span className="whitespace-nowrap">{item.label}</span>
-                                                            </button>
-                                                        );
-                                                    })}
+                                                        </button>
+                                                    );
+
+                                                    return item.id === 'dashboard' && allowedDashboardViews.length > 1 ? (
+                                                        <DashboardViewMenu key={item.id} views={allowedDashboardViews} onSelect={handleDashboardViewSelect} placement="topbar">
+                                                            {navItem}
+                                                        </DashboardViewMenu>
+                                                    ) : <React.Fragment key={item.id}>{navItem}</React.Fragment>;
+                                                })}
 
                                                         {hiddenItems.length > 0 && (
                                                             <div className="relative z-20">
@@ -546,6 +573,90 @@ interface NavItemProps {
     active?: boolean;
     onClick: () => void;
 }
+
+interface DashboardViewMenuProps {
+    views: DashboardViewDefinition[];
+    onSelect: (view: DashboardViewDefinition) => void;
+    placement: 'sidebar' | 'topbar';
+    children: React.ReactNode;
+}
+
+const DashboardViewMenu: React.FC<DashboardViewMenuProps> = ({ views, onSelect, placement, children }) => {
+    const triggerRef = React.useRef<HTMLDivElement>(null);
+    const closeTimerRef = React.useRef<number | null>(null);
+    const [sidebarMenuOpen, setSidebarMenuOpen] = useState(false);
+    const [sidebarMenuPosition, setSidebarMenuPosition] = useState({ left: 0, top: 0 });
+
+    const clearCloseTimer = () => {
+        if (closeTimerRef.current !== null) {
+            window.clearTimeout(closeTimerRef.current);
+            closeTimerRef.current = null;
+        }
+    };
+
+    const openSidebarMenu = () => {
+        clearCloseTimer();
+        const rect = triggerRef.current?.getBoundingClientRect();
+        if (rect) {
+            setSidebarMenuPosition({ left: rect.right + 10, top: rect.top + rect.height / 2 });
+            setSidebarMenuOpen(true);
+        }
+    };
+
+    const closeSidebarMenu = () => {
+        clearCloseTimer();
+        closeTimerRef.current = window.setTimeout(() => setSidebarMenuOpen(false), 160);
+    };
+
+    useEffect(() => () => clearCloseTimer(), []);
+
+    const menuContent = (
+        <>
+            <p className="px-2 py-1 text-[9px] font-black uppercase tracking-[0.16em] text-slate-400">首页切换</p>
+            <div className="mt-1 space-y-1">
+                {views.map(view => (
+                    <button
+                        key={view.key}
+                        type="button"
+                        onClick={() => onSelect(view)}
+                        className="flex w-full items-center gap-2.5 rounded-xl px-2.5 py-2 text-left text-[11px] font-bold text-slate-600 transition-colors hover:bg-red-50 hover:text-red-600"
+                    >
+                        <span className="text-slate-400 transition-colors group-hover:text-red-500">{dashboardViewIcons[view.key]}</span>
+                        <span>{view.label}</span>
+                    </button>
+                ))}
+            </div>
+        </>
+    );
+
+    if (placement === 'sidebar') {
+        return (
+            <div ref={triggerRef} className="relative" onMouseEnter={openSidebarMenu} onMouseLeave={closeSidebarMenu}>
+                {children}
+                {sidebarMenuOpen && typeof document !== 'undefined' && createPortal(
+                    <div
+                        className="group fixed z-[300] w-44 -translate-y-1/2 rounded-2xl border border-slate-200/80 bg-white/95 p-2 shadow-[0_24px_50px_-18px_rgba(15,23,42,0.28)] backdrop-blur-2xl"
+                        style={sidebarMenuPosition}
+                        onMouseEnter={openSidebarMenu}
+                        onMouseLeave={closeSidebarMenu}
+                    >
+                        {menuContent}
+                    </div>,
+                    document.body,
+                )}
+            </div>
+        );
+    }
+
+    return (
+        <div className="group relative">
+            {children}
+            <div className="pointer-events-none absolute left-0 top-full z-[180] w-44 rounded-2xl border border-slate-200/80 bg-white/95 p-2 opacity-0 shadow-[0_24px_50px_-18px_rgba(15,23,42,0.28)] backdrop-blur-2xl transition-all duration-200 group-hover:pointer-events-auto group-hover:opacity-100">
+                {menuContent}
+            </div>
+        </div>
+    );
+};
 
 const NavItem: React.FC<NavItemProps> = ({ icon, label, active, onClick }) => (
     <button

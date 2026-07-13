@@ -35,6 +35,20 @@ const MarketplacePage: React.FC = () => {
     const activeTabConfig = visibleTabs.find(tab => tab.id === activeTab);
 
     useEffect(() => {
+        const syncTabFromHash = () => {
+            const query = window.location.hash.includes('?') ? window.location.hash.split('?')[1] : '';
+            const requestedTab = new URLSearchParams(query).get('tab') as MarketplaceTab | null;
+            if (requestedTab && visibleTabs.some(tab => tab.id === requestedTab)) {
+                setActiveTab(requestedTab);
+            }
+        };
+
+        syncTabFromHash();
+        window.addEventListener('hashchange', syncTabFromHash);
+        return () => window.removeEventListener('hashchange', syncTabFromHash);
+    }, [visibleTabs]);
+
+    useEffect(() => {
         if (!activeTabConfig && visibleTabs.length > 0) {
             setActiveTab(visibleTabs[0].id);
         }
