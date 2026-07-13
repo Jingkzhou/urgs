@@ -1,5 +1,5 @@
 import React, { useState, useEffect } from 'react';
-import { GitBranch, ShieldCheck, Megaphone, BarChart3, Folder, Terminal, Gauge, ChevronRight, LayoutGrid, Timer, GitPullRequest, Calendar } from 'lucide-react';
+import { GitBranch, ShieldCheck, Megaphone, BarChart3, Folder, Terminal, Gauge, ChevronRight, LayoutGrid, GitPullRequest, Calendar } from 'lucide-react';
 import { motion, AnimatePresence } from 'framer-motion';
 import { hasPermission } from '../utils/permission';
 import { BreadcrumbProvider, useBreadcrumbs } from '../context/BreadcrumbContext';
@@ -8,9 +8,11 @@ import NoticeManagement from './version/NoticeManagement';
 import ReleaseStats from './version/ReleaseStats';
 import VersionOverview from './version/VersionOverview';
 import GitRepoManagement from './version/git-repo/GitRepoManagement';
+import { getRepoPrCounts } from '@/api/version';
 
 const VersionManagementContent: React.FC = () => {
     const [activeTab, setActiveTab] = useState<string>('');
+    const [openPullRequestCount, setOpenPullRequestCount] = useState(0);
 
     const TABS = [
         { id: 'app', label: '应用系统', subLabel: 'Applications', icon: LayoutGrid, code: 'version:app:list', component: AppSystemList },
@@ -34,6 +36,18 @@ const VersionManagementContent: React.FC = () => {
         }
         setActiveTab('overview');
     }, [activeTab]);
+
+    useEffect(() => {
+        const loadOpenPullRequestCount = async () => {
+            try {
+                const counts = await getRepoPrCounts();
+                setOpenPullRequestCount(Object.values(counts).reduce((total, count) => total + count, 0));
+            } catch (error) {
+                console.error('获取合并请求数量失败', error);
+            }
+        };
+        loadOpenPullRequestCount();
+    }, []);
 
     const allTabs = [
         { id: 'overview', label: '版本概览', subLabel: 'Overview', icon: Gauge, component: VersionOverview },
@@ -162,14 +176,9 @@ const VersionManagementContent: React.FC = () => {
 
                     <div className="flex items-center gap-6">
                         <div className="hidden md:flex items-center gap-4 text-[10px] font-mono text-slate-400">
-                            <div className="flex items-center gap-1.5 px-2 py-1 rounded bg-orange-50 border border-orange-100 text-orange-600 font-bold">
-                                <Timer size={12} />
-                                <span>待发布: 3</span>
-                            </div>
-                            <div className="w-px h-3 bg-slate-300"></div>
                             <div className="flex items-center gap-1.5 px-2 py-1 rounded bg-blue-50 border border-blue-100 text-blue-600 font-bold">
                                 <GitPullRequest size={12} />
-                                <span>合并请求: 12</span>
+                                <span>合并请求: {openPullRequestCount}</span>
                             </div>
                         </div>
                     </div>

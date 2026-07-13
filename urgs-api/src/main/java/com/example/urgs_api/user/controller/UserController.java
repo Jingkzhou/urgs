@@ -5,6 +5,7 @@ import com.example.urgs_api.auth.annotation.RequirePermission;
 import com.example.urgs_api.user.dto.UserBatchImportResultDTO;
 import com.example.urgs_api.user.dto.UserDTO;
 import com.example.urgs_api.user.dto.UserGitIdentityDTO;
+import com.example.urgs_api.user.dto.UserGitTokenRequest;
 import com.example.urgs_api.user.dto.UserRequest;
 import com.example.urgs_api.user.mapper.UserGitIdentityMapper;
 import com.example.urgs_api.user.model.User;
@@ -18,6 +19,7 @@ import org.springframework.web.server.ResponseStatusException;
 
 import java.util.List;
 import java.util.Map;
+import java.util.Set;
 import java.util.stream.Collectors;
 
 @RestController
@@ -163,6 +165,53 @@ public class UserController {
         return ResponseEntity.ok(UserDTO.fromEntity(user));
     }
 
+    @GetMapping("/profile/git-tokens")
+    public ResponseEntity<Map<String, Boolean>> getMyGitTokenStatus(
+            @RequestAttribute(value = "userId", required = false) Long userId) {
+        if (userId == null) {
+            return ResponseEntity.status(HttpStatus.UNAUTHORIZED).build();
+        }
+        Map<String, Boolean> status = Set.of("GITEE", "GITLAB", "GITHUB").stream()
+                .collect(Collectors.toMap(
+                        platform -> platform.toLowerCase(),
+                        platform -> {
+                            UserGitIdentity identity = findGitIdentity(userId, platform);
+                            return identity != null && StringUtils.hasText(identity.getAccessToken());
+                        }));
+        return ResponseEntity.ok(status);
+    }
+
+    @PutMapping("/profile/git-token")
+    public ResponseEntity<Void> saveMyGitToken(
+            @RequestAttribute(value = "userId", required = false) Long userId,
+            @RequestBody UserGitTokenRequest req) {
+        if (userId == null) {
+            return ResponseEntity.status(HttpStatus.UNAUTHORIZED).build();
+        }
+        String platform = normalizeGitPlatform(req.getPlatform());
+        if (!Set.of("GITEE", "GITLAB", "GITHUB").contains(platform)) {
+            throw new ResponseStatusException(HttpStatus.BAD_REQUEST, "不支持的 Git 平台");
+        }
+        String accessToken = trimToNull(req.getAccessToken());
+        if (accessToken == null) {
+            throw new ResponseStatusException(HttpStatus.BAD_REQUEST, "访问令牌不能为空");
+        }
+
+        UserGitIdentity identity = findGitIdentity(userId, platform);
+        if (identity == null) {
+            identity = new UserGitIdentity();
+            identity.setUserId(userId);
+            identity.setPlatform(platform);
+            identity.setEnabled(true);
+            identity.setAccessToken(accessToken);
+            userGitIdentityMapper.insert(identity);
+        } else {
+            identity.setAccessToken(accessToken);
+            userGitIdentityMapper.updateById(identity);
+        }
+        return ResponseEntity.noContent().build();
+    }
+
     private void validateUniqueEmpId(String empId, Long currentUserId) {
         if (empId == null || empId.isBlank()) {
             return;
@@ -264,7 +313,7 @@ public class UserController {
         UserGitIdentity existing = findGitIdentity(userId, DEFAULT_GIT_PLATFORM);
 
         if (!StringUtils.hasText(gitUsername) && !StringUtils.hasText(gitEmail) && !StringUtils.hasText(gitUserId)) {
-            if (existing != null) {
+            if (existing != null && !StringUtils.hasText(existing.getAccessToken())) {
                 userGitIdentityMapper.deleteById(existing.getId());
             }
             return;

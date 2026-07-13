@@ -14,6 +14,12 @@ const platformConfig = {
     github: { label: 'GitHub', color: 'default', icon: '⚫' },
 };
 
+const getActivityTime = (repo: GitRepository) => {
+    const activityTime = repo.lastSyncedAt || repo.updatedAt || repo.createdAt;
+    const timestamp = activityTime ? new Date(activityTime).getTime() : 0;
+    return Number.isNaN(timestamp) ? 0 : timestamp;
+};
+
 const parseFullNameFromCloneUrl = (cloneUrl?: string): string | null => {
     if (!cloneUrl) {
         return null;
@@ -64,10 +70,12 @@ const GitRepoManagement: React.FC = () => {
                 getRepoPrCounts().catch(() => ({}))
             ]);
 
-            const reposWithCounts = (data || []).map(repo => ({
-                ...repo,
-                pendingPrCount: prCounts ? prCounts[repo.id!] : 0
-            }));
+            const reposWithCounts = (data || [])
+                .map(repo => ({
+                    ...repo,
+                    pendingPrCount: prCounts ? prCounts[repo.id!] : 0
+                }))
+                .sort((a, b) => getActivityTime(b) - getActivityTime(a) || (b.id || 0) - (a.id || 0));
 
             setRepos(reposWithCounts);
         } catch (error) {
@@ -89,7 +97,7 @@ const GitRepoManagement: React.FC = () => {
     const handleAdd = () => {
         setEditingRepo(null);
         form.resetFields();
-        form.setFieldsValue({ platform: 'gitee', enabled: true, defaultBranch: 'master' });
+        form.setFieldsValue({ platform: 'gitlab', enabled: true, defaultBranch: 'master' });
         setModalVisible(true);
     };
 
@@ -128,7 +136,7 @@ const GitRepoManagement: React.FC = () => {
             setModalVisible(false);
             fetchRepos();
         } catch (error) {
-            message.error('保存失败');
+            message.error(error instanceof Error ? error.message : '保存失败');
         }
     };
 
@@ -413,13 +421,9 @@ const GitRepoManagement: React.FC = () => {
                         <Input placeholder="master" />
                     </Form.Item>
 
-                    <Form.Item
-                        name="accessToken"
-                        label="访问令牌 (Access Token)"
-                        extra="用于拉取代码和调用平台 API。Gitee: 个人设置 → 私人令牌；GitHub: Settings → Developer settings → Personal access tokens"
-                    >
-                        <Input.Password placeholder="可选，但浏览代码功能需要此令牌" />
-                    </Form.Item>
+                    <div className="rounded-lg border border-blue-100 bg-blue-50 px-3 py-2 text-xs text-blue-700">
+                        使用个人信息中配置的对应平台访问令牌；保存时将自动验证该令牌是否有仓库访问权限。
+                    </div>
 
                     <Form.Item name="enabled" label="启用" valuePropName="checked">
                         <Switch />

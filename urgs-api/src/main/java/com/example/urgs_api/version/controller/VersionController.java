@@ -8,8 +8,10 @@ import com.example.urgs_api.version.service.GitPlatformService;
 import lombok.RequiredArgsConstructor;
 
 import org.springframework.http.ResponseEntity;
+import org.springframework.http.HttpStatus;
 
 import org.springframework.web.bind.annotation.*;
+import org.springframework.web.server.ResponseStatusException;
 import java.util.List;
 import java.util.Map;
 
@@ -107,7 +109,14 @@ public class VersionController {
     @PostMapping("/repos")
     public GitRepository createRepo(@RequestBody GitRepository repo,
             @RequestAttribute(value = "userId", required = false) Long userId) {
-        return gitRepositoryService.create(repo, userId != null ? userId : 1L);
+        Long currentUserId = userId != null ? userId : 1L;
+        try {
+            String accessToken = gitRepositoryService.getPersonalAccessToken(currentUserId, repo.getPlatform());
+            gitPlatformService.verifyRepositoryAccess(repo, accessToken);
+            return gitRepositoryService.create(repo, currentUserId);
+        } catch (IllegalArgumentException e) {
+            throw new ResponseStatusException(HttpStatus.BAD_REQUEST, e.getMessage());
+        }
     }
 
     @PutMapping("/repos/{id}")

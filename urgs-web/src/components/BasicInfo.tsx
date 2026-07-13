@@ -1,5 +1,5 @@
 import React, { useRef, useState } from 'react';
-import { User, Phone, Building, Briefcase, Camera, Shield } from 'lucide-react';
+import { User, Phone, Building, Briefcase, Camera, Shield, KeyRound } from 'lucide-react';
 import { userService } from '../services/userService';
 
 const DEFAULT_AVATARS = ['avatar', 'animal-avatar'].flatMap(prefix =>
@@ -30,6 +30,22 @@ const BasicInfo: React.FC<{ userInfo: UserInfo | null }> = ({ userInfo }) => {
         department: userInfo?.orgName || userInfo?.department || '暂无机构信息',
     });
     const [isSavingAvatar, setIsSavingAvatar] = useState(false);
+    const [gitTokenPlatform, setGitTokenPlatform] = useState<'gitee' | 'gitlab' | 'github'>('gitlab');
+    const [gitAccessToken, setGitAccessToken] = useState('');
+    const [gitTokenStatus, setGitTokenStatus] = useState<Partial<Record<'gitee' | 'gitlab' | 'github', boolean>>>({});
+    const [isSavingGitToken, setIsSavingGitToken] = useState(false);
+
+    const loadGitTokenStatus = async () => {
+        try {
+            setGitTokenStatus(await userService.getGitTokenStatus());
+        } catch (error) {
+            console.error('Load Git token status failed', error);
+        }
+    };
+
+    React.useEffect(() => {
+        loadGitTokenStatus();
+    }, []);
 
     // Auto-fix missing ID
     React.useEffect(() => {
@@ -150,6 +166,25 @@ const BasicInfo: React.FC<{ userInfo: UserInfo | null }> = ({ userInfo }) => {
         }
     };
 
+    const saveGitToken = async () => {
+        if (!gitAccessToken.trim()) {
+            alert('请输入访问令牌');
+            return;
+        }
+        setIsSavingGitToken(true);
+        try {
+            await userService.saveGitToken(gitTokenPlatform, gitAccessToken.trim());
+            setGitAccessToken('');
+            await loadGitTokenStatus();
+            alert('Git 访问令牌已保存');
+        } catch (error) {
+            console.error('Save Git token failed', error);
+            alert('Git 访问令牌保存失败');
+        } finally {
+            setIsSavingGitToken(false);
+        }
+    };
+
 
 
 
@@ -260,6 +295,44 @@ const BasicInfo: React.FC<{ userInfo: UserInfo | null }> = ({ userInfo }) => {
                                     </button>
                                 );
                             })}
+                        </div>
+                    </div>
+
+                    <div className="mt-6 rounded-[1.75rem] border border-slate-100 bg-slate-50/70 p-5">
+                        <div className="mb-4 flex items-center gap-3">
+                            <div className="rounded-xl bg-white p-3 text-red-500 shadow-sm">
+                                <KeyRound size={20} />
+                            </div>
+                            <div>
+                                <h3 className="text-sm font-black text-slate-700">Git 仓库访问令牌</h3>
+                                <p className="mt-1 text-xs text-slate-400">按平台保存一次；新增仓库时系统将使用此令牌验证访问权限。</p>
+                            </div>
+                        </div>
+                        <div className="flex flex-col gap-3 md:flex-row">
+                            <select
+                                value={gitTokenPlatform}
+                                onChange={(event) => setGitTokenPlatform(event.target.value as 'gitee' | 'gitlab' | 'github')}
+                                className="rounded-xl border border-slate-200 bg-white px-3 py-2 text-sm text-slate-700 outline-none focus:border-red-300"
+                            >
+                                <option value="gitee">Gitee</option>
+                                <option value="gitlab">GitLab</option>
+                                <option value="github">GitHub</option>
+                            </select>
+                            <input
+                                type="password"
+                                value={gitAccessToken}
+                                onChange={(event) => setGitAccessToken(event.target.value)}
+                                placeholder={gitTokenStatus[gitTokenPlatform] ? '已配置，输入新令牌可覆盖' : '请输入 Access Token'}
+                                className="min-w-0 flex-1 rounded-xl border border-slate-200 bg-white px-3 py-2 text-sm outline-none focus:border-red-300"
+                            />
+                            <button
+                                type="button"
+                                onClick={saveGitToken}
+                                disabled={isSavingGitToken}
+                                className="rounded-xl bg-red-500 px-4 py-2 text-sm font-bold text-white transition-colors hover:bg-red-600 disabled:cursor-wait disabled:opacity-60"
+                            >
+                                {isSavingGitToken ? '保存中...' : '保存令牌'}
+                            </button>
                         </div>
                     </div>
 

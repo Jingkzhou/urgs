@@ -2,9 +2,13 @@ package com.example.urgs_api.version.service;
 
 import com.example.urgs_api.version.entity.GitRepository;
 import com.example.urgs_api.version.repository.GitRepositoryRepository;
+import com.example.urgs_api.user.mapper.UserGitIdentityMapper;
+import com.example.urgs_api.user.model.UserGitIdentity;
+import com.baomidou.mybatisplus.core.conditions.query.LambdaQueryWrapper;
 import lombok.RequiredArgsConstructor;
 import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
+import org.springframework.util.StringUtils;
 import java.time.LocalDateTime;
 import java.util.List;
 import java.util.Optional;
@@ -19,6 +23,7 @@ import java.util.UUID;
 public class GitRepositoryService {
 
     private final GitRepositoryRepository repository;
+    private final UserGitIdentityMapper userGitIdentityMapper;
 
     /**
      * 按创建者过滤获取所有 Git 仓库
@@ -68,7 +73,29 @@ public class GitRepositoryService {
      * @return Optional 包装的仓库对象
      */
     public Optional<GitRepository> findById(Long id) {
-        return repository.findById(id);
+        return repository.findById(id).map(this::resolveAccessToken);
+    }
+
+    /**
+     * 获取用户在指定 Git 平台配置的访问令牌。
+     */
+    public String getPersonalAccessToken(Long userId, String platform) {
+        if (userId == null || !StringUtils.hasText(platform)) {
+            return null;
+        }
+        UserGitIdentity identity = userGitIdentityMapper.selectOne(new LambdaQueryWrapper<UserGitIdentity>()
+                .eq(UserGitIdentity::getUserId, userId)
+                .eq(UserGitIdentity::getPlatform, platform.trim().toUpperCase())
+                .last("LIMIT 1"));
+        return identity == null ? null : identity.getAccessToken();
+    }
+
+    private GitRepository resolveAccessToken(GitRepository repo) {
+        String token = getPersonalAccessToken(repo.getCreateBy(), repo.getPlatform());
+        if (StringUtils.hasText(token)) {
+            repo.setResolvedAccessToken(token);
+        }
+        return repo;
     }
 
     /**
@@ -110,6 +137,8 @@ public class GitRepositoryService {
         if (currentUserId != null) {
             repo.setCreateBy(currentUserId);
         }
+        // 新仓库统一使用个人信息中的平台令牌，不再保存仓库级令牌。
+        repo.setAccessToken(null);
         // 生成 webhook secret
         if (repo.getWebhookSecret() == null) {
             repo.setWebhookSecret(UUID.randomUUID().toString().replace("-", ""));
@@ -135,7 +164,6 @@ public class GitRepositoryService {
         existing.setCloneUrl(repo.getCloneUrl());
         existing.setSshUrl(repo.getSshUrl());
         existing.setDefaultBranch(repo.getDefaultBranch());
-        existing.setAccessToken(repo.getAccessToken());
         existing.setEnabled(repo.getEnabled());
         existing.setPlatform(repo.getPlatform());
         existing.setSsoId(repo.getSsoId());

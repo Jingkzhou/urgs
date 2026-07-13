@@ -46,6 +46,38 @@ public class GitPlatformService {
     }
 
     /**
+     * 使用个人信息中配置的平台令牌，验证是否能访问待保存的仓库。
+     */
+    public void verifyRepositoryAccess(GitRepository repo, String accessToken) {
+        if (accessToken == null || accessToken.isBlank()) {
+            throw new IllegalArgumentException("请先在个人信息中配置 " + repo.getPlatform() + " 访问令牌");
+        }
+        String fullName = resolveRepoFullName(repo);
+        try {
+            switch (repo.getPlatform().toLowerCase()) {
+                case "gitee" -> {
+                    String url = "https://gitee.com/api/v5/repos/" + fullName
+                            + "?access_token=" + java.net.URLEncoder.encode(accessToken, java.nio.charset.StandardCharsets.UTF_8);
+                    httpGet(url);
+                }
+                case "github" -> httpGetWithAuth(
+                        "https://api.github.com/repos/" + fullName, accessToken, "Bearer");
+                case "gitlab" -> httpGetWithAuth(
+                        getGitLabApiBase(repo) + "/projects/"
+                                + java.net.URLEncoder.encode(fullName, java.nio.charset.StandardCharsets.UTF_8),
+                        accessToken,
+                        "PRIVATE-TOKEN");
+                default -> throw new IllegalArgumentException("不支持的平台: " + repo.getPlatform());
+            }
+        } catch (IllegalArgumentException e) {
+            throw e;
+        } catch (Exception e) {
+            log.warn("Git 仓库访问校验失败: platform={}, repo={}", repo.getPlatform(), fullName, e);
+            throw new IllegalArgumentException("无法访问该仓库，请检查个人访问令牌和仓库权限");
+        }
+    }
+
+    /**
      * 获取文件树
      */
     public List<GitFileEntry> getFileTree(Long repoId, String ref, String path) {

@@ -27,7 +27,6 @@ export interface GitRepository {
     cloneUrl: string;
     sshUrl?: string;
     defaultBranch?: string;
-    accessToken?: string;
     webhookSecret?: string;
     webhookUrl?: string;
     enabled?: boolean;

@@ -1,5 +1,7 @@
 package com.example.urgs_api.version.entity;
 
+import com.fasterxml.jackson.annotation.JsonIgnore;
+import com.fasterxml.jackson.annotation.JsonProperty;
 import jakarta.persistence.*;
 import lombok.Data;
 import java.time.LocalDateTime;
@@ -45,9 +47,19 @@ public class GitRepository {
     @Column(name = "default_branch", length = 50)
     private String defaultBranch = "master";
 
-    /** 访问令牌（加密存储） */
+    /** 历史仓库级访问令牌，仅用于兼容已有配置，不再对外返回。 */
+    @JsonProperty(access = JsonProperty.Access.WRITE_ONLY)
     @Column(name = "access_token", length = 500)
     private String accessToken;
+
+    /** 当前用户的平台令牌，仅在运行时解析，不持久化。 */
+    @Transient
+    @JsonIgnore
+    private String resolvedAccessToken;
+
+    public String getAccessToken() {
+        return resolvedAccessToken != null ? resolvedAccessToken : accessToken;
+    }
 
     /** Webhook Secret */
     @Column(name = "webhook_secret", length = 100)

@@ -1,5 +1,5 @@
 import axios from 'axios';
-import { get, post } from '@/utils/request';
+import { get, post, put } from '@/utils/request';
 
 const API_BASE = '/api/users';
 const COMMON_API = '/api/common';
@@ -15,6 +15,8 @@ export interface User {
     roleId?: number; // Added for role association
     orgName: string;
 }
+
+export type GitTokenStatus = Record<'gitee' | 'gitlab' | 'github', boolean>;
 
 export const userService = {
     // Check permissions
@@ -50,5 +52,13 @@ export const userService = {
     // Update Profile
     updateProfile: async (data: Partial<User>) => {
         return post<User>(`${API_BASE}/profile`, data);
-    }
+    },
+
+    getGitTokenStatus: async () => {
+        return get<GitTokenStatus>(`${API_BASE}/profile/git-tokens`);
+    },
+
+    saveGitToken: async (platform: 'gitee' | 'gitlab' | 'github', accessToken: string) => {
+        return put<void>(`${API_BASE}/profile/git-token`, { platform, accessToken });
+    },
 };

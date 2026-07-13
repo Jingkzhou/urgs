@@ -28,6 +28,9 @@ public class UserGitIdentity {
     @TableField("git_user_id")
     private String gitUserId;
 
+    @TableField("access_token")
+    private String accessToken;
+
     private Boolean enabled;
 
     @TableField("created_at")
