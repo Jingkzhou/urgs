@@ -84,6 +84,78 @@
 - CodeGraph 用于缩小范围；涉及 Spring 拦截器、配置、Flyway、MyBatis XML、前端路由/API 字符串、运行时行为时，仍需用源码读取或 `rg` 补充验证。
 - 修改代码前如涉及公共接口、Controller、Service、Mapper、前端 API 封装，应先跑一次 `codegraph impact "<目标符号>"` 或等价查询确认影响面。
 
+### 10. 数据库表与字段命名规范
+
+**表名必须表达“业务域 + 业务对象”，不得再把 `sys_`、`t_` 当作无意义的通用前缀。表名和字段名应让不了解代码的人也能从名称与注释判断其用途。**
+
+#### 10.1 总体规则
+
+- 表名、字段名、索引名统一使用小写 `snake_case`，禁止拼音、大小写混用和无约定缩写。
+- 表名使用单数名词，格式为 `<业务域>_<聚合根>[_<明细角色>]`，例如 `sched_task`、`sched_task_instance`、`market_task_application`。
+- 新表禁止使用无业务含义的 `t_`、`biz_`、`data_`、`common_` 前缀；`sys_` 也不得表示“系统里的一张表”。
+- 名称应优先表达业务语义，禁止单独使用 `info`、`data`、`detail`、`record`、`list`、`temp` 等模糊词；确有临时表时使用明确用途和生命周期，并在迁移脚本中说明清理方式。
+- MySQL 标识符上限为 64 个字符，项目表名目标不超过 48 个字符；超长时只允许使用本节登记的业务域前缀和团队已确认的通用缩写。
+- 新增业务域前缀前，必须先在本节“业务域前缀表”登记含义、边界和示例，禁止同一业务域出现多个同义前缀。
+
+#### 10.2 业务域前缀表
+
+| 前缀 | 业务边界 | 示例 |
+|------|----------|------|
+| `sys_` | 平台基础管理、身份、组织、认证、授权和平台级配置 | `sys_user`、`sys_role`、`sys_permission`、`sys_org`、`sys_auth_session` |
+| `sched_` | 工作流、任务编排、调度计划、执行实例、依赖和执行日志 | `sched_workflow`、`sched_task_definition`、`sched_task_instance`、`sched_task_dependency` |
+| `market_` | 工作发布、任务市场、申领、竞标、评价和积分闭环 | `market_work`、`market_task`、`market_task_application` |
+| `meta_` | 技术元数据、数据模型、码表、目录和物理结构 | `meta_model_table`、`meta_model_field`、`meta_code_table` |
+| `reg_` | 监管报表、监管元素、监管资产及其业务绑定 | `reg_table`、`reg_element`、`reg_table_model_rel` |
+| `lineage_` | 数据血缘分析、审核、问题、缓存和报告 | `lineage_analysis`、`lineage_review_task` |
+| `ops_` | 基础设施、运行监控、部署环境和运维台账 | `ops_infrastructure_asset`、`ops_monitor_sample`、`ops_deployment` |
+| `ver_` | 代码仓库、版本包、发布策略、流水线和发布记录 | `ver_repository`、`ver_package`、`ver_release_record` |
+| `ai_` | AI 配置、Agent、会话、消息和用量 | `ai_agent`、`ai_chat_session`、`ai_usage_log` |
+| `kb_` | 知识库、文件、目录和标签 | `kb_document`、`kb_folder`、`kb_tag` |
+| `doc_` | 在线文档、文档权限和协作关系 | `doc_document`、`doc_document_permission` |
+| `im_` | 即时通信用户、会话、群组、好友和消息 | `im_conversation`、`im_group_member`、`im_message` |
+
+边界判断以数据的业务归属为准，而不是以页面菜单、Java 包名或调用方为准。例如：
+
+- `sys_task` 存储的是工作流节点的任务定义，包含任务类型、执行内容、Cron、数据日期规则、优先级等，语义上属于调度编排域，目标命名应为 `sched_task_definition`，不是系统表。
+- `sys_task_instance`、`sys_task_dependency` 应归入 `sched_` 域；工作市场中的任务申请、评论、申诉、日志应归入 `market_` 域，两类“任务”不得继续共享含糊的 `sys_task*` 命名空间。
+- `t_quartz_task*` 属于调度执行域；后续治理时应先确认它与 `sys_task*` 的模型边界，再统一到 `sched_`，不得继续新增 `t_quartz_*` 表。
+
+#### 10.3 聚合与表角色命名
+
+- 聚合主表使用 `<域>_<对象>`，子表必须保留聚合根名称，例如 `market_task_application`，不得简写成无法定位归属的 `task_application`。
+- 纯多对多关系表统一使用 `<左对象>_<右对象>_rel`；有独立业务属性或生命周期的关系不得伪装成 `_rel`，应按业务对象命名。
+- 层级成员使用 `_member`，执行实例使用 `_instance`，配置使用 `_config`，规则使用 `_rule`，快照使用 `_snapshot`，操作流水使用 `_log`，状态变更历史使用 `_history`。
+- 同库存在多个同名概念时，外键和子表名必须带聚合或业务域限定。例如同时存在调度任务和市场任务时，跨域引用应使用 `sched_task_id` 或 `market_task_id`，不得只写无法判断目标的 `task_id`。
+
+#### 10.4 字段命名
+
+- 主键默认命名为 `id`；外键命名为 `<被引用对象>_id`，字段类型、长度和有无符号属性必须与目标主键完全一致。
+- 业务编码使用 `<对象>_code`，显示名称使用 `<对象>_name`；只有表内语义唯一且不会产生歧义时才可简化为 `code`、`name`。
+- 布尔字段使用 `is_`、`has_`、`can_` 前缀，数据库类型使用 `TINYINT(1)`，并在字段注释中明确 `0/1` 含义。
+- 只有一个生命周期状态时可使用 `status`；存在多个状态维度时必须写成 `run_status`、`review_status`、`sync_status` 等，不得使用 `status1`、`type2`。
+- 类型、状态、来源、模式等枚举字段必须在字段注释中列出全部合法值及含义；禁止只有“状态”“类型”这类无信息注释，也禁止无注释的魔法数字。
+- 时间字段统一使用 `create_time`、`update_time`、`delete_time` 和 `<业务动作>_time`；同一聚合内禁止混用 `create_time` 与 `created_at`。扩展存量聚合时遵循该聚合现有风格，新建聚合默认使用 `*_time`。
+- 审计操作人统一使用 `created_by`、`updated_by`；软删除统一使用 `is_deleted`、`delete_time`、`deleted_by`，不得混用 `del_flag`、`deleted`、`is_delete`。
+- 数量、金额、时长、容量字段必须体现单位或含义，例如 `retry_count`、`amount_cent`、`timeout_seconds`、`size_bytes`，不得仅命名为 `num`、`value`、`time`。
+- JSON 字段使用 `<业务含义>_json`，例如 `execution_config_json`；字段注释必须说明核心结构或指向对应 DTO，禁止使用 `content`、`ext` 保存未说明结构的 JSON。
+- 大文本字段仍需表达内容，例如 `error_message`、`execution_log`、`review_comment`，不得使用 `text1`、`remark2`。
+
+#### 10.5 注释、索引与约束
+
+- 每张新表必须有中文表注释，格式建议为 `<业务域> - <数据对象及用途>`，例如 `任务调度 - 工作流节点任务定义`；不得只写“任务表”“数据表”。
+- 每个业务字段必须有中文字段注释。外键注释需写明目标表，枚举需写明值域，JSON 需写明结构，时间需写明业务动作。
+- 主键、唯一索引、普通索引、外键约束分别使用 `pk_<表名>`、`uk_<表名>_<字段>`、`idx_<表名>_<字段>`、`fk_<表名>_<目标表>`；联合索引字段按索引顺序排列。
+- 具有业务唯一性的编码、关系或幂等键必须创建唯一约束，不能只依赖 Service 层查询防重。
+- 禁止为了“以后可能会查”而建立冗余索引；新增索引时应能对应到实际查询条件、关联条件或排序路径。
+
+#### 10.6 存量表治理与变更门禁
+
+- 本规范对新表立即生效；存量表不做无需求驱动的批量重命名，避免一次性影响 Entity、Mapper XML、原生 SQL、脚本和外部接口。
+- 修改存量歧义表时，应在本次影响范围内补齐或修正表注释、字段注释；需要重命名时，先给出“旧名 → 新名”映射和 CodeGraph 影响分析，经用户确认后再实施。
+- 表重命名必须通过 Flyway 完成，并同步修改 Entity 注解、Mapper XML、Repository 原生 SQL、前端接口约定、调度脚本和部署脚本；不得只改 Java 映射。
+- 新建表或字段前必须依次回答：属于哪个业务域、核心对象是什么、是主表还是哪种子表、是否与现有概念重名、名称能否在不读代码时判断用途。
+- 创建 Flyway 脚本前使用 `rg` 检查同名表和字段，涉及公共 Entity、Mapper、Service 或跨模块 SQL 时先执行 `codegraph impact`；提交前同时执行本文件第 1、7 节的 Flyway 自检。
+
 ## 通用行为准则
 
 以下准则用于减少常见的 LLM 编码失误。与项目强制规则冲突时，以本文件中的项目强制规则为准；简单任务可按实际情况简化执行，但不得跳过必要的验证和自检。
