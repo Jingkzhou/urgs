@@ -259,7 +259,7 @@ start_backend() {
     echo "Configured Neo4j URI: $SPRING_NEO4J_URI"
   fi
 
-  ./mvnw spring-boot:run -Dspring-boot.run.profiles="$spring_profile" -Dspring-boot.run.jvmArguments="$API_JAVA_OPTS" &
+  ./mvnw clean spring-boot:run -Dspring-boot.run.profiles="$spring_profile" -Dspring-boot.run.jvmArguments="$API_JAVA_OPTS" &
   pids+=($!)
 }
 
@@ -308,7 +308,7 @@ start_executor() {
   local spring_profile="${SPRING_PROFILES_ACTIVE:-$ENVIRONMENT}"
   echo "Starting executor (env: $ENVIRONMENT, profile: $spring_profile, config: $LOCAL_ENV_FILE)..."
   echo "Executor JVM opts: $EXECUTOR_JAVA_OPTS"
-  ./mvnw spring-boot:run -Dspring-boot.run.profiles="$spring_profile" -Dspring-boot.run.jvmArguments="$EXECUTOR_JAVA_OPTS" &
+  ./mvnw clean spring-boot:run -Dspring-boot.run.profiles="$spring_profile" -Dspring-boot.run.jvmArguments="$EXECUTOR_JAVA_OPTS" &
   pids+=($!)
 }
 
