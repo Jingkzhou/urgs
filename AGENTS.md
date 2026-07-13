@@ -9,7 +9,10 @@
 **任何对 JPA Entity (`@Entity`) 的字段新增、修改、删除，都必须在同一次 commit 中创建对应的 Flyway 迁移脚本。**
 
 - 迁移脚本路径：`urgs-api/src/main/resources/db/migration/V<N>__<描述>.sql`
-- 创建前先查看当前最大版本号：`ls urgs-api/src/main/resources/db/migration/ | sort -V | tail -1`
+- 创建迁移脚本前，必须同时检查迁移目录和目标数据库中的最大 Flyway 版本号：
+  - 目录检查：`ls urgs-api/src/main/resources/db/migration/ | sort -V | tail -1`
+  - 数据库检查：`SELECT MAX(CAST(version AS UNSIGNED)) AS max_version FROM flyway_schema_history WHERE success = 1;`
+- 新迁移文件的版本号 `N` 必须大于上述两个最大版本号；禁止复用已有版本号或修改已执行的迁移脚本
 - 使用幂等存储过程模式（`IF NOT EXISTS` 检查 + `DECLARE CONTINUE HANDLER`）
 - 详细规范见 `.agent/workflows/db-migration.md`
 
