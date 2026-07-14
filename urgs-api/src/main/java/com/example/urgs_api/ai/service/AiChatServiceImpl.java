@@ -18,6 +18,7 @@ import org.springframework.web.servlet.mvc.method.annotation.SseEmitter;
 
 import java.util.List;
 import java.util.Map;
+import java.util.Set;
 import java.util.concurrent.ExecutorService;
 import java.util.concurrent.Executors;
 import java.util.function.Consumer;
@@ -32,8 +33,6 @@ public class AiChatServiceImpl implements AiChatService {
     private static final Logger log = LoggerFactory.getLogger(AiChatServiceImpl.class);
     private static final ObjectMapper objectMapper = new ObjectMapper();
     private static final ExecutorService executor = Executors.newCachedThreadPool();
-    private static final String REGULATORY_DATA_QUERY_AGENT_CODE = "regulatory-data-query-agent";
-    private static final String REGULATORY_DATA_QUERY_PERMISSION = "ai:regulatory-query:use";
     private static final String AGENT_BINDING_MANUAL = "MANUAL";
     private static final String AGENT_BINDING_AUTO = "AUTO";
 
@@ -66,6 +65,9 @@ public class AiChatServiceImpl implements AiChatService {
 
     @Autowired
     private UserService userService;
+
+    @Autowired
+    private AgentService agentService;
 
     @Autowired
     private AgentExecutionContextService agentExecutionContextService;
@@ -131,9 +133,10 @@ public class AiChatServiceImpl implements AiChatService {
         com.example.urgs_api.ai.entity.Agent sessionAgent = sessionInfo != null && sessionInfo.getAgentId() != null
                 ? agentRepository.selectById(sessionInfo.getAgentId())
                 : null;
+        Set<Long> authorizedAgentIds = resolveAuthorizedAgentIds(requesterUserId);
         boolean manualAgentSelected = isManualAgentBinding(sessionInfo);
         Agent currentAgent = isAutoAgentBinding(sessionInfo) ? sessionAgent : null;
-        if (sessionAgent != null && !canUseAgent(requesterUserId, sessionAgent)) {
+        if (sessionAgent != null && !canUseAgent(authorizedAgentIds, sessionAgent)) {
             if (!manualAgentSelected) {
                 currentAgent = null;
                 sessionAgent = null;
@@ -142,13 +145,17 @@ public class AiChatServiceImpl implements AiChatService {
                 return;
             }
         }
+        List<Agent> catalog = listRoutingAgents(authorizedAgentIds);
+        if (catalog.isEmpty() && (!manualAgentSelected || sessionAgent == null)) {
+            sendAccessDenied(emitter);
+            return;
+        }
         Agent runAgent = manualAgentSelected ? sessionAgent : currentAgent;
         String runId = aiAgentRunService.createRun(sessionId, sessionInfo == null ? null : sessionInfo.getUserId(),
                 runAgent, userPrompt);
         sendAgentEvent(runId, sessionId, runAgent, emitter, "routing_started", "thinking",
                 "任务识别", "正在识别任务类型和可用助手", Map.of("manual", manualAgentSelected), "RUNNING");
 
-        List<Agent> catalog = listRoutingAgents(requesterUserId);
         final com.example.urgs_api.ai.entity.AiChatSession sessionRef = sessionInfo;
         final String finalSystemPrompt = systemPrompt;
         final String finalUserPrompt = userPrompt;
@@ -335,24 +342,49 @@ public class AiChatServiceImpl implements AiChatService {
         }
     }
 
+    private Set<Long> resolveAuthorizedAgentIds(Long requesterUserId) {
+        if (requesterUserId == null) {
+            return Set.of();
+        }
+        com.example.urgs_api.user.model.User user = userService.getById(requesterUserId);
+        if (user == null || user.getRoleId() == null) {
+            return Set.of();
+        }
+        List<Long> roleAgentIds = agentService.getRoleAgents(user.getRoleId());
+        if (roleAgentIds == null || roleAgentIds.isEmpty()) {
+            return Set.of();
+        }
+        return roleAgentIds.stream()
+                .filter(java.util.Objects::nonNull)
+                .collect(java.util.stream.Collectors.toUnmodifiableSet());
+    }
+
     private List<Agent> listRoutingAgents(Long requesterUserId) {
+        return listRoutingAgents(resolveAuthorizedAgentIds(requesterUserId));
+    }
+
+    private List<Agent> listRoutingAgents(Set<Long> authorizedAgentIds) {
+        if (authorizedAgentIds == null || authorizedAgentIds.isEmpty()) {
+            return List.of();
+        }
         return agentRepository.selectList(new QueryWrapper<Agent>()
+                .in("id", authorizedAgentIds)
                 .eq("status", 1)
                 .isNotNull("agent_code")
                 .ne("agent_code", "")
                 .orderByAsc("sort_order")
                 .orderByDesc("id"))
                 .stream()
-                .filter(agent -> canUseAgent(requesterUserId, agent))
+                .filter(agent -> agent.getId() != null && authorizedAgentIds.contains(agent.getId()))
                 .toList();
     }
 
-    private boolean canUseAgent(Long requesterUserId, Agent agent) {
-        if (agent == null || !REGULATORY_DATA_QUERY_AGENT_CODE.equals(agent.getAgentCode())) {
-            return true;
-        }
-        return requesterUserId != null
-                && userService.getUserPermissions(requesterUserId).contains(REGULATORY_DATA_QUERY_PERMISSION);
+    private boolean canUseAgent(Set<Long> authorizedAgentIds, Agent agent) {
+        return agent != null
+                && agent.getId() != null
+                && Integer.valueOf(1).equals(agent.getStatus())
+                && authorizedAgentIds != null
+                && authorizedAgentIds.contains(agent.getId());
     }
 
     private boolean isManualAgentBinding(com.example.urgs_api.ai.entity.AiChatSession session) {
@@ -372,9 +404,10 @@ public class AiChatServiceImpl implements AiChatService {
     private void sendAccessDenied(SseEmitter emitter) {
         try {
             emitter.send(SseEmitter.event().name("error")
-                    .data(objectMapper.writeValueAsString(Map.of("error", "无权使用监管指标查询 Agent"))));
+                    .data(objectMapper.writeValueAsString(
+                            Map.of("error", "当前角色未配置可用 Agent，或所选 Agent 无权限/已停用"))));
         } catch (Exception e) {
-            log.warn("Failed to send regulatory query access denied event", e);
+            log.warn("Failed to send agent access denied event", e);
         } finally {
             emitter.complete();
         }

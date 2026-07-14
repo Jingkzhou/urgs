@@ -113,11 +113,20 @@ const ArkPage: React.FC = () => {
 
     useEffect(() => {
         const init = async () => {
-            await fetchAgents();
+            const availableAgents = await fetchAgents();
             const sessionList = await getSessions();
             setSessions(sessionList);
 
-            handleNewChat();
+            if (availableAgents.length === 1) {
+                setCurrentSessionId(null);
+                setMessages([]);
+                setInputValue('');
+                setMetrics(null);
+                setActiveAgent(availableAgents[0]);
+                setIsChatActive(true);
+            } else {
+                handleNewChat();
+            }
             setLoading(false);
         };
         init();
@@ -403,6 +412,13 @@ const ArkPage: React.FC = () => {
             setInputValue('');
             setMetrics(null);
             setActiveAgent(agents.find(a => String(a.id) === String(searchId)) || null);
+            setIsChatActive(true);
+        } else if (agents.length === 1) {
+            setCurrentSessionId(null);
+            setMessages([]);
+            setInputValue('');
+            setMetrics(null);
+            setActiveAgent(agents[0]);
             setIsChatActive(true);
         } else {
             setCurrentSessionId(null);
@@ -743,28 +759,6 @@ const ArkPage: React.FC = () => {
                                         </button>
                                     ))}
 
-                                    <button
-                                        type="button"
-                                        onClick={() => {
-                                            setCurrentSessionId(null);
-                                            setMessages([]);
-                                            setInputValue('');
-                                            setMetrics(null);
-                                            setActiveAgent(null);
-                                            setIsChatActive(true);
-                                        }}
-                                        className="group flex min-h-[92px] items-start gap-3 rounded-lg border border-slate-200 bg-white p-4 text-left transition-colors hover:bg-[#f7f7f7]"
-                                    >
-                                        <span className="mt-0.5 flex h-8 w-8 shrink-0 items-center justify-center rounded-lg bg-[#f4f4f4] text-slate-700">
-                                            <Sparkles size={16} />
-                                        </span>
-                                        <span>
-                                            <span className="block text-sm font-semibold text-slate-900">通用助手</span>
-                                            <span className="mt-1 block text-sm leading-5 text-slate-500">
-                                                写作、分析、规划、代码和日常协作。
-                                            </span>
-                                        </span>
-                                    </button>
                                 </div>
                             </div>
                         </motion.div>
