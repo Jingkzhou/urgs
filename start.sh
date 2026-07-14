@@ -54,7 +54,6 @@ fi
 
 pids=()
 external_services=0
-AGENT_COMPOSE_DEPS_STARTED=false
 ONLYOFFICE_LOCAL_CONTAINER_STARTED=false
 
 # Flags for services
@@ -223,9 +222,6 @@ cleanup() {
   for pid in "${pids[@]:-}"; do
     kill "$pid" 2>/dev/null || true
   done
-  if [ "$AGENT_COMPOSE_DEPS_STARTED" = true ]; then
-    (cd "$AGENT_DIR" && docker compose stop postgres redis >/dev/null 2>&1) || true
-  fi
   if [ "$ONLYOFFICE_LOCAL_CONTAINER_STARTED" = true ]; then
     docker stop "${ONLYOFFICE_LOCAL_DOCKER_CONTAINER:-urgs-onlyoffice-test}" >/dev/null 2>&1 || true
   fi
@@ -361,70 +357,6 @@ start_onlyoffice() {
   exit 1
 }
 
-AGENT_DIR="$SCRIPT_DIR/urgs-agent"
-
-# ... (existing flags)
-ENABLE_AGENT=false
-
-# ... (existing functions)
-
-start_agent() {
-  echo "Starting agent runtime..."
-  cd "$AGENT_DIR"
-  load_env_file
-
-  local agent_port="${AGENT_PORT:-8002}"
-  kill_port_if_exists "$agent_port"
-
-  if ! command -v uv >/dev/null 2>&1; then
-    echo "uv not found. Install uv before starting urgs-agent."
-    exit 1
-  fi
-
-  if ! nc -z 127.0.0.1 5432 >/dev/null 2>&1 || ! nc -z 127.0.0.1 6379 >/dev/null 2>&1; then
-    if ! command -v docker >/dev/null 2>&1; then
-      echo "PostgreSQL or Redis is unavailable, and Docker is not installed."
-      exit 1
-    fi
-    echo "Starting agent PostgreSQL and Redis dependencies..."
-    docker compose up -d postgres redis
-    AGENT_COMPOSE_DEPS_STARTED=true
-    for _ in $(seq 1 30); do
-      if nc -z 127.0.0.1 5432 >/dev/null 2>&1 && nc -z 127.0.0.1 6379 >/dev/null 2>&1; then
-        break
-      fi
-      sleep 1
-    done
-    if ! nc -z 127.0.0.1 5432 >/dev/null 2>&1 || ! nc -z 127.0.0.1 6379 >/dev/null 2>&1; then
-      echo "Agent PostgreSQL or Redis failed to become ready."
-      exit 1
-    fi
-  fi
-
-  echo "Preparing agent Python 3.11 environment..."
-  if [ -d ".venv" ] && [ ! -x ".venv/bin/python" ]; then
-    echo "Found invalid agent .venv; recreating it..."
-    rm -rf .venv
-  fi
-  if [ "$ENVIRONMENT" = "local" ] || [ "$ENVIRONMENT" = "dev" ]; then
-    uv sync --frozen --extra dev
-  else
-    uv sync --frozen --no-dev
-  fi
-  export PYTHONPATH="$AGENT_DIR/src${PYTHONPATH:+:$PYTHONPATH}"
-
-  echo "Applying agent database migrations..."
-  .venv/bin/alembic upgrade head
-
-  echo "Starting agent API on port $agent_port..."
-  .venv/bin/uvicorn urgs_agent.main:app --host "${AGENT_HOST:-0.0.0.0}" --port "$agent_port" &
-  pids+=($!)
-
-  echo "Starting agent worker..."
-  .venv/bin/python -m urgs_agent.worker &
-  pids+=($!)
-}
-
 start_deepagents() {
   echo "Starting DeepAgents service..."
   cd "$DEEPAGENTS_DIR"
@@ -441,7 +373,7 @@ start_deepagents() {
   fi
 
   if [ -z "${DEEPAGENTS_URGS_API_URL:-}" ]; then
-    export DEEPAGENTS_URGS_API_URL="${URGS_API_URL:-${AGENT_URGS_API_URL:-http://127.0.0.1:8080}}"
+    export DEEPAGENTS_URGS_API_URL="${URGS_API_URL:-http://127.0.0.1:8080}"
   fi
   export DEEPAGENTS_INTERNAL_API_TOKEN="${DEEPAGENTS_INTERNAL_API_TOKEN:-$URGS_INTERNAL_API_TOKEN}"
   export DEEPAGENTS_WORKSPACE_ROOT="${DEEPAGENTS_WORKSPACE_ROOT:-$SCRIPT_DIR}"
@@ -468,17 +400,16 @@ start_deepagents() {
 
 # --- Interactive Menu ---
 echo "Multiple services detected. Please select which ones to start:"
-echo "  [1] All Services (Backend, Executor, Frontend, RAG, Agent, DeepAgents)"
+echo "  [1] All Services (Backend, Executor, Frontend, RAG, DeepAgents)"
 echo "  [2] Backend (urgs-api)"
 echo "  [3] Executor (urgs-executor)"
 echo "  [4] Frontend (urgs-web)"
 echo "  [5] RAG (urgs-rag)"
 echo "  [6] Presentation (urgs-presentation)"
-echo "  [7] Agent (urgs-agent)"
-echo "  [8] ONLYOFFICE Docs"
-echo "  [9] DeepAgents (urgs-deepagents)"
+echo "  [7] ONLYOFFICE Docs"
+echo "  [8] DeepAgents (urgs-deepagents)"
 echo ""
-echo "Enter your choice (e.g., '1' for all, or '2 7' for Backend+Agent):"
+echo "Enter your choice (e.g., '1' for all, or '2 8' for Backend+DeepAgents):"
 read -r -a choices
 
 if [ ${#choices[@]} -eq 0 ]; then
@@ -494,7 +425,6 @@ for choice in "${choices[@]}"; do
       ENABLE_FRONTEND=true
       ENABLE_RAG=true
       ENABLE_PRESENTATION=true
-      ENABLE_AGENT=true
       ENABLE_ONLYOFFICE=true
       ENABLE_DEEPAGENTS=true
       ;;
@@ -503,9 +433,8 @@ for choice in "${choices[@]}"; do
     4) ENABLE_FRONTEND=true ;;
     5) ENABLE_RAG=true ;;
     6) ENABLE_PRESENTATION=true ;;
-    7) ENABLE_AGENT=true ;;
-    8) ENABLE_ONLYOFFICE=true ;;
-    9) ENABLE_DEEPAGENTS=true ;;
+    7) ENABLE_ONLYOFFICE=true ;;
+    8) ENABLE_DEEPAGENTS=true ;;
     *) echo "Unknown option: $choice (ignored)" ;;
   esac
 done
@@ -522,7 +451,6 @@ if [ "$ENABLE_FRONTEND" = true ] || [ "$ENABLE_PRESENTATION" = true ]; then reso
 if [ "$ENABLE_FRONTEND" = true ]; then start_frontend; fi
 if [ "$ENABLE_RAG" = true ]; then start_rag; fi
 if [ "$ENABLE_PRESENTATION" = true ]; then start_presentation; fi
-if [ "$ENABLE_AGENT" = true ]; then start_agent; fi
 if [ "$ENABLE_DEEPAGENTS" = true ]; then start_deepagents; fi
 
 if [ ${#pids[@]} -eq 0 ] && [ "$external_services" -eq 0 ]; then

@@ -6,7 +6,7 @@
 
 本模块主要解决三类问题：
 
-1. **依赖隔离**：`urgs-agent` 当前使用 LangChain/LangGraph 0.x 依赖链；DeepAgents 0.6.10 依赖 LangChain 1.x。独立微服务可以避免 Python 依赖冲突。
+1. **独立运行时**：DeepAgents 0.6.10 使用 LangChain 1.x 依赖链，通过独立微服务隔离 Python 运行环境。
 2. **能力封装**：把 DeepAgents 的文件系统、子代理、记忆、技能、摘要、工具调用等能力封装为 URGS 可调用的 HTTP 服务。
 3. **多 Agent 编排**：在 DeepAgents 之上增加 URGS 自定义编排管道，用于输入校验、路由、规划、执行、验收、返工和最终汇总。
 

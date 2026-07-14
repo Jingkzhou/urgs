@@ -27,7 +27,7 @@
 17. [sql — SQL 控制台](#17-sql--sql-控制台)
 18. [im — 即时通讯](#18-im--即时通讯)
 19. [urgs-executor — 任务执行器](#19-urgs-executor--任务执行器)
-20. [urgs-agent — AI Agent 运行时](#20-urgs-agent--ai-agent-运行时)
+20. [urgs-deepagents — AI Agent 编排运行时](#20-urgs-deepagents--ai-agent-编排运行时)
 21. [sql-lineage-engine — SQL 血缘引擎](#21-sql-lineage-engine--sql-血缘引擎)
 
 ---
@@ -373,13 +373,14 @@
 
 ---
 
-## 20. urgs-agent — AI Agent 运行时
+## 20. urgs-deepagents — AI Agent 编排运行时
 
 ### 现状
-- Python FastAPI 服务
-- 与 Dify 平台集成
-- RAG 检索增强
-- Agent Skill 管理
+- Python FastAPI + DeepAgents 独立微服务
+- Input Guard、Router、Planner、Worker、Reviewer、Rework、Finalizer 编排管道
+- 基于角色授权后的 Agent 目录进行语义路由
+- Skill、记忆文件、工具白名单和只读/写入策略控制
+- 由 urgs-api 负责 Agent 配置、会话、运行事件和持久化
 
 ### 终极目标：**可自主规划、可工具调用、可持续学习的 Agent 平台**
 

@@ -70,10 +70,7 @@ urgs-rag/doc_store/urgs_knowledge_base/视觉型小学生高效英语单词记�
 urgs-rag/data/
 urgs-rag/doc_store/
 urgs-rag/.venv_312/
-urgs-agent/urgs_agent.egg-info/
-urgs-agent/src/*.egg-info/
 urgs-deepagents/src/*.egg-info/
-urgs-agent/wiki/
 
 # AI 工具配置（仅本地保留）
 .agent/

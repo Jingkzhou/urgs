@@ -153,7 +153,7 @@ public class AgentAppBuildModeHandler {
             return new AgentAppPrompt(currentPrompt, null, aiTokenBudgetService.estimateText(currentPrompt));
         }
 
-        Path contextFile = Files.createTempFile("urgs-agent-app-context-", ".md");
+        Path contextFile = Files.createTempFile("urgs-ai-app-context-", ".md");
         restrictContextFilePermissions(contextFile);
         Files.writeString(contextFile, contextFileContent, StandardCharsets.UTF_8);
         String query = """

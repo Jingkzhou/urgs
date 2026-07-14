@@ -43,7 +43,7 @@ graph TB
 
     subgraph Standalone["独立部署服务"]
         Executor["urgs-executor<br/>任务执行器"]
-        Agent["urgs-agent<br/>Python AI Agent"]
+        Agent["urgs-deepagents<br/>Python Agent 编排"]
         Lineage["sql-lineage-engine<br/>SQL 血缘引擎"]
     end
 
@@ -61,8 +61,8 @@ graph TB
     Service -->|"时序写入"| Cassandra
     DynamicDS -->|"查询"| Hive
     Service -->|"Git 拉取"| Git
-    Service -->|"AI 调用"| Agent
-    Agent -->|"推理"| Dify
+    Service -->|"Agent 编排 / SSE"| Agent
+    Agent -->|"模型推理"| Dify
     Quartz -->|"下发任务"| Executor
     Service -->|"SQL 解析"| Lineage
 ```
@@ -117,18 +117,16 @@ sequenceDiagram
     participant U as 用户
     participant W as urgs-web
     participant A as urgs-api<br/>AiChatController
-    participant G as urgs-agent<br/>Python 服务
-    participant V as MongoDB<br/>向量索引
-    participant D as Dify 平台<br/>大模型
+    participant G as urgs-deepagents<br/>编排服务
+    participant D as OpenAI 兼容<br/>模型服务
 
     U->>W: 输入提问
     W->>A: POST /api/ai/chat (SSE)
-    A->>G: HTTP 调用 Agent
-    G->>V: 向量相似度检索
-    V-->>G: 召回相关文档片段
-    G->>G: 拼装 RAG Prompt
+    A->>G: 下发角色授权 Agent 目录与问题
+    G->>G: Guard / Router / Planner / Worker
     G->>D: 调用大模型推理
     D-->>G: 流式返回答案
+    G->>G: Reviewer / Finalizer
     G-->>A: SSE 流式响应
     A-->>W: SSE 流式推送
     W-->>U: Markdown 渲染展示
@@ -184,7 +182,7 @@ graph LR
     Line --> Neo[(Neo4j)]
     Task --> DB
     Know --> Mongo[(MongoDB)]
-    Know --> Agent["urgs-agent"]
+    Know --> Agent["urgs-deepagents"]
     Ver --> DB
     Ops --> DB
     Mkt --> DB

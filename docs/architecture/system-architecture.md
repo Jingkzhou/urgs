@@ -69,8 +69,8 @@ URGS 是一个面向数据团队的综合性治理平台，整合了**任务调�
          ┌─────────────────────────────────────────┐
          │          独立部署服务                    │
          │  ┌──────────────┐  ┌────────────────┐  │
-         │  │ urgs-executor│  │  urgs-agent    │  │
-         │  │ (任务执行器)  │  │  (AI Agent 运行时)│
+         │  │ urgs-executor│  │urgs-deepagents │  │
+         │  │ (任务执行器)  │  │ (Agent 编排运行时)│
          │  └──────────────┘  └────────────────┘  │
          │  ┌──────────────────────────────────┐  │
          │  │  sql-lineage-engine (SQL 血缘引擎) │  │
@@ -200,24 +200,24 @@ urgs-executor/
 
 ---
 
-### 3.4 urgs-agent（AI Agent 运行时）
+### 3.4 urgs-deepagents（AI Agent 编排运行时）
 
-Python 实现的 AI Agent 服务，提供：
+Python 实现的 DeepAgents 编排服务，提供：
 
-- 与大模型（Dify 平台）的集成
-- 知识库向量检索与 RAG 推理
-- 监管规则智能问答
-- Agent Skill 管理（App Code 模式）
+- Input Guard、Router、Planner、Worker、Reviewer、Rework、Finalizer 编排
+- 基于 urgs-api 下发的角色授权 Agent 目录进行语义路由
+- Skill、记忆文件、工具白名单和文件系统权限控制
+- OpenAI 兼容模型调用及 SSE 过程事件输出
 
 ```
-urg-agent/
-├── agent/              # Agent 核心逻辑
-│   ├── rag/            # RAG 检索增强生成
-│   ├── skill/          # Skill 加载与执行
-│   └── llm/            # 大模型调用封装
-├── api/                # FastAPI / Flask 接口层
-├── config/             # 模型配置、知识库配置
-└── requirements.txt
+urgs-deepagents/
+├── src/deepagents/                  # vendored DeepAgents SDK
+├── src/urgs_deepagents_service/
+│   ├── orchestrator/                # 编排控制面
+│   ├── runtime.py                   # Agent/Skill/工具运行时
+│   ├── model_config.py              # 模型配置
+│   └── main.py                      # FastAPI/SSE 接口
+└── tests/                           # 服务与编排测试
 ```
 
 ---
@@ -297,12 +297,13 @@ urgs-web (G6 图谱可视化)
 urgs-api (AiChatController SSE 流式)
         │ 调用
         ▼
-urgs-agent (Python 服务)
-        │ 1. 向量检索（MongoDB 向量索引）
-        │ 2. 召回相关文档片段
-        │ 3. 拼装 Prompt
+urgs-deepagents (Python 服务)
+        │ 1. Input Guard
+        │ 2. 角色授权候选集内语义路由
+        │ 3. Worker 调用 Agent Skill/知识资产
+        │ 4. Reviewer 验收并由 Finalizer 输出
         ▼
-Dify 平台（大模型推理）
+OpenAI 兼容模型服务
         │ 流式返回
         ▼
 urgs-web（Markdown 渲染 + KaTeX 公式）
@@ -429,8 +430,8 @@ VersionPackage（版本包）
 │  │         MySQL 8.0 / Redis / Neo4j          │  │
 │  └──────────────────────────────────────────┘  │
 │  ┌──────────────────┐  ┌─────────────────────┐ │
-│  │  urgs-agent      │  │ sql-lineage-engine  │ │
-│  │  (Python :8000)  │  │  (独立进程)          │ │
+│  │urgs-deepagents   │  │ sql-lineage-engine  │ │
+│  │  (Python :8003)  │  │  (独立进程)          │ │
 │  └──────────────────┘  └─────────────────────┘ │
 └──────────────────────────────────────────────────┘
 ```
