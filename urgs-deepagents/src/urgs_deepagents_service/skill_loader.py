@@ -36,7 +36,10 @@ def normalize_skill_dirs(value: str | Sequence[str] | None) -> list[str]:
 
 
 def load_agent_skill_runtime(
-    settings: Any, agent_code: str | None, skill_dirs: str | Sequence[str] | None
+    settings: Any,
+    agent_code: str | None,
+    skill_dirs: str | Sequence[str] | None,
+    runtime_context: dict[str, Any] | None = None,
 ) -> SkillRuntime | None:
     """Load the sole configured packaged runtime without embedding domain logic in Sidecar."""
 
@@ -71,7 +74,7 @@ def load_agent_skill_runtime(
     factory = getattr(module, "create_skill_runtime", None)
     if not callable(factory):
         raise SkillConfigurationError("Skill 运行时缺少 create_skill_runtime")
-    runtime = factory(skill_dir)
+    runtime = factory(skill_dir, runtime_context)
     if not isinstance(runtime, SkillRuntime):
         raise SkillConfigurationError("Skill 运行时返回结果无效")
     return runtime

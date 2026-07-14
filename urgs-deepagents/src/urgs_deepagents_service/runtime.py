@@ -328,9 +328,7 @@ class RegulatoryRetrievalGateMiddleware(AgentMiddleware[Any, Any, Any]):
             for message in messages
             if isinstance(message, HumanMessage)
         )
-        if not requires_regulatory_coverage_review(
-            REGULATORY_KNOWLEDGE_AGENT_CODE, user_message
-        ):
+        if not requires_regulatory_coverage_review(REGULATORY_KNOWLEDGE_AGENT_CODE, user_message):
             return None
 
         calls = self._tool_calls(messages)
@@ -479,10 +477,11 @@ def create_runtime_agent(
     workspace_root: str | None = None,
     debug: bool,
     agent_code: str | None = None,
+    runtime_context: dict[str, Any] | None = None,
 ) -> Any:
     """Create a DeepAgent with centralized permission, backend, memory, and skill policy."""
 
-    regulatory_runtime = load_agent_skill_runtime(settings, agent_code, skill_dirs)
+    regulatory_runtime = load_agent_skill_runtime(settings, agent_code, skill_dirs, runtime_context)
     effective_system_prompt = system_prompt
     effective_tool_allowlist = tool_allowlist
     effective_skill_dirs = skill_dirs

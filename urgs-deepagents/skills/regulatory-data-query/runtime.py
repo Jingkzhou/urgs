@@ -5,6 +5,7 @@ from __future__ import annotations
 import json
 import os
 import re
+from calendar import monthrange
 from collections.abc import Callable, Mapping, Sequence
 from dataclasses import dataclass, field
 from datetime import date, datetime
@@ -29,6 +30,9 @@ REGULATORY_QUERY_TOOL_NAMES = frozenset(
         "search_regulatory_fields",
         "query_regulatory_summary",
         "query_regulatory_detail",
+        "get_regulatory_metric_profile",
+        "compare_regulatory_metric",
+        "breakdown_regulatory_metric_change",
     }
 )
 
@@ -42,6 +46,34 @@ _COMPACT_DATE_PATTERN = re.compile(r"^\d{8}$")
 _CHINESE_DATE_PATTERN = re.compile(r"^(\d{4})年(\d{1,2})月(\d{1,2})日?$")
 _ORG_CODE_WITH_SUFFIX_PATTERN = re.compile(r"^([A-Za-z0-9_-]+)\s*(?:机构|主体)$")
 EngineFactory = Callable[..., Any]
+REGULATORY_QUERY_PERMISSION = "ai:regulatory-query:use"
+
+
+@dataclass(frozen=True)
+class DataAccessContext:
+    requester_user_id: int | None
+    permissions: frozenset[str]
+    allowed_systems: frozenset[str]
+    allowed_organizations: frozenset[str]
+    can_view_detail: bool
+
+
+@dataclass(frozen=True)
+class AnalysisDimension:
+    code: str
+    name: str
+    column: str
+
+
+@dataclass(frozen=True)
+class MetricAnalysisConfig:
+    aggregation: Literal["SUM"]
+    frequency: Literal["MONTH", "QUARTER"]
+    unit: str
+    scale: Decimal
+    additivity: Literal["ADDITIVE"]
+    supported_baselines: frozenset[str]
+    dimensions: Mapping[str, AnalysisDimension]
 
 
 @dataclass(frozen=True)
@@ -79,6 +111,7 @@ class AssetMetricQueryConfig:
     max_rows: int
     order_by: tuple[OrderRule, ...]
     description: str | None
+    analysis: MetricAnalysisConfig | None = None
 
 
 @dataclass(frozen=True)
@@ -87,6 +120,7 @@ class MetricConfig:
     name: str
     value_type: Literal["string", "number", "boolean", "date"]
     query_config: AssetMetricQueryConfig | None = None
+    analysis: MetricAnalysisConfig | None = None
 
 
 @dataclass(frozen=True)
@@ -196,6 +230,24 @@ class QueryDetailInput(BaseModel):
     sort_direction: Literal["asc", "desc"] | None = Field(default=None, description="排序方向")
 
 
+class MetricProfileInput(BaseModel):
+    system_code: str = Field(min_length=1, max_length=64)
+    table_code: str = Field(min_length=1, max_length=64)
+    indicator_code: str = Field(min_length=1, max_length=64)
+
+
+class CompareMetricInput(MetricProfileInput):
+    current_date: str = Field(description="当前统计日期，格式 YYYY-MM-DD")
+    baseline: Literal["PREVIOUS_PERIOD", "YEAR_OVER_YEAR", "CUSTOM"]
+    baseline_date: str | None = Field(default=None, description="自定义基准日期")
+    organization: str = Field(min_length=1, max_length=128)
+    filters: list[QueryFilterInput] = Field(default_factory=list)
+
+
+class BreakdownMetricChangeInput(CompareMetricInput):
+    dimension_code: str = Field(min_length=1, max_length=64)
+
+
 def _require_code(value: Any, field_name: str) -> str:
     candidate = str(value or "").strip()
     if not _CODE_PATTERN.fullmatch(candidate):
@@ -232,8 +284,7 @@ def _field_value_type(raw_type: Any) -> Literal["string", "number", "boolean", "
     if any(token in normalized for token in ("date", "time")):
         return "date"
     if any(
-        token in normalized
-        for token in ("int", "number", "decimal", "numeric", "double", "float")
+        token in normalized for token in ("int", "number", "decimal", "numeric", "double", "float")
     ):
         return "number"
     if any(token in normalized for token in ("bool", "bit")):
@@ -256,6 +307,78 @@ def _read_json_list(value: Any) -> list[str]:
     if not isinstance(parsed, list):
         return []
     return [str(item) for item in parsed if str(item or "").strip()]
+
+
+def _read_json_object(value: Any) -> dict[str, Any]:
+    if isinstance(value, dict):
+        return dict(value)
+    text_value = str(value or "").strip()
+    if not text_value:
+        return {}
+    try:
+        parsed = json.loads(text_value)
+    except json.JSONDecodeError as exc:
+        raise SkillConfigurationError("分析语义 JSON 无法解析") from exc
+    if not isinstance(parsed, dict):
+        raise SkillConfigurationError("分析语义必须是 JSON 对象")
+    return parsed
+
+
+def _parse_analysis_config(
+    value: Any,
+    field_name: str,
+    dimension_resolver: Callable[[Mapping[str, Any], str], AnalysisDimension] | None = None,
+) -> MetricAnalysisConfig | None:
+    raw = _read_json_object(value)
+    if not raw:
+        return None
+    aggregation = str(raw.get("aggregation") or "").upper()
+    frequency = str(raw.get("frequency") or "").upper()
+    additivity = str(raw.get("additivity") or "").upper()
+    if aggregation != "SUM":
+        raise SkillConfigurationError(f"{field_name}.aggregation 首期只支持 SUM")
+    if frequency not in {"MONTH", "QUARTER"}:
+        raise SkillConfigurationError(f"{field_name}.frequency 只支持 MONTH 或 QUARTER")
+    if additivity != "ADDITIVE":
+        raise SkillConfigurationError(f"{field_name}.additivity 首期只支持 ADDITIVE")
+    try:
+        scale = Decimal(str(raw.get("scale", 1)))
+    except Exception as exc:
+        raise SkillConfigurationError(f"{field_name}.scale 必须是正数") from exc
+    if scale <= 0:
+        raise SkillConfigurationError(f"{field_name}.scale 必须是正数")
+    baselines = frozenset(str(item).upper() for item in raw.get("supportedBaselines", []))
+    if not baselines or not baselines <= {"PREVIOUS_PERIOD", "YEAR_OVER_YEAR", "CUSTOM"}:
+        raise SkillConfigurationError(f"{field_name}.supportedBaselines 配置无效")
+    raw_dimensions = raw.get("dimensions") or []
+    if not isinstance(raw_dimensions, list):
+        raise SkillConfigurationError(f"{field_name}.dimensions 必须是数组")
+    dimensions: dict[str, AnalysisDimension] = {}
+    for index, item in enumerate(raw_dimensions):
+        if not isinstance(item, dict):
+            raise SkillConfigurationError(f"{field_name}.dimensions[{index}] 必须是对象")
+        item_name = f"{field_name}.dimensions[{index}]"
+        dimension = (
+            dimension_resolver(item, item_name)
+            if dimension_resolver
+            else AnalysisDimension(
+                code=_require_code(item.get("code"), f"{item_name}.code"),
+                name=_require_name(item.get("name"), f"{item_name}.name"),
+                column=_require_identifier(item.get("column"), f"{item_name}.column"),
+            )
+        )
+        if dimension.code in dimensions:
+            raise SkillConfigurationError(f"{field_name}.dimensions 存在重复编码")
+        dimensions[dimension.code] = dimension
+    return MetricAnalysisConfig(
+        aggregation="SUM",
+        frequency=cast(Literal["MONTH", "QUARTER"], frequency),
+        unit=str(raw.get("unit") or "").strip(),
+        scale=scale,
+        additivity="ADDITIVE",
+        supported_baselines=baselines,
+        dimensions=dimensions,
+    )
 
 
 def _parse_field(value: Any, field_name: str) -> FieldConfig:
@@ -300,6 +423,7 @@ def _parse_metric(value: Any, field_name: str) -> MetricConfig:
         code=_require_code(value.get("code"), f"{field_name}.code"),
         name=_require_name(value.get("name"), f"{field_name}.name"),
         value_type=cast(Literal["string", "number", "boolean", "date"], value_type),
+        analysis=_parse_analysis_config(value.get("analysis"), f"{field_name}.analysis"),
     )
 
 
@@ -364,9 +488,7 @@ def _parse_summary_table(value: Any, field_name: str) -> SummaryTableConfig:
             value.get("organization_column"), f"{field_name}.organization_column"
         ),
         organization_name_column=(
-            _require_identifier(
-                organization_name_column, f"{field_name}.organization_name_column"
-            )
+            _require_identifier(organization_name_column, f"{field_name}.organization_name_column")
             if organization_name_column
             else None
         ),
@@ -410,9 +532,7 @@ def _parse_detail_table(value: Any, field_name: str) -> DetailTableConfig:
             value.get("organization_column"), f"{field_name}.organization_column"
         ),
         organization_name_column=(
-            _require_identifier(
-                organization_name_column, f"{field_name}.organization_name_column"
-            )
+            _require_identifier(organization_name_column, f"{field_name}.organization_name_column")
             if organization_name_column
             else None
         ),
@@ -526,6 +646,30 @@ def _safe_tool_error(exc: Exception) -> dict[str, Any]:
     }
 
 
+def _parse_access_context(value: Mapping[str, Any] | None) -> DataAccessContext | None:
+    if value is None:
+        return None
+    requester = value.get("requester_user_id")
+    permissions = frozenset(str(item) for item in value.get("permissions", []))
+    return DataAccessContext(
+        requester_user_id=int(requester) if requester is not None else None,
+        permissions=permissions,
+        allowed_systems=frozenset(
+            str(item).strip() for item in value.get("allowed_systems", []) if str(item).strip()
+        ),
+        allowed_organizations=frozenset(
+            str(item).strip()
+            for item in value.get("allowed_organizations", [])
+            if str(item).strip()
+        ),
+        can_view_detail=(
+            value.get("can_view_detail") is True
+            if "can_view_detail" in value
+            else REGULATORY_QUERY_PERMISSION in permissions
+        ),
+    )
+
+
 class RegulatoryDataQueryService:
     """Build parameterized MySQL reads from approved logical catalog items only."""
 
@@ -534,10 +678,17 @@ class RegulatoryDataQueryService:
         skill: RegulatoryQuerySkill,
         database_url: str,
         engine_factory: EngineFactory = create_engine,
+        access_context: Mapping[str, Any] | None = None,
     ) -> None:
         if not database_url.startswith(("mysql://", "mysql+")):
             raise SkillConfigurationError("监管查询数据库连接必须使用 MySQL URL")
         self.engine = engine_factory(database_url, pool_pre_ping=True)
+        self.access_context = _parse_access_context(access_context)
+        if self.access_context is not None and (
+            self.access_context.requester_user_id is None
+            or REGULATORY_QUERY_PERMISSION not in self.access_context.permissions
+        ):
+            raise SkillConfigurationError("当前请求缺少监管数据分析权限")
         self.skill = self._merge_asset_catalog(skill)
 
     def _merge_asset_catalog(self, skill: RegulatoryQuerySkill) -> RegulatoryQuerySkill:
@@ -561,6 +712,7 @@ class RegulatoryDataQueryService:
                         cfg.sort_field_ids,
                         cfg.mask_field_ids,
                         cfg.detail_max_rows,
+                        cfg.analysis_config_json,
                         elem.name AS element_code,
                         elem.cn_name AS element_name,
                         elem.business_caliber AS element_description,
@@ -763,6 +915,10 @@ class RegulatoryDataQueryService:
         field_ids.extend(_read_json_list(row.get("filter_field_ids")))
         field_ids.extend(_read_json_list(row.get("sort_field_ids")))
         field_ids.extend(_read_json_list(row.get("mask_field_ids")))
+        analysis = _read_json_object(row.get("analysis_config_json"))
+        for dimension in analysis.get("dimensions", []) if analysis else []:
+            if isinstance(dimension, dict) and dimension.get("fieldId"):
+                field_ids.append(str(dimension["fieldId"]))
         return tuple(dict.fromkeys(str(item) for item in field_ids if str(item or "").strip()))
 
     @staticmethod
@@ -838,6 +994,23 @@ class RegulatoryDataQueryService:
         metric_code = _safe_asset_code(
             row.get("element_code"), f"asset_metric_{row.get('reg_element_id')}"
         )
+
+        def resolve_dimension(item: Mapping[str, Any], field_name: str) -> AnalysisDimension:
+            field_id = str(item.get("fieldId") or "")
+            field = fields_by_id.get(field_id)
+            if field is None or str(field.get("table_id")) != model_table_id:
+                raise SkillConfigurationError(f"{field_name}.fieldId 不属于主查询物理表")
+            return AnalysisDimension(
+                code=_require_code(item.get("code"), f"{field_name}.code"),
+                name=_require_name(item.get("name"), f"{field_name}.name"),
+                column=_require_identifier(field.get("name"), f"{field_name}.fieldId"),
+            )
+
+        analysis = _parse_analysis_config(
+            row.get("analysis_config_json"),
+            "analysis_config_json",
+            resolve_dimension,
+        )
         return MetricConfig(
             code=metric_code,
             name=str(row.get("element_name") or row.get("element_code") or metric_code),
@@ -848,9 +1021,7 @@ class RegulatoryDataQueryService:
                 query_mode=cast(Literal["SUMMARY", "DETAIL"], query_mode),
                 table=table_name,
                 date_column=self._asset_column(row.get("date_field_id"), fields_by_id),
-                organization_column=self._asset_column(
-                    row.get("org_code_field_id"), fields_by_id
-                ),
+                organization_column=self._asset_column(row.get("org_code_field_id"), fields_by_id),
                 organization_name_column=self._asset_optional_column(
                     row.get("org_name_field_id"), fields_by_id
                 ),
@@ -863,11 +1034,11 @@ class RegulatoryDataQueryService:
                 max_rows=max_rows if query_mode == "DETAIL" else 100,
                 order_by=order_by,
                 description=(
-                    str(row.get("element_description"))
-                    if row.get("element_description")
-                    else None
+                    str(row.get("element_description")) if row.get("element_description") else None
                 ),
+                analysis=analysis,
             ),
+            analysis=analysis,
         )
 
     def _table_detail_from_row(
@@ -1016,9 +1187,7 @@ class RegulatoryDataQueryService:
         result_fields = tuple(
             query_config.fields[field_code] for field_code in query_config.default_return_fields
         )
-        filters = {
-            field.code: field for field in query_config.fields.values() if field.filterable
-        }
+        filters = {field.code: field for field in query_config.fields.values() if field.filterable}
         return SummaryTableConfig(
             code=table_code,
             name=table_name,
@@ -1088,7 +1257,9 @@ class RegulatoryDataQueryService:
             system = self._system(system_code)
             systems = [system]
         else:
-            systems = list(self.skill.systems.values())
+            systems = [
+                system for system in self.skill.systems.values() if self._can_access_system(system)
+            ]
         entries: list[dict[str, Any]] = []
         for system in systems:
             selected: list[tuple[str, SummaryTableConfig | DetailTableConfig]] = []
@@ -1331,6 +1502,318 @@ class RegulatoryDataQueryService:
             "rows": [self._json_row(row) for row in rows],
         }
 
+    def get_metric_profile(
+        self, *, system_code: str, table_code: str, indicator_code: str
+    ) -> dict[str, Any]:
+        system, table, indicator, analysis = self._analysis_metric(
+            system_code, table_code, indicator_code
+        )
+        return {
+            "system_code": system.code,
+            "table_code": table.code,
+            "indicator": {"code": indicator.code, "name": indicator.name},
+            "aggregation": analysis.aggregation,
+            "frequency": analysis.frequency,
+            "unit": analysis.unit,
+            "scale": str(analysis.scale),
+            "additivity": analysis.additivity,
+            "supported_baselines": sorted(analysis.supported_baselines),
+            "dimensions": [
+                {"code": item.code, "name": item.name} for item in analysis.dimensions.values()
+            ],
+        }
+
+    def compare_metric(
+        self,
+        *,
+        system_code: str,
+        table_code: str,
+        indicator_code: str,
+        current_date: str,
+        baseline: str,
+        baseline_date: str | None,
+        organization: str,
+        filters: Sequence[Mapping[str, Any]],
+    ) -> dict[str, Any]:
+        system, table, indicator, analysis = self._analysis_metric(
+            system_code, table_code, indicator_code
+        )
+        current = self._parse_date(current_date, "当前统计日期")
+        previous = self._resolve_baseline_date(current, baseline, baseline_date, analysis)
+        self._assert_organization_access(self._normalize_organization(organization))
+        values, filter_summary = self._aggregate_metric_values(
+            table, indicator, (current, previous), organization, filters
+        )
+        missing_dates = [item.isoformat() for item in (previous, current) if item not in values]
+        if missing_dates:
+            raise ValueError("当前期或基准期缺少数据: " + ", ".join(missing_dates))
+        current_value = values.get(current, Decimal("0")) / analysis.scale
+        baseline_value = values.get(previous, Decimal("0")) / analysis.scale
+        change = current_value - baseline_value
+        change_rate = None if baseline_value == 0 else change / baseline_value * Decimal("100")
+        return {
+            "system_code": system.code,
+            "table_code": table.code,
+            "indicator": {"code": indicator.code, "name": indicator.name},
+            "organization": self._normalize_organization(organization),
+            "baseline": baseline,
+            "current_date": current.isoformat(),
+            "baseline_date": previous.isoformat(),
+            "unit": analysis.unit,
+            "current_value": str(current_value),
+            "baseline_value": str(baseline_value),
+            "change_value": str(change),
+            "change_rate_percent": str(change_rate.quantize(Decimal("0.0001")))
+            if change_rate is not None
+            else None,
+            "filters": filter_summary,
+            "evidence": {
+                "aggregation": analysis.aggregation,
+                "frequency": analysis.frequency,
+                "periods": [previous.isoformat(), current.isoformat()],
+                "row_presence": {
+                    previous.isoformat(): previous in values,
+                    current.isoformat(): current in values,
+                },
+            },
+        }
+
+    def breakdown_metric_change(
+        self,
+        *,
+        system_code: str,
+        table_code: str,
+        indicator_code: str,
+        current_date: str,
+        baseline: str,
+        baseline_date: str | None,
+        organization: str,
+        filters: Sequence[Mapping[str, Any]],
+        dimension_code: str,
+    ) -> dict[str, Any]:
+        system, table, indicator, analysis = self._analysis_metric(
+            system_code, table_code, indicator_code
+        )
+        dimension = analysis.dimensions.get(dimension_code)
+        if dimension is None:
+            raise ValueError("维度未在指标分析语义中配置")
+        current = self._parse_date(current_date, "当前统计日期")
+        previous = self._resolve_baseline_date(current, baseline, baseline_date, analysis)
+        self._assert_organization_access(self._normalize_organization(organization))
+        rows, filter_summary = self._aggregate_metric_breakdown(
+            table, indicator, dimension, (current, previous), organization, filters
+        )
+        grouped: dict[str, dict[date, Decimal]] = {}
+        present_dates: set[date] = set()
+        for row in rows:
+            key = str(row.get("dimension_value") or "未分类")
+            row_date = self._parse_date(str(row["data_date"]), "数据日期")
+            present_dates.add(row_date)
+            grouped.setdefault(key, {})[row_date] = Decimal(str(row.get("metric_value") or 0))
+        missing_dates = [
+            item.isoformat() for item in (previous, current) if item not in present_dates
+        ]
+        if missing_dates:
+            raise ValueError("当前期或基准期缺少维度数据: " + ", ".join(missing_dates))
+        contributions: list[dict[str, Any]] = []
+        total_change = sum(
+            (values.get(current, Decimal("0")) - values.get(previous, Decimal("0")))
+            for values in grouped.values()
+        )
+        for value, values in grouped.items():
+            current_value = values.get(current, Decimal("0")) / analysis.scale
+            baseline_value = values.get(previous, Decimal("0")) / analysis.scale
+            change = current_value - baseline_value
+            raw_change = values.get(current, Decimal("0")) - values.get(previous, Decimal("0"))
+            contribution = None if total_change == 0 else raw_change / total_change * Decimal("100")
+            contributions.append(
+                {
+                    "dimension_value": value,
+                    "current_value": str(current_value),
+                    "baseline_value": str(baseline_value),
+                    "change_value": str(change),
+                    "contribution_percent": (
+                        str(contribution.quantize(Decimal("0.0001")))
+                        if contribution is not None
+                        else None
+                    ),
+                }
+            )
+        contributions.sort(key=lambda item: abs(Decimal(item["change_value"])), reverse=True)
+        return {
+            "system_code": system.code,
+            "table_code": table.code,
+            "indicator": {"code": indicator.code, "name": indicator.name},
+            "organization": self._normalize_organization(organization),
+            "dimension": {"code": dimension.code, "name": dimension.name},
+            "baseline": baseline,
+            "current_date": current.isoformat(),
+            "baseline_date": previous.isoformat(),
+            "unit": analysis.unit,
+            "total_change_value": str(total_change / analysis.scale),
+            "filters": filter_summary,
+            "groups": contributions,
+            "evidence": {
+                "aggregation": analysis.aggregation,
+                "frequency": analysis.frequency,
+                "group_count": len(contributions),
+            },
+        }
+
+    def _analysis_metric(
+        self, system_code: str, table_code: str, indicator_code: str
+    ) -> tuple[SystemConfig, SummaryTableConfig, MetricConfig, MetricAnalysisConfig]:
+        system = self._system(system_code)
+        table = self._summary_table(system_code, table_code)
+        indicator = self._select_items(table.indicators, [indicator_code], "指标")[0]
+        analysis = indicator.analysis or (
+            indicator.query_config.analysis if indicator.query_config else None
+        )
+        if indicator.value_type != "number" or analysis is None:
+            raise ValueError("指标未配置可执行的数值分析语义")
+        return system, table, indicator, analysis
+
+    def _resolve_baseline_date(
+        self,
+        current: date,
+        baseline: str,
+        baseline_date: str | None,
+        analysis: MetricAnalysisConfig,
+    ) -> date:
+        normalized = str(baseline or "").upper()
+        if normalized not in analysis.supported_baselines:
+            raise ValueError("指标未启用所选对比基准")
+        if normalized == "CUSTOM":
+            if not baseline_date:
+                raise ValueError("自定义对比必须提供基准日期")
+            return self._parse_date(baseline_date, "基准日期")
+        if normalized == "YEAR_OVER_YEAR":
+            return self._shift_months(current, -12)
+        return self._shift_months(current, -1 if analysis.frequency == "MONTH" else -3)
+
+    @staticmethod
+    def _shift_months(value: date, months: int) -> date:
+        target_index = value.year * 12 + value.month - 1 + months
+        target_year, target_month_index = divmod(target_index, 12)
+        target_month = target_month_index + 1
+        source_last = monthrange(value.year, value.month)[1]
+        target_last = monthrange(target_year, target_month)[1]
+        day = target_last if value.day == source_last else min(value.day, target_last)
+        return date(target_year, target_month, day)
+
+    def _metric_query_parts(
+        self, table: SummaryTableConfig, indicator: MetricConfig
+    ) -> tuple[str, str, str, tuple[str, ...], Mapping[str, FieldConfig], str | None, str]:
+        config = indicator.query_config
+        if config is not None:
+            return (
+                config.table,
+                config.date_column,
+                config.value_column,
+                self._asset_organization_columns(config),
+                self._asset_filterable_fields(config),
+                config.metric_code_column,
+                config.source_metric_code,
+            )
+        return (
+            table.table,
+            table.date_column,
+            "metric_value",
+            self._organization_columns(table),
+            table.filters,
+            table.metric_code_column,
+            indicator.code,
+        )
+
+    def _analysis_where(
+        self,
+        table: SummaryTableConfig,
+        indicator: MetricConfig,
+        dates: Sequence[date],
+        organization: str,
+        filters: Sequence[Mapping[str, Any]],
+    ) -> tuple[str, dict[str, Any], list[dict[str, Any]], tuple[str, str, str]]:
+        source_table, date_column, value_column, org_columns, fields, metric_column, source_code = (
+            self._metric_query_parts(table, indicator)
+        )
+        normalized_organization = self._normalize_organization(organization)
+        self._assert_organization_access(normalized_organization)
+        parameters: dict[str, Any] = {"organization": normalized_organization}
+        date_parameters = {f"analysis_date_{index}": item for index, item in enumerate(dates)}
+        date_placeholders = ", ".join(":" + key for key in date_parameters)
+        conditions = [
+            self._organization_condition(org_columns),
+            f"{_quote_identifier(date_column)} IN ({date_placeholders})",
+        ]
+        parameters.update(date_parameters)
+        if metric_column:
+            conditions.append(f"{_quote_identifier(metric_column)} = :analysis_metric_code")
+            parameters["analysis_metric_code"] = source_code
+        filter_conditions, filter_parameters, filter_summary = self._filter_conditions(
+            fields, filters
+        )
+        conditions.extend(filter_conditions)
+        parameters.update(filter_parameters)
+        return (
+            " WHERE " + " AND ".join(conditions),
+            parameters,
+            filter_summary,
+            (source_table, date_column, value_column),
+        )
+
+    def _aggregate_metric_values(
+        self,
+        table: SummaryTableConfig,
+        indicator: MetricConfig,
+        dates: Sequence[date],
+        organization: str,
+        filters: Sequence[Mapping[str, Any]],
+    ) -> tuple[dict[date, Decimal], list[dict[str, Any]]]:
+        where_sql, parameters, filter_summary, parts = self._analysis_where(
+            table, indicator, dates, organization, filters
+        )
+        source_table, date_column, value_column = parts
+        rows = self._rows(
+            text(
+                f"SELECT {_quote_identifier(date_column)} AS data_date, "
+                f"SUM({_quote_identifier(value_column)}) AS metric_value "
+                f"FROM {_quote_identifier(source_table)}{where_sql} "
+                f"GROUP BY {_quote_identifier(date_column)}"
+            ),
+            parameters,
+        )
+        return {
+            self._parse_date(str(row["data_date"]), "数据日期"): Decimal(
+                str(row.get("metric_value") or 0)
+            )
+            for row in rows
+        }, filter_summary
+
+    def _aggregate_metric_breakdown(
+        self,
+        table: SummaryTableConfig,
+        indicator: MetricConfig,
+        dimension: AnalysisDimension,
+        dates: Sequence[date],
+        organization: str,
+        filters: Sequence[Mapping[str, Any]],
+    ) -> tuple[list[dict[str, Any]], list[dict[str, Any]]]:
+        where_sql, parameters, filter_summary, parts = self._analysis_where(
+            table, indicator, dates, organization, filters
+        )
+        source_table, date_column, value_column = parts
+        rows = self._rows(
+            text(
+                f"SELECT {_quote_identifier(date_column)} AS data_date, "
+                f"{_quote_identifier(dimension.column)} AS dimension_value, "
+                f"SUM({_quote_identifier(value_column)}) AS metric_value "
+                f"FROM {_quote_identifier(source_table)}{where_sql} "
+                f"GROUP BY {_quote_identifier(date_column)}, {_quote_identifier(dimension.column)}"
+            ),
+            parameters,
+        )
+        return [dict(row) for row in rows], filter_summary
+
     def query_detail(
         self,
         *,
@@ -1345,6 +1828,8 @@ class RegulatoryDataQueryService:
         sort_field: str | None,
         sort_direction: str | None,
     ) -> dict[str, Any]:
+        if self.access_context is not None and not self.access_context.can_view_detail:
+            raise ValueError("当前用户无权查看监管明细数据")
         system = self._system(system_code)
         table = self._detail_table(system_code, table_code)
         if table.indicator_configs:
@@ -1511,9 +1996,7 @@ class RegulatoryDataQueryService:
                 for field_code in query_config.default_return_fields
                 if field_code in query_config.fields
             ]
-            columns_sql, masks = self._asset_select_columns(
-                fields, query_config.value_column
-            )
+            columns_sql, masks = self._asset_select_columns(fields, query_config.value_column)
             order_sql = self._order_clause(query_config.order_by, query_config.fields)
             result_rows = self._rows(
                 text(
@@ -1698,13 +2181,32 @@ class RegulatoryDataQueryService:
     def _system(self, code: str) -> SystemConfig:
         system = self.skill.systems.get(code)
         if system is not None:
+            self._assert_system_access(system)
             return system
         matched = [candidate for candidate in self.skill.systems.values() if candidate.name == code]
         if len(matched) == 1:
+            self._assert_system_access(matched[0])
             return matched[0]
         if len(matched) > 1:
             raise ValueError(f"系统名称存在多个目录项，请使用编码: {code}")
         raise ValueError("系统未在 Skill 目录中配置")
+
+    def _can_access_system(self, system: SystemConfig) -> bool:
+        if self.access_context is None or "ALL" in self.access_context.allowed_systems:
+            return True
+        allowed = {item.casefold() for item in self.access_context.allowed_systems}
+        return system.code.casefold() in allowed or system.name.casefold() in allowed
+
+    def _assert_system_access(self, system: SystemConfig) -> None:
+        if not self._can_access_system(system):
+            raise ValueError("当前用户无权访问该监管系统数据")
+
+    def _assert_organization_access(self, organization: str) -> None:
+        if self.access_context is None or "ALL" in self.access_context.allowed_organizations:
+            return
+        allowed = {item.casefold() for item in self.access_context.allowed_organizations}
+        if organization.casefold() not in allowed:
+            raise ValueError("当前用户无权访问该机构数据")
 
     def _summary_table(self, system_code: str, table_code: str) -> SummaryTableConfig:
         return cast(
@@ -1763,13 +2265,13 @@ class RegulatoryDataQueryService:
             items.append(item)
         return items
 
-    @staticmethod
     def _required_scope(
-        start_date: str, end_date: str, organization: str
+        self, start_date: str, end_date: str, organization: str
     ) -> tuple[date, date, str]:
         normalized_organization = RegulatoryDataQueryService._normalize_organization(organization)
         if not normalized_organization:
             raise ValueError("机构或主体范围不能为空")
+        self._assert_organization_access(normalized_organization)
         start = RegulatoryDataQueryService._parse_date(start_date, "开始日期")
         end = RegulatoryDataQueryService._parse_date(end_date, "结束日期")
         if start > end:
@@ -1785,8 +2287,11 @@ class RegulatoryDataQueryService:
     ) -> tuple[list[str], dict[str, Any], list[dict[str, Any]]]:
         conditions: list[str] = []
         parameters: dict[str, Any] = {}
+        if self.access_context is not None and not (organization and organization.strip()):
+            raise ValueError("受权限控制的日期查询必须提供机构范围")
         if organization and organization.strip():
             normalized = self._normalize_organization(organization)
+            self._assert_organization_access(normalized)
             conditions.append(self._organization_condition(organization_columns))
             parameters["organization"] = normalized
         filter_conditions, filter_parameters, filter_summary = self._filter_conditions(
@@ -1828,9 +2333,13 @@ class RegulatoryDataQueryService:
             raise SkillConfigurationError("机构字段未配置")
         if len(unique_columns) == 1:
             return f"{_quote_identifier(unique_columns[0])} = :organization"
-        return "(" + " OR ".join(
-            f"{_quote_identifier(column)} = :organization" for column in unique_columns
-        ) + ")"
+        return (
+            "("
+            + " OR ".join(
+                f"{_quote_identifier(column)} = :organization" for column in unique_columns
+            )
+            + ")"
+        )
 
     def _filter_conditions(
         self, fields: Mapping[str, FieldConfig], filters: Sequence[Mapping[str, Any]]
@@ -1952,12 +2461,14 @@ class RegulatoryDataQueryService:
 
 
 def create_regulatory_query_skill_runtime(
-    skill: RegulatoryQuerySkill, engine_factory: EngineFactory = create_engine
+    skill: RegulatoryQuerySkill,
+    engine_factory: EngineFactory = create_engine,
+    access_context: Mapping[str, Any] | None = None,
 ) -> SkillRuntime:
     database_url = os.getenv(skill.database_url_env, "").strip()
     if not database_url:
         raise SkillConfigurationError(f"缺少监管查询数据库连接环境变量: {skill.database_url_env}")
-    service = RegulatoryDataQueryService(skill, database_url, engine_factory)
+    service = RegulatoryDataQueryService(skill, database_url, engine_factory, access_context)
 
     def filters(items: list[QueryFilterInput]) -> list[dict[str, Any]]:
         return [
@@ -1982,8 +2493,7 @@ def create_regulatory_query_skill_runtime(
             ),
             StructuredTool.from_function(
                 lambda **kwargs: safe_call(
-                    service.list_periods,
-                    **{**kwargs, "filters": filters(kwargs["filters"])}
+                    service.list_periods, **{**kwargs, "filters": filters(kwargs["filters"])}
                 ),
                 name="list_regulatory_periods",
                 description="按受控系统、表、指标、机构和筛选条件列出可用统计日期。",
@@ -2003,8 +2513,7 @@ def create_regulatory_query_skill_runtime(
             ),
             StructuredTool.from_function(
                 lambda **kwargs: safe_call(
-                    service.query_summary,
-                    **{**kwargs, "filters": filters(kwargs["filters"])}
+                    service.query_summary, **{**kwargs, "filters": filters(kwargs["filters"])}
                 ),
                 name="query_regulatory_summary",
                 description="按受控系统、汇总表、指标、日期、机构和筛选条件查询汇总数据。",
@@ -2012,8 +2521,7 @@ def create_regulatory_query_skill_runtime(
             ),
             StructuredTool.from_function(
                 lambda **kwargs: safe_call(
-                    service.query_detail,
-                    **{**kwargs, "filters": filters(kwargs["filters"])}
+                    service.query_detail, **{**kwargs, "filters": filters(kwargs["filters"])}
                 ),
                 name="query_regulatory_detail",
                 description=(
@@ -2022,15 +2530,42 @@ def create_regulatory_query_skill_runtime(
                 ),
                 args_schema=QueryDetailInput,
             ),
+            StructuredTool.from_function(
+                lambda **kwargs: safe_call(service.get_metric_profile, **kwargs),
+                name="get_regulatory_metric_profile",
+                description="读取指标已配置的聚合、频率、单位、对比基准和可分析维度。",
+                args_schema=MetricProfileInput,
+            ),
+            StructuredTool.from_function(
+                lambda **kwargs: safe_call(
+                    service.compare_metric, **{**kwargs, "filters": filters(kwargs["filters"])}
+                ),
+                name="compare_regulatory_metric",
+                description="按已配置口径确定性计算单个指标的环比、同比或自定义期间变化。",
+                args_schema=CompareMetricInput,
+            ),
+            StructuredTool.from_function(
+                lambda **kwargs: safe_call(
+                    service.breakdown_metric_change,
+                    **{**kwargs, "filters": filters(kwargs["filters"])},
+                ),
+                name="breakdown_regulatory_metric_change",
+                description="按已配置维度分解指标变动并计算各分组贡献度。",
+                args_schema=BreakdownMetricChangeInput,
+            ),
         ),
         tool_names=REGULATORY_QUERY_TOOL_NAMES,
     )
 
 
-def create_skill_runtime(skill_dir: Path) -> SkillRuntime:
+def create_skill_runtime(
+    skill_dir: Path, access_context: Mapping[str, Any] | None = None
+) -> SkillRuntime:
     """Packaged Skill entry point used by the generic Sidecar loader."""
 
-    return create_regulatory_query_skill_runtime(load_regulatory_query_skill(skill_dir))
+    return create_regulatory_query_skill_runtime(
+        load_regulatory_query_skill(skill_dir), access_context=access_context
+    )
 
 
 def is_regulatory_query_tool(name: str) -> bool:
@@ -2050,6 +2585,12 @@ def summarize_regulatory_query_result(output: Any) -> str:
         return f"指标候选检索完成，共 {output.get('candidate_count', 0)} 条候选"
     if "fields" in output:
         return f"明细字段检索完成，共 {output.get('field_count', 0)} 个字段"
+    if "groups" in output:
+        return f"监管指标维度贡献分析完成，共 {len(output.get('groups') or [])} 个分组"
+    if "current_value" in output and "baseline_value" in output:
+        return "监管指标期间对比分析完成"
+    if "aggregation" in output and "dimensions" in output:
+        return "监管指标分析口径读取完成"
     suffix = "，结果已截断" if output.get("truncated") else ""
     returned_count = output.get("returned_count", 0)
     return f"监管{output.get('view', '数据')}查询完成，返回 {returned_count} 条{suffix}"

@@ -153,7 +153,24 @@ public class RegElementQueryConfigServiceImpl
         validateFieldList(result, fieldMap, dto.getFilterFieldIds(), "允许筛选字段");
         validateFieldList(result, fieldMap, dto.getSortFieldIds(), "允许排序字段");
         validateFieldList(result, fieldMap, dto.getMaskFieldIds(), "脱敏字段");
+        validateJsonObject(result, dto.getAnalysisConfigJson(), "指标分析语义");
         return result;
+    }
+
+    private void validateJsonObject(
+            RegElementQueryConfigValidationResult result,
+            String json,
+            String label) {
+        if (StringUtils.isBlank(json)) {
+            return;
+        }
+        try {
+            if (!objectMapper.readTree(json).isObject()) {
+                result.addError(label + "必须是 JSON 对象");
+            }
+        } catch (JsonProcessingException e) {
+            result.addError(label + " JSON 无法解析");
+        }
     }
 
     @Override
@@ -227,6 +244,7 @@ public class RegElementQueryConfigServiceImpl
         dto.setSortFieldIds(normalizeList(dto.getSortFieldIds()));
         dto.setMaskFieldIds(normalizeList(dto.getMaskFieldIds()));
         dto.setDetailMaxRows(dto.getDetailMaxRows() == null ? 5 : dto.getDetailMaxRows());
+        dto.setAnalysisConfigJson(blankToNull(dto.getAnalysisConfigJson()));
         return dto;
     }
 
@@ -264,6 +282,7 @@ public class RegElementQueryConfigServiceImpl
         dto.setSortFieldIds(readList(entity.getSortFieldIds()));
         dto.setMaskFieldIds(readList(entity.getMaskFieldIds()));
         dto.setDetailMaxRows(entity.getDetailMaxRows());
+        dto.setAnalysisConfigJson(entity.getAnalysisConfigJson());
         return dto;
     }
 
@@ -283,6 +302,7 @@ public class RegElementQueryConfigServiceImpl
         entity.setSortFieldIds(writeList(dto.getSortFieldIds()));
         entity.setMaskFieldIds(writeList(dto.getMaskFieldIds()));
         entity.setDetailMaxRows(dto.getDetailMaxRows());
+        entity.setAnalysisConfigJson(dto.getAnalysisConfigJson());
     }
 
     private List<String> readList(String value) {

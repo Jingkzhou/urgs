@@ -4,6 +4,7 @@ import com.baomidou.mybatisplus.core.conditions.query.QueryWrapper;
 import com.example.urgs_api.ai.entity.Agent;
 import com.example.urgs_api.ai.client.DefaultAiChatClient;
 import com.example.urgs_api.ai.service.agent.AgentAppBuildModeHandler;
+import com.example.urgs_api.ai.service.agent.AgentExecutionContextService;
 import com.example.urgs_api.ai.service.agent.DeepAgentsBuildModeHandler;
 import com.example.urgs_api.ai.service.agent.DifyBuildModeHandler;
 import com.example.urgs_api.ai.service.agent.RagBuildModeHandler;
@@ -65,6 +66,9 @@ public class AiChatServiceImpl implements AiChatService {
 
     @Autowired
     private UserService userService;
+
+    @Autowired
+    private AgentExecutionContextService agentExecutionContextService;
 
     @Override
     public String chat(String systemPrompt, String userPrompt) {
@@ -151,6 +155,7 @@ public class AiChatServiceImpl implements AiChatService {
         final List<Map<String, String>> finalContext = conversationContext;
         final String finalSkillAppCode = agentAppSkillAppCode;
         final String finalSkillCode = agentAppSkillCode;
+        final Map<String, Object> executionContext = agentExecutionContextService.build(requesterUserId);
 
         java.util.function.Consumer<DeepAgentsBuildModeHandler.RoutingInfo> routingCallback = info -> {
             Agent routed = findAgentByCode(catalog, info.agentCode());
@@ -167,7 +172,7 @@ public class AiChatServiceImpl implements AiChatService {
         // 手动预选的 DEEPAGENTS Agent：编排跳过路由，仍执行 Input Guard 与后续流程
         if (manualAgentSelected && sessionAgent != null && deepAgentsBuildModeHandler.supports(sessionAgent)) {
             deepAgentsBuildModeHandler.streamWithPersistence(sessionId, sessionAgent, null, systemPrompt, userPrompt,
-                    conversationContext, catalog, emitter, runId, routingCallback, legacyDispatch);
+                    conversationContext, catalog, executionContext, emitter, runId, routingCallback, legacyDispatch);
             return;
         }
 
@@ -187,7 +192,7 @@ public class AiChatServiceImpl implements AiChatService {
 
         // 未手动选择 Agent：编排内部完成路由。currentAgent 只是软绑定，Router 可复用也可重选。
         deepAgentsBuildModeHandler.streamWithPersistence(sessionId, null, currentAgent, systemPrompt, userPrompt,
-                conversationContext, catalog, emitter, runId, routingCallback, legacyDispatch);
+                conversationContext, catalog, executionContext, emitter, runId, routingCallback, legacyDispatch);
     }
 
     /**

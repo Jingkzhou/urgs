@@ -10,7 +10,10 @@
     "search_regulatory_metrics",
     "search_regulatory_fields",
     "query_regulatory_summary",
-    "query_regulatory_detail"
+    "query_regulatory_detail",
+    "get_regulatory_metric_profile",
+    "compare_regulatory_metric",
+    "breakdown_regulatory_metric_change"
   ],
   "database": {
     "dialect": "mysql",

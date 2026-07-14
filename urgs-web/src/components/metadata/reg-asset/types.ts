@@ -99,6 +99,7 @@ export interface RegElementQueryConfig {
     sortFieldIds?: string[];
     maskFieldIds?: string[];
     detailMaxRows?: number;
+    analysisConfigJson?: string;
 }
 
 export interface RegElementQueryConfigValidationResult {

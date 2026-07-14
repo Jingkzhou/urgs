@@ -80,6 +80,7 @@ async def run_worker(
         workspace_root=getattr(agent_config, "workspace_root", None),
         debug=debug,
         agent_code=agent_code,
+        runtime_context=getattr(agent_config, "execution_context", None),
     )
 
     messages: list[dict[str, str]] = []

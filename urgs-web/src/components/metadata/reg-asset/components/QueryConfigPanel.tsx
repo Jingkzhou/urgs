@@ -387,6 +387,20 @@ export const QueryConfigPanel: React.FC<QueryConfigPanelProps> = ({
                         onChange={event => patchConfig({ detailMaxRows: Number(event.target.value || 5) })}
                     />
                 </div>
+                {config.queryMode === 'SUMMARY' && (
+                    <div className="col-span-2">
+                        <label className="block text-xs font-medium text-slate-600 mb-1">指标分析语义 JSON</label>
+                        <textarea
+                            className={`${selectClass} min-h-32 font-mono`}
+                            value={config.analysisConfigJson || ''}
+                            onChange={event => patchConfig({ analysisConfigJson: event.target.value })}
+                            placeholder={'{"aggregation":"SUM","frequency":"MONTH","unit":"万元","scale":10000,"additivity":"ADDITIVE","supportedBaselines":["PREVIOUS_PERIOD","YEAR_OVER_YEAR"],"dimensions":[{"code":"product_type","name":"产品类型","fieldId":"物理字段ID"}]}' }
+                        />
+                        <div className="mt-1 text-xs text-slate-500">
+                            首期支持 SUM 可加指标、月/季度频率，以及环比、同比、自定义基准和已登记维度贡献分析。
+                        </div>
+                    </div>
+                )}
             </div>
 
             {validation && (

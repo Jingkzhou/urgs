@@ -73,6 +73,9 @@ class AgentRuntimeConfig(BaseModel):
     workspace_root: str | None = Field(
         default=None, description="Agent 级工作空间根目录，覆盖全局 DEEPAGENTS_WORKSPACE_ROOT"
     )
+    execution_context: dict[str, Any] | None = Field(
+        default=None, description="服务端生成的通用 Agent 执行上下文"
+    )
 
 
 class OrchestratorRequest(BaseModel):

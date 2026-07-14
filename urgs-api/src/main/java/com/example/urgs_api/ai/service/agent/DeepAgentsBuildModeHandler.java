@@ -85,7 +85,8 @@ public class DeepAgentsBuildModeHandler {
      */
     public void streamWithPersistence(String sessionId, Agent preselectedAgent, Agent currentAgent,
             String systemPrompt, String userPrompt, List<Map<String, String>> conversationContext, List<Agent> catalog,
-            SseEmitter emitter, String runId, Consumer<RoutingInfo> routingCallback,
+            Map<String, Object> executionContext, SseEmitter emitter, String runId,
+            Consumer<RoutingInfo> routingCallback,
             Consumer<Agent> legacyDispatch) {
         executor.submit(() -> {
             StringBuilder responseBuilder = new StringBuilder();
@@ -102,7 +103,7 @@ public class DeepAgentsBuildModeHandler {
 
                 Map<String, Object> body = buildOrchestratorRequest(
                         resolveSystemPrompt(preselectedAgent, systemPrompt), messages, preselectedAgent, currentAgent,
-                        catalog);
+                        catalog, executionContext);
 
                 final boolean[] handoff = { false };
                 final Agent[] handoffAgent = { null };
@@ -302,7 +303,8 @@ public class DeepAgentsBuildModeHandler {
     }
 
     private Map<String, Object> buildOrchestratorRequest(String systemPrompt, List<Map<String, String>> messages,
-            Agent preselectedAgent, Agent currentAgent, List<Agent> catalog) {
+            Agent preselectedAgent, Agent currentAgent, List<Agent> catalog,
+            Map<String, Object> executionContext) {
         Map<String, Object> body = new java.util.LinkedHashMap<>();
         body.put("system_prompt", systemPrompt);
         body.put("messages", messages);
@@ -342,6 +344,9 @@ public class DeepAgentsBuildModeHandler {
                 Object wsRoot = policy.get("workspace_root");
                 if (wsRoot instanceof String ws && !ws.isBlank()) {
                     cfg.put("workspace_root", ws);
+                }
+                if (executionContext != null) {
+                    cfg.put("execution_context", executionContext);
                 }
                 configs.put(agent.getAgentCode(), cfg);
             }

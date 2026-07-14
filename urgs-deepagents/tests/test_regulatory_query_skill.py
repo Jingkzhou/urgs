@@ -34,6 +34,9 @@ TOOLS = [
     "search_regulatory_fields",
     "query_regulatory_summary",
     "query_regulatory_detail",
+    "get_regulatory_metric_profile",
+    "compare_regulatory_metric",
+    "breakdown_regulatory_metric_change",
 ]
 
 
@@ -72,6 +75,25 @@ def _catalog(*, detail_max_rows: int = 5) -> dict[str, Any]:
                                 "code": "loan_balance",
                                 "name": "各项贷款余额",
                                 "type": "number",
+                                "analysis": {
+                                    "aggregation": "SUM",
+                                    "frequency": "MONTH",
+                                    "unit": "万元",
+                                    "scale": 10000,
+                                    "additivity": "ADDITIVE",
+                                    "supportedBaselines": [
+                                        "PREVIOUS_PERIOD",
+                                        "YEAR_OVER_YEAR",
+                                        "CUSTOM",
+                                    ],
+                                    "dimensions": [
+                                        {
+                                            "code": "product_type",
+                                            "name": "产品类型",
+                                            "column": "product_type",
+                                        }
+                                    ],
+                                },
                             },
                             {
                                 "code": "npl_balance",
@@ -244,6 +266,38 @@ class _FakeConnection:
             return _FakeResult([{"data_date": "2026-02-28"}, {"data_date": "2026-01-31"}])
         if "COUNT(*)" in sql:
             return _FakeResult([{"total_count": 7}])
+        if "GROUP BY `stat_date`, `product_type`" in sql:
+            return _FakeResult(
+                [
+                    {
+                        "data_date": "2026-01-31",
+                        "dimension_value": "零售贷款",
+                        "metric_value": 430000,
+                    },
+                    {
+                        "data_date": "2026-02-28",
+                        "dimension_value": "零售贷款",
+                        "metric_value": 470000,
+                    },
+                    {
+                        "data_date": "2026-01-31",
+                        "dimension_value": "公司贷款",
+                        "metric_value": 270000,
+                    },
+                    {
+                        "data_date": "2026-02-28",
+                        "dimension_value": "公司贷款",
+                        "metric_value": 290000,
+                    },
+                ]
+            )
+        if "GROUP BY `stat_date`" in sql:
+            return _FakeResult(
+                [
+                    {"data_date": "2026-01-31", "metric_value": 700000},
+                    {"data_date": "2026-02-28", "metric_value": 760000},
+                ]
+            )
         if "`reg_summary`" in sql:
             return _FakeResult(
                 [
@@ -706,6 +760,127 @@ def test_summary_query_accepts_unique_chinese_system_table_and_indicator_names(
     assert result["system_code"] == "credit"
     assert result["table_code"] == "loan_summary"
     assert result["indicators"] == [{"code": "loan_balance", "name": "各项贷款余额"}]
+
+
+def test_metric_profile_compare_and_dimension_contribution_are_deterministic(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    runtime, engine = _runtime(tmp_path, monkeypatch)
+    tools = {tool.name: tool for tool in runtime.tools}
+
+    profile = tools["get_regulatory_metric_profile"].invoke(
+        {
+            "system_code": "credit",
+            "table_code": "loan_summary",
+            "indicator_code": "loan_balance",
+        }
+    )
+    assert profile["ok"] is True
+    assert profile["frequency"] == "MONTH"
+    assert profile["dimensions"] == [{"code": "product_type", "name": "产品类型"}]
+
+    compare = tools["compare_regulatory_metric"].invoke(
+        {
+            "system_code": "credit",
+            "table_code": "loan_summary",
+            "indicator_code": "loan_balance",
+            "current_date": "2026-02-28",
+            "baseline": "PREVIOUS_PERIOD",
+            "organization": "1200",
+            "filters": [],
+        }
+    )
+    assert compare["ok"] is True
+    assert compare["baseline_date"] == "2026-01-31"
+    assert compare["current_value"] == "76"
+    assert compare["baseline_value"] == "70"
+    assert compare["change_value"] == "6"
+    assert compare["change_rate_percent"] == "8.5714"
+
+    breakdown = tools["breakdown_regulatory_metric_change"].invoke(
+        {
+            "system_code": "credit",
+            "table_code": "loan_summary",
+            "indicator_code": "loan_balance",
+            "current_date": "2026-02-28",
+            "baseline": "PREVIOUS_PERIOD",
+            "organization": "1200",
+            "filters": [],
+            "dimension_code": "product_type",
+        }
+    )
+    assert breakdown["ok"] is True
+    assert breakdown["total_change_value"] == "6"
+    assert breakdown["groups"][0] == {
+        "dimension_value": "零售贷款",
+        "current_value": "47",
+        "baseline_value": "43",
+        "change_value": "4",
+        "contribution_percent": "66.6667",
+    }
+    assert any("SUM(`metric_value`)" in sql for sql, _ in engine.calls)
+    assert all("700000" not in sql and "760000" not in sql for sql, _ in engine.calls)
+
+
+def test_request_access_context_blocks_cross_org_and_detail_data(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    skill = load_regulatory_query_skill(_write_skill(tmp_path))
+    monkeypatch.setenv(
+        "DEEPAGENTS_REGULATORY_QUERY_DATABASE_URL", "mysql+pymysql://user:pass@db/test"
+    )
+    engine = _FakeEngine()
+    runtime = create_regulatory_query_skill_runtime(
+        skill,
+        engine_factory=lambda *_args, **_kwargs: engine,
+        access_context={
+            "requester_user_id": 7,
+            "permissions": ["ai:regulatory-query:use"],
+            "allowed_systems": ["credit"],
+            "allowed_organizations": ["分行一", "1200"],
+            "can_view_detail": False,
+        },
+    )
+    tools = {tool.name: tool for tool in runtime.tools}
+    denied_periods = tools["list_regulatory_periods"].invoke(
+        {
+            "system_code": "credit",
+            "table_code": "loan_summary",
+            "view": "summary",
+            "indicator_codes": ["loan_balance"],
+            "filters": [],
+        }
+    )
+    assert denied_periods["ok"] is False
+    assert "必须提供机构范围" in denied_periods["error"]
+
+    denied_org = tools["compare_regulatory_metric"].invoke(
+        {
+            "system_code": "credit",
+            "table_code": "loan_summary",
+            "indicator_code": "loan_balance",
+            "current_date": "2026-02-28",
+            "baseline": "PREVIOUS_PERIOD",
+            "organization": "总行",
+            "filters": [],
+        }
+    )
+    assert denied_org["ok"] is False
+    assert "无权访问该机构" in denied_org["error"]
+
+    denied_detail = tools["query_regulatory_detail"].invoke(
+        {
+            "system_code": "credit",
+            "table_code": "loan_detail",
+            "return_fields": [],
+            "start_date": "2026-02-28",
+            "end_date": "2026-02-28",
+            "organization": "1200",
+            "filters": [],
+        }
+    )
+    assert denied_detail["ok"] is False
+    assert "无权查看监管明细" in denied_detail["error"]
 
 
 def test_asset_query_config_overrides_catalog_with_parameterized_summary_query(

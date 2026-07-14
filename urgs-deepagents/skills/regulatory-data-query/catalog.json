@@ -15,8 +15,38 @@
           "organization_name_column": "org_name",
           "metric_code_column": "metric_code",
           "indicators": [
-            {"code": "loan_balance", "name": "各项贷款余额", "type": "number"},
-            {"code": "npl_balance", "name": "不良贷款余额", "type": "number"}
+            {
+              "code": "loan_balance",
+              "name": "各项贷款余额",
+              "type": "number",
+              "analysis": {
+                "aggregation": "SUM",
+                "frequency": "MONTH",
+                "unit": "万元",
+                "scale": 10000,
+                "additivity": "ADDITIVE",
+                "supportedBaselines": ["PREVIOUS_PERIOD", "YEAR_OVER_YEAR", "CUSTOM"],
+                "dimensions": [
+                  {"code": "product_type", "name": "产品类型", "column": "product_type"}
+                ]
+              }
+            },
+            {
+              "code": "npl_balance",
+              "name": "不良贷款余额",
+              "type": "number",
+              "analysis": {
+                "aggregation": "SUM",
+                "frequency": "MONTH",
+                "unit": "万元",
+                "scale": 10000,
+                "additivity": "ADDITIVE",
+                "supportedBaselines": ["PREVIOUS_PERIOD", "YEAR_OVER_YEAR", "CUSTOM"],
+                "dimensions": [
+                  {"code": "product_type", "name": "产品类型", "column": "product_type"}
+                ]
+              }
+            }
           ],
           "result_fields": [
             {"code": "data_date", "name": "数据日期", "column": "data_date", "type": "date", "returnable": true, "filterable": false, "sortable": false},

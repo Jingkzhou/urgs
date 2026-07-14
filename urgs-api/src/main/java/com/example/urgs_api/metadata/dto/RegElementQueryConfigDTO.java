@@ -31,4 +31,5 @@ public class RegElementQueryConfigDTO {
     private List<String> sortFieldIds = new ArrayList<>();
     private List<String> maskFieldIds = new ArrayList<>();
     private Integer detailMaxRows = 5;
+    private String analysisConfigJson;
 }

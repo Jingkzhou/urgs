@@ -65,6 +65,9 @@ public class RegElementQueryConfig {
     @TableField("detail_max_rows")
     private Integer detailMaxRows;
 
+    @TableField("analysis_config_json")
+    private String analysisConfigJson;
+
     @TableField("create_time")
     @JsonFormat(pattern = "yyyy-MM-dd HH:mm:ss")
     private LocalDateTime createTime;
