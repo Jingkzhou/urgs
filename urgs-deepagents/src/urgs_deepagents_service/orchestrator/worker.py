@@ -16,12 +16,11 @@ from urgs_deepagents_service.orchestrator.utils import (
     StreamContext,
     assistant_text_from_output,
     chunk_text,
-    graph_config,
     serialize,
     sse,
     tool_result_text,
 )
-from urgs_deepagents_service.runtime import create_runtime_agent
+from urgs_deepagents_service.runtime import agent_graph_config, create_runtime_agent
 
 
 @dataclass
@@ -131,7 +130,7 @@ async def run_worker(
             message=f"{agent_code} 正在分析并执行子任务",
         )
         async for event in agent.astream_events(
-            {"messages": messages}, config=graph_config(settings), version="v2"
+            {"messages": messages}, config=agent_graph_config(settings, agent_code), version="v2"
         ):
             event_name = event.get("event")
             name = event.get("name") or ""

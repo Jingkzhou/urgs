@@ -5,9 +5,11 @@ import httpx
 import pytest
 from fastapi import HTTPException
 from fastapi.testclient import TestClient
+from langchain.agents import create_agent
 from langchain.agents.middleware import ToolCallLimitMiddleware
 from langchain_core.language_models.fake_chat_models import FakeMessagesListChatModel
 from langchain_core.messages import AIMessage, AIMessageChunk, HumanMessage, ToolMessage
+from langchain_core.tools import tool
 from langchain_openai import ChatOpenAI
 
 from urgs_deepagents_service.config import get_settings
@@ -28,10 +30,13 @@ from urgs_deepagents_service.model_config import (
 from urgs_deepagents_service.orchestrator.progress import PROGRESS_TOOL_NAME
 from urgs_deepagents_service.runtime import (
     REGULATORY_KNOWLEDGE_AGENT_CODE,
-    REGULATORY_KNOWLEDGE_TOOL_CALL_LIMIT,
+    REGULATORY_KNOWLEDGE_MIN_RECURSION_LIMIT,
+    REGULATORY_KNOWLEDGE_TOOL_CALL_HARD_LIMIT,
     BusinessToolCallLimitMiddleware,
+    BusinessToolLoopDetectionMiddleware,
     RegulatoryCodeEvidenceMiddleware,
     RegulatoryRetrievalGateMiddleware,
+    agent_graph_config,
     create_runtime_agent,
     graph_config,
 )
@@ -174,7 +179,7 @@ def test_agent_runtime_merges_workspace_memory_skills_and_tool_allowlist(tmp_pat
     assert middleware.allowed == frozenset({"read_file", "grep"})
 
 
-def test_regulatory_knowledge_agent_limits_run_tool_calls(
+def test_regulatory_knowledge_agent_uses_loop_detection_and_global_circuit_breaker(
     tmp_path, monkeypatch: pytest.MonkeyPatch
 ) -> None:
     class FakeSettings:
@@ -212,11 +217,148 @@ def test_regulatory_knowledge_agent_limits_run_tool_calls(
     assert any(
         isinstance(item, RegulatoryRetrievalGateMiddleware) for item in captured["middleware"]
     )
-    assert limiter.run_limit == REGULATORY_KNOWLEDGE_TOOL_CALL_LIMIT
+    loop_detector = next(
+        item
+        for item in captured["middleware"]
+        if isinstance(item, BusinessToolLoopDetectionMiddleware)
+    )
+    assert limiter.run_limit == REGULATORY_KNOWLEDGE_TOOL_CALL_HARD_LIMIT
     assert limiter.exit_behavior == "continue"
     assert isinstance(limiter, BusinessToolCallLimitMiddleware)
     assert not limiter._matches_tool_filter({"name": PROGRESS_TOOL_NAME})
     assert limiter._matches_tool_filter({"name": "read_file"})
+    assert loop_detector.warning_threshold < loop_detector.critical_threshold
+    assert "不使用固定 8 次" in captured["system_prompt"]
+    assert "异常熔断上限" in captured["system_prompt"]
+
+
+def test_regulatory_graph_depth_covers_hard_tool_budget() -> None:
+    class FakeSettings:
+        recursion_limit = 100
+
+    assert agent_graph_config(FakeSettings(), REGULATORY_KNOWLEDGE_AGENT_CODE) == {
+        "recursion_limit": REGULATORY_KNOWLEDGE_MIN_RECURSION_LIMIT
+    }
+    assert agent_graph_config(FakeSettings(), "general-agent") == {"recursion_limit": 100}
+
+
+def _tool_round(index: int, *, result: str = "same") -> list[object]:
+    call_id = f"call-{index}"
+    return [
+        AIMessage(
+            content="",
+            tool_calls=[
+                {
+                    "name": "grep",
+                    "args": {"pattern": "福费廷", "path": "/03-实体"},
+                    "id": call_id,
+                    "type": "tool_call",
+                }
+            ],
+        ),
+        ToolMessage(content=result, tool_call_id=call_id, status="success"),
+    ]
+
+
+def test_tool_loop_detection_blocks_repeated_identical_no_progress_calls() -> None:
+    middleware = BusinessToolLoopDetectionMiddleware(warning_threshold=2, critical_threshold=4)
+    messages: list[object] = []
+    for index in range(3):
+        messages.extend(_tool_round(index))
+    messages.append(
+        AIMessage(
+            content="",
+            tool_calls=[
+                {
+                    "name": "grep",
+                    "args": {"pattern": "福费廷", "path": "/03-实体"},
+                    "id": "call-blocked",
+                    "type": "tool_call",
+                }
+            ],
+        )
+    )
+
+    update = middleware.after_model({"messages": messages}, None)
+
+    assert update is not None
+    blocked = update["messages"][0]
+    assert isinstance(blocked, ToolMessage)
+    assert blocked.status == "error"
+    assert "无进展" in str(blocked.content)
+
+
+def test_tool_loop_detection_allows_repeated_calls_when_results_change() -> None:
+    middleware = BusinessToolLoopDetectionMiddleware(warning_threshold=2, critical_threshold=4)
+    messages: list[object] = []
+    for index in range(3):
+        messages.extend(_tool_round(index, result=f"page-{index}"))
+    messages.append(
+        AIMessage(
+            content="",
+            tool_calls=[
+                {
+                    "name": "grep",
+                    "args": {"pattern": "福费廷", "path": "/03-实体"},
+                    "id": "call-allowed",
+                    "type": "tool_call",
+                }
+            ],
+        )
+    )
+
+    assert middleware.after_model({"messages": messages}, None) is None
+
+
+def test_tool_loop_detection_returns_control_to_model_after_blocking() -> None:
+    class ToolAwareFake(FakeMessagesListChatModel):
+        def bind_tools(self, tools, *, tool_choice=None, **kwargs):
+            return self
+
+    @tool
+    def lookup(query: str) -> str:
+        """Return a stable lookup result."""
+
+        return "same"
+
+    def lookup_call(index: int) -> AIMessage:
+        return AIMessage(
+            content="",
+            tool_calls=[
+                {
+                    "name": "lookup",
+                    "args": {"query": "福费廷"},
+                    "id": f"lookup-{index}",
+                    "type": "tool_call",
+                }
+            ],
+        )
+
+    model = ToolAwareFake(
+        responses=[
+            lookup_call(1),
+            lookup_call(2),
+            lookup_call(3),
+            AIMessage(content="已调整检索策略并形成最终答案"),
+        ]
+    )
+    agent = create_agent(
+        model,
+        tools=[lookup],
+        middleware=[
+            BusinessToolLoopDetectionMiddleware(warning_threshold=2, critical_threshold=3)
+        ],
+    )
+
+    result = agent.invoke({"messages": [{"role": "user", "content": "查询福费廷"}]})
+
+    assert result["messages"][-1].content == "已调整检索策略并形成最终答案"
+    assert any(
+        isinstance(message, ToolMessage)
+        and message.status == "error"
+        and "无进展" in str(message.content)
+        for message in result["messages"]
+    )
 
 
 def test_runtime_agent_injects_public_progress_tool(

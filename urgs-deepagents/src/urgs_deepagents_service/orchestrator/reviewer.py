@@ -12,6 +12,13 @@ from urgs_deepagents_service.orchestrator.utils import (
 from urgs_deepagents_service.runtime import create_control_agent
 
 REVIEW_PASS_SCORE_THRESHOLD = 0.75
+TOOL_BUDGET_INCOMPLETE_MARKERS = (
+    "由于工具调用限制",
+    "因工具调用限制",
+    "工具调用次数已达上限",
+    "工具调用次数已耗尽",
+    "工具预算未完成",
+)
 
 REVIEWER_SYSTEM_PROMPT = """你是 URGS 的 Reviewer，负责验收 Worker 的产出是否合格。
 
@@ -134,6 +141,24 @@ def _local_review_failure(outputs: list[WorkerOutput]) -> ReviewResult | None:
             "Worker 产出为空，触发返工",
             [f"{agent_code} 没有返回有效答案" for agent_code in blank_outputs],
             ["补充完整答案，至少覆盖用户问题中的核心诉求"],
+        )
+    budget_incomplete_outputs = [
+        output.agent_code
+        for output in outputs
+        if output.agent_code == "regulatory-knowledge-agent"
+        and any(marker in output.answer for marker in TOOL_BUDGET_INCOMPLETE_MARKERS)
+    ]
+    if budget_incomplete_outputs:
+        return _failure(
+            "Worker 因工具预算未完成证据闭合，触发定向续查",
+            [
+                f"{agent_code} 明确声明关键实体页或原文页尚未读取"
+                for agent_code in budget_incomplete_outputs
+            ],
+            [
+                "停止重复目录检索，直接读取已定位的实体页或原文页后重新回答",
+                "删除仅由目录名称推断出的字段、值域或报送口径",
+            ],
         )
     return None
 

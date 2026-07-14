@@ -904,6 +904,50 @@ async def test_reviewer_parse_failure_fails_closed(monkeypatch) -> None:
 
 
 @pytest.mark.asyncio
+async def test_reviewer_rejects_answer_that_stopped_before_evidence_closed(monkeypatch) -> None:
+    def fail_create_reviewer(**kwargs: Any) -> object:
+        raise AssertionError("local evidence-closure check must fail before model review")
+
+    monkeypatch.setattr(reviewer_mod, "create_control_agent", fail_create_reviewer)
+
+    review = await reviewer_mod.run_review(
+        object(),
+        "福费廷业务在金融基础数据系统中如何报送？",
+        [
+            WorkerOutput(
+                agent_code="regulatory-knowledge-agent",
+                task="查询报送口径",
+                answer=(
+                    "由于工具调用限制，未能继续读取实体页和原文页的详细字段级内容。"
+                    "根据目录推断报送到单位贷款表。"
+                ),
+            )
+        ],
+    )
+
+    assert review.passed is False
+    assert "证据闭合" in review.reason
+    assert any("实体页或原文页" in item for item in review.required_fixes)
+
+
+def test_reviewer_budget_guard_does_not_match_other_agents_or_incidental_wording() -> None:
+    outputs = [
+        WorkerOutput(
+            agent_code="general-agent",
+            task="说明边界",
+            answer="由于工具调用限制，当前环境未能继续读取；这是预期的权限边界。",
+        ),
+        WorkerOutput(
+            agent_code="regulatory-knowledge-agent",
+            task="正常回答",
+            answer="页面读取完成；没有出现未能继续读取的情况。",
+        ),
+    ]
+
+    assert reviewer_mod._local_review_failure(outputs) is None
+
+
+@pytest.mark.asyncio
 async def test_handoff_for_non_deepagents(monkeypatch) -> None:
     _patch_guard(monkeypatch, passed=True)
     _patch_router(monkeypatch, "rag-agent", is_complex=False)

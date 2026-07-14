@@ -2,6 +2,9 @@
 
 from __future__ import annotations
 
+import hashlib
+import json
+import logging
 import re
 from typing import Any
 
@@ -29,8 +32,13 @@ READ_ONLY_FILESYSTEM_PERMISSIONS = [
 DEFAULT_EXCLUDED_TOOLS = frozenset({"execute"})
 DEFAULT_RECURSION_LIMIT = 100
 REGULATORY_KNOWLEDGE_AGENT_CODE = "regulatory-knowledge-agent"
-REGULATORY_KNOWLEDGE_TOOL_CALL_LIMIT = 8
+REGULATORY_KNOWLEDGE_TOOL_CALL_HARD_LIMIT = 30
+REGULATORY_KNOWLEDGE_MIN_RECURSION_LIMIT = REGULATORY_KNOWLEDGE_TOOL_CALL_HARD_LIMIT * 8
+TOOL_LOOP_HISTORY_SIZE = 30
+TOOL_LOOP_WARNING_THRESHOLD = 4
+TOOL_LOOP_CRITICAL_THRESHOLD = 8
 WRITE_TOOLS = frozenset({"write_file", "edit_file"})
+logger = logging.getLogger(__name__)
 REGULATORY_REPORT_CODE_PATTERN = re.compile(
     r"(?<![A-Za-z0-9_])(?:"
     r"JS_\d{3}(?:_[A-Z0-9_]+)?|"
@@ -49,6 +57,17 @@ def graph_config(settings: Any) -> dict[str, Any]:
     except (TypeError, ValueError):
         recursion_limit = DEFAULT_RECURSION_LIMIT
     return {"recursion_limit": max(25, recursion_limit)}
+
+
+def agent_graph_config(settings: Any, agent_code: str | None) -> dict[str, Any]:
+    """Size graph depth for agent-specific middleware and tool-call budgets."""
+
+    config = graph_config(settings)
+    if agent_code == REGULATORY_KNOWLEDGE_AGENT_CODE:
+        config["recursion_limit"] = max(
+            config["recursion_limit"], REGULATORY_KNOWLEDGE_MIN_RECURSION_LIMIT
+        )
+    return config
 
 
 def _tool_name(tool: Any) -> str | None:
@@ -86,12 +105,137 @@ class ToolVisibilityMiddleware(AgentMiddleware[Any, Any, Any]):
 
 
 class BusinessToolCallLimitMiddleware(ToolCallLimitMiddleware):
-    """Limit business tool calls without charging public progress updates."""
+    """Global circuit breaker without charging public progress updates."""
 
     def _matches_tool_filter(self, tool_call: Any) -> bool:
         if tool_call.get("name") == PROGRESS_TOOL_NAME:
             return False
         return super()._matches_tool_filter(tool_call)
+
+
+def _tool_call_signature(tool_call: ToolCall) -> str:
+    payload = {
+        "name": tool_call.get("name") or "",
+        "args": tool_call.get("args") or {},
+    }
+    return json.dumps(payload, ensure_ascii=False, sort_keys=True, default=str)
+
+
+def _tool_result_signature(message: ToolMessage) -> str:
+    payload = {
+        "status": getattr(message, "status", None),
+        "content": _message_text(message.content),
+    }
+    raw = json.dumps(payload, ensure_ascii=False, sort_keys=True, default=str)
+    return hashlib.sha256(raw.encode("utf-8")).hexdigest()
+
+
+class BusinessToolLoopDetectionMiddleware(AgentMiddleware[Any, Any, Any]):
+    """Detect repeated no-progress tool calls using an OpenClaw-style rolling history."""
+
+    def __init__(
+        self,
+        *,
+        history_size: int = TOOL_LOOP_HISTORY_SIZE,
+        warning_threshold: int = TOOL_LOOP_WARNING_THRESHOLD,
+        critical_threshold: int = TOOL_LOOP_CRITICAL_THRESHOLD,
+    ) -> None:
+        if warning_threshold >= critical_threshold:
+            raise ValueError("warning_threshold must be lower than critical_threshold")
+        self.history_size = history_size
+        self.warning_threshold = warning_threshold
+        self.critical_threshold = critical_threshold
+
+    @staticmethod
+    def _history(messages: list[Any]) -> list[tuple[str, str]]:
+        calls_by_id: dict[str, ToolCall] = {}
+        executions: list[tuple[str, str]] = []
+        for message in messages:
+            if isinstance(message, AIMessage):
+                for call in message.tool_calls or []:
+                    call_id = call.get("id")
+                    if call_id and call.get("name") != PROGRESS_TOOL_NAME:
+                        calls_by_id[call_id] = call
+                continue
+            if not isinstance(message, ToolMessage):
+                continue
+            matched_call = calls_by_id.get(message.tool_call_id)
+            if matched_call is None:
+                continue
+            executions.append((_tool_call_signature(matched_call), _tool_result_signature(message)))
+        return executions
+
+    def _is_no_progress_repeat(
+        self, current_signature: str, history: list[tuple[str, str]]
+    ) -> bool:
+        matching_results = [
+            result for signature, result in history if signature == current_signature
+        ]
+        required_previous_results = self.critical_threshold - 1
+        if len(matching_results) < required_previous_results:
+            return False
+        recent = matching_results[-required_previous_results:]
+        return len(set(recent)) == 1
+
+    def _is_no_progress_ping_pong(
+        self, current_signature: str, history: list[tuple[str, str]]
+    ) -> bool:
+        required_previous_results = self.critical_threshold - 1
+        if len(history) < required_previous_results:
+            return False
+        recent = history[-required_previous_results:]
+        signatures = [signature for signature, _ in recent] + [current_signature]
+        if len(set(signatures)) != 2:
+            return False
+        if any(signatures[index] != signatures[index - 2] for index in range(2, len(signatures))):
+            return False
+        results_by_signature: dict[str, set[str]] = {}
+        for signature, result in recent:
+            results_by_signature.setdefault(signature, set()).add(result)
+        return all(len(results) == 1 for results in results_by_signature.values())
+
+    def after_model(self, state: Any, runtime: Any) -> dict[str, Any] | None:
+        messages = state.get("messages", [])
+        if not messages:
+            return None
+        last_message = messages[-1]
+        if not isinstance(last_message, AIMessage) or not last_message.tool_calls:
+            return None
+
+        history = self._history(messages[:-1])[-self.history_size :]
+        blocked_messages: list[ToolMessage] = []
+        for call in last_message.tool_calls:
+            if call.get("name") == PROGRESS_TOOL_NAME:
+                continue
+            signature = _tool_call_signature(call)
+            repeat_count = sum(1 for previous, _ in history if previous == signature) + 1
+            ping_pong = self._is_no_progress_ping_pong(signature, history)
+            repeated = self._is_no_progress_repeat(signature, history)
+            if repeated or ping_pong:
+                pattern = "交替调用" if ping_pong else "相同调用"
+                blocked_messages.append(
+                    ToolMessage(
+                        content=(
+                            f"检测到无进展的工具{pattern}循环，已阻止本次调用。"
+                            "请调整检索条件、改读更直接的证据页，或基于已有证据明确说明边界。"
+                        ),
+                        tool_call_id=call.get("id") or "tool-loop-detected",
+                        name=call.get("name"),
+                        status="error",
+                    )
+                )
+                continue
+            if repeat_count >= self.warning_threshold:
+                logger.warning(
+                    "Possible tool loop: tool=%s repeated=%d without reaching critical threshold",
+                    call.get("name"),
+                    repeat_count,
+                )
+
+        return {"messages": blocked_messages} if blocked_messages else None
+
+    async def aafter_model(self, state: Any, runtime: Any) -> dict[str, Any] | None:
+        return self.after_model(state, runtime)
 
 
 def _message_text(content: Any) -> str:
@@ -371,11 +515,21 @@ def create_runtime_agent(
         debug=debug,
     )
     if agent_code == REGULATORY_KNOWLEDGE_AGENT_CODE:
+        effective_system_prompt = (
+            f"{effective_system_prompt}\n\n"
+            "## 运行时工具策略（优先于前文的固定次数说明）\n"
+            "- 不使用固定 8 次工具调用作为正常停止条件；应以关键证据是否闭合决定是否继续检索。\n"
+            "- 避免相同工具与相同参数的重复调用；命中目录或索引后，应转向更直接的实体页或原文页。\n"
+            "- 运行时会对无进展重复、交替循环进行检测，并以 30 次业务工具调用作为异常熔断上限。\n"
+            "- 若问题涉及字段、值域、校验、公式、版本或具体报送指导，不能仅因已读取目录页就停止；"
+            "应继续核对实体页或原文页。"
+        ).strip()
         runtime_kwargs["middleware"][:0] = [
             BusinessToolCallLimitMiddleware(
-                run_limit=REGULATORY_KNOWLEDGE_TOOL_CALL_LIMIT,
+                run_limit=REGULATORY_KNOWLEDGE_TOOL_CALL_HARD_LIMIT,
                 exit_behavior="continue",
             ),
+            BusinessToolLoopDetectionMiddleware(),
             RegulatoryRetrievalGateMiddleware(),
             RegulatoryCodeEvidenceMiddleware(),
         ]
