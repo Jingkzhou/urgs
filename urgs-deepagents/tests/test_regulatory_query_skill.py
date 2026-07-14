@@ -1046,6 +1046,8 @@ def test_target_agent_uses_only_declared_skill_tools(
     exposed_tools = {tool.name for tool in captured["tools"]}
     assert exposed_tools - {PROGRESS_TOOL_NAME} == set(TOOLS)
     assert PROGRESS_TOOL_NAME in exposed_tools
+    assert "运行时日期基准" in captured["system_prompt"]
+    assert "‘今年’‘本年’指" in captured["system_prompt"]
     middleware = captured["middleware"][0]
     assert middleware._filter_tools([{"name": "execute"}, {"name": "read_file"}]) == []
     assert middleware._filter_tools([{"name": PROGRESS_TOOL_NAME}]) == [

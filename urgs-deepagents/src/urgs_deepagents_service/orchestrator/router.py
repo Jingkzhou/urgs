@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 import json
+import re
 from typing import Any
 
 from urgs_deepagents_service.orchestrator.state import RoutingResult
@@ -11,6 +12,37 @@ from urgs_deepagents_service.orchestrator.utils import (
 )
 from urgs_deepagents_service.runtime import create_control_agent
 from urgs_deepagents_service.schemas import RouterAgentDescriptor
+
+REGULATORY_DATA_QUERY_AGENT_CODE = "regulatory-data-query-agent"
+_DATA_QUERY_CAPABILITY_FOLLOWUPS = (
+    "都能查哪些指标",
+    "能查哪些指标",
+    "可以查哪些指标",
+    "可查哪些指标",
+    "有哪些指标可以查",
+    "都能查什么",
+    "能查询什么",
+    "能查哪些数据",
+    "有哪些数据可查",
+    "有哪些日期",
+    "能查哪些日期",
+    "有哪些系统",
+    "能查哪些系统",
+    "有哪些表",
+    "能查哪些表",
+)
+_REGULATORY_KNOWLEDGE_MARKERS = (
+    "定义",
+    "口径",
+    "含义",
+    "报送",
+    "填报",
+    "制度",
+    "规则",
+    "依据",
+    "校验",
+    "字段解释",
+)
 
 ROUTER_SYSTEM_PROMPT = """你是 URGS 的 Router Agent，负责把用户任务分发给最合适的业务 Agent，
 并判断任务复杂度。
@@ -25,7 +57,12 @@ ROUTER_SYSTEM_PROMPT = """你是 URGS 的 Router Agent，负责把用户任务�
    - 用户任务明显延续上一轮、补充条件、要求改写/导出/继续处理时，优先复用当前 Agent。
    - 用户任务切换到其他业务领域、工具能力或问题类型时，必须重新选择更匹配的 Agent。
    - 不要因为存在 current_agent_code 就无条件复用。
-6. 只返回 JSON 对象，不要输出 Markdown，不要输出解释性正文。
+6. 区分“实际可查询的数据目录”与“监管知识”：
+   - 在数据查询会话中追问“能查哪些指标/系统/表/日期”等，是对已接入数据目录的续问，
+     应复用监管指标数据查询 Agent。
+   - 询问指标定义、业务口径、字段含义、报送要求、制度依据时，才选择监管知识 Agent。
+   - 不得用知识库理论覆盖范围替代当前实际已接入、可查询的数据目录。
+7. 只返回 JSON 对象，不要输出 Markdown，不要输出解释性正文。
 
 JSON 字段：
 {
@@ -73,6 +110,35 @@ def _parse_routing_result(text: str, allowed_codes: set[str]) -> RoutingResult:
     return result
 
 
+def _regulatory_data_query_continuation(
+    user_message: str,
+    current_agent_code: str | None,
+    conversation_context: str,
+    agents: list[RouterAgentDescriptor],
+) -> RoutingResult | None:
+    """Keep short data-catalog follow-ups on the active data-query agent."""
+
+    if current_agent_code != REGULATORY_DATA_QUERY_AGENT_CODE:
+        return None
+    if not conversation_context.strip():
+        return None
+    if not any(agent.agent_code == REGULATORY_DATA_QUERY_AGENT_CODE for agent in agents):
+        return None
+    normalized = re.sub(r"[\s，。！？、,.!?：:]", "", user_message).lower()
+    if any(marker in normalized for marker in _REGULATORY_KNOWLEDGE_MARKERS):
+        return None
+    if not any(pattern in normalized for pattern in _DATA_QUERY_CAPABILITY_FOLLOWUPS):
+        return None
+    return RoutingResult(
+        agent_code=REGULATORY_DATA_QUERY_AGENT_CODE,
+        confidence=0.99,
+        reason="当前问题是对上一轮监管数据查询范围的续问，继续使用数据查询目录能力",
+        task_type="监管数据查询能力续问",
+        is_complex=False,
+        reused_current_agent=True,
+    )
+
+
 async def run_router(
     model: Any,
     user_message: str,
@@ -91,6 +157,14 @@ async def run_router(
         (agent for agent in agents if agent.agent_code == effective_current_agent_code),
         None,
     )
+    continuation = _regulatory_data_query_continuation(
+        user_message,
+        effective_current_agent_code,
+        conversation_context,
+        agents,
+    )
+    if continuation is not None:
+        return continuation
     current_section = ""
     if current_agent is not None:
         current_section = (

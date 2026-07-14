@@ -6,7 +6,9 @@ import hashlib
 import json
 import logging
 import re
+from datetime import date, datetime
 from typing import Any
+from zoneinfo import ZoneInfo, ZoneInfoNotFoundError
 
 from fastapi import HTTPException
 from langchain.agents.middleware import ToolCallLimitMiddleware
@@ -38,6 +40,7 @@ TOOL_LOOP_HISTORY_SIZE = 30
 TOOL_LOOP_WARNING_THRESHOLD = 4
 TOOL_LOOP_CRITICAL_THRESHOLD = 8
 WRITE_TOOLS = frozenset({"write_file", "edit_file"})
+DEFAULT_RUNTIME_TIMEZONE = "Asia/Shanghai"
 logger = logging.getLogger(__name__)
 REGULATORY_REPORT_CODE_PATTERN = re.compile(
     r"(?<![A-Za-z0-9_])(?:"
@@ -57,6 +60,23 @@ def graph_config(settings: Any) -> dict[str, Any]:
     except (TypeError, ValueError):
         recursion_limit = DEFAULT_RECURSION_LIMIT
     return {"recursion_limit": max(25, recursion_limit)}
+
+
+def _runtime_date_context(current_date: date | None = None) -> str:
+    if current_date is None:
+        try:
+            current_date = datetime.now(ZoneInfo(DEFAULT_RUNTIME_TIMEZONE)).date()
+        except ZoneInfoNotFoundError:
+            logger.warning(
+                "Timezone %s unavailable; using local timezone", DEFAULT_RUNTIME_TIMEZONE
+            )
+            current_date = datetime.now().astimezone().date()
+    return (
+        "## 运行时日期基准\n"
+        f"- 当前日期：{current_date.isoformat()}。\n"
+        f"- ‘今年’‘本年’指 {current_date.year} 年；‘本月’和相对月份也必须以当前日期为准。\n"
+        "- 不得沿用训练数据年份或自行猜测其他年份；若用户日期仍有歧义，应明确反问。"
+    )
 
 
 def agent_graph_config(settings: Any, agent_code: str | None) -> dict[str, Any]:
@@ -458,7 +478,7 @@ def create_control_agent(*, model: Any, system_prompt: str, debug: bool = False)
     return create_deep_agent(
         model=model,
         tools=[],
-        system_prompt=system_prompt,
+        system_prompt=f"{system_prompt}\n\n{_runtime_date_context()}".strip(),
         permissions=READ_ONLY_FILESYSTEM_PERMISSIONS,
         middleware=[ToolVisibilityMiddleware(allowed=frozenset())],
         debug=debug,
@@ -499,7 +519,9 @@ def create_runtime_agent(
         runtime_tools.extend(regulatory_runtime.tools)
 
     effective_system_prompt = (
-        f"{effective_system_prompt or ''}\n\n{PROGRESS_REPORT_INSTRUCTIONS}"
+        f"{effective_system_prompt or ''}\n\n"
+        f"{_runtime_date_context()}\n\n"
+        f"{PROGRESS_REPORT_INSTRUCTIONS}"
     ).strip()
 
     runtime_kwargs = build_agent_kwargs(

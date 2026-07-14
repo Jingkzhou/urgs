@@ -1343,6 +1343,72 @@ async def test_current_agent_code_is_soft_binding_and_still_routes(monkeypatch) 
     assert routing["reused_current_agent"] is False
 
 
+@pytest.mark.asyncio
+async def test_data_query_catalog_followup_reuses_current_agent_without_model(
+    monkeypatch,
+) -> None:
+    def fail_create_control_agent(**kwargs: Any) -> Any:
+        pytest.fail("数据目录续问应确定性复用当前 Agent，不应再次调用 Router 模型")
+
+    monkeypatch.setattr(router_mod, "create_control_agent", fail_create_control_agent)
+    agents = [
+        RouterAgentDescriptor(
+            agent_code="regulatory-data-query-agent",
+            agent_name="监管指标数据查询助手",
+            agent_type="SPECIALIST",
+            build_mode="DEEPAGENTS",
+            description="查询实际监管指标数据和已接入目录",
+        ),
+        RouterAgentDescriptor(
+            agent_code="regulatory-knowledge-agent",
+            agent_name="监管助手",
+            agent_type="SPECIALIST",
+            build_mode="DEEPAGENTS",
+            description="解释监管制度、报表和指标口径",
+        ),
+    ]
+
+    result = await router_mod.run_router(
+        model=object(),
+        user_message="都能查哪些指标",
+        agents=agents,
+        current_agent_code="regulatory-data-query-agent",
+        conversation_context=(
+            "用户：帮我分析今年各项存款走势\n"
+            "助手：当前数据查询目录未配置各项存款指标"
+        ),
+    )
+
+    assert result.agent_code == "regulatory-data-query-agent"
+    assert result.reused_current_agent is True
+    assert result.task_type == "监管数据查询能力续问"
+
+
+def test_data_query_followup_requires_context_and_allows_knowledge_switch() -> None:
+    agents = [
+        RouterAgentDescriptor(
+            agent_code="regulatory-data-query-agent",
+            agent_name="监管指标数据查询助手",
+        )
+    ]
+
+    without_context = router_mod._regulatory_data_query_continuation(
+        "都能查哪些指标",
+        "regulatory-data-query-agent",
+        "",
+        agents,
+    )
+    knowledge_request = router_mod._regulatory_data_query_continuation(
+        "各项存款的监管口径和报送要求是什么",
+        "regulatory-data-query-agent",
+        "助手：当前数据查询目录未配置各项存款指标",
+        agents,
+    )
+
+    assert without_context is None
+    assert knowledge_request is None
+
+
 def test_build_agent_kwargs_writable_requires_write_tools(tmp_path) -> None:
     from urgs_deepagents_service.orchestrator.utils import (
         READ_ONLY_FILESYSTEM_PERMISSIONS,

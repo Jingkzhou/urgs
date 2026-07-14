@@ -1,4 +1,5 @@
 import json
+from datetime import date
 from types import SimpleNamespace
 
 import httpx
@@ -36,6 +37,7 @@ from urgs_deepagents_service.runtime import (
     BusinessToolLoopDetectionMiddleware,
     RegulatoryCodeEvidenceMiddleware,
     RegulatoryRetrievalGateMiddleware,
+    _runtime_date_context,
     agent_graph_config,
     create_runtime_agent,
     graph_config,
@@ -63,6 +65,14 @@ def test_health_live() -> None:
     assert response.status_code == 200
     assert response.json()["status"] == "UP"
     assert response.headers["X-Request-ID"]
+
+
+def test_runtime_date_context_resolves_relative_year_from_explicit_date() -> None:
+    context = _runtime_date_context(date(2026, 7, 15))
+
+    assert "当前日期：2026-07-15" in context
+    assert "‘今年’‘本年’指 2026 年" in context
+    assert "不得沿用训练数据年份" in context
 
 
 def test_health_ready_up(monkeypatch) -> None:
