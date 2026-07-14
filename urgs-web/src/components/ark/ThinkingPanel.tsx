@@ -8,6 +8,7 @@ export type ThinkingStep = {
     description?: string;
     status: 'pending' | 'running' | 'done' | 'error';
     timestamp?: string;
+    kind?: 'progress' | 'tool' | 'stage';
 };
 
 export type ThinkingPanelProps = {
@@ -112,7 +113,7 @@ const ThinkingPanel: React.FC<ThinkingPanelProps> = ({
                     >
                         <div className="mt-2 space-y-0.5 pl-1">
                             {steps.map((step, index) => (
-                                <div key={step.id} className="relative flex gap-3 py-1.5">
+                                <div key={step.id} className={`relative flex gap-3 ${step.kind === 'progress' ? 'py-2.5' : 'py-1.5'}`}>
                                     {index < steps.length - 1 && (
                                         <span className="absolute left-[9px] top-7 h-[calc(100%-1rem)] w-px bg-slate-200" />
                                     )}
@@ -120,11 +121,11 @@ const ThinkingPanel: React.FC<ThinkingPanelProps> = ({
                                         {getStatusIcon(step.status)}
                                     </span>
                                     <span className="min-w-0 flex-1">
-                                        <span className={`block text-sm font-medium leading-5 ${getTextClassName(step.status)}`}>
+                                        <span className={`block font-medium ${step.kind === 'progress' ? 'text-[15px] leading-6' : 'text-sm leading-5'} ${getTextClassName(step.status)}`}>
                                             {step.title}
                                         </span>
                                         {step.description && (
-                                            <span className="mt-0.5 block whitespace-pre-wrap break-words text-xs leading-5 text-slate-400">
+                                            <span className={`mt-0.5 block whitespace-pre-wrap break-words ${step.kind === 'progress' ? 'text-sm leading-6 text-slate-600' : 'text-xs leading-5 text-slate-400'}`}>
                                                 {step.description.length > 1000 ? `${step.description.slice(0, 1000)}...` : step.description}
                                             </span>
                                         )}

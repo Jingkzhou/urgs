@@ -7,11 +7,20 @@ from typing import Any
 
 from fastapi import HTTPException
 from langchain.agents.middleware import ToolCallLimitMiddleware
-from langchain.agents.middleware.types import AgentMiddleware
-from langchain_core.messages import AIMessage, ToolMessage
+from langchain.agents.middleware.types import AgentMiddleware, hook_config
+from langchain_core.messages import AIMessage, HumanMessage, ToolCall, ToolMessage
 
 from deepagents import FilesystemPermission, create_deep_agent
 from deepagents.backends import FilesystemBackend
+from urgs_deepagents_service.orchestrator.progress import (
+    PROGRESS_REPORT_INSTRUCTIONS,
+    PROGRESS_TOOL_NAME,
+    create_progress_tool,
+)
+from urgs_deepagents_service.regulatory_coverage import (
+    regulatory_retrieval_requirements,
+    requires_regulatory_coverage_review,
+)
 from urgs_deepagents_service.skill_loader import load_agent_skill_runtime
 
 READ_ONLY_FILESYSTEM_PERMISSIONS = [
@@ -76,6 +85,15 @@ class ToolVisibilityMiddleware(AgentMiddleware[Any, Any, Any]):
         return await handler(request.override(tools=self._filter_tools(request.tools)))
 
 
+class BusinessToolCallLimitMiddleware(ToolCallLimitMiddleware):
+    """Limit business tool calls without charging public progress updates."""
+
+    def _matches_tool_filter(self, tool_call: Any) -> bool:
+        if tool_call.get("name") == PROGRESS_TOOL_NAME:
+            return False
+        return super()._matches_tool_filter(tool_call)
+
+
 def _message_text(content: Any) -> str:
     if isinstance(content, str):
         return content
@@ -127,6 +145,83 @@ class RegulatoryCodeEvidenceMiddleware(AgentMiddleware[Any, Any, Any]):
         return self.after_model(state, runtime)
 
 
+class RegulatoryRetrievalGateMiddleware(AgentMiddleware[Any, Any, Any]):
+    """在复杂监管影响评估完成最小证据检索前阻止模型直接结束。"""
+
+    @staticmethod
+    def _tool_calls(messages: list[Any]) -> list[ToolCall]:
+        return [
+            call
+            for message in messages
+            if isinstance(message, AIMessage)
+            for call in (message.tool_calls or [])
+        ]
+
+    @staticmethod
+    def _matches(call: ToolCall, name: str, args: dict[str, str]) -> bool:
+        if call.get("name") != name:
+            return False
+        call_args = call.get("args") or {}
+        if name == "read_file":
+            expected = args["file_path"].lstrip("/")
+            actual = str(call_args.get("file_path") or "").lstrip("/")
+            return actual == expected
+        if name == "grep":
+            return str(call_args.get("pattern") or "").strip() == args["pattern"]
+        return all(str(call_args.get(key) or "") == value for key, value in args.items())
+
+    @hook_config(can_jump_to=["tools"])
+    def after_model(self, state: Any, runtime: Any) -> dict[str, Any] | None:
+        messages = state.get("messages", [])
+        if not messages:
+            return None
+        last_message = messages[-1]
+        if not isinstance(last_message, AIMessage) or last_message.tool_calls:
+            return None
+
+        user_message = "\n".join(
+            _message_text(message.content)
+            for message in messages
+            if isinstance(message, HumanMessage)
+        )
+        if not requires_regulatory_coverage_review(
+            REGULATORY_KNOWLEDGE_AGENT_CODE, user_message
+        ):
+            return None
+
+        calls = self._tool_calls(messages)
+        missing = next(
+            (
+                (index, name, args)
+                for index, (name, args) in enumerate(
+                    regulatory_retrieval_requirements(user_message), start=1
+                )
+                if not any(self._matches(call, name, args) for call in calls)
+            ),
+            None,
+        )
+        if missing is None:
+            return None
+
+        index, name, args = missing
+        forced_call = {
+            "name": name,
+            "args": args,
+            "id": f"regulatory-retrieval-{index}",
+            "type": "tool_call",
+        }
+        return {
+            "messages": [
+                last_message.model_copy(update={"content": "", "tool_calls": [forced_call]})
+            ],
+            "jump_to": "tools",
+        }
+
+    @hook_config(can_jump_to=["tools"])
+    async def aafter_model(self, state: Any, runtime: Any) -> dict[str, Any] | None:
+        return self.after_model(state, runtime)
+
+
 def normalize_path_list(value: str | list[str] | None) -> list[str]:
     if value is None:
         return []
@@ -161,6 +256,7 @@ def build_agent_kwargs(
     allow_write: bool = False,
     workspace_root: str | None = None,
     include_platform_skills: bool = True,
+    always_allowed_tools: frozenset[str] | None = None,
     debug: bool,
 ) -> dict[str, Any]:
     """Build safe `create_deep_agent` runtime kwargs.
@@ -180,6 +276,7 @@ def build_agent_kwargs(
         normalize_path_list(skill_dirs),
     )
     allow_set = frozenset(normalize_path_list(tool_allowlist))
+    visible_allow_set = allow_set | (always_allowed_tools or frozenset()) if allow_set else None
     write_tools_enabled = bool(getattr(settings, "enable_write_tools", False))
     effective_allow_write = write_tools_enabled and allow_write and bool(allow_set & WRITE_TOOLS)
     permissions: list[FilesystemPermission] = (
@@ -189,7 +286,7 @@ def build_agent_kwargs(
         "permissions": permissions,
         "middleware": [
             ToolVisibilityMiddleware(
-                allowed=allow_set if allow_set else None,
+                allowed=visible_allow_set,
                 excluded=DEFAULT_EXCLUDED_TOOLS if not allow_set else frozenset(),
             )
         ],
@@ -246,7 +343,7 @@ def create_runtime_agent(
     effective_tool_allowlist = tool_allowlist
     effective_skill_dirs = skill_dirs
     include_platform_skills = True
-    runtime_tools: list[Any] = []
+    runtime_tools: list[Any] = [create_progress_tool()]
     if regulatory_runtime is not None:
         effective_system_prompt = (
             f"{system_prompt or ''}\n\n"
@@ -256,7 +353,11 @@ def create_runtime_agent(
         effective_tool_allowlist = list(regulatory_runtime.tool_names)
         effective_skill_dirs = None
         include_platform_skills = False
-        runtime_tools = list(regulatory_runtime.tools)
+        runtime_tools.extend(regulatory_runtime.tools)
+
+    effective_system_prompt = (
+        f"{effective_system_prompt or ''}\n\n{PROGRESS_REPORT_INSTRUCTIONS}"
+    ).strip()
 
     runtime_kwargs = build_agent_kwargs(
         settings=settings,
@@ -266,14 +367,16 @@ def create_runtime_agent(
         allow_write=allow_write,
         workspace_root=workspace_root,
         include_platform_skills=include_platform_skills,
+        always_allowed_tools=frozenset({PROGRESS_TOOL_NAME}),
         debug=debug,
     )
     if agent_code == REGULATORY_KNOWLEDGE_AGENT_CODE:
         runtime_kwargs["middleware"][:0] = [
-            ToolCallLimitMiddleware(
+            BusinessToolCallLimitMiddleware(
                 run_limit=REGULATORY_KNOWLEDGE_TOOL_CALL_LIMIT,
                 exit_behavior="continue",
             ),
+            RegulatoryRetrievalGateMiddleware(),
             RegulatoryCodeEvidenceMiddleware(),
         ]
     return create_deep_agent(

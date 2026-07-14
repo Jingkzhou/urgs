@@ -6,6 +6,11 @@ from collections.abc import AsyncIterator, Callable
 from dataclasses import dataclass, field
 from typing import Any
 
+from urgs_deepagents_service.orchestrator.progress import (
+    PROGRESS_TOOL_NAME,
+    build_tool_progress_payload,
+    normalize_progress_payload,
+)
 from urgs_deepagents_service.orchestrator.state import WorkerOutput
 from urgs_deepagents_service.orchestrator.utils import (
     StreamContext,
@@ -104,6 +109,7 @@ async def run_worker(
     async def events() -> AsyncIterator[str]:
         nonlocal emitted_text
         tool_inputs: dict[str, Any] = {}
+        progress_sequence = 0
         yield sse(
             "worker",
             {"type": "worker", "status": "started", "agent_code": agent_code, "task": task},
@@ -150,6 +156,18 @@ async def run_worker(
                 continue
 
             if event_name == "on_tool_start":
+                if name == PROGRESS_TOOL_NAME:
+                    progress_sequence += 1
+                    progress = normalize_progress_payload(data.get("input"))
+                    yield sse(
+                        "agent",
+                        {"type": "progress", **progress},
+                        event_context,
+                        step_id=f"worker.{agent_code}.progress.{progress_sequence}",
+                        status="completed",
+                        message=progress["title"],
+                    )
+                    continue
                 if run_id:
                     tool_inputs[run_id] = data.get("input")
                 yield sse(
@@ -168,6 +186,8 @@ async def run_worker(
                 continue
 
             if event_name == "on_tool_end":
+                if name == PROGRESS_TOOL_NAME:
+                    continue
                 output = data.get("output")
                 result_text = tool_result_text(output)
                 result_record: dict[str, Any] = {
@@ -199,6 +219,20 @@ async def run_worker(
                     step_id=f"tool.{name}.end",
                     status="completed",
                     message=f"{agent_code} 工具 {name} 返回结果",
+                )
+                progress = build_tool_progress_payload(
+                    name,
+                    result_record.get("args"),
+                    result_text,
+                )
+                progress_sequence += 1
+                yield sse(
+                    "agent",
+                    {"type": "progress", **progress},
+                    event_context,
+                    step_id=f"worker.{agent_code}.progress.{progress_sequence}",
+                    status="completed",
+                    message=progress["title"],
                 )
                 continue
 

@@ -6,7 +6,8 @@ import pytest
 from fastapi import HTTPException
 from fastapi.testclient import TestClient
 from langchain.agents.middleware import ToolCallLimitMiddleware
-from langchain_core.messages import AIMessage, ToolMessage
+from langchain_core.language_models.fake_chat_models import FakeMessagesListChatModel
+from langchain_core.messages import AIMessage, HumanMessage, ToolMessage
 from langchain_openai import ChatOpenAI
 
 from urgs_deepagents_service.config import get_settings
@@ -23,11 +24,15 @@ from urgs_deepagents_service.model_config import (
     build_chat_model,
     load_default_ai_config,
 )
+from urgs_deepagents_service.orchestrator.progress import PROGRESS_TOOL_NAME
 from urgs_deepagents_service.runtime import (
     REGULATORY_KNOWLEDGE_AGENT_CODE,
     REGULATORY_KNOWLEDGE_TOOL_CALL_LIMIT,
+    BusinessToolCallLimitMiddleware,
     RegulatoryCodeEvidenceMiddleware,
+    RegulatoryRetrievalGateMiddleware,
     create_runtime_agent,
+    graph_config,
 )
 from urgs_deepagents_service.schemas import InvokeRequest
 
@@ -203,8 +208,49 @@ def test_regulatory_knowledge_agent_limits_run_tool_calls(
     assert any(
         isinstance(item, RegulatoryCodeEvidenceMiddleware) for item in captured["middleware"]
     )
+    assert any(
+        isinstance(item, RegulatoryRetrievalGateMiddleware) for item in captured["middleware"]
+    )
     assert limiter.run_limit == REGULATORY_KNOWLEDGE_TOOL_CALL_LIMIT
     assert limiter.exit_behavior == "continue"
+    assert isinstance(limiter, BusinessToolCallLimitMiddleware)
+    assert not limiter._matches_tool_filter({"name": PROGRESS_TOOL_NAME})
+    assert limiter._matches_tool_filter({"name": "read_file"})
+
+
+def test_runtime_agent_injects_public_progress_tool(
+    tmp_path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    class FakeSettings:
+        workspace_root = str(tmp_path)
+        memory_files = ""
+        skill_dirs = ""
+        enable_write_tools = False
+
+    captured: dict[str, object] = {}
+    monkeypatch.setattr(
+        "urgs_deepagents_service.runtime.create_deep_agent",
+        lambda **kwargs: captured.update(kwargs) or kwargs,
+    )
+
+    create_runtime_agent(
+        model=object(),
+        settings=FakeSettings(),
+        system_prompt="执行用户任务",
+        memory_files=None,
+        skill_dirs=None,
+        tool_allowlist="read_file,grep",
+        workspace_root=str(tmp_path),
+        debug=False,
+    )
+
+    tool_names = {tool.name for tool in captured["tools"]}
+    visibility = next(
+        item for item in captured["middleware"] if isinstance(item, ToolVisibilityMiddleware)
+    )
+    assert PROGRESS_TOOL_NAME in tool_names
+    assert visibility.allowed == frozenset({"read_file", "grep", PROGRESS_TOOL_NAME})
+    assert "不要逐条复述工具调用" in captured["system_prompt"]
 
 
 def test_regulatory_code_evidence_middleware_removes_unsupported_exact_codes() -> None:
@@ -240,6 +286,100 @@ def test_regulatory_code_evidence_middleware_keeps_fully_supported_answer() -> N
     answer = AIMessage(content="涉及 G01 和 G21。", id="answer-1")
 
     assert middleware.after_model({"messages": [supported, answer]}, None) is None
+
+
+def test_regulatory_retrieval_gate_forces_required_evidence_sequence() -> None:
+    middleware = RegulatoryRetrievalGateMiddleware()
+    question = HumanMessage(
+        content="分析同业存放业务变更影响哪些监管系统、报表和监管指标，并说明排除依据"
+    )
+    answer = AIMessage(content="直接给出结论", id="answer-1")
+
+    update = middleware.after_model({"messages": [question, answer]}, None)
+
+    assert update is not None
+    assert update["jump_to"] == "tools"
+    first_call = update["messages"][0].tool_calls[0]
+    assert first_call["name"] == "read_file"
+    assert first_call["args"]["file_path"] == "/04-综合/监管业务场景-报送映射.md"
+
+    completed_calls = [
+        AIMessage(content="", tool_calls=[first_call]),
+        ToolMessage(content="场景映射", tool_call_id=first_call["id"]),
+    ]
+    update = middleware.after_model(
+        {"messages": [question, *completed_calls, AIMessage(content="准备结束")]}, None
+    )
+
+    assert update is not None
+    second_call = update["messages"][0].tool_calls[0]
+    assert second_call["name"] == "grep"
+    assert second_call["args"]["pattern"] == "同业存放"
+
+
+def test_regulatory_retrieval_gate_skips_simple_fact_question() -> None:
+    middleware = RegulatoryRetrievalGateMiddleware()
+    messages = [HumanMessage(content="G01 的报送频度是什么"), AIMessage(content="月报")]
+
+    assert middleware.after_model({"messages": messages}, None) is None
+
+
+def test_regulatory_retrieval_gate_executes_tools_and_terminates(tmp_path) -> None:
+    for relative_path in (
+        "04-综合/监管业务场景-报送映射.md",
+        "02-主题/同业存放-监管报送映射.md",
+        "03-实体/EAST5.0-IE_004_405-对公存款分户账.md",
+    ):
+        path = tmp_path / relative_path
+        path.parent.mkdir(parents=True, exist_ok=True)
+        path.write_text("同业存放 EAST5.0 IE_004_405", encoding="utf-8")
+
+    class ToolAwareFake(FakeMessagesListChatModel):
+        def bind_tools(self, tools, *, tool_choice=None, **kwargs):
+            return self
+
+    class FakeSettings:
+        memory_files = ""
+        skill_dirs = ""
+        workspace_root = str(tmp_path)
+        enable_write_tools = False
+        skills_root = str(tmp_path / "skills")
+        recursion_limit = 100
+
+    model = ToolAwareFake(responses=[AIMessage(content="最终答案") for _ in range(8)])
+    agent = create_runtime_agent(
+        model=model,
+        settings=FakeSettings(),
+        system_prompt="只读监管助手",
+        memory_files=None,
+        skill_dirs=None,
+        tool_allowlist="ls,read_file,glob,grep",
+        workspace_root=str(tmp_path),
+        debug=False,
+        agent_code=REGULATORY_KNOWLEDGE_AGENT_CODE,
+    )
+
+    result = agent.invoke(
+        {
+            "messages": (
+                "分析同业存放业务变更影响哪些监管系统、报表和监管指标，并说明排除依据"
+            )
+        },
+        config=graph_config(FakeSettings()),
+    )
+    calls = [
+        call
+        for message in result["messages"]
+        for call in (getattr(message, "tool_calls", None) or [])
+    ]
+
+    assert [call["name"] for call in calls] == [
+        "read_file",
+        "grep",
+        "read_file",
+        "read_file",
+    ]
+    assert result["messages"][-1].content == "最终答案"
 
 
 def test_agents_invoke_basic_path(monkeypatch) -> None:

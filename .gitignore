@@ -84,5 +84,4 @@ dist-packages/
 deploy/components-cache/onlyoffice-documentserver_9.4.0_arm64.deb
 backups/
 .hermes/
-regulatory-knowledge-vault/
 data/

@@ -29,12 +29,19 @@ from urgs_deepagents_service.orchestrator import (
     worker as worker_mod,
 )
 from urgs_deepagents_service.orchestrator.orchestrator import _conversation_context
+from urgs_deepagents_service.orchestrator.progress import (
+    PROGRESS_TOOL_NAME,
+    build_tool_progress_payload,
+)
 from urgs_deepagents_service.orchestrator.state import (
     GuardResult,
     PlanStep,
     ReviewResult,
     RoutingResult,
     WorkerOutput,
+)
+from urgs_deepagents_service.regulatory_coverage import (
+    requires_regulatory_coverage_review,
 )
 from urgs_deepagents_service.schemas import (
     AgentRuntimeConfig,
@@ -286,7 +293,7 @@ async def test_worker_merges_context_and_current_slot_completion(monkeypatch) ->
         debug=False,
     )
 
-    await _collect(run.events())
+    events = await _collect(run.events())
 
     messages = captured["messages"]
     assert len(messages) == 1
@@ -298,6 +305,97 @@ async def test_worker_merges_context_and_current_slot_completion(monkeypatch) ->
     assert run.output.tool_results[0]["tool_name"] == "query_regulatory_summary"
     assert run.output.tool_results[0]["args"]["organization"] == "1100"
     assert "metric_value" in run.output.tool_results[0]["result"]
+    fallback_progress = [
+        data for name, data in events if name == "agent" and data["type"] == "progress"
+    ]
+    assert fallback_progress[-1]["title"] == "query_regulatory_summary 已完成"
+
+
+async def test_worker_converts_progress_tool_into_public_event(monkeypatch) -> None:
+    class FakeAgent:
+        async def astream_events(
+            self,
+            payload: dict[str, object],
+            config: dict[str, object] | None = None,
+            version: str = "v2",
+        ) -> AsyncIterator[dict[str, object]]:
+            yield {
+                "event": "on_tool_start",
+                "name": PROGRESS_TOOL_NAME,
+                "run_id": "progress-1",
+                "data": {
+                    "input": {
+                        "title": "已定位检索范围",
+                        "content": "已确认需要优先核对用户点名的报表。",
+                        "next_action": "读取对应知识页",
+                        "phase": "verification",
+                    }
+                },
+            }
+            yield {
+                "event": "on_tool_end",
+                "name": PROGRESS_TOOL_NAME,
+                "run_id": "progress-1",
+                "data": {"output": "进度已记录"},
+            }
+            yield {
+                "event": "on_chat_model_end",
+                "name": "model",
+                "data": {"output": SimpleNamespace(content="最终业务答案")},
+            }
+
+    monkeypatch.setattr(worker_mod, "create_runtime_agent", lambda **kwargs: FakeAgent())
+    run = await worker_mod.run_worker(
+        model=object(),
+        settings=_FakeSettings(),
+        agent_code="general-agent",
+        agent_config=AgentRuntimeConfig(system_prompt="通用助手"),
+        task="分析问题",
+        context="",
+        stream_content=False,
+        debug=False,
+    )
+
+    events = await _collect(run.events())
+    progress_events = [
+        data for name, data in events if name == "agent" and data["type"] == "progress"
+    ]
+    assert len(progress_events) == 1
+    assert progress_events[0]["title"] == "已定位检索范围"
+    assert progress_events[0]["next_action"] == "读取对应知识页"
+    assert progress_events[0]["phase"] == "verification"
+    assert run.output.answer == "最终业务答案"
+    assert run.output.tool_results == []
+
+
+def test_tool_progress_reports_grep_match_and_empty_result() -> None:
+    matched = build_tool_progress_payload(
+        "grep",
+        {"pattern": "同业存放", "path": "02-主题/04-综合"},
+        "02-主题/04-综合/同业业务.md",
+    )
+    missing = build_tool_progress_payload(
+        "grep",
+        {"pattern": "不存在指标", "path": "02-主题"},
+        "No matches found",
+    )
+
+    assert matched["title"] == "已定位“同业存放”相关内容"
+    assert matched["phase"] == "verification"
+    assert "读取具体文件" in matched["content"]
+    assert missing["title"] == "未找到“不存在指标”的直接匹配"
+    assert missing["phase"] == "adjustment"
+
+
+def test_tool_progress_sanitizes_sensitive_values() -> None:
+    progress = build_tool_progress_payload(
+        "read_file",
+        {"file_path": "https://127.0.0.1:8003/private?token=secret-value"},
+        "ok",
+    )
+
+    assert "127.0.0.1" not in progress["title"]
+    assert "secret-value" not in progress["title"]
 
 
 def test_rework_feedback_includes_tool_results_as_evidence() -> None:
@@ -821,17 +919,41 @@ async def test_handoff_for_non_deepagents(monkeypatch) -> None:
 
 
 @pytest.mark.asyncio
-async def test_selected_agent_code_skips_router(monkeypatch) -> None:
+async def test_selected_agent_code_keeps_agent_and_still_classifies_complexity(monkeypatch) -> None:
     _patch_guard(monkeypatch, passed=True)
     _patch_worker(monkeypatch, answer="direct")
     _patch_review(monkeypatch, passed=True)
+    _patch_finalizer(monkeypatch, answer="final")
+    seen: dict[str, Any] = {}
 
-    # 若 router 被调用会抛错，确保未调用
-    async def fail_router(*args: Any, **kwargs: Any) -> RoutingResult:
-        raise AssertionError("router should be skipped when selected_agent_code set")
+    async def fake_router(
+        model: Any,
+        user_message: str,
+        agents: list[RouterAgentDescriptor],
+        current_agent_code: str | None = None,
+        conversation_context: str = "",
+    ) -> RoutingResult:
+        seen["agents"] = [agent.agent_code for agent in agents]
+        return RoutingResult(
+            agent_code="general-agent",
+            confidence=0.7,
+            reason="需要拆解",
+            task_type="analysis",
+            is_complex=True,
+        )
 
-    monkeypatch.setattr(router_mod, "run_router", fail_router)
-    monkeypatch.setattr("urgs_deepagents_service.orchestrator.orchestrator.run_router", fail_router)
+    async def fake_planner(
+        model: Any, user_message: str, candidate_agents: list[str]
+    ) -> list[PlanStep]:
+        seen["candidates"] = candidate_agents
+        return [PlanStep(step=1, agent="general-agent", task="分析", depends_on=[])]
+
+    monkeypatch.setattr(router_mod, "run_router", fake_router)
+    monkeypatch.setattr("urgs_deepagents_service.orchestrator.orchestrator.run_router", fake_router)
+    monkeypatch.setattr(planner_mod, "run_planner", fake_planner)
+    monkeypatch.setattr(
+        "urgs_deepagents_service.orchestrator.orchestrator.run_planner", fake_planner
+    )
     request = OrchestratorRequest(
         messages="问题",
         agents=_agents(),
@@ -842,7 +964,119 @@ async def test_selected_agent_code_skips_router(monkeypatch) -> None:
 
     routing = next(data for name, data in events if name == "routing")
     assert routing["agent_code"] == "general-agent"
-    assert routing["task_type"] == "manual"
+    assert routing["is_complex"] is True
+    assert seen["agents"] == ["general-agent"]
+    assert seen["candidates"] == ["general-agent"]
+
+
+def test_regulatory_impact_task_requires_coverage_review() -> None:
+    assert requires_regulatory_coverage_review(
+        "regulatory-knowledge-agent",
+        "请分析同业存放业务变更影响哪些监管系统、报表和监管指标，并说明排除依据",
+    )
+    assert not requires_regulatory_coverage_review(
+        "regulatory-knowledge-agent", "G01 的报送频度是什么"
+    )
+    assert not requires_regulatory_coverage_review(
+        "general-agent", "请分析业务变更影响哪些监管报表"
+    )
+
+
+@pytest.mark.asyncio
+async def test_regulatory_impact_runs_coverage_worker(monkeypatch) -> None:
+    _patch_guard(monkeypatch, passed=True)
+    _patch_review(monkeypatch, passed=True)
+    _patch_finalizer(monkeypatch, answer="final")
+    tasks: list[str] = []
+    contexts: list[str] = []
+
+    async def fake_router(
+        model: Any,
+        user_message: str,
+        agents: list[RouterAgentDescriptor],
+        current_agent_code: str | None = None,
+        conversation_context: str = "",
+    ) -> RoutingResult:
+        return RoutingResult(
+            agent_code="regulatory-knowledge-agent",
+            confidence=0.8,
+            reason="监管知识任务",
+            task_type="regulatory-impact",
+            is_complex=False,
+        )
+
+    async def fake_planner(
+        model: Any, user_message: str, candidate_agents: list[str]
+    ) -> list[PlanStep]:
+        assert candidate_agents == ["regulatory-knowledge-agent"]
+        return [
+            PlanStep(
+                step=1,
+                agent="regulatory-knowledge-agent",
+                task="完成主分析",
+                depends_on=[],
+            )
+        ]
+
+    async def fake_run_worker(**kwargs: Any):
+        tasks.append(kwargs["task"])
+        contexts.append(kwargs["context"])
+        run = worker_mod.WorkerRun(
+            agent_code=kwargs["agent_code"],
+            task=kwargs["task"],
+            stream_content=False,
+        )
+        run.output = WorkerOutput(
+            agent_code=kwargs["agent_code"],
+            task=kwargs["task"],
+            answer="主分析结果" if len(tasks) == 1 else "覆盖复核结果",
+        )
+
+        async def events() -> AsyncIterator[str]:
+            from urgs_deepagents_service.orchestrator.utils import sse
+
+            yield sse("worker", {"type": "worker", "status": "completed"})
+
+        run._events_factory = events
+        return run
+
+    monkeypatch.setattr(router_mod, "run_router", fake_router)
+    monkeypatch.setattr("urgs_deepagents_service.orchestrator.orchestrator.run_router", fake_router)
+    monkeypatch.setattr(planner_mod, "run_planner", fake_planner)
+    monkeypatch.setattr(
+        "urgs_deepagents_service.orchestrator.orchestrator.run_planner", fake_planner
+    )
+    monkeypatch.setattr(worker_mod, "run_worker", fake_run_worker)
+    monkeypatch.setattr(
+        "urgs_deepagents_service.orchestrator.orchestrator.run_worker", fake_run_worker
+    )
+    agents = [
+        RouterAgentDescriptor(
+            agent_code="regulatory-knowledge-agent",
+            agent_name="监管助手",
+            agent_type="SPECIALIST",
+            build_mode="DEEPAGENTS",
+            description="监管知识问答",
+        )
+    ]
+    configs = {
+        "regulatory-knowledge-agent": AgentRuntimeConfig(system_prompt="监管知识助手")
+    }
+    request = OrchestratorRequest(
+        messages="分析同业存放业务变更影响哪些监管系统、报表和监管指标，并说明排除依据",
+        agents=agents,
+        agent_configs=configs,
+        selected_agent_code="regulatory-knowledge-agent",
+    )
+
+    events = await _make_stream(monkeypatch, request)
+
+    routing = next(data for name, data in events if name == "routing")
+    assert routing["is_complex"] is True
+    assert len(tasks) == 2
+    assert tasks[0] == "完成主分析"
+    assert "执行监管影响覆盖复核" in tasks[1]
+    assert "主分析结果" in contexts[1]
 
 
 @pytest.mark.asyncio

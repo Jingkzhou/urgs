@@ -39,11 +39,14 @@ from urgs_deepagents_service.orchestrator.router import run_router
 from urgs_deepagents_service.orchestrator.state import (
     OrchestrationState,
     PlanStep,
-    RoutingResult,
     WorkerOutput,
 )
 from urgs_deepagents_service.orchestrator.utils import StreamContext, sse
 from urgs_deepagents_service.orchestrator.worker import run_worker
+from urgs_deepagents_service.regulatory_coverage import (
+    build_regulatory_coverage_task,
+    requires_regulatory_coverage_review,
+)
 from urgs_deepagents_service.schemas import OrchestratorRequest, RouterAgentDescriptor
 from urgs_deepagents_service.skill_loader import SkillConfigurationError
 from urgs_deepagents_service.sse import safe_error_payload
@@ -198,7 +201,7 @@ async def stream_orchestration(request: OrchestratorRequest, settings: Any) -> A
         if model is None:
             model = build_chat_model(settings, request.model or settings.model)
 
-        # 2. Router / Supervisor（若已预选则跳过路由）
+        # 2. Router / Supervisor。手动预选只固定执行 Agent，仍需判断任务复杂度。
         config_lookup = request.agent_configs or {}
 
         def get_config(code: str) -> Any:
@@ -218,15 +221,17 @@ async def stream_orchestration(request: OrchestratorRequest, settings: Any) -> A
                     message="预选 agent_code 不在目录中",
                 )
                 return
-            routing = RoutingResult(
-                agent_code=routing_agent_code,
-                confidence=1.0,
-                reason="手动预选 Agent，跳过 Router",
-                task_type="manual",
-                is_complex=False,
+            routing = await run_router(
+                model,
+                user_message,
+                [selected],
+                current_agent_code=routing_agent_code,
+                conversation_context=conversation_context,
             )
+            routing.confidence = 1.0
+            routing.reason = f"手动预选 {selected.agent_name}；{routing.reason}".rstrip("；")
             state.record(
-                "routing", "skipped", "手动预选 Agent，跳过 Router", agent_code=routing_agent_code
+                "routing", "completed", routing.reason, agent_code=routing_agent_code
             )
         else:
             state.record("routing", "started", "正在识别任务并选择 Agent")
@@ -257,6 +262,13 @@ async def stream_orchestration(request: OrchestratorRequest, settings: Any) -> A
                     message="Router 选择了不存在的 agent_code",
                 )
                 return
+
+        coverage_review_required = requires_regulatory_coverage_review(
+            routing_agent_code, user_message
+        )
+        if coverage_review_required:
+            routing.is_complex = True
+            routing.reason = f"{routing.reason}；监管影响评估需要覆盖复核".lstrip("；")
 
         state.routing = routing
         state.selected_agent_code = routing_agent_code
@@ -338,11 +350,15 @@ async def stream_orchestration(request: OrchestratorRequest, settings: Any) -> A
         else:
             state.path = "complex"
             # 复杂路径：Planner 拆解 -> 串行 Worker 执行（不流式，仅过程事件）
-            candidate_agents = [
-                agent.agent_code
-                for agent in request.agents
-                if get_config(agent.agent_code) is not None
-            ]
+            candidate_agents = (
+                [routing_agent_code]
+                if request.selected_agent_code
+                else [
+                    agent.agent_code
+                    for agent in request.agents
+                    if get_config(agent.agent_code) is not None
+                ]
+            )
             state.record("planning", "started", "开始拆解复杂任务")
             yield emit(
                 "planning",
@@ -424,6 +440,25 @@ async def stream_orchestration(request: OrchestratorRequest, settings: Any) -> A
                 outputs.append(run.output)
                 state.worker_outputs = outputs
                 context_parts.append(f"[{step.agent}] {run.output.answer}")
+
+            if coverage_review_required:
+                cfg = get_config(routing_agent_code)
+                coverage_run = await run_worker(
+                    model=model,
+                    settings=settings,
+                    agent_code=routing_agent_code,
+                    agent_config=cfg,
+                    task=build_regulatory_coverage_task(user_message),
+                    context="\n".join(context_parts),
+                    stream_content=False,
+                    debug=request.debug,
+                    stream_context=context,
+                )
+                async for evt in coverage_run.events():
+                    yield evt
+                coverage_run.output.step = max((step.step for step in steps), default=0) + 1
+                outputs.append(coverage_run.output)
+                state.worker_outputs = outputs
 
         # 3. Reviewer 验收
         state.record("review", "started", "正在验收产出")
@@ -528,6 +563,29 @@ async def stream_orchestration(request: OrchestratorRequest, settings: Any) -> A
                     run.output.step = step.step
                     rework_outputs.append(run.output)
                     context_parts2.append(f"[{step.agent}] {run.output.answer}")
+
+                if coverage_review_required:
+                    cfg = get_config(routing_agent_code)
+                    coverage_run = await run_worker(
+                        model=model,
+                        settings=settings,
+                        agent_code=routing_agent_code,
+                        agent_config=cfg,
+                        task=build_regulatory_coverage_task(user_message),
+                        context=(
+                            "\n".join(context_parts2)
+                            + f"\n前次验收反馈：\n{feedback}"
+                        ),
+                        stream_content=False,
+                        debug=request.debug,
+                        stream_context=context,
+                    )
+                    async for evt in coverage_run.events():
+                        yield evt
+                    coverage_run.output.step = max(
+                        (step.step for step in steps), default=0
+                    ) + 1
+                    rework_outputs.append(coverage_run.output)
 
             review2 = await run_review_with_feedback(model, user_message, rework_outputs, feedback)
             state.reviews.append(review2)

@@ -14,7 +14,7 @@ export interface Message {
 
 export interface AgentStreamEvent {
     id: string;
-    type: 'thinking' | 'tool_call' | 'tool_result' | 'status' | 'input_guard' | 'routing' | 'planning' | 'worker' | 'review' | 'rework' | 'quality_risk' | 'finalizing' | 'handoff';
+    type: 'thinking' | 'progress' | 'tool_call' | 'tool_result' | 'status' | 'input_guard' | 'routing' | 'planning' | 'worker' | 'review' | 'rework' | 'quality_risk' | 'finalizing' | 'handoff';
     title: string;
     content?: string;
     toolName?: string;
@@ -25,6 +25,8 @@ export interface AgentStreamEvent {
     issues?: string[];
     required_fixes?: string[];
     score?: number;
+    phase?: string;
+    nextAction?: string;
     timestamp: number;
 }
 
@@ -404,6 +406,8 @@ const processLine = (line: string, onChunk: (c: string) => void, onComplete: () 
                     issues: parsed.issues,
                     required_fixes: parsed.required_fixes,
                     score: parsed.score,
+                    phase: parsed.phase,
+                    nextAction: parsed.next_action,
                     timestamp: Date.now()
                 });
             }

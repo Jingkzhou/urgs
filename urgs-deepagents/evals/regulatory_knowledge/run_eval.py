@@ -20,7 +20,9 @@ REPO_ROOT = EVAL_DIR.parents[2]
 DEFAULT_VAULT = REPO_ROOT / "regulatory-knowledge-vault"
 DEFAULT_QUESTIONS = EVAL_DIR / "questions.json"
 DEFAULT_PROMPT_SQL = (
-    REPO_ROOT / "urgs-api/src/main/resources/db/migration/V87__Seed_Regulatory_Knowledge_Agent.sql"
+    REPO_ROOT
+    / "urgs-api/src/main/resources/db/migration/"
+    "V105__Refine_Regulatory_Knowledge_Agent_Retrieval.sql"
 )
 GLOBAL_FORBIDDEN = ("让我先验证", "Worker 引用", "内部思考", "I need to verify")
 
@@ -83,9 +85,26 @@ def normalized(value: str) -> str:
     return re.sub(r"[\s*`_\"'“”‘’：:，,。；;（）()]", "", value).lower()
 
 
-def grade(question: dict[str, Any], answer: str, error: str | None) -> dict[str, Any]:
+def _trace_contains_group(tool_call_details: list[dict[str, Any]], terms: list[str]) -> bool:
+    return any(
+        all(
+            normalized(term) in normalized(json.dumps(detail, ensure_ascii=False))
+            for term in terms
+        )
+        for detail in tool_call_details
+    )
+
+
+def grade(
+    question: dict[str, Any],
+    answer: str,
+    error: str | None,
+    tool_summary: dict[str, Any] | None = None,
+) -> dict[str, Any]:
     checks: list[dict[str, Any]] = []
     normalized_answer = normalized(answer)
+    tool_call_details = list((tool_summary or {}).get("tool_call_details", []))
+    normalized_trace = normalized(json.dumps(tool_call_details, ensure_ascii=False))
 
     checks.append({"name": "completed", "passed": not error and bool(answer.strip())})
     for index, alternatives in enumerate(question.get("required_any", []), start=1):
@@ -102,6 +121,24 @@ def grade(question: dict[str, Any], answer: str, error: str | None) -> dict[str,
             {
                 "name": f"forbidden:{term}",
                 "passed": normalized(term) not in normalized_answer,
+            }
+        )
+    for index, source in enumerate(question.get("required_sources", []), start=1):
+        alternatives = source if isinstance(source, list) else [source]
+        checks.append(
+            {
+                "name": f"required_source_{index}",
+                "passed": any(normalized(str(item)) in normalized_trace for item in alternatives),
+                "alternatives": alternatives,
+            }
+        )
+    for index, pattern in enumerate(question.get("required_tool_patterns", []), start=1):
+        terms = pattern if isinstance(pattern, list) else [pattern]
+        checks.append(
+            {
+                "name": f"required_tool_pattern_{index}",
+                "passed": _trace_contains_group(tool_call_details, [str(term) for term in terms]),
+                "terms": terms,
             }
         )
     for term in GLOBAL_FORBIDDEN:
@@ -123,16 +160,26 @@ def grade(question: dict[str, Any], answer: str, error: str | None) -> dict[str,
 
 def collect_tool_summary(result: dict[str, Any]) -> dict[str, Any]:
     tool_calls: list[str] = []
+    tool_call_details: list[dict[str, Any]] = []
     tool_results = 0
     for message in result.get("messages", []):
         for call in getattr(message, "tool_calls", None) or []:
             name = call.get("name")
             if name:
                 tool_calls.append(str(name))
+                tool_call_details.append(
+                    {
+                        "name": str(name),
+                        "args": json.loads(
+                            json.dumps(call.get("args") or {}, ensure_ascii=False, default=str)
+                        ),
+                    }
+                )
         if message.__class__.__name__ == "ToolMessage":
             tool_results += 1
     return {
         "tool_calls": tool_calls,
+        "tool_call_details": tool_call_details,
         "tool_call_count": len(tool_calls),
         "tool_result_count": tool_results,
     }
@@ -172,7 +219,12 @@ def main() -> int:
             record = json.loads(line)
             question = question_by_id.get(record.get("question_id"))
             if question is not None:
-                record["grading"] = grade(question, record.get("answer", ""), record.get("error"))
+                record["grading"] = grade(
+                    question,
+                    record.get("answer", ""),
+                    record.get("error"),
+                    record,
+                )
             records.append(record)
         result_path.write_text(
             "".join(json.dumps(record, ensure_ascii=False) + "\n" for record in records),
@@ -238,6 +290,7 @@ def main() -> int:
             error: str | None = None
             tool_summary: dict[str, Any] = {
                 "tool_calls": [],
+                "tool_call_details": [],
                 "tool_call_count": 0,
                 "tool_result_count": 0,
             }
@@ -257,7 +310,7 @@ def main() -> int:
                 if args.question_timeout_seconds > 0:
                     signal.setitimer(signal.ITIMER_REAL, 0)
             duration_seconds = round(time.monotonic() - started, 3)
-            grading = grade(question, answer, error)
+            grading = grade(question, answer, error, tool_summary)
             passed += int(grading["passed"])
             record = {
                 "suite": suite["suite"],

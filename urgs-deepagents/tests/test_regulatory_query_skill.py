@@ -10,6 +10,7 @@ from typing import Any
 
 import pytest
 
+from urgs_deepagents_service.orchestrator.progress import PROGRESS_TOOL_NAME
 from urgs_deepagents_service.runtime import create_runtime_agent
 from urgs_deepagents_service.skill_loader import SkillConfigurationError, load_agent_skill_runtime
 
@@ -850,9 +851,14 @@ def test_target_agent_uses_only_declared_skill_tools(
         workspace_root=None,
         debug=False,
     )
-    assert {tool.name for tool in captured["tools"]} == set(TOOLS)
+    exposed_tools = {tool.name for tool in captured["tools"]}
+    assert exposed_tools - {PROGRESS_TOOL_NAME} == set(TOOLS)
+    assert PROGRESS_TOOL_NAME in exposed_tools
     middleware = captured["middleware"][0]
     assert middleware._filter_tools([{"name": "execute"}, {"name": "read_file"}]) == []
+    assert middleware._filter_tools([{"name": PROGRESS_TOOL_NAME}]) == [
+        {"name": PROGRESS_TOOL_NAME}
+    ]
 
 
 def test_target_agent_rejects_skill_path_traversal(tmp_path: Path) -> None:

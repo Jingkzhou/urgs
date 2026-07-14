@@ -1,0 +1,63 @@
+# 知识库 Lint 巡检报告
+
+**巡检时间**: 
+## 📊 
+
+| **级别** | **检查项** | **问题数** |
+|--------|---------|----------|
+| **L1（结构）* | frontmatter等 | ~20个 |
+*- # （路由一致）* | *~待核实* |
+
+
+## 🔴 *
+
+✅ *✅ （已通过项目） *
+-tmp、*.bak、~*） |
+
+⚠️ *✅ （待修复问题）*
+
+#### P0（）
+
+
+None identified.
+
+
+#### P
+
+
+None identified.
+
+
+#### P
+
+
+None identified.
+
+
+---
+
+
+🟡 *✅ （路由一致） *
+
+⚠️ *（待核实项目）*
+
+
+
+---
+
+
+🟢 *
+✅ *（已通过项目） *
+
+
+
+---
+
+
+📋 *
+*(Note: ~~90~~ = deprecated template directory)*
+
+
+`AGENTS.md` → zone `openclaw_skill_dir` vs runtime `managed_skill_dir` environment variable mismatch*
+
+---
