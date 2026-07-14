@@ -39,10 +39,13 @@ def _build_system_prompt(quality_risk: bool, review: ReviewResult | None) -> str
         "2. 综合各 Worker 的结论，去除冗余，保留关键事实与结论。\n"
         "3. 如果存在未解决问题，在答案末尾用「注意：」简要说明。\n"
         "4. 不要向用户输出 Reviewer、验收、返工、quality_risk、required_fixes 等内部流程信息。\n"
+        "5. Worker 产出是唯一业务输入，不要再次验证、质疑或推测文件是否存在，"
+        "不要声称自己将读取文件。\n"
+        "6. 第一段直接回答用户问题；禁止输出“让我先”“我需要先”“下面验证”等自我对话或工作计划。\n"
     )
     if quality_risk:
         base += (
-            "5. 本次存在内部质量风险标记，但该标记只用于平台审计；"
+            "7. 本次存在内部质量风险标记，但该标记只用于平台审计；"
             "最终答案只说明业务结果、缺失条件或查询失败原因，不展示内部风险提示。\n"
         )
     return base
@@ -136,11 +139,12 @@ async def stream_final_answer(
 ) -> AsyncIterator[str]:
     """统一从 Finalizer 阶段输出最终答案。
 
-    简单单 Worker 已验收通过时，可以由 Finalizer 阶段直接发布 Worker 的完整答案；
-    复杂、多 Worker 或 quality_risk 场景仍使用无工具 control agent 汇总。
+    简单单 Worker 可由 Finalizer 阶段直接发布 Worker 的完整答案；质量风险通过事件元数据表达，
+    不再调用一个没有工具的新模型重新质疑或改写业务答案。
+    复杂、多 Worker 场景仍由 control agent 汇总。
     """
     event_context = stream_context or StreamContext()
-    if prefer_direct_answer and not quality_risk and len(outputs) == 1 and outputs[0].answer:
+    if prefer_direct_answer and len(outputs) == 1 and outputs[0].answer:
         output = outputs[0]
         yield sse(
             "agent",

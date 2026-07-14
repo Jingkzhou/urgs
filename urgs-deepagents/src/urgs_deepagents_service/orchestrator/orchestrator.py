@@ -607,6 +607,8 @@ async def stream_orchestration(request: OrchestratorRequest, settings: Any) -> A
                     quality_risk=True,
                     debug=request.debug,
                     stream_context=context,
+                    prefer_direct_answer=not routing.is_complex,
+                    direct_message="返工结果存在质量风险，返回当前最佳答案",
                 ):
                     yield evt
                 yield emit(

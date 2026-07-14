@@ -5,6 +5,8 @@ import httpx
 import pytest
 from fastapi import HTTPException
 from fastapi.testclient import TestClient
+from langchain.agents.middleware import ToolCallLimitMiddleware
+from langchain_core.messages import AIMessage, ToolMessage
 from langchain_openai import ChatOpenAI
 
 from urgs_deepagents_service.config import get_settings
@@ -20,6 +22,12 @@ from urgs_deepagents_service.model_config import (
     _parse_default_config,
     build_chat_model,
     load_default_ai_config,
+)
+from urgs_deepagents_service.runtime import (
+    REGULATORY_KNOWLEDGE_AGENT_CODE,
+    REGULATORY_KNOWLEDGE_TOOL_CALL_LIMIT,
+    RegulatoryCodeEvidenceMiddleware,
+    create_runtime_agent,
 )
 from urgs_deepagents_service.schemas import InvokeRequest
 
@@ -158,6 +166,80 @@ def test_agent_runtime_merges_workspace_memory_skills_and_tool_allowlist(tmp_pat
     assert kwargs["memory"] == ["/AGENTS.md", "/agents/frontend/AGENTS.md"]
     assert kwargs["skills"] == ["/skills/platform", "/skills/frontend"]
     assert middleware.allowed == frozenset({"read_file", "grep"})
+
+
+def test_regulatory_knowledge_agent_limits_run_tool_calls(
+    tmp_path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    class FakeSettings:
+        workspace_root = str(tmp_path)
+        memory_files = ""
+        skill_dirs = ""
+        enable_write_tools = False
+        skills_root = str(tmp_path / "skills")
+
+    captured: dict[str, object] = {}
+    monkeypatch.setattr(
+        "urgs_deepagents_service.runtime.create_deep_agent",
+        lambda **kwargs: captured.update(kwargs) or kwargs,
+    )
+
+    create_runtime_agent(
+        model=object(),
+        settings=FakeSettings(),
+        system_prompt="只读监管查询",
+        memory_files="/AGENTS.md",
+        skill_dirs=None,
+        tool_allowlist="ls,read_file,glob,grep",
+        allow_write=False,
+        workspace_root=str(tmp_path),
+        debug=False,
+        agent_code=REGULATORY_KNOWLEDGE_AGENT_CODE,
+    )
+
+    limiter = next(
+        item for item in captured["middleware"] if isinstance(item, ToolCallLimitMiddleware)
+    )
+    assert any(
+        isinstance(item, RegulatoryCodeEvidenceMiddleware) for item in captured["middleware"]
+    )
+    assert limiter.run_limit == REGULATORY_KNOWLEDGE_TOOL_CALL_LIMIT
+    assert limiter.exit_behavior == "continue"
+
+
+def test_regulatory_code_evidence_middleware_removes_unsupported_exact_codes() -> None:
+    middleware = RegulatoryCodeEvidenceMiddleware()
+    supported = ToolMessage(
+        content="已核验 G01、G21 和 T_6.1。",
+        tool_call_id="tool-1",
+        status="success",
+    )
+    answer = AIMessage(
+        content="涉及 G01、G21、T_6.1、T_5.1、T_6.x、JS_203 和 A1413。",
+        id="answer-1",
+    )
+
+    update = middleware.after_model({"messages": [supported, answer]}, None)
+
+    assert update is not None
+    sanitized = update["messages"][0]
+    assert sanitized.id == "answer-1"
+    assert "G01" in sanitized.content
+    assert "G21" in sanitized.content
+    assert "T_6.1" in sanitized.content
+    assert "T_5.1" not in sanitized.content
+    assert "T_6.x" not in sanitized.content
+    assert "JS_203" not in sanitized.content
+    assert "A1413" not in sanitized.content
+    assert "未在本轮检索证据中出现" in sanitized.content
+
+
+def test_regulatory_code_evidence_middleware_keeps_fully_supported_answer() -> None:
+    middleware = RegulatoryCodeEvidenceMiddleware()
+    supported = ToolMessage(content="G01 和 G21", tool_call_id="tool-1", status="success")
+    answer = AIMessage(content="涉及 G01 和 G21。", id="answer-1")
+
+    assert middleware.after_model({"messages": [supported, answer]}, None) is None
 
 
 def test_agents_invoke_basic_path(monkeypatch) -> None:

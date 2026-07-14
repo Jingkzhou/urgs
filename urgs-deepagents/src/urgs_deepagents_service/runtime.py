@@ -2,10 +2,13 @@
 
 from __future__ import annotations
 
+import re
 from typing import Any
 
 from fastapi import HTTPException
+from langchain.agents.middleware import ToolCallLimitMiddleware
 from langchain.agents.middleware.types import AgentMiddleware
+from langchain_core.messages import AIMessage, ToolMessage
 
 from deepagents import FilesystemPermission, create_deep_agent
 from deepagents.backends import FilesystemBackend
@@ -16,7 +19,18 @@ READ_ONLY_FILESYSTEM_PERMISSIONS = [
 ]
 DEFAULT_EXCLUDED_TOOLS = frozenset({"execute"})
 DEFAULT_RECURSION_LIMIT = 100
+REGULATORY_KNOWLEDGE_AGENT_CODE = "regulatory-knowledge-agent"
+REGULATORY_KNOWLEDGE_TOOL_CALL_LIMIT = 8
 WRITE_TOOLS = frozenset({"write_file", "edit_file"})
+REGULATORY_REPORT_CODE_PATTERN = re.compile(
+    r"(?<![A-Za-z0-9_])(?:"
+    r"JS_\d{3}(?:_[A-Z0-9_]+)?|"
+    r"IE_\d{3}_\d{3}|"
+    r"T_\d+(?:\.(?:\d+|x))+|"
+    r"A\d{4}|"
+    r"[GS]\d{2}(?:_[A-Z]+|[ⅠⅡⅢⅣⅤⅥⅦⅧⅨⅩ]+)?"
+    r")(?![A-Za-z0-9_])"
+)
 
 
 def graph_config(settings: Any) -> dict[str, Any]:
@@ -60,6 +74,57 @@ class ToolVisibilityMiddleware(AgentMiddleware[Any, Any, Any]):
 
     async def awrap_model_call(self, request: Any, handler: Any) -> Any:
         return await handler(request.override(tools=self._filter_tools(request.tools)))
+
+
+def _message_text(content: Any) -> str:
+    if isinstance(content, str):
+        return content
+    if isinstance(content, list):
+        return "\n".join(
+            str(item.get("text", "")) if isinstance(item, dict) else str(item) for item in content
+        )
+    return str(content)
+
+
+class RegulatoryCodeEvidenceMiddleware(AgentMiddleware[Any, Any, Any]):
+    """Remove exact report codes absent from this run's retrieval evidence."""
+
+    def after_model(self, state: Any, runtime: Any) -> dict[str, Any] | None:
+        messages = state.get("messages", [])
+        if not messages:
+            return None
+        last_message = messages[-1]
+        if not isinstance(last_message, AIMessage) or last_message.tool_calls:
+            return None
+
+        evidence = "\n".join(
+            _message_text(message.content)
+            for message in messages
+            if isinstance(message, ToolMessage) and message.status != "error"
+        )
+        if not evidence:
+            return None
+
+        answer = _message_text(last_message.content)
+        unsupported_codes = {
+            match.group(0)
+            for match in REGULATORY_REPORT_CODE_PATTERN.finditer(answer)
+            if match.group(0) not in evidence
+        }
+        if not unsupported_codes:
+            return None
+
+        sanitized = answer
+        for code in sorted(unsupported_codes, key=len, reverse=True):
+            sanitized = sanitized.replace(code, "待核验表码")
+        sanitized = (
+            f"{sanitized.rstrip()}\n\n"
+            "注：部分未在本轮检索证据中出现的精确表码已省略，需进一步核验。"
+        )
+        return {"messages": [last_message.model_copy(update={"content": sanitized})]}
+
+    async def aafter_model(self, state: Any, runtime: Any) -> dict[str, Any] | None:
+        return self.after_model(state, runtime)
 
 
 def normalize_path_list(value: str | list[str] | None) -> list[str]:
@@ -203,6 +268,14 @@ def create_runtime_agent(
         include_platform_skills=include_platform_skills,
         debug=debug,
     )
+    if agent_code == REGULATORY_KNOWLEDGE_AGENT_CODE:
+        runtime_kwargs["middleware"][:0] = [
+            ToolCallLimitMiddleware(
+                run_limit=REGULATORY_KNOWLEDGE_TOOL_CALL_LIMIT,
+                exit_behavior="continue",
+            ),
+            RegulatoryCodeEvidenceMiddleware(),
+        ]
     return create_deep_agent(
         model=model,
         tools=runtime_tools,

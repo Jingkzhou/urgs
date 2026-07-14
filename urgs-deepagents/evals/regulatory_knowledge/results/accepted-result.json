@@ -1,0 +1,25 @@
+{
+  "suite": "regulatory-knowledge-agent-real-questions-v1",
+  "total": 30,
+  "passed": 30,
+  "selection": {
+    "default": "final-v105.jsonl",
+    "replacements": {
+      "RK-017": "round2-v105.jsonl",
+      "RK-018": "round3-v105-rk018.jsonl",
+      "RK-030": "round2-v105.jsonl"
+    }
+  },
+  "metrics": {
+    "average_duration_seconds": 65.1,
+    "median_duration_seconds": 55.5,
+    "maximum_duration_seconds": 164.1,
+    "average_model_tool_attempts": 5.9,
+    "maximum_model_tool_attempts": 16
+  },
+  "notes": [
+    "本地模型正常慢推理不作为失败条件，评测默认不设置单题超时。",
+    "工具调用数包含达到运行门禁后被拦截的重复尝试，不等同于实际成功读取次数。",
+    "复杂场景除确定性断言外已进行人工语义复核。"
+  ]
+}

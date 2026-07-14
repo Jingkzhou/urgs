@@ -194,6 +194,8 @@ def _patch_review(monkeypatch, passed: bool, reason: str = "ok") -> None:
 def test_reviewer_prompt_accepts_required_clarification() -> None:
     assert "缺少必填输入" in reviewer_mod.REVIEWER_SYSTEM_PROMPT
     assert "不得要求 Worker 使用空条件" in reviewer_mod.REVIEWER_SYSTEM_PROMPT
+    assert "不得自行增加" in reviewer_mod.REVIEWER_SYSTEM_PROMPT
+    assert "不得强制要求继续读取或摘录原文页" in reviewer_mod.REVIEWER_SYSTEM_PROMPT
 
 
 def test_finalizer_prompt_hides_review_internals() -> None:
@@ -210,6 +212,8 @@ def test_finalizer_prompt_hides_review_internals() -> None:
     assert "不应展示的问题" not in prompt
     assert "不应展示的修复项" not in prompt
     assert "不要向用户输出 Reviewer" in prompt
+    assert "不要再次验证" in prompt
+    assert "禁止输出“让我先”" in prompt
 
 
 def test_conversation_context_excludes_current_turn_and_keeps_prior_slots() -> None:
@@ -764,13 +768,20 @@ async def test_rework_fail_emits_quality_risk(monkeypatch) -> None:
     _patch_worker(monkeypatch, answer="bad")
     # 两次验收均失败
     _patch_review(monkeypatch, passed=False, reason="仍不合格")
-    _patch_finalizer(monkeypatch, answer="best-effort")
+
+    async def fail_finalize(**kwargs: Any) -> AsyncIterator[str]:
+        raise AssertionError("simple quality-risk result should not be rewritten by finalizer LLM")
+        yield  # unreachable, make it an async generator
+
+    monkeypatch.setattr(finalizer_mod, "stream_finalizer", fail_finalize)
     request = OrchestratorRequest(messages="问题", agents=_agents(), agent_configs=_configs())
     events = await _make_stream(monkeypatch, request)
 
     names = [name for name, _ in events]
     assert "rework" in names
     assert "quality_risk" in names
+    content = "".join(data["content"] for name, data in events if name == "content")
+    assert content == "bad"
     assert names[-1] == "done"
 
 
