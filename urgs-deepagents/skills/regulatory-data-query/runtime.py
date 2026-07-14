@@ -1446,21 +1446,25 @@ class RegulatoryDataQueryService:
         system = self._system(system_code)
         table = self._summary_table(system_code, table_code)
         indicators = self._select_items(table.indicators, indicator_codes, "指标")
-        if any(indicator.query_config is not None for indicator in indicators):
-            if any(indicator.query_config is None for indicator in indicators):
-                raise ValueError("资产配置指标与静态目录指标不能在一次查询中混用")
-            return self._query_asset_summary(
-                system=system,
-                table=table,
-                indicators=indicators,
-                start_date=start_date,
-                end_date=end_date,
-                organization=organization,
-                filters=filters,
-            )
         start, end, normalized_organization = self._required_scope(
             start_date, end_date, organization
         )
+        if any(indicator.query_config is not None for indicator in indicators):
+            if any(indicator.query_config is None for indicator in indicators):
+                raise ValueError("资产配置指标与静态目录指标不能在一次查询中混用")
+            result = self._query_asset_summary(
+                system=system,
+                table=table,
+                indicators=indicators,
+                start_date=start.isoformat(),
+                end_date=end.isoformat(),
+                organization=normalized_organization,
+                filters=filters,
+            )
+            result["aggregates"] = self._summary_aggregates(
+                table, indicators, start, end, normalized_organization, filters
+            )
+            return result
         where_sql, parameters, filter_summary = self._where_clause(
             table.date_column,
             self._organization_columns(table),
@@ -1500,7 +1504,78 @@ class RegulatoryDataQueryService:
             "filters": filter_summary,
             "returned_count": len(rows),
             "rows": [self._json_row(row) for row in rows],
+            "aggregates": self._summary_aggregates(
+                table, indicators, start, end, normalized_organization, filters
+            ),
         }
+
+    def _summary_aggregates(
+        self,
+        table: SummaryTableConfig,
+        indicators: Sequence[MetricConfig],
+        start: date,
+        end: date,
+        organization: str,
+        filters: Sequence[Mapping[str, Any]],
+    ) -> list[dict[str, Any]]:
+        aggregates: list[dict[str, Any]] = []
+        for indicator in indicators:
+            analysis = indicator.analysis or (
+                indicator.query_config.analysis if indicator.query_config else None
+            )
+            if indicator.value_type != "number" or analysis is None:
+                continue
+            rows = self._aggregate_metric_range(
+                table, indicator, start, end, organization, filters
+            )
+            for row in rows:
+                raw_value = Decimal(str(row.get("metric_value") or 0))
+                aggregates.append(
+                    {
+                        "indicator_code": indicator.code,
+                        "indicator_name": indicator.name,
+                        "date": self._parse_date(str(row["data_date"]), "数据日期").isoformat(),
+                        "value": str(raw_value / analysis.scale),
+                        "unit": analysis.unit,
+                        "aggregation": analysis.aggregation,
+                    }
+                )
+        return aggregates
+
+    def _aggregate_metric_range(
+        self,
+        table: SummaryTableConfig,
+        indicator: MetricConfig,
+        start: date,
+        end: date,
+        organization: str,
+        filters: Sequence[Mapping[str, Any]],
+    ) -> list[dict[str, Any]]:
+        source_table, date_column, value_column, org_columns, fields, metric_column, source_code = (
+            self._metric_query_parts(table, indicator)
+        )
+        where_sql, parameters, _ = self._where_clause(
+            date_column,
+            org_columns,
+            fields,
+            start,
+            end,
+            organization,
+            filters,
+        )
+        if metric_column:
+            where_sql += f" AND {_quote_identifier(metric_column)} = :aggregate_metric_code"
+            parameters["aggregate_metric_code"] = source_code
+        return self._rows(
+            text(
+                f"SELECT {_quote_identifier(date_column)} AS data_date, "
+                f"SUM({_quote_identifier(value_column)}) AS metric_value "
+                f"FROM {_quote_identifier(source_table)} {where_sql} "
+                f"GROUP BY {_quote_identifier(date_column)} "
+                f"ORDER BY {_quote_identifier(date_column)} ASC"
+            ),
+            parameters,
+        )
 
     def get_metric_profile(
         self, *, system_code: str, table_code: str, indicator_code: str
@@ -2516,7 +2591,10 @@ def create_regulatory_query_skill_runtime(
                     service.query_summary, **{**kwargs, "filters": filters(kwargs["filters"])}
                 ),
                 name="query_regulatory_summary",
-                description="按受控系统、汇总表、指标、日期、机构和筛选条件查询汇总数据。",
+                description=(
+                    "按受控系统、汇总表、指标、日期、机构和筛选条件查询汇总数据；"
+                    "数值指标同时返回确定性聚合和单位缩放后的 aggregates。"
+                ),
                 args_schema=QuerySummaryInput,
             ),
             StructuredTool.from_function(

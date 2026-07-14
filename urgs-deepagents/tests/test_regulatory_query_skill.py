@@ -292,12 +292,15 @@ class _FakeConnection:
                 ]
             )
         if "GROUP BY `stat_date`" in sql:
-            return _FakeResult(
-                [
-                    {"data_date": "2026-01-31", "metric_value": 700000},
-                    {"data_date": "2026-02-28", "metric_value": 760000},
-                ]
-            )
+            rows = [
+                {"data_date": "2026-01-31", "metric_value": 700000},
+                {"data_date": "2026-02-28", "metric_value": 760000},
+            ]
+            if "start_date" in parameters and "end_date" in parameters:
+                start_date = parameters["start_date"].isoformat()
+                end_date = parameters["end_date"].isoformat()
+                rows = [row for row in rows if start_date <= row["data_date"] <= end_date]
+            return _FakeResult(rows)
         if "`reg_summary`" in sql:
             return _FakeResult(
                 [
@@ -667,6 +670,16 @@ def test_query_tools_use_catalog_columns_parameters_masks_and_hard_detail_limit(
         }
     )
     assert summary["indicators"] == [{"code": "loan_balance", "name": "各项贷款余额"}]
+    assert summary["aggregates"] == [
+        {
+            "indicator_code": "loan_balance",
+            "indicator_name": "各项贷款余额",
+            "date": "2026-01-31",
+            "value": "70",
+            "unit": "万元",
+            "aggregation": "SUM",
+        }
+    ]
     assert (
         detail["returned_count"] == 1 and detail["total_count"] == 7 and detail["truncated"] is True
     )
@@ -710,7 +723,11 @@ def test_query_tools_accept_compact_dates_org_suffix_and_org_name(
     assert suffix_result["end_date"] == "2026-02-28"
     assert suffix_result["organization"] == "1200"
     assert name_result["organization"] == "分行一"
-    summary_calls = [(sql, params) for sql, params in engine.calls if "`reg_summary`" in sql]
+    summary_calls = [
+        (sql, params)
+        for sql, params in engine.calls
+        if "`reg_summary`" in sql and "GROUP BY" not in sql
+    ]
     suffix_sql, suffix_params = summary_calls[-2]
     _, name_params = summary_calls[-1]
     assert "(`org_code` = :organization OR `org_name` = :organization)" in suffix_sql

@@ -1,0 +1,22 @@
+{
+  "suite": "regulatory-data-query-agent-v1",
+  "total": 11,
+  "passed": 11,
+  "selection": {
+    "baseline": "baseline-v1.jsonl",
+    "default": "final-v2.jsonl",
+    "targeted_retest": "smoke-aggregates-v2.jsonl"
+  },
+  "metrics": {
+    "average_duration_seconds": 7.494,
+    "median_duration_seconds": 7.869,
+    "maximum_duration_seconds": 12.176,
+    "average_tool_calls": 2.545,
+    "maximum_tool_calls": 5
+  },
+  "notes": [
+    "基线按最终评分规则重算后为 9/11，失败项为 RDQ-004 和 RDQ-011。",
+    "两个失败均由基础汇总缺少确定性聚合结果导致，模型只能读取底层记录，存在自行求和或单位误标风险。",
+    "修复后 query_regulatory_summary 返回按分析配置聚合和缩放的 aggregates，定向复测 2/2、全量回归 11/11。"
+  ]
+}
