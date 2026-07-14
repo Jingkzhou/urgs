@@ -9,6 +9,7 @@ export type ThinkingStep = {
     status: 'pending' | 'running' | 'done' | 'error';
     timestamp?: string;
     kind?: 'progress' | 'tool' | 'stage';
+    terminal?: boolean;
 };
 
 export type ThinkingPanelProps = {
@@ -16,6 +17,7 @@ export type ThinkingPanelProps = {
     steps: ThinkingStep[];
     defaultExpanded?: boolean;
     currentStatus?: string;
+    active?: boolean;
 };
 
 const getStatusIcon = (status: ThinkingStep['status']) => {
@@ -61,26 +63,41 @@ const ThinkingPanel: React.FC<ThinkingPanelProps> = ({
     title = '执行过程',
     steps,
     defaultExpanded = false,
-    currentStatus
+    currentStatus,
+    active = false
 }) => {
     const [expanded, setExpanded] = useState(defaultExpanded);
-    const latestRunning = useMemo(() => steps.find(step => step.status === 'running'), [steps]);
+    const latestRunning = useMemo(
+        () => [...steps].reverse().find(step => step.status === 'running'),
+        [steps]
+    );
+    const terminalError = useMemo(
+        () => [...steps].reverse().find(step => step.status === 'error' && step.terminal),
+        [steps]
+    );
     const latestStep = steps[steps.length - 1];
-    const displayStatus = currentStatus || latestRunning?.title || latestStep?.title || title;
+    const isActive = active || Boolean(latestRunning);
+    const displayStatus = terminalError?.title || latestRunning?.title || currentStatus || latestStep?.title || title;
+    const stateLabel = terminalError ? '失败' : isActive ? '进行中' : '已完成';
+    const stateClassName = terminalError
+        ? 'text-red-600'
+        : isActive
+            ? 'text-blue-600'
+            : 'text-emerald-600';
 
     if (steps.length === 0 && !displayStatus) {
         return null;
     }
 
     return (
-        <div className="mb-4 max-w-3xl">
+        <div className="mb-4 max-w-3xl" aria-live="polite">
             <button
                 type="button"
                 onClick={() => setExpanded(prev => !prev)}
                 className="group flex max-w-full items-center gap-2 rounded-full px-1.5 py-1 text-left text-sm text-slate-500 transition-colors hover:text-slate-900"
             >
                 <span className="flex h-5 w-5 shrink-0 items-center justify-center">
-                    {latestRunning ? (
+                    {isActive ? (
                         <Loader2 size={15} className="animate-spin text-slate-700" />
                     ) : (
                         <Brain size={15} className="text-slate-500" />
@@ -94,6 +111,9 @@ const ThinkingPanel: React.FC<ThinkingPanelProps> = ({
                         · {steps.length} 步
                     </span>
                 )}
+                <span className={`shrink-0 text-xs font-medium ${stateClassName}`}>
+                    · {stateLabel}
+                </span>
                 {steps.length > 0 && (
                     <ChevronDown
                         size={14}

@@ -49,6 +49,10 @@ urgs:
   profile: "${URGS_PROFILE:${user.dir}/data/api/uploads}"
   api-base-url: "${URGS_API_BASE_URL:}"
   web-base-url: "${URGS_WEB_BASE_URL:}"
+  ai:
+    chat:
+      # 0 表示聊天 SSE 不设置 Servlet 绝对超时；需要限制时可通过环境变量覆盖。
+      sse-timeout-ms: "${URGS_AI_CHAT_SSE_TIMEOUT_MS:0}"
   onlyoffice:
     document-server-url: "${ONLYOFFICE_DOCUMENT_SERVER_URL:http://localhost:8088}"
     callback-secret: "${ONLYOFFICE_CALLBACK_SECRET:urgs-onlyoffice-callback-secret}"

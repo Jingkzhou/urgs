@@ -3,6 +3,7 @@ from typing import Any
 
 import httpx
 from fastapi import HTTPException
+from langchain_core.messages import AIMessage, AIMessageChunk
 from langchain_openai import ChatOpenAI
 
 from urgs_deepagents_service.config import Settings
@@ -17,6 +18,70 @@ class AiApiConfig:
     api_key: str
     max_tokens: int | None
     temperature: float | None
+
+
+class ReasoningContentChatOpenAI(ChatOpenAI):
+    """Preserve OpenAI-compatible reasoning_content across tool-call rounds.
+
+    DeepSeek thinking mode requires the assistant's reasoning_content to be
+    passed back unchanged with its tool_calls. langchain-openai currently drops
+    this provider extension when converting chat-completion chunks and messages.
+    """
+
+    def _convert_chunk_to_generation_chunk(
+        self,
+        chunk: dict[str, Any],
+        default_chunk_class: type,
+        base_generation_info: dict[str, Any] | None,
+    ) -> Any:
+        generation = super()._convert_chunk_to_generation_chunk(
+            chunk, default_chunk_class, base_generation_info
+        )
+        choices = chunk.get("choices") or chunk.get("chunk", {}).get("choices") or []
+        delta = choices[0].get("delta") if choices else None
+        reasoning_content = delta.get("reasoning_content") if isinstance(delta, dict) else None
+        if (
+            generation is not None
+            and reasoning_content is not None
+            and isinstance(generation.message, AIMessageChunk)
+        ):
+            generation.message.additional_kwargs["reasoning_content"] = reasoning_content
+        return generation
+
+    def _create_chat_result(
+        self,
+        response: dict[str, Any] | Any,
+        generation_info: dict[str, Any] | None = None,
+    ) -> Any:
+        result = super()._create_chat_result(response, generation_info)
+        response_dict = response if isinstance(response, dict) else response.model_dump()
+        choices = response_dict.get("choices") or []
+        for generation, choice in zip(result.generations, choices, strict=False):
+            message = choice.get("message") or {}
+            reasoning_content = message.get("reasoning_content")
+            if reasoning_content is not None and isinstance(generation.message, AIMessage):
+                generation.message.additional_kwargs["reasoning_content"] = reasoning_content
+        return result
+
+    def _get_request_payload(
+        self,
+        input_: Any,
+        *,
+        stop: list[str] | None = None,
+        **kwargs: Any,
+    ) -> dict[str, Any]:
+        messages = self._convert_input(input_).to_messages()
+        payload = super()._get_request_payload(input_, stop=stop, **kwargs)
+        outgoing_messages = payload.get("messages")
+        if not isinstance(outgoing_messages, list):
+            return payload
+        for source, outgoing in zip(messages, outgoing_messages, strict=False):
+            if not isinstance(source, AIMessage) or not isinstance(outgoing, dict):
+                continue
+            reasoning_content = source.additional_kwargs.get("reasoning_content")
+            if reasoning_content is not None:
+                outgoing["reasoning_content"] = reasoning_content
+        return payload
 
 
 def _strip_chat_completions_suffix(endpoint: str) -> str:
@@ -133,4 +198,4 @@ def build_chat_model(settings: Settings, model_override: str | None) -> str | Ch
         kwargs["max_tokens"] = config.max_tokens
     if config.temperature is not None:
         kwargs["temperature"] = config.temperature
-    return ChatOpenAI(**kwargs)
+    return ReasoningContentChatOpenAI(**kwargs)

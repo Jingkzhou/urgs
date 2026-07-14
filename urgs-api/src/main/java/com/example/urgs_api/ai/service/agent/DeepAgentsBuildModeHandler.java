@@ -192,7 +192,10 @@ public class DeepAgentsBuildModeHandler {
                             // 流结束后统一处理
                             break;
                         case "error":
-                            throw new RuntimeException(data.path("error").asText("编排失败"));
+                            String detail = data.path("detail").asText("");
+                            throw new RuntimeException(detail.isBlank()
+                                    ? data.path("error").asText("编排失败")
+                                    : detail);
                         default:
                             // 未知事件忽略
                     }

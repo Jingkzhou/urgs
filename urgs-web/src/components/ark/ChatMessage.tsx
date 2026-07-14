@@ -66,20 +66,27 @@ const getToolPath = (event: AgentStreamEvent) => {
 
 const formatAgentEventTitle = (event: AgentStreamEvent) => {
     const path = getToolPath(event);
+    const failed = event.status === 'error' || event.status === 'failed' || event.status === 'rejected';
     if (event.toolName === 'read_file' && path) {
-        return event.type === 'tool_result' ? `已读取 ${path}` : `正在读取 ${path}`;
+        return event.type === 'tool_result'
+            ? failed ? `读取 ${path} 失败` : `已读取 ${path}`
+            : `正在读取 ${path}`;
     }
     if ((event.toolName === 'edit_file' || event.toolName === 'write_file') && path) {
-        return event.type === 'tool_result' ? `已编辑 ${path}` : `正在编辑 ${path}`;
+        return event.type === 'tool_result'
+            ? failed ? `编辑 ${path} 失败` : `已编辑 ${path}`
+            : `正在编辑 ${path}`;
     }
     if (event.toolName === 'grep') {
         const pattern = event.args && typeof event.args.pattern === 'string' ? event.args.pattern : '';
         if (pattern) {
-            return event.type === 'tool_result' ? `已检索“${pattern}”` : `正在检索“${pattern}”`;
+            return event.type === 'tool_result'
+                ? failed ? `检索“${pattern}”失败` : `已检索“${pattern}”`
+                : `正在检索“${pattern}”`;
         }
     }
     if (event.type === 'tool_result' && event.toolName) {
-        return `${event.toolName} 已完成`;
+        return failed ? `${event.toolName} 执行失败` : `${event.toolName} 已完成`;
     }
     if (event.type === 'review') {
         return event.status === 'failed' ? 'Reviewer 验收未通过' : 'Reviewer 验收通过';
@@ -101,10 +108,7 @@ const formatAgentEventDetail = (event: AgentStreamEvent) => {
         return event.content || '已将 Reviewer 反馈发送给 Worker，开始返工';
     }
     if (event.type === 'progress') {
-        return [
-            event.content || '',
-            event.nextAction ? `接下来：${event.nextAction}` : ''
-        ].filter(Boolean).join('\n');
+        return event.content || '';
     }
     if (event.type === 'review' || event.type === 'quality_risk') {
         const issues = Array.isArray(event.issues) && event.issues.length > 0
@@ -132,6 +136,16 @@ const formatAgentEventDetail = (event: AgentStreamEvent) => {
         event.content || argsText
     ].filter(Boolean);
     return details.join('\n');
+};
+
+const formatRunningAction = (action: string) => {
+    const normalized = action.trim().replace(/^接下来\s*[:：]?\s*/, '');
+    if (!normalized) return '正在继续分析';
+    if (/^(正在|等待)/.test(normalized)) return normalized;
+    if (/^(读取|检索|查找|核对|检查|整理|汇总|生成|验证|分析|调整|重试|执行|补充)/.test(normalized)) {
+        return `正在${normalized}`;
+    }
+    return `正在处理：${normalized}`;
 };
 
 const getAgentEventStatus = (
@@ -168,7 +182,11 @@ const getAgentEventStatus = (
     return 'done';
 };
 
-const toThinkingSteps = (events: AgentStreamEvent[], isStreaming: boolean): ThinkingStep[] => {
+const toThinkingSteps = (
+    events: AgentStreamEvent[],
+    isStreaming: boolean,
+    hasAnswerContent: boolean
+): ThinkingStep[] => {
     const hiddenStageTypes = new Set<AgentStreamEvent['type']>([
         'input_guard',
         'planning',
@@ -189,7 +207,7 @@ const toThinkingSteps = (events: AgentStreamEvent[], isStreaming: boolean): Thin
         }
         return true;
     });
-    return visibleEvents.map((event, index) => ({
+    const steps: ThinkingStep[] = visibleEvents.map((event, index) => ({
         id: event.id,
         title: formatAgentEventTitle(event),
         description: formatAgentEventDetail(event),
@@ -199,8 +217,38 @@ const toThinkingSteps = (events: AgentStreamEvent[], isStreaming: boolean): Thin
             ? 'progress'
             : event.type === 'tool_call' || event.type === 'tool_result'
                 ? 'tool'
-                : 'stage'
+                : 'stage',
+        terminal: event.type === 'error'
     }));
+
+    if (!isStreaming || steps.some(step => step.status === 'running')) {
+        return steps;
+    }
+
+    const latestProgress = [...visibleEvents]
+        .reverse()
+        .find(event => event.type === 'progress' && event.nextAction?.trim());
+    const latestVisibleEvent = visibleEvents[visibleEvents.length - 1];
+    const nextAction = hasAnswerContent
+        ? '生成最终结论'
+        : latestProgress?.nextAction || (
+            latestVisibleEvent?.status === 'failed'
+                ? '调整方案并继续处理'
+                : '继续分析并核对结果'
+        );
+
+    return [
+        ...steps,
+        {
+            id: `current:${latestVisibleEvent?.id || 'starting'}`,
+            title: formatRunningAction(nextAction),
+            description: hasAnswerContent
+                ? '检索与核验已完成，正在组织最终答复。'
+                : '当前步骤正在执行，完成后会继续更新。',
+            status: 'running',
+            kind: 'progress'
+        }
+    ];
 };
 
 const ScoreTooltip: React.FC<ScoreDetailProps> = ({ details }) => {
@@ -237,7 +285,9 @@ const ChatMessage: React.FC<ChatMessageProps> = ({ message, isStreaming = false 
     const [isSourcesExpanded, setIsSourcesExpanded] = useState(false);
     const agentEvents = !isUser ? (message.agentEvents || []) : [];
     const lastAgentEvent = agentEvents[agentEvents.length - 1];
-    const thinkingSteps = !isUser ? toThinkingSteps(agentEvents, isStreaming) : [];
+    const thinkingSteps = !isUser
+        ? toThinkingSteps(agentEvents, isStreaming, Boolean(message.content))
+        : [];
 
     return (
         <div className={`group w-full ${isUser ? 'flex justify-end' : 'block'}`}>
@@ -253,11 +303,12 @@ const ChatMessage: React.FC<ChatMessageProps> = ({ message, isStreaming = false 
                             <ThinkingPanel
                                 steps={thinkingSteps}
                                 defaultExpanded={isStreaming}
+                                active={isStreaming}
                                 currentStatus={message.status === 'searching' ? '正在检索知识库' :
                                     message.status === 'compressing' ? '正在压缩对话历史' :
                                         message.status === 'agent_app_running' ? '正在调用 Agent App' :
                                             message.status === 'deepagents_running' ? '正在思考' :
-                                                lastAgentEvent?.title || '思考中'}
+                                                isStreaming ? undefined : lastAgentEvent?.title || '执行结束'}
                             />
                         ) : (
                             <div className={`markdown-body ${isUser ? 'text-[#0d0d0d]' : ''}`}>
@@ -265,7 +316,8 @@ const ChatMessage: React.FC<ChatMessageProps> = ({ message, isStreaming = false 
                                     <ThinkingPanel
                                         steps={thinkingSteps}
                                         defaultExpanded={isStreaming}
-                                        currentStatus={lastAgentEvent?.title || '执行过程'}
+                                        active={isStreaming}
+                                        currentStatus={isStreaming ? undefined : '分析完成'}
                                     />
                                 )}
 

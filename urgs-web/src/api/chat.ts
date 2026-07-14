@@ -14,7 +14,7 @@ export interface Message {
 
 export interface AgentStreamEvent {
     id: string;
-    type: 'thinking' | 'progress' | 'tool_call' | 'tool_result' | 'status' | 'input_guard' | 'routing' | 'planning' | 'worker' | 'review' | 'rework' | 'quality_risk' | 'finalizing' | 'handoff';
+    type: 'thinking' | 'progress' | 'tool_call' | 'tool_result' | 'status' | 'input_guard' | 'routing' | 'planning' | 'worker' | 'review' | 'rework' | 'quality_risk' | 'finalizing' | 'handoff' | 'error';
     title: string;
     content?: string;
     toolName?: string;
@@ -414,6 +414,20 @@ const processLine = (line: string, onChunk: (c: string) => void, onComplete: () 
             return;
         }
 
+        if (eventName === 'error' || parsed.error) {
+            if (onAgentEvent) {
+                onAgentEvent({
+                    id: parsed.id || `${Date.now()}-${Math.random().toString(36).slice(2)}`,
+                    type: 'error',
+                    title: '执行失败',
+                    content: parsed.detail || parsed.error || 'Agent 执行失败',
+                    status: 'failed',
+                    timestamp: Date.now()
+                });
+            }
+            return;
+        }
+
         // 默认处理（无事件名称或 message 事件）
         if (parsed.status === 'compressing') {
             if (onStatus) onStatus('compressing');
@@ -430,8 +444,6 @@ const processLine = (line: string, onChunk: (c: string) => void, onComplete: () 
         } else if (parsed.intent) {
             // 处理意图数据
             if (onIntent) onIntent(parsed.intent);
-        } else if (parsed.error) {
-            console.error("Stream reported error:", parsed.error);
         }
     } catch (e) {
         // 非 JSON，如果是普通文本块则直接处理

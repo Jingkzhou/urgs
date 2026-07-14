@@ -7,7 +7,7 @@ from fastapi import HTTPException
 from fastapi.testclient import TestClient
 from langchain.agents.middleware import ToolCallLimitMiddleware
 from langchain_core.language_models.fake_chat_models import FakeMessagesListChatModel
-from langchain_core.messages import AIMessage, HumanMessage, ToolMessage
+from langchain_core.messages import AIMessage, AIMessageChunk, HumanMessage, ToolMessage
 from langchain_openai import ChatOpenAI
 
 from urgs_deepagents_service.config import get_settings
@@ -20,6 +20,7 @@ from urgs_deepagents_service.main import (
     create_app,
 )
 from urgs_deepagents_service.model_config import (
+    ReasoningContentChatOpenAI,
     _parse_default_config,
     build_chat_model,
     load_default_ai_config,
@@ -546,6 +547,45 @@ def test_build_chat_model_uses_ai_api_default(monkeypatch) -> None:
 
     assert isinstance(model, ChatOpenAI)
     assert model.model_name == "qwen3"
+
+
+def test_reasoning_content_is_preserved_across_tool_call_rounds() -> None:
+    model = ReasoningContentChatOpenAI(
+        model="deepseek-reasoner",
+        api_key="sk-test",
+        base_url="https://api.deepseek.com/v1",
+    )
+    chunk = {
+        "choices": [
+            {
+                "delta": {"role": "assistant", "reasoning_content": "分析过程"},
+                "finish_reason": None,
+            }
+        ]
+    }
+
+    generation = model._convert_chunk_to_generation_chunk(chunk, AIMessageChunk, None)
+
+    assert generation is not None
+    assert generation.message.additional_kwargs["reasoning_content"] == "分析过程"
+
+    assistant = AIMessage(
+        content="",
+        additional_kwargs={"reasoning_content": "分析过程"},
+        tool_calls=[
+            {
+                "name": "read_file",
+                "args": {"file_path": "/example.md"},
+                "id": "call-1",
+                "type": "tool_call",
+            }
+        ],
+    )
+    payload = model._get_request_payload(
+        [assistant, ToolMessage(content="文件内容", tool_call_id="call-1")]
+    )
+
+    assert payload["messages"][0]["reasoning_content"] == "分析过程"
 
 
 def test_load_default_ai_config_retries_transient_http_errors(monkeypatch) -> None:

@@ -5,6 +5,7 @@ import com.example.urgs_api.ai.entity.AiChatSession;
 import com.example.urgs_api.ai.service.AiChatHistoryService;
 import com.example.urgs_api.ai.service.AiChatService;
 import org.springframework.beans.factory.annotation.Autowired;
+import org.springframework.beans.factory.annotation.Value;
 import org.springframework.web.bind.annotation.*;
 import org.springframework.web.servlet.mvc.method.annotation.SseEmitter;
 
@@ -25,6 +26,9 @@ public class AiChatController {
     @Autowired
     private AiChatHistoryService aiChatHistoryService;
 
+    @Value("${urgs.ai.chat.sse-timeout-ms:0}")
+    private long sseTimeoutMs;
+
     /**
      * 发送聊天请求 (流式响应)
      */
@@ -39,7 +43,9 @@ public class AiChatController {
         String agentAppSkillCode = (String) request.get("agentAppSkillCode");
         List<Map<String, String>> conversationContext = extractConversationContext(request.get("conversationContext"));
 
-        SseEmitter emitter = new SseEmitter(900000L); // 15分钟超时，覆盖 Agent App 长任务
+        // Agent 编排可能持续较长时间。默认不设置 Servlet 绝对超时，避免任务仍在运行时
+        // SSE 被提前关闭；部署环境仍可通过配置显式设置上限。
+        SseEmitter emitter = new SseEmitter(sseTimeoutMs);
 
         if (sessionId != null && !sessionId.isEmpty()) {
             aiChatService.streamChatWithPersistence(sessionId, systemPrompt, userPrompt, agentAppSkillAppCode,
