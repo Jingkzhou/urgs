@@ -20,7 +20,15 @@ from urgs_deepagents_service.orchestrator.utils import (
     sse,
     tool_result_text,
 )
-from urgs_deepagents_service.runtime import agent_graph_config, create_runtime_agent
+from urgs_deepagents_service.runtime import (
+    agent_graph_config,
+    create_control_agent,
+    create_runtime_agent,
+)
+
+DIRECT_ANSWER_INSTRUCTIONS = """## 当前执行模式：直接解答
+本次请求没有授权访问工作区。直接根据已有知识回答用户，不调用 task、ls、read_file、glob、grep
+或其他工具，不扫描目录，不声称已经检查项目文件。用户需要代码时，直接给出可复制的代码示例。"""
 
 
 @dataclass
@@ -55,11 +63,14 @@ async def run_worker(
     stream_content: bool,
     debug: bool,
     stream_context: StreamContext | None = None,
+    direct_answer: bool = False,
 ) -> WorkerRun:
     """构建并返回 WorkerRun。调用方迭代 run.events() 取事件，结束后读 run.output。"""
     event_context = (stream_context or StreamContext()).for_agent(agent_code)
     system_prompt = getattr(agent_config, "system_prompt", None) or "You are a helpful assistant."
-    if getattr(agent_config, "workspace_root", None):
+    if direct_answer:
+        system_prompt = f"{system_prompt}\n\n{DIRECT_ANSWER_INSTRUCTIONS}"
+    elif getattr(agent_config, "workspace_root", None):
         # FilesystemBackend 已绑定工作空间根，但 LLM 不知道路径约定，会凭 prompt 字样猜前缀。
         # 这里只说明路径约定（相对根、前导 /、不加前缀），不暴露宿主机物理路径。
         system_prompt = (
@@ -69,19 +80,22 @@ async def run_worker(
             f"所有路径均相对于该工作空间根，使用前导 `/`，不要在路径前加工作空间名、"
             f"系统名或任意前缀。例如 `00-首页/index.md` 对应工具路径 `/00-首页/index.md`。"
         )
-    agent = create_runtime_agent(
-        model=model,
-        settings=settings,
-        system_prompt=system_prompt,
-        memory_files=getattr(agent_config, "memory_files", None),
-        skill_dirs=getattr(agent_config, "skill_dirs", None),
-        tool_allowlist=getattr(agent_config, "tool_allowlist", None),
-        allow_write=getattr(agent_config, "allow_write", False),
-        workspace_root=getattr(agent_config, "workspace_root", None),
-        debug=debug,
-        agent_code=agent_code,
-        runtime_context=getattr(agent_config, "execution_context", None),
-    )
+    if direct_answer:
+        agent = create_control_agent(model=model, system_prompt=system_prompt, debug=debug)
+    else:
+        agent = create_runtime_agent(
+            model=model,
+            settings=settings,
+            system_prompt=system_prompt,
+            memory_files=getattr(agent_config, "memory_files", None),
+            skill_dirs=getattr(agent_config, "skill_dirs", None),
+            tool_allowlist=getattr(agent_config, "tool_allowlist", None),
+            allow_write=getattr(agent_config, "allow_write", False),
+            workspace_root=getattr(agent_config, "workspace_root", None),
+            debug=debug,
+            agent_code=agent_code,
+            runtime_context=getattr(agent_config, "execution_context", None),
+        )
 
     messages: list[dict[str, str]] = []
     if context:
@@ -141,6 +155,7 @@ async def run_worker(
             if event_name == "on_chat_model_stream":
                 text = chunk_text(data.get("chunk"))
                 if text:
+                    collected.append(text)
                     if stream_content:
                         yield sse(
                             "content",
@@ -150,8 +165,6 @@ async def run_worker(
                             status="streaming",
                             message="Worker 内容增量",
                         )
-                    else:
-                        collected.append(text)
                     emitted_text = True
                 continue
 
@@ -241,6 +254,7 @@ async def run_worker(
                 if not emitted_text:
                     text = chunk_text(output)
                     if text:
+                        collected.append(text)
                         if stream_content:
                             yield sse(
                                 "content",
@@ -250,8 +264,6 @@ async def run_worker(
                                 status="streaming",
                                 message="Worker 内容增量",
                             )
-                        else:
-                            collected.append(text)
                         emitted_text = True
                 # 不在此转发 tool_call：on_tool_start 已会发送，避免「准备调用」与「调用」重复
                 continue
@@ -259,6 +271,7 @@ async def run_worker(
             if event_name == "on_chain_end" and name == "LangGraph" and not emitted_text:
                 text = assistant_text_from_output(data.get("output"))
                 if text:
+                    collected.append(text)
                     if stream_content:
                         yield sse(
                             "content",
@@ -268,11 +281,9 @@ async def run_worker(
                             status="streaming",
                             message="Worker 内容增量",
                         )
-                    else:
-                        collected.append(text)
                     emitted_text = True
 
-        run.output.answer = "".join(collected) if not stream_content else ""
+        run.output.answer = "".join(collected)
         yield sse(
             "worker",
             {

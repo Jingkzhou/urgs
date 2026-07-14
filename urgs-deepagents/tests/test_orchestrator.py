@@ -40,6 +40,10 @@ from urgs_deepagents_service.orchestrator.state import (
     RoutingResult,
     WorkerOutput,
 )
+from urgs_deepagents_service.orchestrator.task_policy import (
+    explicitly_requests_workspace_access,
+    should_answer_directly,
+)
 from urgs_deepagents_service.regulatory_coverage import (
     requires_regulatory_coverage_review,
 )
@@ -131,6 +135,39 @@ def _assert_subsequence(names: list[str], expected: list[str]) -> None:
         if cursor < len(expected) and name == expected[cursor]:
             cursor += 1
     assert cursor == len(expected)
+
+
+def test_general_agent_answers_code_example_without_workspace_tools() -> None:
+    assert should_answer_directly(
+        "general-agent",
+        "使用 React 实现一个深色模式切换功能。",
+    )
+    assert should_answer_directly(
+        "general-agent",
+        "说明如何在 React 代码中实现深色模式切换。",
+    )
+    assert not explicitly_requests_workspace_access("使用 React 实现一个深色模式切换功能。")
+
+
+def test_general_agent_uses_workspace_only_when_user_explicitly_requests_it() -> None:
+    assert not should_answer_directly(
+        "general-agent",
+        "请在 urgs-web/src/App.tsx 中实现深色模式切换。",
+    )
+    assert not should_answer_directly(
+        "general-agent",
+        "修改吧",
+        "用户：请检查当前项目中的主题实现。",
+    )
+    assert should_answer_directly(
+        "general-agent",
+        "只做解答，不要扫描项目。",
+        "用户：请检查当前项目中的主题实现。",
+    )
+    assert not should_answer_directly(
+        "lineage-agent",
+        "解释这段 SQL 的血缘。",
+    )
 
 
 def _patch_guard(monkeypatch, passed: bool, reason: str = "") -> None:
@@ -368,6 +405,58 @@ async def test_worker_converts_progress_tool_into_public_event(monkeypatch) -> N
     assert run.output.tool_results == []
 
 
+async def test_worker_direct_answer_uses_no_tools_control_agent(monkeypatch) -> None:
+    captured: dict[str, Any] = {}
+
+    class FakeAgent:
+        async def astream_events(
+            self,
+            payload: dict[str, object],
+            config: dict[str, object] | None = None,
+            version: str = "v2",
+        ) -> AsyncIterator[dict[str, object]]:
+            yield {
+                "event": "on_chat_model_end",
+                "name": "model",
+                "data": {"output": SimpleNamespace(content="直接答案")},
+            }
+
+    def fake_create_control_agent(**kwargs: Any) -> FakeAgent:
+        captured.update(kwargs)
+        return FakeAgent()
+
+    monkeypatch.setattr(worker_mod, "create_control_agent", fake_create_control_agent)
+    monkeypatch.setattr(
+        worker_mod,
+        "create_runtime_agent",
+        lambda **kwargs: pytest.fail("直接解答不应创建带工具的 Runtime Agent"),
+    )
+    run = await worker_mod.run_worker(
+        model=object(),
+        settings=_FakeSettings(),
+        agent_code="general-agent",
+        agent_config=AgentRuntimeConfig(
+            system_prompt="你是通用助手",
+            memory_files="/AGENTS.md",
+            tool_allowlist="ls,read_file,glob,grep",
+            workspace_root="/workspace",
+        ),
+        task="使用 React 实现一个深色模式切换功能。",
+        context="",
+        stream_content=True,
+        debug=False,
+        direct_answer=True,
+    )
+
+    events = await _collect(run.events())
+
+    assert "本次请求没有授权访问工作区" in captured["system_prompt"]
+    assert "task、ls、read_file、glob、grep" in captured["system_prompt"]
+    assert [name for name, _ in events if name == "content"] == ["content"]
+    assert not [data for name, data in events if name == "agent" and "toolName" in data]
+    assert run.output.answer == "直接答案"
+
+
 def test_tool_progress_reports_grep_match_and_empty_result() -> None:
     matched = build_tool_progress_payload(
         "grep",
@@ -510,7 +599,11 @@ async def test_simple_path_passes_through_worker_answer(monkeypatch) -> None:
         yield  # unreachable, make it an async generator
 
     monkeypatch.setattr(finalizer_mod, "stream_finalizer", fail_finalize)
-    request = OrchestratorRequest(messages="你好", agents=_agents(), agent_configs=_configs())
+    request = OrchestratorRequest(
+        messages="请检查当前项目文件并回答问题",
+        agents=_agents(),
+        agent_configs=_configs(),
+    )
     events = await _make_stream(monkeypatch, request)
 
     names = [name for name, _ in events]
@@ -526,12 +619,81 @@ async def test_simple_path_passes_through_worker_answer(monkeypatch) -> None:
 
 
 @pytest.mark.asyncio
+async def test_general_direct_answer_skips_planner_review_and_finalizer(monkeypatch) -> None:
+    _patch_guard(monkeypatch, passed=True)
+    _patch_router(monkeypatch, "general-agent", is_complex=True)
+    captured: dict[str, Any] = {}
+
+    async def fake_run_worker(**kwargs: Any):
+        captured.update(kwargs)
+        run = worker_mod.WorkerRun(
+            agent_code=kwargs["agent_code"],
+            task=kwargs["task"],
+            stream_content=kwargs["stream_content"],
+        )
+
+        async def events() -> AsyncIterator[str]:
+            from urgs_deepagents_service.orchestrator.utils import sse
+
+            yield sse(
+                "content",
+                {"content": "React 深色模式示例"},
+                kwargs["stream_context"],
+                step_id="worker.general-agent.content",
+                status="streaming",
+                message="直接答案",
+            )
+
+        run._events_factory = events
+        return run
+
+    async def fail_stage(*args: Any, **kwargs: Any):
+        raise AssertionError("直接解答不应进入 Planner 或 Reviewer")
+
+    monkeypatch.setattr(
+        "urgs_deepagents_service.orchestrator.orchestrator.run_worker",
+        fake_run_worker,
+    )
+    monkeypatch.setattr(
+        "urgs_deepagents_service.orchestrator.orchestrator.run_planner",
+        fail_stage,
+    )
+    monkeypatch.setattr(
+        "urgs_deepagents_service.orchestrator.orchestrator.run_review",
+        fail_stage,
+    )
+    request = OrchestratorRequest(
+        messages="使用 React 实现一个深色模式切换功能。",
+        agents=_agents(),
+        agent_configs=_configs(),
+        selected_agent_code="general-agent",
+    )
+
+    events = await _make_stream(monkeypatch, request)
+    names = [name for name, _ in events]
+
+    assert captured["direct_answer"] is True
+    assert captured["stream_content"] is True
+    assert "planning" not in names
+    assert "review" not in names
+    assert "finalizing" not in names
+    assert names[-1] == "done"
+    routing = next(data for name, data in events if name == "routing")
+    assert routing["is_complex"] is False
+    assert "直接解答" in routing["reason"]
+
+
+@pytest.mark.asyncio
 async def test_orchestrator_sse_envelope_and_simple_order(monkeypatch) -> None:
     _patch_guard(monkeypatch, passed=True)
     _patch_router(monkeypatch, "general-agent", is_complex=False)
     _patch_worker(monkeypatch, answer="hello")
     _patch_review(monkeypatch, passed=True)
-    request = OrchestratorRequest(messages="你好", agents=_agents(), agent_configs=_configs())
+    request = OrchestratorRequest(
+        messages="请检查当前项目文件并回答问题",
+        agents=_agents(),
+        agent_configs=_configs(),
+    )
     events = await _make_stream(monkeypatch, request)
 
     _assert_envelope(events)
@@ -778,7 +940,11 @@ async def test_rework_pass_finalizes_without_quality_risk(monkeypatch) -> None:
         "urgs_deepagents_service.orchestrator.orchestrator.run_review_with_feedback", fake_review_fb
     )
     _patch_finalizer(monkeypatch, answer="final")
-    request = OrchestratorRequest(messages="问题", agents=_agents(), agent_configs=_configs())
+    request = OrchestratorRequest(
+        messages="请检查当前项目文件并回答问题",
+        agents=_agents(),
+        agent_configs=_configs(),
+    )
     events = await _make_stream(monkeypatch, request)
 
     names = [name for name, _ in events]
@@ -846,7 +1012,11 @@ async def test_rework_context_includes_required_fixes_and_previous_output(monkey
     monkeypatch.setattr(
         "urgs_deepagents_service.orchestrator.orchestrator.run_review_with_feedback", fake_review_fb
     )
-    request = OrchestratorRequest(messages="问题", agents=_agents(), agent_configs=_configs())
+    request = OrchestratorRequest(
+        messages="请检查当前项目文件并回答问题",
+        agents=_agents(),
+        agent_configs=_configs(),
+    )
     events = await _make_stream(monkeypatch, request)
 
     assert contexts[0] == ""
@@ -872,7 +1042,11 @@ async def test_rework_fail_emits_quality_risk(monkeypatch) -> None:
         yield  # unreachable, make it an async generator
 
     monkeypatch.setattr(finalizer_mod, "stream_finalizer", fail_finalize)
-    request = OrchestratorRequest(messages="问题", agents=_agents(), agent_configs=_configs())
+    request = OrchestratorRequest(
+        messages="请检查当前项目文件并回答问题",
+        agents=_agents(),
+        agent_configs=_configs(),
+    )
     events = await _make_stream(monkeypatch, request)
 
     names = [name for name, _ in events]
@@ -999,7 +1173,7 @@ async def test_selected_agent_code_keeps_agent_and_still_classifies_complexity(m
         "urgs_deepagents_service.orchestrator.orchestrator.run_planner", fake_planner
     )
     request = OrchestratorRequest(
-        messages="问题",
+        messages="请分析当前项目文件并给出修改方案",
         agents=_agents(),
         agent_configs=_configs(),
         selected_agent_code="general-agent",

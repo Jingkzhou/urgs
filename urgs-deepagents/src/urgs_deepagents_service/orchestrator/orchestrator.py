@@ -41,6 +41,7 @@ from urgs_deepagents_service.orchestrator.state import (
     PlanStep,
     WorkerOutput,
 )
+from urgs_deepagents_service.orchestrator.task_policy import should_answer_directly
 from urgs_deepagents_service.orchestrator.utils import StreamContext, sse
 from urgs_deepagents_service.orchestrator.worker import run_worker
 from urgs_deepagents_service.regulatory_coverage import (
@@ -270,6 +271,15 @@ async def stream_orchestration(request: OrchestratorRequest, settings: Any) -> A
             routing.is_complex = True
             routing.reason = f"{routing.reason}；监管影响评估需要覆盖复核".lstrip("；")
 
+        direct_answer = should_answer_directly(
+            routing_agent_code,
+            user_message,
+            conversation_context,
+        )
+        if direct_answer:
+            routing.is_complex = False
+            routing.reason = f"{routing.reason}；无需访问工作区，直接解答".lstrip("；")
+
         state.routing = routing
         state.selected_agent_code = routing_agent_code
         yield emit(
@@ -326,6 +336,33 @@ async def stream_orchestration(request: OrchestratorRequest, settings: Any) -> A
 
         outputs: list[WorkerOutput] = []
         steps: list[PlanStep] = []
+
+        if direct_answer:
+            state.path = "direct"
+            cfg = get_config(routing.agent_code)
+            run = await run_worker(
+                model=model,
+                settings=settings,
+                agent_code=routing.agent_code,
+                agent_config=cfg,
+                task=user_message,
+                context=conversation_context,
+                stream_content=True,
+                debug=request.debug,
+                stream_context=context,
+                direct_answer=True,
+            )
+            async for evt in run.events():
+                yield evt
+            state.worker_outputs = [run.output]
+            yield emit(
+                "done",
+                done_payload(),
+                step_id="orchestrator.done",
+                status="completed",
+                message="直接解答完成",
+            )
+            return
 
         if not routing.is_complex:
             state.path = "simple"

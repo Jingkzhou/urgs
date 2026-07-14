@@ -28,7 +28,7 @@ StageStatus = Literal[
     "streaming",
     "skipped",
 ]
-ExecutionPath = Literal["simple", "complex", "handoff"]
+ExecutionPath = Literal["direct", "simple", "complex", "handoff"]
 
 
 class GuardResult(BaseModel):
