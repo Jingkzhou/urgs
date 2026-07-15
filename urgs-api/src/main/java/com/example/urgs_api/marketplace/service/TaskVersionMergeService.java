@@ -62,7 +62,7 @@ public class TaskVersionMergeService {
         }
 
         List<String> tokens = buildRequirementTokens(requirementNumber);
-        List<GitRepository> repos = findMergeCandidateRepositories(task, reviewerId);
+        List<GitRepository> repos = findMergeCandidateRepositories(task);
         if (repos.isEmpty()) {
             summary.addSkipped("未配置可自动合并的 Git 仓库");
             return summary;
@@ -459,12 +459,11 @@ public class TaskVersionMergeService {
                 || StringUtils.hasText(identity.getGitUserId()));
     }
 
-    private List<GitRepository> findMergeCandidateRepositories(WorkTask task, String reviewerId) {
-        Long reviewerUserId = parseLong(reviewerId);
+    private List<GitRepository> findMergeCandidateRepositories(WorkTask task) {
         Set<Long> involvedSystemIds = resolveInvolvedSystemIds(task);
-        List<GitRepository> repos = reviewerUserId == null
+        List<GitRepository> repos = involvedSystemIds.isEmpty()
                 ? gitRepositoryService.findAll()
-                : gitRepositoryService.findAll(reviewerUserId);
+                : gitRepositoryService.findBySsoIds(new ArrayList<>(involvedSystemIds));
         return repos.stream()
                 .filter(repo -> repo.getId() != null && !Boolean.FALSE.equals(repo.getEnabled()))
                 .filter(repo -> involvedSystemIds.isEmpty()

@@ -57,7 +57,7 @@ class TaskVersionMergeServiceTest {
     }
 
     @Test
-    void mergeOpenMasterPullRequests_usesReviewerVisibleReposWithinTaskSystems() {
+    void mergeOpenMasterPullRequests_usesTaskSystemReposRegardlessOfCreator() {
         Work work = new Work();
         work.setRequirementNumber("REQ-20260708");
 
@@ -79,12 +79,12 @@ class TaskVersionMergeServiceTest {
         targetRepo.setSsoId(200L);
         targetRepo.setEnabled(true);
 
-        when(gitRepositoryService.findAll(77L)).thenReturn(List.of(unrelatedRepo, targetRepo));
+        when(gitRepositoryService.findBySsoIds(List.of(200L))).thenReturn(List.of(targetRepo));
         when(gitPlatformService.getPullRequests(20L, "all", 1, 100)).thenReturn(List.of());
 
         taskVersionMergeService.mergeOpenMasterPullRequests(work, task, "77");
 
-        verify(gitRepositoryService).findAll(77L);
+        verify(gitRepositoryService).findBySsoIds(List.of(200L));
         verify(gitRepositoryService, never()).findAll();
         verify(gitPlatformService, never()).getPullRequests(10L, "all", 1, 100);
         verify(gitPlatformService).getPullRequests(20L, "all", 1, 100);
@@ -109,7 +109,7 @@ class TaskVersionMergeServiceTest {
         targetRepo.setEnabled(true);
         targetRepo.setFullName("team/repo");
 
-        when(gitRepositoryService.findAll(77L)).thenReturn(List.of(targetRepo));
+        when(gitRepositoryService.findBySsoIds(List.of(200L))).thenReturn(List.of(targetRepo));
         when(gitPlatformService.getPullRequests(20L, "all", 1, 100))
                 .thenThrow(new RuntimeException("获取 PR 列表失败: HTTP 401: {\"message\":\"401 Unauthorized\"}"));
 
