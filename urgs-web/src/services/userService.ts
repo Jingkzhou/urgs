@@ -18,6 +18,13 @@ export interface User {
 
 export type GitTokenStatus = Record<'gitee' | 'gitlab' | 'github', boolean>;
 
+export interface GitIdentity {
+    platform?: string;
+    gitUsername?: string;
+    gitEmail?: string;
+    gitUserId?: string;
+}
+
 export const userService = {
     // Check permissions
     getPermissions: async () => {
@@ -60,5 +67,13 @@ export const userService = {
 
     saveGitToken: async (platform: 'gitee' | 'gitlab' | 'github', accessToken: string) => {
         return put<void>(`${API_BASE}/profile/git-token`, { platform, accessToken });
+    },
+
+    getMyGitIdentity: async (platform: 'gitlab' = 'gitlab') => {
+        return get<GitIdentity>(`${API_BASE}/profile/git-identity?platform=${platform}`);
+    },
+
+    saveMyGitIdentity: async (data: GitIdentity) => {
+        return put<void>(`${API_BASE}/profile/git-identity`, { platform: 'gitlab', ...data });
     },
 };

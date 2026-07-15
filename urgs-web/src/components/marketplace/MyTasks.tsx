@@ -136,7 +136,7 @@ const MyTasks: React.FC<MyTasksProps> = ({ todoFocus }) => {
     };
 
     const isAssetReviewAdvance = (task: TaskMarketDTO) => {
-        return task.currentStage === 'TESTING' || task.currentStage === 'ASSET_REVIEW';
+        return task.currentStage === 'QUALITY_ACCEPTANCE_COMPLETED' || task.currentStage === 'ASSET_REVIEW';
     };
 
     const isIssueTrackingTask = (task: TaskMarketDTO) => {
@@ -438,7 +438,8 @@ const MyTasks: React.FC<MyTasksProps> = ({ todoFocus }) => {
 
     const getAdvanceButtonText = (task: TaskMarketDTO) => {
         if (isIssueTrackingTask(task)) return '完成任务';
-        if (task.currentStage === 'TESTING') return '完成测试，提交资产审核';
+        if (task.currentStage === 'TEST_SUBMISSION_COMPLETED') return '完成提测，进入质量验收';
+        if (task.currentStage === 'QUALITY_ACCEPTANCE_COMPLETED') return '完成质量验收，提交资产同步审核';
         if (task.currentStage === 'ASSET_REVIEW') return '重新提交资产审核';
         if (task.currentStage === 'LAUNCH') return '上线完成，进入验收';
         return `完成${getTaskStageLabel(task.currentStage)}阶段`;

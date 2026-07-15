@@ -47,9 +47,8 @@ import java.util.stream.Collectors;
 public class WorkTaskServiceImpl extends ServiceImpl<WorkTaskMapper, WorkTask> implements WorkTaskService {
     private static final String TASK_ROLE_MAIN = "MAIN";
     private static final String TASK_ROLE_SUB = "SUB";
-    private static final String STAGE_REQUIREMENT = "REQUIREMENT";
-    private static final String STAGE_DEVELOPMENT = "DEVELOPMENT";
-    private static final String STAGE_TESTING = "TESTING";
+    private static final String STAGE_TEST_SUBMISSION_COMPLETED = "TEST_SUBMISSION_COMPLETED";
+    private static final String STAGE_QUALITY_ACCEPTANCE_COMPLETED = "QUALITY_ACCEPTANCE_COMPLETED";
     private static final String STAGE_ASSET_REVIEW = "ASSET_REVIEW";
     private static final String STAGE_LAUNCH = "LAUNCH";
     private static final int TASK_LOG_DETAIL_MAX_LENGTH = 500;
@@ -395,7 +394,7 @@ public class WorkTaskServiceImpl extends ServiceImpl<WorkTaskMapper, WorkTask> i
             throw new IllegalStateException("当前状态不可提交验收");
         }
         if (!STAGE_LAUNCH.equals(resolveStage(task))) {
-            throw new IllegalStateException("请先完成需求、开发、测试、资产同步审核并进入上线阶段后再提交验收");
+            throw new IllegalStateException("请先完成提测、质量验收、资产同步审核并进入上线阶段后再提交验收");
         }
         if (TASK_ROLE_MAIN.equals(task.getTaskRole()) && !areAllSubTasksClosed(task.getWorkId())) {
             throw new IllegalStateException("请先完成所有子任务后再提交主任务验收");
@@ -666,7 +665,7 @@ public class WorkTaskServiceImpl extends ServiceImpl<WorkTaskMapper, WorkTask> i
                 task.setStatus(TaskStatus.WAITING_REVIEW.name());
                 task.setReviewComment(trimmedAssetReviewNote);
                 logTaskAction(taskId, userId, "STAGE_TO_ASSET_REVIEW",
-                        buildSubmitLogDetail("测试完成，进入资产同步审核", trimmedAssetReviewNote));
+                        buildSubmitLogDetail("质量验收完成，进入资产同步审核", trimmedAssetReviewNote));
             } else if (nextStage == null) {
                 task.setSubmittedAt(now);
                 task.setStatus(TaskStatus.WAITING_REVIEW.name());
@@ -1021,14 +1020,13 @@ public class WorkTaskServiceImpl extends ServiceImpl<WorkTaskMapper, WorkTask> i
     }
 
     private String resolveStage(WorkTask task) {
-        return StringUtils.hasText(task.getCurrentStage()) ? task.getCurrentStage() : STAGE_REQUIREMENT;
+        return StringUtils.hasText(task.getCurrentStage()) ? task.getCurrentStage() : STAGE_TEST_SUBMISSION_COMPLETED;
     }
 
     private String nextStage(String currentStage) {
         return switch (currentStage) {
-            case STAGE_REQUIREMENT -> STAGE_DEVELOPMENT;
-            case STAGE_DEVELOPMENT -> STAGE_TESTING;
-            case STAGE_TESTING -> STAGE_ASSET_REVIEW;
+            case STAGE_TEST_SUBMISSION_COMPLETED -> STAGE_QUALITY_ACCEPTANCE_COMPLETED;
+            case STAGE_QUALITY_ACCEPTANCE_COMPLETED -> STAGE_ASSET_REVIEW;
             default -> null;
         };
     }

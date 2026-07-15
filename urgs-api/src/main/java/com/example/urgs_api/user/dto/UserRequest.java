@@ -20,9 +20,6 @@ public class UserRequest {
     private String phone;
     private String lastLogin;
     private String status;
-    private String gitUsername;
-    private String gitEmail;
-    private String gitUserId;
 
     public String getEmpId() {
         return empId;
@@ -86,30 +83,6 @@ public class UserRequest {
 
     public void setStatus(String status) {
         this.status = status;
-    }
-
-    public String getGitUsername() {
-        return gitUsername;
-    }
-
-    public void setGitUsername(String gitUsername) {
-        this.gitUsername = gitUsername;
-    }
-
-    public String getGitEmail() {
-        return gitEmail;
-    }
-
-    public void setGitEmail(String gitEmail) {
-        this.gitEmail = gitEmail;
-    }
-
-    public String getGitUserId() {
-        return gitUserId;
-    }
-
-    public void setGitUserId(String gitUserId) {
-        this.gitUserId = gitUserId;
     }
 
     private String password;

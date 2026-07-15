@@ -30,14 +30,13 @@ export const getTaskStatusLabel = (status?: string) => {
 };
 
 export const taskStageLabelMap: Record<string, string> = {
-    REQUIREMENT: '需求',
-    DEVELOPMENT: '开发',
-    TESTING: '测试',
+    TEST_SUBMISSION_COMPLETED: '提测阶段完成',
+    QUALITY_ACCEPTANCE_COMPLETED: '质量验收完成',
     ASSET_REVIEW: '资产同步审核',
     LAUNCH: '上线',
 };
 
 export const getTaskStageLabel = (stage?: string) => {
-    if (!stage) return '需求';
+    if (!stage) return '提测阶段完成';
     return taskStageLabelMap[stage] || stage;
 };

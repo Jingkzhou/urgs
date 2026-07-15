@@ -32,9 +32,6 @@ export interface UserDTO {
     empId: string;
     roleName: string;
     avatarUrl?: string;
-    gitUsername?: string;
-    gitEmail?: string;
-    gitUserId?: string;
 }
 
 export interface UserGitIdentity {

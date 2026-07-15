@@ -33,7 +33,8 @@ const BasicInfo: React.FC<{ userInfo: UserInfo | null }> = ({ userInfo }) => {
     const [gitTokenPlatform, setGitTokenPlatform] = useState<'gitee' | 'gitlab' | 'github'>('gitlab');
     const [gitAccessToken, setGitAccessToken] = useState('');
     const [gitTokenStatus, setGitTokenStatus] = useState<Partial<Record<'gitee' | 'gitlab' | 'github', boolean>>>({});
-    const [isSavingGitToken, setIsSavingGitToken] = useState(false);
+    const [gitIdentity, setGitIdentity] = useState({ gitUsername: '', gitEmail: '', gitUserId: '' });
+    const [isSavingGitConfig, setIsSavingGitConfig] = useState(false);
 
     const loadGitTokenStatus = async () => {
         try {
@@ -45,6 +46,17 @@ const BasicInfo: React.FC<{ userInfo: UserInfo | null }> = ({ userInfo }) => {
 
     React.useEffect(() => {
         loadGitTokenStatus();
+        userService.getMyGitIdentity()
+            .then(identity => {
+                if (identity) {
+                    setGitIdentity({
+                        gitUsername: identity.gitUsername || '',
+                        gitEmail: identity.gitEmail || '',
+                        gitUserId: identity.gitUserId || '',
+                    });
+                }
+            })
+            .catch(error => console.error('Load Git identity failed', error));
     }, []);
 
     // Auto-fix missing ID
@@ -166,22 +178,29 @@ const BasicInfo: React.FC<{ userInfo: UserInfo | null }> = ({ userInfo }) => {
         }
     };
 
-    const saveGitToken = async () => {
-        if (!gitAccessToken.trim()) {
-            alert('请输入访问令牌');
+    const saveGitConfig = async () => {
+        const hasIdentity = Object.values(gitIdentity).some(value => value.trim());
+        const hasToken = Boolean(gitAccessToken.trim());
+        if (!hasIdentity && !hasToken) {
+            alert('请至少填写 Git 身份或访问令牌');
             return;
         }
-        setIsSavingGitToken(true);
+        setIsSavingGitConfig(true);
         try {
-            await userService.saveGitToken(gitTokenPlatform, gitAccessToken.trim());
+            if (gitTokenPlatform === 'gitlab') {
+                await userService.saveMyGitIdentity(gitIdentity);
+            }
+            if (hasToken) {
+                await userService.saveGitToken(gitTokenPlatform, gitAccessToken.trim());
+            }
             setGitAccessToken('');
             await loadGitTokenStatus();
-            alert('Git 访问令牌已保存');
+            alert('Git 配置已保存');
         } catch (error) {
-            console.error('Save Git token failed', error);
-            alert('Git 访问令牌保存失败');
+            console.error('Save Git config failed', error);
+            alert('Git 配置保存失败');
         } finally {
-            setIsSavingGitToken(false);
+            setIsSavingGitConfig(false);
         }
     };
 
@@ -304,11 +323,11 @@ const BasicInfo: React.FC<{ userInfo: UserInfo | null }> = ({ userInfo }) => {
                                 <KeyRound size={20} />
                             </div>
                             <div>
-                                <h3 className="text-sm font-black text-slate-700">Git 仓库访问令牌</h3>
-                                <p className="mt-1 text-xs text-slate-400">按平台保存一次；新增仓库时系统将使用此令牌验证访问权限。</p>
+                                <h3 className="text-sm font-black text-slate-700">Git 身份与仓库访问令牌</h3>
+                                <p className="mt-1 text-xs text-slate-400">身份仅由本人维护；访问令牌按平台保存，用于访问共享仓库。</p>
                             </div>
                         </div>
-                        <div className="flex flex-col gap-3 md:flex-row">
+                        <div className="grid grid-cols-1 gap-3 md:grid-cols-2">
                             <select
                                 value={gitTokenPlatform}
                                 onChange={(event) => setGitTokenPlatform(event.target.value as 'gitee' | 'gitlab' | 'github')}
@@ -318,20 +337,43 @@ const BasicInfo: React.FC<{ userInfo: UserInfo | null }> = ({ userInfo }) => {
                                 <option value="gitlab">GitLab</option>
                                 <option value="github">GitHub</option>
                             </select>
+                            {gitTokenPlatform === 'gitlab' && (
+                                <>
+                                    <input
+                                        value={gitIdentity.gitUsername}
+                                        onChange={(event) => setGitIdentity(prev => ({ ...prev, gitUsername: event.target.value }))}
+                                        placeholder="GitLab 用户名，如 liudan"
+                                        className="rounded-xl border border-slate-200 bg-white px-3 py-2 text-sm outline-none focus:border-red-300"
+                                    />
+                                    <input
+                                        type="email"
+                                        value={gitIdentity.gitEmail}
+                                        onChange={(event) => setGitIdentity(prev => ({ ...prev, gitEmail: event.target.value }))}
+                                        placeholder="提交邮箱，如 liudan@example.com"
+                                        className="rounded-xl border border-slate-200 bg-white px-3 py-2 text-sm outline-none focus:border-red-300"
+                                    />
+                                    <input
+                                        value={gitIdentity.gitUserId}
+                                        onChange={(event) => setGitIdentity(prev => ({ ...prev, gitUserId: event.target.value }))}
+                                        placeholder="Git 用户ID（可选）"
+                                        className="rounded-xl border border-slate-200 bg-white px-3 py-2 text-sm outline-none focus:border-red-300"
+                                    />
+                                </>
+                            )}
                             <input
                                 type="password"
                                 value={gitAccessToken}
                                 onChange={(event) => setGitAccessToken(event.target.value)}
                                 placeholder={gitTokenStatus[gitTokenPlatform] ? '已配置，输入新令牌可覆盖' : '请输入 Access Token'}
-                                className="min-w-0 flex-1 rounded-xl border border-slate-200 bg-white px-3 py-2 text-sm outline-none focus:border-red-300"
+                                className="min-w-0 rounded-xl border border-slate-200 bg-white px-3 py-2 text-sm outline-none focus:border-red-300"
                             />
                             <button
                                 type="button"
-                                onClick={saveGitToken}
-                                disabled={isSavingGitToken}
-                                className="rounded-xl bg-red-500 px-4 py-2 text-sm font-bold text-white transition-colors hover:bg-red-600 disabled:cursor-wait disabled:opacity-60"
+                                onClick={saveGitConfig}
+                                disabled={isSavingGitConfig}
+                                className="rounded-xl bg-red-500 px-4 py-2 text-sm font-bold text-white transition-colors hover:bg-red-600 disabled:cursor-wait disabled:opacity-60 md:col-span-2"
                             >
-                                {isSavingGitToken ? '保存中...' : '保存令牌'}
+                                {isSavingGitConfig ? '保存中...' : '保存 Git 配置'}
                             </button>
                         </div>
                     </div>

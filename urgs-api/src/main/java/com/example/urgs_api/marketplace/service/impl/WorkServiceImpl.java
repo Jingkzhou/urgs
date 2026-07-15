@@ -40,7 +40,7 @@ import java.util.stream.Collectors;
 public class WorkServiceImpl extends ServiceImpl<WorkMapper, Work> implements WorkService {
     private static final String TASK_ROLE_MAIN = "MAIN";
     private static final String TASK_ROLE_SUB = "SUB";
-    private static final String STAGE_REQUIREMENT = "REQUIREMENT";
+    private static final String STAGE_TEST_SUBMISSION_COMPLETED = "TEST_SUBMISSION_COMPLETED";
 
     @Autowired
     @org.springframework.context.annotation.Lazy
@@ -407,7 +407,7 @@ public class WorkServiceImpl extends ServiceImpl<WorkMapper, Work> implements Wo
         task.setWorkId(workId);
         task.setTaskRole(taskRole);
         task.setParentTaskId(parentTaskId);
-        task.setCurrentStage(taskDto.getCurrentStage() != null ? taskDto.getCurrentStage() : STAGE_REQUIREMENT);
+        task.setCurrentStage(taskDto.getCurrentStage() != null ? taskDto.getCurrentStage() : STAGE_TEST_SUBMISSION_COMPLETED);
         task.setStageRiskReported(false);
         task.setTitle(taskDto.getTitle());
         task.setDescription(taskDto.getDescription());
@@ -461,7 +461,7 @@ public class WorkServiceImpl extends ServiceImpl<WorkMapper, Work> implements Wo
         task.setSortOrder(sortOrder);
 
         if (task.getCurrentStage() == null || task.getCurrentStage().isBlank()) {
-            task.setCurrentStage(taskDto.getCurrentStage() != null ? taskDto.getCurrentStage() : STAGE_REQUIREMENT);
+            task.setCurrentStage(taskDto.getCurrentStage() != null ? taskDto.getCurrentStage() : STAGE_TEST_SUBMISSION_COMPLETED);
         }
         if (task.getStageRiskReported() == null) {
             task.setStageRiskReported(false);

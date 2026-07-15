@@ -4,11 +4,14 @@ import com.example.urgs_api.version.entity.GitRepository;
 import com.example.urgs_api.version.repository.GitRepositoryRepository;
 import com.example.urgs_api.user.mapper.UserGitIdentityMapper;
 import com.example.urgs_api.user.model.UserGitIdentity;
+import com.example.urgs_api.system.service.SysSystemService;
 import com.baomidou.mybatisplus.core.conditions.query.LambdaQueryWrapper;
 import lombok.RequiredArgsConstructor;
 import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
 import org.springframework.util.StringUtils;
+import org.springframework.web.context.request.RequestContextHolder;
+import org.springframework.web.context.request.RequestAttributes;
 import java.time.LocalDateTime;
 import java.util.List;
 import java.util.Optional;
@@ -24,6 +27,7 @@ public class GitRepositoryService {
 
     private final GitRepositoryRepository repository;
     private final UserGitIdentityMapper userGitIdentityMapper;
+    private final SysSystemService sysSystemService;
 
     /**
      * 按创建者过滤获取所有 Git 仓库
@@ -83,7 +87,9 @@ public class GitRepositoryService {
      * @return Optional 包装的仓库对象
      */
     public Optional<GitRepository> findById(Long id) {
-        return repository.findById(id).map(this::resolveAccessToken);
+        return repository.findById(id)
+                .filter(this::isAccessibleByCurrentUser)
+                .map(this::resolveAccessToken);
     }
 
     /**
@@ -101,11 +107,35 @@ public class GitRepositoryService {
     }
 
     private GitRepository resolveAccessToken(GitRepository repo) {
-        String token = getPersonalAccessToken(repo.getCreateBy(), repo.getPlatform());
-        if (StringUtils.hasText(token)) {
-            repo.setResolvedAccessToken(token);
+        Long currentUserId = getCurrentRequestUserId();
+        if (currentUserId != null) {
+            // 共享仓库必须使用当前登录用户的个人令牌，不能继承仓库创建人的权限。
+            repo.setResolvedAccessToken(getPersonalAccessToken(currentUserId, repo.getPlatform()));
+        } else {
+            String token = getPersonalAccessToken(repo.getCreateBy(), repo.getPlatform());
+            if (StringUtils.hasText(token)) {
+                repo.setResolvedAccessToken(token);
+            }
         }
         return repo;
+    }
+
+    private boolean isAccessibleByCurrentUser(GitRepository repo) {
+        Long currentUserId = getCurrentRequestUserId();
+        if (currentUserId == null) {
+            return true;
+        }
+        return sysSystemService.getSystems(currentUserId, false).stream()
+                .anyMatch(system -> java.util.Objects.equals(system.getId(), repo.getSsoId()));
+    }
+
+    private Long getCurrentRequestUserId() {
+        RequestAttributes attributes = RequestContextHolder.getRequestAttributes();
+        if (attributes == null) {
+            return null;
+        }
+        Object userId = attributes.getAttribute("userId", RequestAttributes.SCOPE_REQUEST);
+        return userId instanceof Long ? (Long) userId : null;
     }
 
     /**

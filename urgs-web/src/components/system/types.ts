@@ -33,9 +33,6 @@ export interface User {
     phone: string;
     lastLogin: string;
     status: 'active' | 'inactive';
-    gitUsername?: string;
-    gitEmail?: string;
-    gitUserId?: string;
 }
 
 export interface SsoConfig {

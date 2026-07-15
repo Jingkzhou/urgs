@@ -31,7 +31,7 @@ import java.util.Map;
 public class WorkTaskController {
     private static final String TASK_ROLE_MAIN = "MAIN";
     private static final String TASK_ROLE_SUB = "SUB";
-    private static final String STAGE_REQUIREMENT = "REQUIREMENT";
+    private static final String STAGE_TEST_SUBMISSION_COMPLETED = "TEST_SUBMISSION_COMPLETED";
 
     @Autowired
     private WorkTaskService workTaskService;
@@ -65,7 +65,7 @@ public class WorkTaskController {
         task.setWorkId(workId);
         task.setTaskRole(TASK_ROLE_SUB);
         task.setParentTaskId(findMainTaskId(workId));
-        task.setCurrentStage(dto.getCurrentStage() != null ? dto.getCurrentStage() : STAGE_REQUIREMENT);
+        task.setCurrentStage(dto.getCurrentStage() != null ? dto.getCurrentStage() : STAGE_TEST_SUBMISSION_COMPLETED);
         task.setStageRiskReported(false);
         task.setTitle(dto.getTitle());
         task.setDescription(dto.getDescription());

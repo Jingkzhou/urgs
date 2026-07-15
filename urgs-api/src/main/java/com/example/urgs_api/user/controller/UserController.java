@@ -5,6 +5,7 @@ import com.example.urgs_api.auth.annotation.RequirePermission;
 import com.example.urgs_api.user.dto.UserBatchImportResultDTO;
 import com.example.urgs_api.user.dto.UserDTO;
 import com.example.urgs_api.user.dto.UserGitIdentityDTO;
+import com.example.urgs_api.user.dto.UserGitIdentityRequest;
 import com.example.urgs_api.user.dto.UserGitTokenRequest;
 import com.example.urgs_api.user.dto.UserRequest;
 import com.example.urgs_api.user.mapper.UserGitIdentityMapper;
@@ -52,8 +53,7 @@ public class UserController {
             user.setPassword("123456");
         }
         userService.save(user);
-        saveGitIdentity(user.getId(), req);
-        return toDtoWithGitIdentity(user);
+        return UserDTO.fromEntity(user);
     }
 
     @PostMapping("/{id}/reset-password")
@@ -75,8 +75,7 @@ public class UserController {
         User user = toEntity(req, id);
         validateUniqueEmpId(user.getEmpId(), id);
         userService.updateById(user);
-        saveGitIdentity(id, req);
-        return ResponseEntity.ok(toDtoWithGitIdentity(userService.getById(id)));
+        return ResponseEntity.ok(UserDTO.fromEntity(userService.getById(id)));
     }
 
     @DeleteMapping("/{id}")
@@ -103,6 +102,7 @@ public class UserController {
     }
 
     @GetMapping("/{id}/git-identity")
+    @RequirePermission("marketplace:review")
     public ResponseEntity<UserGitIdentityDTO> getGitIdentity(
             @PathVariable("id") String id,
             @RequestParam(required = false, defaultValue = DEFAULT_GIT_PLATFORM) String platform) {
@@ -116,6 +116,33 @@ public class UserController {
             return ResponseEntity.noContent().build();
         }
         return ResponseEntity.ok(UserGitIdentityDTO.fromEntity(identity));
+    }
+
+    /** 当前登录用户的 Git 身份，仅允许本人读取。 */
+    @GetMapping("/profile/git-identity")
+    public ResponseEntity<UserGitIdentityDTO> getMyGitIdentity(
+            @RequestAttribute(value = "userId", required = false) Long userId,
+            @RequestParam(required = false, defaultValue = DEFAULT_GIT_PLATFORM) String platform) {
+        if (userId == null) {
+            return ResponseEntity.status(HttpStatus.UNAUTHORIZED).build();
+        }
+        UserGitIdentity identity = findGitIdentity(userId, platform);
+        if (identity == null || !Boolean.TRUE.equals(identity.getEnabled())) {
+            return ResponseEntity.noContent().build();
+        }
+        return ResponseEntity.ok(UserGitIdentityDTO.fromEntity(identity));
+    }
+
+    /** 当前登录用户的 Git 身份，仅允许本人维护。 */
+    @PutMapping("/profile/git-identity")
+    public ResponseEntity<Void> saveMyGitIdentity(
+            @RequestAttribute(value = "userId", required = false) Long userId,
+            @RequestBody UserGitIdentityRequest req) {
+        if (userId == null) {
+            return ResponseEntity.status(HttpStatus.UNAUTHORIZED).build();
+        }
+        saveGitIdentity(userId, req);
+        return ResponseEntity.noContent().build();
     }
 
     @GetMapping("/permissions")
@@ -229,39 +256,7 @@ public class UserController {
         if (users == null || users.isEmpty()) {
             return List.of();
         }
-
-        List<Long> userIds = users.stream()
-                .map(User::getId)
-                .filter(id -> id != null)
-                .collect(Collectors.toList());
-        Map<Long, UserGitIdentity> identityMap = userIds.isEmpty() ? Map.of()
-                : userGitIdentityMapper.selectList(new LambdaQueryWrapper<UserGitIdentity>()
-                        .in(UserGitIdentity::getUserId, userIds)
-                        .eq(UserGitIdentity::getPlatform, DEFAULT_GIT_PLATFORM)
-                        .eq(UserGitIdentity::getEnabled, true))
-                        .stream()
-                        .collect(Collectors.toMap(UserGitIdentity::getUserId, identity -> identity, (left, right) -> left));
-
-        return users.stream()
-                .map(user -> attachGitIdentity(UserDTO.fromEntity(user), identityMap.get(user.getId())))
-                .collect(Collectors.toList());
-    }
-
-    private UserDTO toDtoWithGitIdentity(User user) {
-        if (user == null) {
-            return null;
-        }
-        return attachGitIdentity(UserDTO.fromEntity(user), findGitIdentity(user.getId(), DEFAULT_GIT_PLATFORM));
-    }
-
-    private UserDTO attachGitIdentity(UserDTO dto, UserGitIdentity identity) {
-        if (dto == null || identity == null || !Boolean.TRUE.equals(identity.getEnabled())) {
-            return dto;
-        }
-        dto.setGitUsername(identity.getGitUsername());
-        dto.setGitEmail(identity.getGitEmail());
-        dto.setGitUserId(identity.getGitUserId());
-        return dto;
+        return users.stream().map(UserDTO::fromEntity).collect(Collectors.toList());
     }
 
     private UserGitIdentity findGitIdentity(Long userId, String platform) {
@@ -303,14 +298,15 @@ public class UserController {
         }
     }
 
-    private void saveGitIdentity(Long userId, UserRequest req) {
+    private void saveGitIdentity(Long userId, UserGitIdentityRequest req) {
         if (userId == null || req == null) {
             return;
         }
+        String platform = normalizeGitPlatform(req.getPlatform());
         String gitUsername = trimToNull(req.getGitUsername());
         String gitEmail = trimToNull(req.getGitEmail());
         String gitUserId = trimToNull(req.getGitUserId());
-        UserGitIdentity existing = findGitIdentity(userId, DEFAULT_GIT_PLATFORM);
+        UserGitIdentity existing = findGitIdentity(userId, platform);
 
         if (!StringUtils.hasText(gitUsername) && !StringUtils.hasText(gitEmail) && !StringUtils.hasText(gitUserId)) {
             if (existing != null && !StringUtils.hasText(existing.getAccessToken())) {
@@ -321,7 +317,7 @@ public class UserController {
 
         UserGitIdentity identity = existing == null ? new UserGitIdentity() : existing;
         identity.setUserId(userId);
-        identity.setPlatform(DEFAULT_GIT_PLATFORM);
+        identity.setPlatform(platform);
         identity.setGitUsername(gitUsername);
         identity.setGitEmail(gitEmail);
         identity.setGitUserId(gitUserId);

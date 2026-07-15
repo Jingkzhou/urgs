@@ -58,7 +58,7 @@ export interface WorkTaskCreateDTO {
     stageUpdatedAt?: string;
 }
 
-export type TaskStage = 'REQUIREMENT' | 'DEVELOPMENT' | 'TESTING' | 'ASSET_REVIEW' | 'LAUNCH';
+export type TaskStage = 'TEST_SUBMISSION_COMPLETED' | 'QUALITY_ACCEPTANCE_COMPLETED' | 'ASSET_REVIEW' | 'LAUNCH';
 
 export interface TaskAuditLogDTO {
     id: string;

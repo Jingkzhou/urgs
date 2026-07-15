@@ -57,8 +57,17 @@ public class GitRepository {
     @JsonIgnore
     private String resolvedAccessToken;
 
+    @Transient
+    @JsonIgnore
+    private boolean accessTokenResolved;
+
     public String getAccessToken() {
-        return resolvedAccessToken != null ? resolvedAccessToken : accessToken;
+        return accessTokenResolved ? resolvedAccessToken : accessToken;
+    }
+
+    public void setResolvedAccessToken(String resolvedAccessToken) {
+        this.resolvedAccessToken = resolvedAccessToken;
+        this.accessTokenResolved = true;
     }
 
     /** Webhook Secret */

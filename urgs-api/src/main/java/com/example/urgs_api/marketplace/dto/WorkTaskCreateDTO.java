@@ -21,5 +21,5 @@ public class WorkTaskCreateDTO {
     private LocalDateTime deadline;
     private String taskRole; // MAIN/SUB
     private String parentTaskId;
-    private String currentStage; // REQUIREMENT/DEVELOPMENT/TESTING/ASSET_REVIEW/LAUNCH
+    private String currentStage; // TEST_SUBMISSION_COMPLETED/QUALITY_ACCEPTANCE_COMPLETED/ASSET_REVIEW/LAUNCH
 }
