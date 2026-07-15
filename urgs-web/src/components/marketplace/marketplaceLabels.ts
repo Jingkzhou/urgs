@@ -32,7 +32,7 @@ export const getTaskStatusLabel = (status?: string) => {
 export const taskStageLabelMap: Record<string, string> = {
     TEST_SUBMISSION_COMPLETED: '提测阶段完成',
     QUALITY_ACCEPTANCE_COMPLETED: '质量验收完成',
-    ASSET_REVIEW: '资产同步审核',
+    ASSET_REVIEW: '资产审核准备',
     LAUNCH: '上线',
 };
 

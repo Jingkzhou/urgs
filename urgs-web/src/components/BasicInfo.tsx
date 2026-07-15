@@ -1,6 +1,7 @@
 import React, { useRef, useState } from 'react';
 import { User, Phone, Building, Briefcase, Camera, Shield, KeyRound } from 'lucide-react';
 import { userService } from '../services/userService';
+import { hasPermission } from '../utils/permission';
 
 const DEFAULT_AVATARS = ['avatar', 'animal-avatar'].flatMap(prefix =>
     Array.from(
@@ -23,6 +24,9 @@ interface UserInfo {
 }
 
 const BasicInfo: React.FC<{ userInfo: UserInfo | null }> = ({ userInfo }) => {
+    const canEditBasicInfo = hasPermission('profile:basic');
+    const canManageGitIdentity = hasPermission('profile:git-identity');
+    const canManageGitToken = hasPermission('profile:git-token');
     // Mock extended info if not present
     const [displayInfo, setDisplayInfo] = useState({
         ...userInfo,
@@ -45,7 +49,12 @@ const BasicInfo: React.FC<{ userInfo: UserInfo | null }> = ({ userInfo }) => {
     };
 
     React.useEffect(() => {
-        loadGitTokenStatus();
+        if (canManageGitToken) {
+            loadGitTokenStatus();
+        }
+        if (!canManageGitIdentity) {
+            return;
+        }
         userService.getMyGitIdentity()
             .then(identity => {
                 if (identity) {
@@ -57,7 +66,7 @@ const BasicInfo: React.FC<{ userInfo: UserInfo | null }> = ({ userInfo }) => {
                 }
             })
             .catch(error => console.error('Load Git identity failed', error));
-    }, []);
+    }, [canManageGitIdentity, canManageGitToken]);
 
     // Auto-fix missing ID
     React.useEffect(() => {
@@ -187,10 +196,10 @@ const BasicInfo: React.FC<{ userInfo: UserInfo | null }> = ({ userInfo }) => {
         }
         setIsSavingGitConfig(true);
         try {
-            if (gitTokenPlatform === 'gitlab') {
+            if (gitTokenPlatform === 'gitlab' && canManageGitIdentity) {
                 await userService.saveMyGitIdentity(gitIdentity);
             }
-            if (hasToken) {
+            if (hasToken && canManageGitToken) {
                 await userService.saveGitToken(gitTokenPlatform, gitAccessToken.trim());
             }
             setGitAccessToken('');
@@ -274,7 +283,7 @@ const BasicInfo: React.FC<{ userInfo: UserInfo | null }> = ({ userInfo }) => {
                         </div>
                     </div>
 
-                    <div className="mb-10 rounded-[1.75rem] border border-slate-100 bg-slate-50/70 p-5">
+                    {canEditBasicInfo && <div className="mb-10 rounded-[1.75rem] border border-slate-100 bg-slate-50/70 p-5">
                         <div className="mb-4 flex flex-wrap items-center justify-between gap-3">
                             <div>
                                 <h3 className="text-sm font-black text-slate-700">选择默认头像</h3>
@@ -315,9 +324,9 @@ const BasicInfo: React.FC<{ userInfo: UserInfo | null }> = ({ userInfo }) => {
                                 );
                             })}
                         </div>
-                    </div>
+                    </div>}
 
-                    <div className="mt-6 rounded-[1.75rem] border border-slate-100 bg-slate-50/70 p-5">
+                    {(canManageGitIdentity || canManageGitToken) && <div className="mt-6 rounded-[1.75rem] border border-slate-100 bg-slate-50/70 p-5">
                         <div className="mb-4 flex items-center gap-3">
                             <div className="rounded-xl bg-white p-3 text-red-500 shadow-sm">
                                 <KeyRound size={20} />
@@ -337,7 +346,7 @@ const BasicInfo: React.FC<{ userInfo: UserInfo | null }> = ({ userInfo }) => {
                                 <option value="gitlab">GitLab</option>
                                 <option value="github">GitHub</option>
                             </select>
-                            {gitTokenPlatform === 'gitlab' && (
+                            {gitTokenPlatform === 'gitlab' && canManageGitIdentity && (
                                 <>
                                     <input
                                         value={gitIdentity.gitUsername}
@@ -360,23 +369,23 @@ const BasicInfo: React.FC<{ userInfo: UserInfo | null }> = ({ userInfo }) => {
                                     />
                                 </>
                             )}
-                            <input
+                            {canManageGitToken && <input
                                 type="password"
                                 value={gitAccessToken}
                                 onChange={(event) => setGitAccessToken(event.target.value)}
                                 placeholder={gitTokenStatus[gitTokenPlatform] ? '已配置，输入新令牌可覆盖' : '请输入 Access Token'}
                                 className="min-w-0 rounded-xl border border-slate-200 bg-white px-3 py-2 text-sm outline-none focus:border-red-300"
-                            />
+                            />}
                             <button
                                 type="button"
                                 onClick={saveGitConfig}
-                                disabled={isSavingGitConfig}
+                                disabled={isSavingGitConfig || (!canManageGitIdentity && !gitAccessToken.trim())}
                                 className="rounded-xl bg-red-500 px-4 py-2 text-sm font-bold text-white transition-colors hover:bg-red-600 disabled:cursor-wait disabled:opacity-60 md:col-span-2"
                             >
                                 {isSavingGitConfig ? '保存中...' : '保存 Git 配置'}
                             </button>
                         </div>
-                    </div>
+                    </div>}
 
                     {/* Information Grid */}
                     <div className="grid grid-cols-1 md:grid-cols-2 gap-6">

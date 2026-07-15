@@ -120,6 +120,7 @@ public class UserController {
 
     /** 当前登录用户的 Git 身份，仅允许本人读取。 */
     @GetMapping("/profile/git-identity")
+    @RequirePermission("profile:git-identity")
     public ResponseEntity<UserGitIdentityDTO> getMyGitIdentity(
             @RequestAttribute(value = "userId", required = false) Long userId,
             @RequestParam(required = false, defaultValue = DEFAULT_GIT_PLATFORM) String platform) {
@@ -135,6 +136,7 @@ public class UserController {
 
     /** 当前登录用户的 Git 身份，仅允许本人维护。 */
     @PutMapping("/profile/git-identity")
+    @RequirePermission("profile:git-identity")
     public ResponseEntity<Void> saveMyGitIdentity(
             @RequestAttribute(value = "userId", required = false) Long userId,
             @RequestBody UserGitIdentityRequest req) {
@@ -155,6 +157,7 @@ public class UserController {
     }
 
     @PostMapping("/change-password")
+    @RequirePermission("profile:password")
     public ResponseEntity<String> changePassword(
             @RequestAttribute(value = "userId", required = false) Long userId,
             @RequestBody com.example.urgs_api.user.dto.ChangePasswordRequest req) {
@@ -171,6 +174,7 @@ public class UserController {
     }
 
     @PostMapping("/profile")
+    @RequirePermission("profile:basic")
     public ResponseEntity<UserDTO> updateProfile(
             @RequestAttribute(value = "userId", required = false) Long userId,
             @RequestBody UserDTO req) {
@@ -193,6 +197,7 @@ public class UserController {
     }
 
     @GetMapping("/profile/git-tokens")
+    @RequirePermission("profile:git-token")
     public ResponseEntity<Map<String, Boolean>> getMyGitTokenStatus(
             @RequestAttribute(value = "userId", required = false) Long userId) {
         if (userId == null) {
@@ -209,6 +214,7 @@ public class UserController {
     }
 
     @PutMapping("/profile/git-token")
+    @RequirePermission("profile:git-token")
     public ResponseEntity<Void> saveMyGitToken(
             @RequestAttribute(value = "userId", required = false) Long userId,
             @RequestBody UserGitTokenRequest req) {

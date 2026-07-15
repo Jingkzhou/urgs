@@ -59,6 +59,12 @@ public class PermissionSeedProvider {
         list.add(new PermissionDTO(null, "数据源配置", "sys:datasource", "menu", "/admin/datasource", 1, "3"));
         list.add(new PermissionDTO(null, "查询", "datasource:list", "button", "-", 2, "3-6"));
 
+        list.add(new PermissionDTO(null, "Git 仓库管理", "sys:repo", "menu", "/admin/git-repos", 1, "3"));
+        list.add(new PermissionDTO(null, "查询", "sys:repo:query", "button", "-", 2, "3-8"));
+        list.add(new PermissionDTO(null, "新增", "sys:repo:add", "button", "-", 2, "3-8"));
+        list.add(new PermissionDTO(null, "编辑", "sys:repo:edit", "button", "-", 2, "3-8"));
+        list.add(new PermissionDTO(null, "删除", "sys:repo:del", "button", "-", 2, "3-8"));
+
         list.add(new PermissionDTO(null, "首页指标走势配置", "sys:metric", "menu", "/admin/metric", 1, "3"));
         list.add(new PermissionDTO(null, "查询", "sys:metric:query", "button", "-", 2, "3-9"));
         list.add(new PermissionDTO(null, "新增", "sys:metric:add", "button", "-", 2, "3-9"));
@@ -69,6 +75,12 @@ public class PermissionSeedProvider {
         list.add(new PermissionDTO(null, "查询", "sys:monitor:query", "button", "-", 3, "6-3-1"));
         list.add(new PermissionDTO(null, "阈值配置", "sys:monitor:config", "button", "-", 3, "6-3-1"));
         list.add(new PermissionDTO(null, "立即采集", "sys:monitor:collect", "button", "-", 3, "6-3-1"));
+
+        list.add(new PermissionDTO(null, "个人信息", "profile", "menu", "/profile", 0, "root"));
+        list.add(new PermissionDTO(null, "基本资料", "profile:basic", "button", "-", 1, "11"));
+        list.add(new PermissionDTO(null, "Git 身份", "profile:git-identity", "button", "-", 1, "11"));
+        list.add(new PermissionDTO(null, "仓库访问令牌", "profile:git-token", "button", "-", 1, "11"));
+        list.add(new PermissionDTO(null, "修改密码", "profile:password", "button", "-", 1, "11"));
         return list;
     }
 }

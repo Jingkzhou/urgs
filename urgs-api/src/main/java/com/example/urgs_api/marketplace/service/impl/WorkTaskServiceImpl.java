@@ -642,6 +642,8 @@ public class WorkTaskServiceImpl extends ServiceImpl<WorkTaskMapper, WorkTask> i
         }
 
         String currentStage = resolveStage(task);
+        boolean assetReviewResubmission = STAGE_ASSET_REVIEW.equals(currentStage)
+                && TaskStatus.REWORK.name().equals(task.getStatus());
         LocalDateTime now = LocalDateTime.now();
         String trimmedAssetReviewNote = StringUtils.hasText(assetReviewNote) ? assetReviewNote.trim() : null;
 
@@ -655,17 +657,19 @@ public class WorkTaskServiceImpl extends ServiceImpl<WorkTaskMapper, WorkTask> i
             task.setSubmittedAt(now);
             task.setStatus(TaskStatus.WAITING_REVIEW.name());
             task.setReviewComment(trimmedAssetReviewNote);
-            logTaskAction(taskId, userId, "ASSET_REVIEW_RESUBMIT",
-                    buildSubmitLogDetail("重新提交资产同步审核", trimmedAssetReviewNote));
+            String action = assetReviewResubmission
+                    ? "ASSET_REVIEW_RESUBMIT"
+                    : "ASSET_REVIEW_SUBMIT";
+            logTaskAction(taskId, userId, action,
+                    buildSubmitLogDetail(action.equals("ASSET_REVIEW_RESUBMIT")
+                            ? "重新提交资产同步审核"
+                            : "提交资产同步审核", trimmedAssetReviewNote));
         } else {
             String nextStage = nextStage(currentStage);
             if (STAGE_ASSET_REVIEW.equals(nextStage)) {
                 task.setCurrentStage(nextStage);
-                task.setSubmittedAt(now);
-                task.setStatus(TaskStatus.WAITING_REVIEW.name());
-                task.setReviewComment(trimmedAssetReviewNote);
                 logTaskAction(taskId, userId, "STAGE_TO_ASSET_REVIEW",
-                        buildSubmitLogDetail("质量验收完成，进入资产同步审核", trimmedAssetReviewNote));
+                        "质量验收完成，进入资产审核准备");
             } else if (nextStage == null) {
                 task.setSubmittedAt(now);
                 task.setStatus(TaskStatus.WAITING_REVIEW.name());

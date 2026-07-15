@@ -272,21 +272,21 @@ const App: React.FC = () => {
 
             <div className="h-px bg-slate-100/80 my-1 mx-2"></div>
 
-            <button
+            {hasPermission('profile') && <button
                 onClick={() => { setActiveTab('basic_info'); window.location.hash = '#/basic_info'; setShowUserMenu(false); }}
                 className="w-full flex items-center gap-4 px-4 py-3 text-[11px] font-black uppercase tracking-[0.15em] text-slate-500 hover:text-red-600 hover:bg-red-50/50 rounded-xl transition-all group"
             >
                 <User size={16} strokeWidth={2.5} className="group-hover:scale-110 transition-transform" />
                 <span>个人信息</span>
-            </button>
+            </button>}
 
-            <button
+            {hasPermission('profile:password') && <button
                 onClick={handleChangePassword}
                 className="w-full flex items-center gap-4 px-4 py-3 text-[11px] font-black uppercase tracking-[0.15em] text-slate-500 hover:text-red-600 hover:bg-red-50/50 rounded-xl transition-all group"
             >
                 <Lock size={16} strokeWidth={2.5} className="group-hover:scale-110 transition-transform" />
                 <span>修改密码</span>
-            </button>
+            </button>}
 
             <div className="h-px bg-slate-100 my-2 mx-2"></div>
 
@@ -547,7 +547,7 @@ const App: React.FC = () => {
                                 {activeTab === 'tools' && <ToolsPage />}
                                 {activeTab === 'knowledge' && <KnowledgeCenter />}
                                 {activeTab === 'marketplace' && <MarketplacePage />}
-                                {activeTab === 'basic_info' && <BasicInfo userInfo={userInfo} />}
+                                {activeTab === 'basic_info' && hasPermission('profile') && <BasicInfo userInfo={userInfo} />}
                             </div>
                         </main>
                     </div>

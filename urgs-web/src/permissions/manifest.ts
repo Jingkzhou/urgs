@@ -7,7 +7,7 @@ export interface PermissionManifestMeta {
 }
 
 export const manifestMeta: PermissionManifestMeta = {
-    version: '1.0.0',
+    version: '1.0.2',
     generatedAt: new Date().toISOString(),
     source: 'front-end-manifest',
 };
@@ -74,12 +74,13 @@ export const permissionManifest: FunctionPoint[] = [
 
     { id: '3-6', name: '数据源配置', code: 'sys:datasource', type: 'menu', path: '/admin/datasource', level: 1, parentId: '3' },
 
-    { id: '3-6-1', name: 'Git 仓库管理', code: 'sys:repo', type: 'menu', path: '/admin/git-repos', level: 1, parentId: '3' },
-    { id: '3-6-1-1', name: '查询', code: 'sys:repo:query', type: 'button', path: '-', level: 2, parentId: '3-6-1' },
-    { id: '3-6-1-2', name: '新增', code: 'sys:repo:add', type: 'button', path: '-', level: 2, parentId: '3-6-1' },
-    { id: '3-6-1-3', name: '编辑', code: 'sys:repo:edit', type: 'button', path: '-', level: 2, parentId: '3-6-1' },
-    { id: '3-6-1-4', name: '删除', code: 'sys:repo:del', type: 'button', path: '-', level: 2, parentId: '3-6-1' },
     { id: '3-6-1', name: '查询', code: 'datasource:list', type: 'button', path: '-', level: 2, parentId: '3-6' },
+
+    { id: '3-8', name: 'Git 仓库管理', code: 'sys:repo', type: 'menu', path: '/admin/git-repos', level: 1, parentId: '3' },
+    { id: '3-8-1', name: '查询', code: 'sys:repo:query', type: 'button', path: '-', level: 2, parentId: '3-8' },
+    { id: '3-8-2', name: '新增', code: 'sys:repo:add', type: 'button', path: '-', level: 2, parentId: '3-8' },
+    { id: '3-8-3', name: '编辑', code: 'sys:repo:edit', type: 'button', path: '-', level: 2, parentId: '3-8' },
+    { id: '3-8-4', name: '删除', code: 'sys:repo:del', type: 'button', path: '-', level: 2, parentId: '3-8' },
     { id: '3-7', name: 'AI 管理', code: 'sys:ai', type: 'menu', path: '/admin/ai', level: 1, parentId: '3' },
     // API 管理模块
     { id: '3-7-1', name: 'API 管理', code: 'sys:ai:api', type: 'menu', path: '/admin/ai/api', level: 2, parentId: '3-7' },
@@ -115,6 +116,12 @@ export const permissionManifest: FunctionPoint[] = [
     { id: '9-6', name: '规则配置', code: 'marketplace:rules', type: 'menu', path: '/marketplace/rules', level: 1, parentId: '9' },
     { id: '10', name: '工具', code: 'tools', type: 'menu', path: '/tools', level: 0, parentId: 'root' },
     { id: '10-1', name: '在线文档', code: 'tools:online-docs', type: 'menu', path: '/tools/online-docs', level: 1, parentId: '10' },
+
+    { id: '11', name: '个人信息', code: 'profile', type: 'menu', path: '/profile', level: 0, parentId: 'root' },
+    { id: '11-1', name: '基本资料', code: 'profile:basic', type: 'button', path: '-', level: 1, parentId: '11' },
+    { id: '11-2', name: 'Git 身份', code: 'profile:git-identity', type: 'button', path: '-', level: 1, parentId: '11' },
+    { id: '11-3', name: '仓库访问令牌', code: 'profile:git-token', type: 'button', path: '-', level: 1, parentId: '11' },
+    { id: '11-4', name: '修改密码', code: 'profile:password', type: 'button', path: '-', level: 1, parentId: '11' },
 
     // ================= Level 1 子菜单 =================
 
