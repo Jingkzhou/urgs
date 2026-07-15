@@ -74,7 +74,11 @@ urgs-deepagents/src/*.egg-info/
 
 # AI 工具配置（仅本地保留）
 .agent/
-.agents/
+.agents/*
+!.agents/skills/
+.agents/skills/*
+!.agents/skills/sql-to-asset-caliber/
+!.agents/skills/sql-to-asset-caliber/**
 .claude/
 .codex/
 dist-packages/

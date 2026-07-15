@@ -1,0 +1,4 @@
+interface:
+  display_name: "监管集市智能助手"
+  short_description: "咨询监管集市资产并生成经过静态校验的指标加工 SQL 草稿"
+  default_prompt: "Use $regulatory-market-assistant to explain available regulatory-market assets or develop a validated indicator SQL draft."

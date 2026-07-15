@@ -1,0 +1,21 @@
+{
+  "skill_code": "regulatory-market-assistant",
+  "version": 1,
+  "enabled": true,
+  "agent_code": "regulatory-market-assistant-agent",
+  "runtime_entrypoint": "runtime.py",
+  "permission": "ai:regulatory-query:use",
+  "tools": [
+    "search_regulatory_assets",
+    "get_regulatory_table",
+    "get_regulatory_element",
+    "get_regulatory_code_values",
+    "get_regulatory_relationships",
+    "build_indicator_context",
+    "validate_generated_sql"
+  ],
+  "api": {
+    "url_env": "DEEPAGENTS_URGS_API_URL",
+    "token_env": "DEEPAGENTS_INTERNAL_API_TOKEN"
+  }
+}

@@ -1,0 +1,43 @@
+{
+  "suite": "regulatory-market-assistant-real-scenarios-v1",
+  "status": "accepted",
+  "evaluated_at": "2026-07-15",
+  "result_file": "accepted-result.jsonl",
+  "baseline": {
+    "total": 30,
+    "passed": 18,
+    "failed": 12,
+    "pass_rate": 0.6,
+    "average_duration_seconds": 17.5498,
+    "maximum_duration_seconds": 89.702,
+    "total_tool_calls": 173,
+    "maximum_tool_calls": 39
+  },
+  "accepted": {
+    "total": 30,
+    "passed": 30,
+    "failed": 0,
+    "pass_rate": 1.0,
+    "average_score": 1.0,
+    "average_duration_seconds": 11.6359,
+    "p95_duration_seconds": 24.152,
+    "maximum_duration_seconds": 26.822,
+    "total_tool_calls": 90,
+    "maximum_tool_calls": 8
+  },
+  "category_results": {
+    "表咨询": "3/3",
+    "字段码值": "4/4",
+    "多表关系": "1/1",
+    "指标开发": "6/6",
+    "SQL校验": "2/2",
+    "多轮衔接": "2/2",
+    "权限范围": "1/1",
+    "能力边界": "2/2",
+    "证据边界": "3/3",
+    "只读安全": "3/3",
+    "抗注入": "1/1",
+    "抗幻觉": "2/2"
+  },
+  "verification_note": "使用真实模型、真实本地监管集市 API 和真实资产数据；确定性断言用于回归门禁，source_truth 保留供业务专家复核。"
+}

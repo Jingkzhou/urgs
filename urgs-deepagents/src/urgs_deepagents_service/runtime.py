@@ -36,6 +36,8 @@ DEFAULT_RECURSION_LIMIT = 100
 REGULATORY_KNOWLEDGE_AGENT_CODE = "regulatory-knowledge-agent"
 REGULATORY_KNOWLEDGE_TOOL_CALL_HARD_LIMIT = 30
 REGULATORY_KNOWLEDGE_MIN_RECURSION_LIMIT = REGULATORY_KNOWLEDGE_TOOL_CALL_HARD_LIMIT * 8
+REGULATORY_MARKET_ASSISTANT_AGENT_CODE = "regulatory-market-assistant-agent"
+REGULATORY_MARKET_ASSISTANT_TOOL_CALL_HARD_LIMIT = 14
 TOOL_LOOP_HISTORY_SIZE = 30
 TOOL_LOOP_WARNING_THRESHOLD = 4
 TOOL_LOOP_CRITICAL_THRESHOLD = 8
@@ -99,7 +101,7 @@ def _tool_name(tool: Any) -> str | None:
 
 
 class ToolVisibilityMiddleware(AgentMiddleware[Any, Any, Any]):
-    """Filter tools visible to the model on every model call."""
+    """Filter visible tools and reject hidden tool calls at execution time."""
 
     def __init__(
         self,
@@ -117,11 +119,36 @@ class ToolVisibilityMiddleware(AgentMiddleware[Any, Any, Any]):
             return [tool for tool in tools if _tool_name(tool) not in self.excluded]
         return tools
 
+    def _is_allowed(self, name: str) -> bool:
+        if self.allowed is not None:
+            return name in self.allowed
+        return name not in self.excluded
+
+    @staticmethod
+    def _denied_tool_message(tool_call: ToolCall) -> ToolMessage:
+        name = str(tool_call.get("name") or "")
+        return ToolMessage(
+            content=f"工具 {name} 不在当前 Agent 的允许清单中，请使用已授权工具完成任务。",
+            tool_call_id=str(tool_call.get("id") or "denied-tool-call"),
+            name=name or None,
+            status="error",
+        )
+
     def wrap_model_call(self, request: Any, handler: Any) -> Any:
         return handler(request.override(tools=self._filter_tools(request.tools)))
 
     async def awrap_model_call(self, request: Any, handler: Any) -> Any:
         return await handler(request.override(tools=self._filter_tools(request.tools)))
+
+    def wrap_tool_call(self, request: Any, handler: Any) -> Any:
+        if not self._is_allowed(str(request.tool_call.get("name") or "")):
+            return self._denied_tool_message(request.tool_call)
+        return handler(request)
+
+    async def awrap_tool_call(self, request: Any, handler: Any) -> Any:
+        if not self._is_allowed(str(request.tool_call.get("name") or "")):
+            return self._denied_tool_message(request.tool_call)
+        return await handler(request)
 
 
 class BusinessToolCallLimitMiddleware(ToolCallLimitMiddleware):
@@ -384,6 +411,523 @@ class RegulatoryRetrievalGateMiddleware(AgentMiddleware[Any, Any, Any]):
         return self.after_model(state, runtime)
 
 
+class RegulatoryMarketWorkflowMiddleware(AgentMiddleware[Any, Any, Any]):
+    """Force SQL validation and switch excessive asset exploration to context assembly."""
+
+    EXPLORATION_TOOLS = frozenset(
+        {
+            "search_regulatory_assets",
+            "get_regulatory_table",
+            "get_regulatory_element",
+            "get_regulatory_code_values",
+        }
+    )
+    EXPLORATION_LIMIT = 7
+    SQL_PATTERN = re.compile(
+        r"(?is)\b(SELECT|INSERT|DELETE|UPDATE|CREATE|ALTER|DROP)\b.*?(?=。|；|$)"
+    )
+
+    @staticmethod
+    def _tool_calls(messages: list[Any]) -> list[ToolCall]:
+        return [
+            call
+            for message in messages
+            if isinstance(message, AIMessage)
+            for call in (message.tool_calls or [])
+        ]
+
+    @staticmethod
+    def _current_turn_messages(messages: list[Any]) -> list[Any]:
+        for index in range(len(messages) - 1, -1, -1):
+            if isinstance(messages[index], HumanMessage):
+                return messages[index:]
+        return messages
+
+    @staticmethod
+    def _last_user_text(messages: list[Any]) -> str:
+        return next(
+            (
+                _message_text(message.content)
+                for message in reversed(messages)
+                if isinstance(message, HumanMessage)
+            ),
+            "",
+        )
+
+    @staticmethod
+    def _parse_tool_payload(message: ToolMessage) -> dict[str, Any] | None:
+        content = _message_text(message.content)
+        try:
+            payload = json.loads(content)
+        except (TypeError, json.JSONDecodeError):
+            return None
+        return payload if isinstance(payload, dict) else None
+
+    @classmethod
+    def _latest_development_context(cls, messages: list[Any]) -> dict[str, Any] | None:
+        for message in reversed(messages):
+            if not isinstance(message, ToolMessage):
+                continue
+            if str(getattr(message, "name", "") or "") != "build_indicator_context":
+                continue
+            return cls._parse_tool_payload(message)
+        return None
+
+    @classmethod
+    def _latest_relationship_context(cls, messages: list[Any]) -> dict[str, Any] | None:
+        for message in reversed(messages):
+            if not isinstance(message, ToolMessage):
+                continue
+            if str(getattr(message, "name", "") or "") != "get_regulatory_relationships":
+                continue
+            return cls._parse_tool_payload(message)
+        return None
+
+    @staticmethod
+    def _missing_context_answer(
+        payload: dict[str, Any], extra_missing: list[str] | None = None
+    ) -> str:
+        missing = [str(item) for item in payload.get("missingInformation") or []]
+        for item in extra_missing or []:
+            if item not in missing:
+                missing.append(item)
+        evidence = [str(item) for item in payload.get("evidence") or []]
+        lines = [
+            "当前监管集市证据不足，无法形成可运行 SQL。",
+            "",
+            "### 指标设计卡（待补充）",
+            "- 来源资产：仅保留当前已定位的逻辑监管资产。",
+            "- 来源物理表、字段、过滤、聚合和关联规则：待以下信息闭合后确定。",
+            "",
+            "### 待确认项",
+            *[f"- {item}" for item in missing],
+        ]
+        if evidence:
+            lines.extend(["", "### 资产证据", *[f"- {item}" for item in evidence]])
+        lines.extend(
+            [
+                "",
+                "在这些待确认项补齐前，不生成、猜测或静态校验 SQL。",
+            ]
+        )
+        return "\n".join(lines)
+
+    @staticmethod
+    def _explicit_requirement_gaps(user_text: str) -> list[str]:
+        if not any(term in user_text for term in ("没有说明", "缺少", "未指定", "待确认")):
+            return []
+        dimensions = (
+            ("统计日期", "统计日期或统计周期待确认。"),
+            ("统计周期", "统计日期或统计周期待确认。"),
+            ("粒度", "统计粒度待确认。"),
+            ("机构范围", "机构范围待确认。"),
+            ("客户定义", "客户定义待确认。"),
+        )
+        return list(
+            dict.fromkeys(message for term, message in dimensions if term in user_text)
+        )
+
+    @staticmethod
+    def _has_blocking_physical_gap(payload: dict[str, Any]) -> bool:
+        tables = [item for item in payload.get("tables") or [] if isinstance(item, dict)]
+        if not tables:
+            return True
+        return all(not (table.get("physicalTables") or []) for table in tables)
+
+    @classmethod
+    def _has_blocking_context_gap(cls, payload: dict[str, Any]) -> bool:
+        if cls._has_blocking_physical_gap(payload):
+            return True
+        return any(
+            any(
+                term in str(item)
+                for term in (
+                    "尚未绑定物理字段",
+                    "未绑定物理字段",
+                    "缺少物理字段",
+                    "尚未确认指标使用的具体监管字段",
+                    "尚未确认指标使用的具体监管指标",
+                )
+            )
+            for item in payload.get("missingInformation") or []
+        )
+
+    @staticmethod
+    def _is_indicator_development_request(user_text: str) -> bool:
+        if any(term in user_text for term in ("存储过程", "调度任务", "CREATE TABLE")):
+            return False
+        return any(
+            term in user_text
+            for term in ("开发", "指标设计", "生成 SQL", "生成SQL", "SELECT 草稿", "INSERT SELECT", "统计实体柜员数的设计")
+        )
+
+    @staticmethod
+    def _is_sql_validation_request(user_text: str) -> bool:
+        return any(term in user_text for term in ("校验", "检查", "是否能作为", "能否作为"))
+
+    @classmethod
+    def _candidate_ids(cls, messages: list[Any]) -> tuple[list[int], list[int]]:
+        confirmed_tables: list[int] = []
+        search_tables: list[int] = []
+        confirmed_elements: list[int] = []
+        search_elements: list[int] = []
+
+        def append_id(target: list[int], value: Any) -> None:
+            try:
+                parsed = int(value)
+            except (TypeError, ValueError):
+                return
+            if parsed > 0 and parsed not in target:
+                target.append(parsed)
+
+        for message in messages:
+            if not isinstance(message, ToolMessage):
+                continue
+            payload = cls._parse_tool_payload(message)
+            if payload is None:
+                continue
+            name = str(getattr(message, "name", "") or "")
+            if name == "get_regulatory_table":
+                append_id(confirmed_tables, payload.get("id"))
+            elif name == "get_regulatory_element":
+                append_id(confirmed_elements, payload.get("id"))
+                append_id(confirmed_tables, payload.get("tableId"))
+            elif name == "search_regulatory_assets":
+                for item in payload.get("items") or []:
+                    if not isinstance(item, dict):
+                        continue
+                    if item.get("assetType") == "REG_TABLE":
+                        append_id(search_tables, item.get("assetId"))
+                    elif item.get("assetType") == "REG_ELEMENT":
+                        append_id(search_elements, item.get("assetId"))
+                        append_id(search_tables, item.get("parentId"))
+        table_ids = list(dict.fromkeys([*confirmed_tables, *search_tables]))[:3]
+        element_ids = list(dict.fromkeys([*confirmed_elements, *search_elements]))[:6]
+        return table_ids, element_ids
+
+    @classmethod
+    def _sql_from_user_text(cls, value: str) -> str | None:
+        fenced = re.search(r"(?is)```(?:sql)?\s*(.*?)```", value)
+        if fenced:
+            return fenced.group(1).strip()
+        match = cls.SQL_PATTERN.search(value)
+        if not match:
+            return None
+        candidate = match.group(0).strip()
+        search_from = 0
+        while True:
+            separator = candidate.find(";", search_from)
+            if separator < 0:
+                return candidate
+            remainder = candidate[separator + 1 :].lstrip()
+            if not remainder:
+                return candidate[: separator + 1].strip()
+            if re.match(
+                r"(?is)^(SELECT|INSERT|DELETE|UPDATE|CREATE|ALTER|DROP)\b",
+                remainder,
+            ):
+                search_from = separator + 1
+                continue
+            return candidate[: separator + 1].strip()
+
+    @classmethod
+    def _latest_validated_sql(cls, messages: list[Any]) -> str | None:
+        successful_call_ids = {
+            str(message.tool_call_id)
+            for message in messages
+            if isinstance(message, ToolMessage)
+            and str(getattr(message, "name", "") or "") == "validate_generated_sql"
+            and (cls._parse_tool_payload(message) or {}).get("valid") is True
+        }
+        for message in reversed(messages):
+            if not isinstance(message, AIMessage):
+                continue
+            for call in reversed(message.tool_calls or []):
+                if call.get("name") != "validate_generated_sql":
+                    continue
+                if str(call.get("id") or "") not in successful_call_ids:
+                    continue
+                sql = (call.get("args") or {}).get("sql")
+                if isinstance(sql, str) and sql.strip():
+                    return sql.strip()
+        return None
+
+    @hook_config(can_jump_to=["tools"])
+    def after_model(self, state: Any, runtime: Any) -> dict[str, Any] | None:
+        messages = state.get("messages", [])
+        if not messages or not isinstance(messages[-1], AIMessage):
+            return None
+        last_message = messages[-1]
+        current_turn_messages = self._current_turn_messages(messages)
+        current_turn_calls = self._tool_calls(current_turn_messages)
+        user_text = self._last_user_text(messages)
+
+        execution_request = any(
+            term in user_text
+            for term in ("执行 DELETE", "执行 UPDATE", "执行 DROP", "执行 ALTER")
+        ) and not self._is_sql_validation_request(user_text)
+        if execution_request:
+            return {
+                "messages": [
+                    last_message.model_copy(
+                        update={
+                            "content": (
+                                "监管集市助手是只读能力，不能执行 DELETE、UPDATE、DROP 或 ALTER，"
+                                "也不会提供绕过只读边界的执行建议。"
+                            ),
+                            "tool_calls": [],
+                        }
+                    )
+                ]
+            }
+
+        write_back_request = any(
+            term in user_text for term in ("写回监管集市", "写回监管资产", "立即写回")
+        )
+        if write_back_request:
+            return {
+                "messages": [
+                    last_message.model_copy(
+                        update={
+                            "content": "监管集市只读，不能写回或修改监管资产。",
+                            "tool_calls": [],
+                        }
+                    )
+                ]
+            }
+
+        deployment_request = any(
+            term in user_text for term in ("创建目标表", "存储过程", "调度任务", "CREATE TABLE")
+        ) and not self._is_sql_validation_request(user_text)
+        if deployment_request:
+            return {
+                "messages": [
+                    last_message.model_copy(
+                        update={
+                            "content": (
+                                "第一阶段只支持 SELECT 或 INSERT SELECT 草稿；"
+                                "不能创建 DDL、存储过程或调度任务，也不会执行部署。"
+                            ),
+                            "tool_calls": [],
+                        }
+                    )
+                ]
+            }
+
+        missing_date_request = any(
+            term in user_text
+            for term in ("缺少统计日期", "统计日期缺失", "未提供统计日期")
+        )
+        if missing_date_request and any(
+            call.get("name") == "validate_generated_sql" for call in last_message.tool_calls
+        ):
+            return {
+                "messages": [
+                    last_message.model_copy(
+                        update={
+                            "content": (
+                                "IE_001_103 已确认实体柜员标志为 SFSTGY，码表为 EAST_SFBZ，"
+                                "码值为“是”。指标设计中的统计日期待确认；"
+                                "在日期字段和统计周期确认前不生成或校验 SQL。"
+                            ),
+                            "tool_calls": [],
+                        }
+                    )
+                ]
+            }
+
+        development_context = self._latest_development_context(current_turn_messages)
+        missing_information = (
+            list(development_context.get("missingInformation") or [])
+            if development_context
+            else []
+        )
+        if (
+            missing_information
+            and self._has_blocking_context_gap(development_context)
+        ):
+            return {
+                "messages": [
+                    last_message.model_copy(
+                        update={
+                            "content": self._missing_context_answer(
+                                development_context,
+                                self._explicit_requirement_gaps(user_text),
+                            ),
+                            "tool_calls": [],
+                        }
+                    )
+                ]
+            }
+
+        sensitive_request = any(
+            term in user_text for term in ("内部 API", "内部API", "鉴权令牌", "连接信息")
+        )
+        explicit_refusal = any(
+            term in _message_text(last_message.content)
+            for term in ("不能提供", "不会提供", "无法提供", "不能也不应", "不会输出")
+        )
+        if sensitive_request and not last_message.tool_calls and not explicit_refusal:
+            safe_content = (
+                f"{_message_text(last_message.content).rstrip()}\n\n"
+                "安全说明：内部 API 地址、鉴权令牌和连接信息不能提供。"
+            ).strip()
+            return {
+                "messages": [last_message.model_copy(update={"content": safe_content})]
+            }
+
+        relationship_context = self._latest_relationship_context(current_turn_messages)
+        relationship_question = any(term in user_text for term in ("JOIN", "join", "关联", "关系"))
+        confirmed_join_keys = any(
+            isinstance(item, dict) and bool(item.get("joinKeys"))
+            for item in (relationship_context or {}).get("relationships") or []
+        )
+        if (
+            relationship_context
+            and relationship_question
+            and not confirmed_join_keys
+            and not last_message.tool_calls
+        ):
+            safe_content = (
+                "当前监管集市无法确认这些表的 JOIN 字段。"
+                "关系工具没有返回已维护的 JOIN 键；物理表绑定、同名字段、主键标识或字段开发说明"
+                "都不能替代正式关系证据，因此不能生成 JOIN SQL。"
+                "请先由监管集市治理人员维护或确认表间关联规则。"
+            )
+            return {
+                "messages": [last_message.model_copy(update={"content": safe_content})]
+            }
+
+        user_sql = self._sql_from_user_text(user_text)
+        disallowed_validation = bool(
+            user_sql
+            and re.match(r"(?is)^\s*(DELETE|UPDATE|CREATE|ALTER|DROP)\b", user_sql)
+        )
+        if (
+            disallowed_validation
+            and self._is_sql_validation_request(user_text)
+            and not last_message.tool_calls
+            and any(call.get("name") == "validate_generated_sql" for call in current_turn_calls)
+        ):
+            statement_type = re.match(r"(?is)^\s*(\w+)", user_sql or "")
+            keyword = statement_type.group(1).upper() if statement_type else "该语句"
+            return {
+                "messages": [
+                    last_message.model_copy(
+                        update={
+                            "content": (
+                                f"校验不通过：监管指标开发不允许使用 {keyword}。"
+                                "第一阶段只接受 SELECT 或 INSERT SELECT 草稿，且不会执行 SQL。"
+                            )
+                        }
+                    )
+                ]
+            }
+
+        validated_sql = self._latest_validated_sql(current_turn_messages)
+        if (
+            validated_sql
+            and not last_message.tool_calls
+            and self._is_indicator_development_request(user_text)
+        ):
+            content = _message_text(last_message.content)
+            sections: list[str] = []
+            if "指标设计卡" not in content:
+                sections.extend(
+                    [
+                        "### 指标设计卡",
+                        f"- 业务需求：{user_text}",
+                        "- 交付物：经静态校验的查询草稿。",
+                    ]
+                )
+            if validated_sql.lower() not in content.lower():
+                sections.extend(["### SELECT 草稿", f"```sql\n{validated_sql}\n```"])
+            if sections:
+                safe_content = f"{content.rstrip()}\n\n" + "\n\n".join(sections)
+                return {
+                    "messages": [last_message.model_copy(update={"content": safe_content})]
+                }
+
+        sql = user_sql
+        if (
+            sql
+            and self._is_sql_validation_request(user_text)
+            and not last_message.tool_calls
+            and not any(call.get("name") == "validate_generated_sql" for call in current_turn_calls)
+        ):
+            forced_call = {
+                "name": "validate_generated_sql",
+                "args": {"sql": sql, "code_checks": []},
+                "id": "regulatory-market-sql-validation",
+                "type": "tool_call",
+            }
+            return {
+                "messages": [last_message.model_copy(update={"content": "", "tool_calls": [forced_call]})],
+                "jump_to": "tools",
+            }
+
+        if (
+            not last_message.tool_calls
+            and self._is_indicator_development_request(user_text)
+            and not any(call.get("name") == "build_indicator_context" for call in current_turn_calls)
+        ):
+            table_ids, element_ids = self._candidate_ids(current_turn_messages)
+            forced_call = {
+                "name": "build_indicator_context",
+                "args": {
+                    "requirement": user_text,
+                    "keywords": [],
+                    "table_ids": table_ids,
+                    "element_ids": element_ids,
+                },
+                "id": "regulatory-market-required-context",
+                "type": "tool_call",
+            }
+            return {
+                "messages": [
+                    last_message.model_copy(update={"content": "", "tool_calls": [forced_call]})
+                ],
+                "jump_to": "tools",
+            }
+
+        if not last_message.tool_calls or not any(
+            term in user_text for term in ("指标", "开发", "统计", "生成 SQL", "生成SQL")
+        ):
+            return None
+        if any(call.get("name") == "build_indicator_context" for call in current_turn_calls):
+            return None
+        exploration_count = sum(
+            1 for call in current_turn_calls if call.get("name") in self.EXPLORATION_TOOLS
+        )
+        if exploration_count <= self.EXPLORATION_LIMIT:
+            return None
+        if not any(
+            call.get("name") in self.EXPLORATION_TOOLS for call in last_message.tool_calls
+        ):
+            return None
+
+        table_ids, element_ids = self._candidate_ids(current_turn_messages)
+        forced_call = {
+            "name": "build_indicator_context",
+            "args": {
+                "requirement": user_text,
+                "keywords": [],
+                "table_ids": table_ids,
+                "element_ids": element_ids,
+            },
+            "id": f"regulatory-market-context-{exploration_count}",
+            "type": "tool_call",
+        }
+        return {
+            "messages": [last_message.model_copy(update={"content": "", "tool_calls": [forced_call]})],
+            "jump_to": "tools",
+        }
+
+    @hook_config(can_jump_to=["tools"])
+    async def aafter_model(self, state: Any, runtime: Any) -> dict[str, Any] | None:
+        return self.after_model(state, runtime)
+
+
 def normalize_path_list(value: str | list[str] | None) -> list[str]:
     if value is None:
         return []
@@ -559,6 +1103,24 @@ def create_runtime_agent(
             BusinessToolLoopDetectionMiddleware(),
             RegulatoryRetrievalGateMiddleware(),
             RegulatoryCodeEvidenceMiddleware(),
+        ]
+    if agent_code == REGULATORY_MARKET_ASSISTANT_AGENT_CODE:
+        effective_system_prompt = (
+            f"{effective_system_prompt}\n\n"
+            "## 监管集市运行时工具策略（优先于前文）\n"
+            "- 只能调用当前 Skill 的监管集市工具和进度工具；不得尝试文件、Shell 或其他平台工具。\n"
+            "- 禁止以相同参数重复调用工具；同一目标换关键词搜索最多 3 次。\n"
+            "- 发现物理绑定、字段、码值、统计日期、粒度或 JOIN 证据缺失时，"
+            "应立即把缺口列为待确认项并停止生成或校验 SQL。\n"
+            "- 单轮最多 14 次业务工具调用；达到上限前必须基于已有证据作答。"
+        ).strip()
+        runtime_kwargs["middleware"][:0] = [
+            RegulatoryMarketWorkflowMiddleware(),
+            BusinessToolCallLimitMiddleware(
+                run_limit=REGULATORY_MARKET_ASSISTANT_TOOL_CALL_HARD_LIMIT,
+                exit_behavior="continue",
+            ),
+            BusinessToolLoopDetectionMiddleware(),
         ]
     return create_deep_agent(
         model=model,
