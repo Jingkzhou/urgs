@@ -3,6 +3,7 @@ package com.example.urgs_api.metadata.dto;
 import java.time.LocalDate;
 import java.time.LocalDateTime;
 import java.util.List;
+import java.util.Map;
 
 public final class RegulatoryMarketContextDTO {
 
@@ -21,6 +22,39 @@ public final class RegulatoryMarketContextDTO {
     }
 
     public record SearchResponse(String keyword, List<SearchItem> items, boolean truncated) {
+    }
+
+    public record CatalogScanRequest(
+            String requirement,
+            List<String> keywords,
+            List<String> exactIdentifiers,
+            List<String> systemCodes,
+            Integer limit,
+            String allowedSystems) {
+    }
+
+    public record CatalogCandidate(
+            String tableId,
+            String systemCode,
+            String name,
+            String cnName,
+            String subjectName,
+            String theme,
+            String frequency,
+            String businessCaliber,
+            List<PhysicalTableBindingDTO> physicalTables,
+            int score,
+            List<String> hitReasons,
+            LocalDateTime updateTime) {
+    }
+
+    public record CatalogScanResponse(
+            String requirement,
+            int scannedTableCount,
+            Map<String, Long> systemTableCounts,
+            List<CatalogCandidate> candidates,
+            boolean truncated,
+            List<String> evidence) {
     }
 
     public record CodeValue(

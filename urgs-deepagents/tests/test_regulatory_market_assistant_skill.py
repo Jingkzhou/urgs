@@ -38,6 +38,7 @@ def test_skill_exposes_only_declared_read_only_market_tools(
 
     assert runtime is not None
     assert runtime.tool_names == {
+        "scan_regulatory_catalog",
         "search_regulatory_assets",
         "get_regulatory_table",
         "get_regulatory_element",
@@ -48,6 +49,44 @@ def test_skill_exposes_only_declared_read_only_market_tools(
     }
     assert "不执行 SQL" in runtime.instructions
     assert "不写回监管资产" in runtime.instructions
+
+
+def test_catalog_scan_carries_dynamic_plan_and_access_scope(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    monkeypatch.setenv("DEEPAGENTS_URGS_API_URL", "http://urgs-api:8080")
+    monkeypatch.setenv("DEEPAGENTS_INTERNAL_API_TOKEN", "internal-token")
+    captured: dict[str, Any] = {}
+
+    def fake_request(method: str, url: str, **kwargs: Any) -> httpx.Response:
+        captured.update(method=method, url=url, **kwargs)
+        return httpx.Response(
+            200,
+            json={"scannedTableCount": 858, "candidates": []},
+            request=httpx.Request(method, url),
+        )
+
+    monkeypatch.setattr(httpx, "request", fake_request)
+    runtime = load_agent_skill_runtime(_Settings(), AGENT_CODE, [SKILL_CODE], _context())
+    assert runtime is not None
+    tool = next(item for item in runtime.tools if item.name == "scan_regulatory_catalog")
+
+    result = tool.invoke(
+        {
+            "mode": "sql_development",
+            "requirement": "用 L_ACCT_LOAN 查询贷款借据",
+            "keywords": ["贷款借据"],
+            "exact_identifiers": ["L_ACCT_LOAN"],
+            "system_codes": [],
+            "evidence_needs": ["来源表", "日期字段", "贷款状态码值"],
+            "limit": 10,
+        }
+    )
+
+    assert result["ok"] is True
+    assert captured["url"].endswith("/api/internal/regulatory-market/catalog-scan")
+    assert captured["json"]["exactIdentifiers"] == ["L_ACCT_LOAN"]
+    assert captured["json"]["allowedSystems"] == "1104"
 
 
 def test_search_tool_forwards_server_side_access_scope(

@@ -14,12 +14,12 @@ def _load_runner():
     return module
 
 
-def test_eval_has_30_unique_real_scenarios() -> None:
+def test_eval_has_31_unique_real_scenarios() -> None:
     suite = json.loads((EVAL_DIR / "questions.json").read_text(encoding="utf-8"))
     questions = suite["questions"]
 
-    assert len(questions) == 30
-    assert len({question["id"] for question in questions}) == 30
+    assert len(questions) == 31
+    assert len({question["id"] for question in questions}) == 31
     assert all(question["question"].strip() for question in questions)
     assert all(question["source_truth"] for question in questions)
     assert all(question.get("required_any") for question in questions)
@@ -31,7 +31,7 @@ def test_eval_covers_consultation_development_and_boundaries() -> None:
 
     assert {
         "表咨询", "字段码值", "多表关系", "指标开发", "SQL校验", "多轮衔接",
-        "权限范围", "能力边界", "证据边界", "只读安全", "抗注入", "抗幻觉",
+        "权限范围", "能力边界", "证据边界", "目录扫描与质询", "只读安全", "抗注入", "抗幻觉",
     } <= categories
 
 

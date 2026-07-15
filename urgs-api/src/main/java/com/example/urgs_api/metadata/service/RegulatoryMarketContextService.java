@@ -6,6 +6,9 @@ import com.example.urgs_api.metadata.dto.PhysicalTableBindingDTO;
 import com.example.urgs_api.metadata.dto.RegulatoryMarketContextDTO.CodeTableContext;
 import com.example.urgs_api.metadata.dto.RegulatoryMarketContextDTO.CodeValue;
 import com.example.urgs_api.metadata.dto.RegulatoryMarketContextDTO.CodeValueCheck;
+import com.example.urgs_api.metadata.dto.RegulatoryMarketContextDTO.CatalogCandidate;
+import com.example.urgs_api.metadata.dto.RegulatoryMarketContextDTO.CatalogScanRequest;
+import com.example.urgs_api.metadata.dto.RegulatoryMarketContextDTO.CatalogScanResponse;
 import com.example.urgs_api.metadata.dto.RegulatoryMarketContextDTO.DevelopmentContextRequest;
 import com.example.urgs_api.metadata.dto.RegulatoryMarketContextDTO.DevelopmentContextResponse;
 import com.example.urgs_api.metadata.dto.RegulatoryMarketContextDTO.ElementContext;
@@ -67,6 +70,7 @@ import java.util.stream.Collectors;
 public class RegulatoryMarketContextService {
 
     private static final int MAX_SEARCH_LIMIT = 50;
+    private static final int MAX_CATALOG_CANDIDATES = 30;
     private static final int DEFAULT_ELEMENT_LIMIT = 100;
     private static final int MAX_CODE_VALUE_LIMIT = 500;
     private static final int MAX_DEVELOPMENT_TABLES = 5;
@@ -79,6 +83,9 @@ public class RegulatoryMarketContextService {
                     + ")(?![A-Za-z0-9_$])");
     private static final Pattern SQL_LITERAL_OR_COMMENT_PATTERN = Pattern.compile(
             "/\\*[\\s\\S]*?\\*/|--(?=\\s|$)[^\\r\\n]*|#[^\\r\\n]*|'(?:''|\\\\.|[^'])*'");
+    private static final Pattern CATALOG_IDENTIFIER_PATTERN = Pattern.compile(
+            "(?<![A-Za-z0-9_$])(?:[A-Za-z][A-Za-z0-9_$]*\\.)?"
+                    + "[A-Za-z][A-Za-z0-9_$]*_[A-Za-z0-9_$]+(?![A-Za-z0-9_$])");
 
     private final RegTableService regTableService;
     private final RegElementService regElementService;
@@ -175,6 +182,68 @@ public class RegulatoryMarketContextService {
                     .forEach(codeTable -> items.add(toSearchItem(codeTable)));
         }
         return new SearchResponse(normalizedKeyword, items, items.size() >= limit);
+    }
+
+    public CatalogScanResponse scanCatalog(CatalogScanRequest request) {
+        CatalogScanRequest safeRequest = request == null
+                ? new CatalogScanRequest("", List.of(), List.of(), List.of(), 10, "")
+                : request;
+        AccessScope scope = AccessScope.parse(safeRequest.allowedSystems());
+        if (scope.denied()) {
+            return new CatalogScanResponse(
+                    StringUtils.defaultString(safeRequest.requirement()), 0, Map.of(), List.of(), false,
+                    List.of("当前用户没有可扫描的监管系统目录"));
+        }
+        int limit = Math.max(1, Math.min(
+                safeRequest.limit() == null ? 10 : safeRequest.limit(), MAX_CATALOG_CANDIDATES));
+        LinkedHashSet<String> requestedSystems = safeStrings(safeRequest.systemCodes()).stream()
+                .map(value -> value.toUpperCase(Locale.ROOT))
+                .collect(Collectors.toCollection(LinkedHashSet::new));
+        List<RegTable> tables = listAllowedTables(scope, null).stream()
+                .filter(table -> requestedSystems.isEmpty()
+                        || requestedSystems.contains(StringUtils.upperCase(table.getSystemCode())))
+                .toList();
+        regPhysicalBindingService.enrichTables(tables);
+
+        Map<String, Long> systemCounts = tables.stream().collect(Collectors.groupingBy(
+                table -> StringUtils.defaultIfBlank(table.getSystemCode(), "UNKNOWN"),
+                LinkedHashMap::new,
+                Collectors.counting()));
+        LinkedHashSet<String> exactIdentifiers = safeStrings(safeRequest.exactIdentifiers()).stream()
+                .map(this::normalizeIdentifier)
+                .filter(StringUtils::isNotBlank)
+                .collect(Collectors.toCollection(LinkedHashSet::new));
+        LinkedHashSet<String> keywords = safeStrings(safeRequest.keywords()).stream()
+                .map(String::trim)
+                .filter(StringUtils::isNotBlank)
+                .collect(Collectors.toCollection(LinkedHashSet::new));
+        extractExactIdentifiers(safeRequest.requirement()).forEach(exactIdentifiers::add);
+
+        List<CatalogCandidate> matched = tables.stream()
+                .map(table -> toCatalogCandidate(table, exactIdentifiers, keywords))
+                .filter(candidate -> candidate.score() > 0 || (exactIdentifiers.isEmpty() && keywords.isEmpty()))
+                .sorted((left, right) -> {
+                    int scoreOrder = Integer.compare(right.score(), left.score());
+                    if (scoreOrder != 0) {
+                        return scoreOrder;
+                    }
+                    int systemOrder = StringUtils.defaultString(left.systemCode())
+                            .compareToIgnoreCase(StringUtils.defaultString(right.systemCode()));
+                    return systemOrder != 0 ? systemOrder
+                            : StringUtils.defaultString(left.name())
+                                    .compareToIgnoreCase(StringUtils.defaultString(right.name()));
+                })
+                .toList();
+        List<CatalogCandidate> candidates = matched.stream().limit(limit).toList();
+        List<String> evidence = new ArrayList<>();
+        evidence.add("已扫描当前权限范围内 " + tables.size() + " 张启用监管表的表层信息");
+        evidence.add("候选匹配覆盖监管逻辑表名、中文名、主题、业务口径和物理表绑定");
+        if (matched.isEmpty()) {
+            evidence.add("当前输入未命中候选；空结果只表示本次目录匹配未命中，不能证明资产不存在");
+        }
+        return new CatalogScanResponse(
+                StringUtils.defaultString(safeRequest.requirement()), tables.size(), systemCounts,
+                candidates, matched.size() > candidates.size(), evidence);
     }
 
     public TableContext getTable(Long tableId, String allowedSystemsValue, int requestedElementLimit) {
@@ -868,6 +937,85 @@ public class RegulatoryMarketContextService {
         return new CodeValue(
                 item.getCode(), item.getName(), item.getParentCode(), item.getLevel(), item.getDescription(),
                 item.getStartDate(), item.getEndDate());
+    }
+
+    private CatalogCandidate toCatalogCandidate(
+            RegTable table, Set<String> exactIdentifiers, Set<String> keywords) {
+        LinkedHashSet<String> reasons = new LinkedHashSet<>();
+        int score = 0;
+        String logicalName = normalizeIdentifier(table.getName());
+        String chineseName = normalizeCatalogText(table.getCnName());
+        List<PhysicalTableBindingDTO> physicalTables = nullToEmpty(table.getPhysicalTables());
+        LinkedHashSet<String> physicalNames = physicalTables.stream()
+                .flatMap(binding -> java.util.stream.Stream.of(
+                        normalizeIdentifier(binding.getTableName()),
+                        normalizeIdentifier(qualifiedName(binding.getOwner(), binding.getTableName()))))
+                .filter(StringUtils::isNotBlank)
+                .collect(Collectors.toCollection(LinkedHashSet::new));
+        for (String identifier : exactIdentifiers) {
+            String shortIdentifier = normalizeIdentifier(shortName(identifier));
+            if (logicalName.equals(identifier) || logicalName.equals(shortIdentifier)) {
+                score = Math.max(score, 120);
+                reasons.add("监管逻辑表名精确匹配 " + table.getName());
+            }
+            if (physicalNames.contains(identifier) || physicalNames.contains(shortIdentifier)) {
+                score = Math.max(score, 115);
+                reasons.add("物理表绑定精确匹配 " + identifier);
+            }
+        }
+        for (String keyword : keywords) {
+            String normalized = normalizeCatalogText(keyword);
+            if (normalized.isEmpty()) {
+                continue;
+            }
+            if (logicalName.contains(normalized)) {
+                score = Math.max(score, 100);
+                reasons.add("监管逻辑表名命中 " + keyword);
+            }
+            if (chineseName.contains(normalized)) {
+                score = Math.max(score, 95);
+                reasons.add("中文表名命中 " + keyword);
+            }
+            if (physicalNames.stream().anyMatch(name -> name.contains(normalized))) {
+                score = Math.max(score, 90);
+                reasons.add("物理表绑定命中 " + keyword);
+            }
+            if (normalizeCatalogText(table.getSubjectName()).contains(normalized)
+                    || normalizeCatalogText(table.getTheme()).contains(normalized)) {
+                score = Math.max(score, 70);
+                reasons.add("主题或业务分类命中 " + keyword);
+            }
+            if (normalizeCatalogText(table.getBusinessCaliber()).contains(normalized)
+                    || normalizeCatalogText(table.getFillInstruction()).contains(normalized)) {
+                score = Math.max(score, 60);
+                reasons.add("业务口径命中 " + keyword);
+            }
+        }
+        return new CatalogCandidate(
+                String.valueOf(table.getId()), table.getSystemCode(), table.getName(), table.getCnName(),
+                table.getSubjectName(), table.getTheme(), table.getFrequency(), table.getBusinessCaliber(),
+                physicalTables, score, List.copyOf(reasons), table.getUpdateTime());
+    }
+
+    private LinkedHashSet<String> extractExactIdentifiers(String requirement) {
+        LinkedHashSet<String> identifiers = new LinkedHashSet<>();
+        Matcher matcher = CATALOG_IDENTIFIER_PATTERN.matcher(StringUtils.defaultString(requirement));
+        while (matcher.find()) {
+            identifiers.add(normalizeIdentifier(matcher.group()));
+        }
+        return identifiers;
+    }
+
+    private List<String> safeStrings(Collection<String> values) {
+        return values == null ? List.of() : values.stream()
+                .filter(Objects::nonNull)
+                .map(String::trim)
+                .filter(StringUtils::isNotBlank)
+                .toList();
+    }
+
+    private String normalizeCatalogText(String value) {
+        return StringUtils.defaultString(value).replaceAll("\\s+", "").toUpperCase(Locale.ROOT);
     }
 
     private String normalizeKeyword(String keyword) {

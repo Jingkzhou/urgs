@@ -1,6 +1,8 @@
 package com.example.urgs_api.metadata.controller;
 
 import com.example.urgs_api.metadata.dto.RegulatoryMarketContextDTO.CodeTableContext;
+import com.example.urgs_api.metadata.dto.RegulatoryMarketContextDTO.CatalogScanRequest;
+import com.example.urgs_api.metadata.dto.RegulatoryMarketContextDTO.CatalogScanResponse;
 import com.example.urgs_api.metadata.dto.RegulatoryMarketContextDTO.DevelopmentContextRequest;
 import com.example.urgs_api.metadata.dto.RegulatoryMarketContextDTO.DevelopmentContextResponse;
 import com.example.urgs_api.metadata.dto.RegulatoryMarketContextDTO.ElementContext;
@@ -36,6 +38,11 @@ public class RegulatoryMarketInternalController {
             @RequestParam String allowedSystems,
             @RequestParam(defaultValue = "20") int limit) {
         return contextService.search(keyword, systemCode, allowedSystems, limit);
+    }
+
+    @PostMapping("/catalog-scan")
+    public CatalogScanResponse scanCatalog(@RequestBody CatalogScanRequest request) {
+        return contextService.scanCatalog(request);
     }
 
     @GetMapping("/tables/{tableId}")

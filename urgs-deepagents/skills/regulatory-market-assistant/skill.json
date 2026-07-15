@@ -6,6 +6,7 @@
   "runtime_entrypoint": "runtime.py",
   "permission": "ai:regulatory-query:use",
   "tools": [
+    "scan_regulatory_catalog",
     "search_regulatory_assets",
     "get_regulatory_table",
     "get_regulatory_element",

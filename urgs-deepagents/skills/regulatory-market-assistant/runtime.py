@@ -7,7 +7,7 @@ import os
 from collections.abc import Callable, Mapping
 from dataclasses import dataclass
 from pathlib import Path
-from typing import Any
+from typing import Any, Literal
 from urllib.parse import quote
 
 import httpx
@@ -22,6 +22,7 @@ REQUIRED_PERMISSION = "ai:regulatory-query:use"
 TABLE_CODE_PATTERN = r"^[A-Za-z0-9][A-Za-z0-9_.-]{0,127}$"
 TOOL_NAMES = frozenset(
     {
+        "scan_regulatory_catalog",
         "search_regulatory_assets",
         "get_regulatory_table",
         "get_regulatory_element",
@@ -31,6 +32,34 @@ TOOL_NAMES = frozenset(
         "validate_generated_sql",
     }
 )
+
+
+class ScanRegulatoryCatalogInput(BaseModel):
+    mode: Literal["consultation", "challenge", "sql_development"] = Field(
+        description="任务模式：咨询、质询核验或 SQL 开发"
+    )
+    requirement: str = Field(description="用户当前轮的完整目标")
+    keywords: list[str] = Field(
+        default_factory=list,
+        max_length=12,
+        description="用于扫描目录的核心业务短语，不要放宽泛同义词列表",
+    )
+    exact_identifiers: list[str] = Field(
+        default_factory=list,
+        max_length=12,
+        description="用户明确提供的表名、物理表名或编码，必须原样保留",
+    )
+    system_codes: list[str] = Field(
+        default_factory=list,
+        max_length=10,
+        description="已确认的监管系统编码；未知时留空，不要把监管集市平台名称当作系统编码",
+    )
+    evidence_needs: list[str] = Field(
+        default_factory=list,
+        max_length=12,
+        description="完成任务仍需确认的证据，例如来源表、日期字段、码值、JOIN、物理绑定",
+    )
+    limit: int = Field(default=10, ge=1, le=30, description="最多返回的候选表数")
 
 
 class SearchAssetsInput(BaseModel):
@@ -114,6 +143,20 @@ class RegulatoryMarketApiClient:
         self.headers = {auth_header: auth_prefix + token}
         self.access_context = access_context
         self.timeout_seconds = timeout_seconds
+
+    def scan_catalog(self, **kwargs: Any) -> dict[str, Any]:
+        return self._request(
+            "POST",
+            "/api/internal/regulatory-market/catalog-scan",
+            json_body={
+                "requirement": kwargs.get("requirement", ""),
+                "keywords": kwargs.get("keywords", []),
+                "exactIdentifiers": kwargs.get("exact_identifiers", []),
+                "systemCodes": kwargs.get("system_codes", []),
+                "limit": kwargs.get("limit", 10),
+                "allowedSystems": self.access_context.allowed_systems_param,
+            },
+        )
 
     def search_assets(self, **kwargs: Any) -> dict[str, Any]:
         system_code = kwargs.pop("system_code", None)
@@ -294,6 +337,15 @@ def create_skill_runtime(
         access_context=access,
     )
     tools = (
+        StructuredTool.from_function(
+            lambda **kwargs: _safe_call(client.scan_catalog, **kwargs),
+            name="scan_regulatory_catalog",
+            description=(
+                "先扫描当前权限范围内全部启用监管表的紧凑表层目录，再返回按命中原因排序的候选表。"
+                "调用参数同时记录任务模式、精确标识和证据缺口；不会加载全部字段。"
+            ),
+            args_schema=ScanRegulatoryCatalogInput,
+        ),
         StructuredTool.from_function(
             lambda **kwargs: _safe_call(client.search_assets, **kwargs),
             name="search_regulatory_assets",

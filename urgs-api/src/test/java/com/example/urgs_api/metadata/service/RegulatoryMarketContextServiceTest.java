@@ -5,6 +5,7 @@ import com.baomidou.mybatisplus.core.conditions.Wrapper;
 import com.baomidou.mybatisplus.core.metadata.TableInfoHelper;
 import com.example.urgs_api.metadata.dto.PhysicalTableBindingDTO;
 import com.example.urgs_api.metadata.dto.RegulatoryMarketContextDTO.CodeValueCheck;
+import com.example.urgs_api.metadata.dto.RegulatoryMarketContextDTO.CatalogScanRequest;
 import com.example.urgs_api.metadata.dto.RegulatoryMarketContextDTO.DevelopmentContextRequest;
 import com.example.urgs_api.metadata.dto.RegulatoryMarketContextDTO.SqlValidationRequest;
 import com.example.urgs_api.metadata.mapper.RegTableModelTableRelMapper;
@@ -118,6 +119,56 @@ class RegulatoryMarketContextServiceTest {
                 .thenReturn(List.of(relation));
         when(modelFieldService.list(org.mockito.ArgumentMatchers.<Wrapper<ModelField>>any()))
                 .thenReturn(List.of(amount, classCode));
+    }
+
+    @Test
+    void catalogScanFindsExactLoanNoteTableBeforeFieldExploration() {
+        RegTable loan = new RegTable();
+        loan.setId(1994254277826388541L);
+        loan.setName("L_ACCT_LOAN");
+        loan.setCnName("贷款借据信息表");
+        loan.setSystemCode("SMTMODS");
+        loan.setStatus(1);
+        when(regTableService.list(org.mockito.ArgumentMatchers.<Wrapper<RegTable>>any()))
+                .thenReturn(List.of(loan));
+
+        var result = service.scanCatalog(new CatalogScanRequest(
+                "L_ACCT_LOAN 这个不是借据表吗",
+                List.of("贷款借据"),
+                List.of("L_ACCT_LOAN"),
+                List.of(),
+                10,
+                "SMTMODS"));
+
+        assertEquals(1, result.scannedTableCount());
+        assertEquals("L_ACCT_LOAN", result.candidates().get(0).name());
+        assertEquals("SMTMODS", result.candidates().get(0).systemCode());
+        assertTrue(result.candidates().get(0).hitReasons().stream()
+                .anyMatch(reason -> reason.contains("逻辑表名精确匹配")));
+    }
+
+    @Test
+    void catalogScanCanResolveRegulatoryTableFromPhysicalBinding() {
+        RegTable loan = new RegTable();
+        loan.setId(1L);
+        loan.setName("LOAN_LEDGER");
+        loan.setCnName("贷款台账");
+        loan.setSystemCode("SMTMODS");
+        loan.setStatus(1);
+        when(regTableService.list(org.mockito.ArgumentMatchers.<Wrapper<RegTable>>any()))
+                .thenReturn(List.of(loan));
+
+        var result = service.scanCatalog(new CatalogScanRequest(
+                "CORE.LOAN_FACT 是哪个监管资产",
+                List.of(),
+                List.of("CORE.LOAN_FACT"),
+                List.of(),
+                10,
+                "SMTMODS"));
+
+        assertEquals("LOAN_LEDGER", result.candidates().get(0).name());
+        assertTrue(result.candidates().get(0).hitReasons().stream()
+                .anyMatch(reason -> reason.contains("物理表绑定精确匹配")));
     }
 
     @Test

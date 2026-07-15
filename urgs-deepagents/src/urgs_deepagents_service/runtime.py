@@ -416,6 +416,7 @@ class RegulatoryMarketWorkflowMiddleware(AgentMiddleware[Any, Any, Any]):
 
     EXPLORATION_TOOLS = frozenset(
         {
+            "scan_regulatory_catalog",
             "search_regulatory_assets",
             "get_regulatory_table",
             "get_regulatory_element",
@@ -426,6 +427,19 @@ class RegulatoryMarketWorkflowMiddleware(AgentMiddleware[Any, Any, Any]):
     SQL_PATTERN = re.compile(
         r"(?is)\b(SELECT|INSERT|DELETE|UPDATE|CREATE|ALTER|DROP)\b.*?(?=。|；|$)"
     )
+    REQUESTED_SYSTEM_PATTERN = re.compile(
+        r"(?<![A-Za-z0-9_])([A-Z][A-Z0-9]{2,31}|\d{3,12})"
+        r"(?![A-Za-z0-9_])(?=\s*(?:系统|的))"
+    )
+    NON_SYSTEM_TERMS = frozenset({"SQL", "API", "ID", "DDL", "DML"})
+    CATALOG_IDENTIFIER_PATTERN = re.compile(
+        r"(?<![A-Za-z0-9_$])(?:[A-Za-z][A-Za-z0-9_$]*\.)?"
+        r"[A-Za-z][A-Za-z0-9_$]*_[A-Za-z0-9_$]+(?![A-Za-z0-9_$])"
+    )
+    CODE_TABLE_PATTERN = re.compile(
+        r"(?<![A-Za-z0-9_])([A-Z][A-Z0-9]*_[A-Z0-9_]+)(?![A-Za-z0-9_])"
+    )
+
     def __init__(self, allowed_systems: list[str] | tuple[str, ...] | None = None) -> None:
         self.allowed_systems = tuple(
             dict.fromkeys(
@@ -435,21 +449,63 @@ class RegulatoryMarketWorkflowMiddleware(AgentMiddleware[Any, Any, Any]):
             )
         )
 
-    def _out_of_scope_systems(self, calls: list[ToolCall]) -> list[str]:
-        if not self.allowed_systems:
+    def _out_of_scope_systems(
+        self, calls: list[ToolCall], user_text: str = ""
+    ) -> list[str]:
+        if not self.allowed_systems or "ALL" in self.allowed_systems:
             return []
+        candidates: list[str] = []
+        for call in calls:
+            args = call.get("args") or {}
+            candidates.append(str(args.get("system_code") or "").strip().upper())
+            candidates.extend(
+                str(item).strip().upper() for item in args.get("system_codes") or []
+            )
+        if any(
+            call.get("name") in {"scan_regulatory_catalog", "search_regulatory_assets"}
+            for call in calls
+        ):
+            candidates.extend(
+                match.group(1).upper()
+                for match in self.REQUESTED_SYSTEM_PATTERN.finditer(user_text)
+                if match.group(1).upper() not in self.NON_SYSTEM_TERMS
+            )
         return list(
             dict.fromkeys(
                 system_code
-                for call in calls
-                if (
-                    system_code := str(
-                        (call.get("args") or {}).get("system_code") or ""
-                    ).strip().upper()
-                )
+                for system_code in candidates
+                if system_code
                 and system_code not in self.allowed_systems
             )
         )
+
+    @classmethod
+    def _catalog_scan_call(cls, user_text: str, search_call: ToolCall) -> ToolCall:
+        args = search_call.get("args") or {}
+        keyword = str(args.get("keyword") or "").strip()
+        system_code = str(args.get("system_code") or "").strip()
+        challenge = any(term in user_text for term in ("不是", "为什么", "质疑", "核验", "对吗"))
+        development = cls._is_indicator_development_request(user_text) or "SQL" in user_text.upper()
+        mode = "challenge" if challenge else "sql_development" if development else "consultation"
+        evidence_needs = ["来源表", "物理绑定"]
+        if mode == "sql_development":
+            evidence_needs.extend(["查询粒度", "日期字段", "度量字段", "过滤码值", "必要的 JOIN"])
+        elif mode == "challenge":
+            evidence_needs.extend(["支持证据", "冲突证据"])
+        return {
+            "name": "scan_regulatory_catalog",
+            "args": {
+                "mode": mode,
+                "requirement": user_text,
+                "keywords": [keyword] if keyword else [],
+                "exact_identifiers": cls.CATALOG_IDENTIFIER_PATTERN.findall(user_text),
+                "system_codes": [system_code] if system_code else [],
+                "evidence_needs": evidence_needs,
+                "limit": 10,
+            },
+            "id": f"catalog-scan-{hashlib.sha256(user_text.encode()).hexdigest()[:12]}",
+            "type": "tool_call",
+        }
 
     @staticmethod
     def _tool_calls(messages: list[Any]) -> list[ToolCall]:
@@ -666,6 +722,10 @@ class RegulatoryMarketWorkflowMiddleware(AgentMiddleware[Any, Any, Any]):
                     elif item.get("assetType") == "REG_ELEMENT":
                         append_id(search_elements, item.get("assetId"))
                         append_id(search_tables, item.get("parentId"))
+            elif name == "scan_regulatory_catalog":
+                for item in payload.get("candidates") or []:
+                    if isinstance(item, dict):
+                        append_id(search_tables, item.get("tableId"))
         table_ids = list(dict.fromkeys([*confirmed_tables, *search_tables]))[:3]
         element_ids = list(dict.fromkeys([*confirmed_elements, *search_elements]))[:6]
         return table_ids, element_ids
@@ -727,7 +787,7 @@ class RegulatoryMarketWorkflowMiddleware(AgentMiddleware[Any, Any, Any]):
         current_turn_calls = self._tool_calls(current_turn_messages)
         user_text = self._last_user_text(messages)
 
-        out_of_scope_systems = self._out_of_scope_systems(current_turn_calls)
+        out_of_scope_systems = self._out_of_scope_systems(current_turn_calls, user_text)
         if out_of_scope_systems:
             requested_scope = "、".join(out_of_scope_systems)
             allowed_scope = "、".join(self.allowed_systems)
@@ -853,9 +913,69 @@ class RegulatoryMarketWorkflowMiddleware(AgentMiddleware[Any, Any, Any]):
                 ]
             }
 
+        has_catalog_scan = any(
+            call.get("name") == "scan_regulatory_catalog" for call in current_turn_calls
+        )
+        proposed_search = next(
+            (
+                call
+                for call in last_message.tool_calls
+                if call.get("name") == "search_regulatory_assets"
+            ),
+            None,
+        )
+        if (
+            proposed_search is not None
+            and not has_catalog_scan
+            and not self._is_sql_validation_request(user_text)
+        ):
+            return {
+                "messages": [
+                    last_message.model_copy(
+                        update={
+                            "content": "",
+                            "tool_calls": [self._catalog_scan_call(user_text, proposed_search)],
+                        }
+                    )
+                ],
+                "jump_to": "tools",
+            }
+
         sensitive_request = any(
             term in user_text for term in ("内部 API", "内部API", "鉴权令牌", "连接信息")
         )
+        requested_code_table = next(
+            (match.group(1) for match in self.CODE_TABLE_PATTERN.finditer(user_text)),
+            None,
+        )
+        has_code_lookup = any(
+            call.get("name") == "get_regulatory_code_values"
+            for call in current_turn_calls
+        )
+        if (
+            sensitive_request
+            and "码值" in user_text
+            and requested_code_table
+            and not has_code_lookup
+            and not last_message.tool_calls
+        ):
+            forced_call: ToolCall = {
+                "name": "get_regulatory_code_values",
+                "args": {"table_code": requested_code_table, "limit": 200},
+                "id": (
+                    "safe-code-lookup-"
+                    f"{hashlib.sha256(user_text.encode()).hexdigest()[:12]}"
+                ),
+                "type": "tool_call",
+            }
+            return {
+                "messages": [
+                    last_message.model_copy(
+                        update={"content": "", "tool_calls": [forced_call]}
+                    )
+                ],
+                "jump_to": "tools",
+            }
         explicit_refusal = any(
             term in _message_text(last_message.content)
             for term in ("不能提供", "不会提供", "无法提供", "不能也不应", "不会输出")
@@ -1211,7 +1331,8 @@ def create_runtime_agent(
             "用户请求清单外系统时，必须明确说明受当前访问范围限制；"
             "不得把权限过滤后的空结果表述为资产不存在、未接入或表名错误。\n"
             "- 只能调用当前 Skill 的监管集市工具和进度工具；不得尝试文件、Shell 或其他平台工具。\n"
-            "- 禁止以相同参数重复调用工具；同一目标换关键词搜索最多 3 次。\n"
+            "- 首次资产探索先扫描表层目录并形成证据计划；目录返回后再按候选和证据缺口下钻。\n"
+            "- 禁止以相同参数重复调用工具；不得用同义词遍历代替目录扫描。\n"
             "- 发现物理绑定、字段、码值、统计日期、粒度或 JOIN 证据缺失时，"
             "应立即把缺口列为待确认项并停止生成或校验 SQL。\n"
             "- 单轮最多 14 次业务工具调用；达到上限前必须基于已有证据作答。"
