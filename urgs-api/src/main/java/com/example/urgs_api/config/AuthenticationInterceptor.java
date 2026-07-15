@@ -28,6 +28,9 @@ public class AuthenticationInterceptor implements HandlerInterceptor {
         if ("GET".equalsIgnoreCase(request.getMethod()) && "/api/oauth/authorize".equals(request.getRequestURI())) {
             return true;
         }
+        if ("POST".equalsIgnoreCase(request.getMethod()) && "/api/oauth/token".equals(request.getRequestURI())) {
+            return true;
+        }
 
         String token = extractToken(request);
         if (!StringUtils.hasText(token)) {

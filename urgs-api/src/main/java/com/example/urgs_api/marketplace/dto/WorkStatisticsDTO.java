@@ -13,6 +13,7 @@ public class WorkStatisticsDTO {
     private LocalDate endDate;
     private Integer totalWorks;
     private Integer completedWorks;
+    private Integer totalTasks;
     private Integer completedTasks;
     private Integer activeTasks;
     private Integer overdueTasks;
@@ -64,12 +65,14 @@ public class WorkStatisticsDTO {
         private String workTitle;
         private String taskId;
         private String taskTitle;
+        private String taskRole;
         private String assigneeId;
         private String status;
         private LocalDateTime deadline;
         private Boolean overdue;
-        private Boolean riskReported;
-        private String riskNote;
+        private String attentionType;
+        private String attentionMessage;
+        private Integer remainingWorkdays;
     }
 
     @Data

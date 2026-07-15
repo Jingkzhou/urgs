@@ -349,12 +349,14 @@ export interface WorkStatisticsAttentionItem {
     workTitle: string;
     taskId: string;
     taskTitle: string;
+    taskRole?: 'MAIN' | 'SUB';
     assigneeId?: string;
     status: string;
     deadline?: string;
     overdue: boolean;
-    riskReported: boolean;
-    riskNote?: string;
+    attentionType?: 'TEST_SUBMISSION' | 'QUALITY_ACCEPTANCE';
+    attentionMessage?: string;
+    remainingWorkdays?: number;
 }
 
 export interface WorkCalendarTask {
@@ -372,6 +374,7 @@ export interface WorkStatistics {
     endDate: string;
     totalWorks: number;
     completedWorks: number;
+    totalTasks: number;
     completedTasks: number;
     activeTasks: number;
     overdueTasks: number;

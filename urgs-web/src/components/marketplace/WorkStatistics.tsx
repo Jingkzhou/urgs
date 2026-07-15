@@ -44,6 +44,7 @@ import {
     WorkTask,
 } from '../../api/marketplace';
 import { streamChatResponse } from '../../api/chat';
+import { getSystemList } from '../../api/ops';
 import { searchUsers } from '../../api/user';
 import { getTaskStageLabel, getTaskStatusLabel, getWorkStatusLabel } from './marketplaceLabels';
 
@@ -57,13 +58,14 @@ const WORK_STATUS_COLORS: Record<string, string> = {
     CANCELLED: '#cbd5e1',
 };
 
-const formatDate = (value?: string) => value ? dayjs(value).format('YYYY-MM-DD') : '-';
+const formatDateTime = (value?: string) => value ? dayjs(value).format('YYYY-MM-DD HH:mm') : '-';
 
 const WorkStatistics: React.FC = () => {
     const [startDate, setStartDate] = useState(() => dayjs().startOf('year').format('YYYY-MM-DD'));
     const [endDate, setEndDate] = useState(() => dayjs().format('YYYY-MM-DD'));
     const [statistics, setStatistics] = useState<WorkStatisticsData | null>(null);
     const [assigneeLabels, setAssigneeLabels] = useState<Record<string, string>>({});
+    const [systemNames, setSystemNames] = useState<Record<string, string>>({});
     const [loading, setLoading] = useState(true);
     const [loadError, setLoadError] = useState('');
     const [aiSummary, setAiSummary] = useState('');
@@ -118,7 +120,7 @@ const WorkStatistics: React.FC = () => {
         } catch (error) {
             console.error('Failed to fetch work statistics', error);
             setStatistics(null);
-            setLoadError('工作统计加载失败，请稍后重试');
+            setLoadError('需求统计加载失败，请稍后重试');
         } finally {
             setLoading(false);
         }
@@ -146,6 +148,14 @@ const WorkStatistics: React.FC = () => {
         fetchStatistics();
     }, [startDate, endDate]);
 
+    useEffect(() => {
+        getSystemList({ showAll: true })
+            .then(systems => setSystemNames(Object.fromEntries(
+                (systems || []).map(system => [String(system.id), system.name])
+            )))
+            .catch(error => console.error('Failed to fetch systems', error));
+    }, []);
+
     const calendarMonth = calendarDate.format('YYYY-MM');
 
     useEffect(() => {
@@ -157,6 +167,11 @@ const WorkStatistics: React.FC = () => {
     const renderAssignee = (assigneeId?: string) => {
         if (!assigneeId || assigneeId === 'UNASSIGNED') return '未分配';
         return assigneeLabels[assigneeId] || assigneeId;
+    };
+
+    const renderTaskSystems = (systemIds?: number[]) => {
+        if (!systemIds?.length) return '未设置';
+        return systemIds.map(systemId => systemNames[String(systemId)] || `系统 ${systemId}`).join('、');
     };
 
     const trendData = useMemo(() => (statistics?.workTrend || []).map(item => ({
@@ -174,6 +189,10 @@ const WorkStatistics: React.FC = () => {
         name: renderAssignee(item.assigneeId),
         pendingCount: Math.max(item.activeCount - item.pausedCount - item.overdueCount, 0),
     })), [statistics, assigneeLabels]);
+    const pausedTasks = useMemo(
+        () => statistics?.taskStatusDistribution.find(item => item.name === 'PAUSED')?.value || 0,
+        [statistics]
+    );
     const systemTaskData = useMemo(
         () => statistics?.systemTaskStats || [],
         [statistics]
@@ -230,7 +249,7 @@ const WorkStatistics: React.FC = () => {
                 console.error('Failed to fetch calendar work details', error);
                 if (!cancelled) {
                     setCalendarWorkTasks({});
-                    setCalendarDetailError('工作任务明细加载失败，请稍后重试');
+                    setCalendarDetailError('需求任务明细加载失败，请稍后重试');
                 }
             } finally {
                 if (!cancelled) setCalendarDetailLoading(false);
@@ -256,12 +275,12 @@ const WorkStatistics: React.FC = () => {
             .join('\n') || '暂无';
         const attentionItems = data.attentionItems
             .slice(0, 8)
-            .map(item => `- ${item.workTitle} / ${item.taskTitle}：状态 ${getTaskStatusLabel(item.status)}，${item.overdue ? '已逾期' : '未逾期'}，${item.riskReported ? `存在风险${item.riskNote ? `（${item.riskNote}）` : ''}` : '无风险报备'}`)
+            .map(item => `- ${item.workTitle} / ${item.taskTitle}：状态 ${getTaskStatusLabel(item.status)}，${item.overdue ? '已逾期' : item.attentionMessage || '阶段时限预警'}`)
             .join('\n') || '暂无';
 
-        return `你是项目管理助手。请基于以下真实统计数据，生成简洁、专业的中文工作进展概要。
-统计时间：${data.startDate} 至 ${data.endDate}，口径为按工作创建时间筛选，状态为查询时现状。
-工作：共 ${data.totalWorks} 个，已完成 ${data.completedWorks} 个；状态分布：${workStatuses}。
+        return `你是项目管理助手。请基于以下真实统计数据，生成简洁、专业的中文需求进展概要。
+统计时间：${data.startDate} 至 ${data.endDate}，口径为按需求创建时间筛选，状态为查询时现状。
+需求：共 ${data.totalWorks} 个，已完成 ${data.completedWorks} 个；状态分布：${workStatuses}。
 任务现状：已完成 ${data.completedTasks} 个，进行中 ${data.activeTasks} 个，完成率 ${data.completionRate}%，逾期 ${data.overdueTasks} 个，风险报备 ${data.riskTasks} 个；状态分布：${taskStatuses}。
 人员负载：
 ${workloads}
@@ -328,7 +347,7 @@ ${attentionItems}
             <div className="flex min-h-[420px] items-center justify-center rounded-xl border border-slate-200 bg-white">
                 <div className="flex items-center gap-3 text-sm text-slate-500">
                     <Loader2 size={20} className="animate-spin text-blue-500" />
-                    正在汇总工作进展...
+                    正在汇总需求进展...
                 </div>
             </div>
         );
@@ -394,7 +413,7 @@ ${attentionItems}
                     <RefreshCw size={14} />刷新
                 </button>
                 <div className="ml-auto flex flex-wrap items-center gap-3">
-                    <span className="text-xs text-slate-400">统计口径：按工作创建时间筛选，展示当前任务状态</span>
+                    <span className="text-xs text-slate-400">统计口径：按需求创建时间筛选，展示当前任务状态</span>
                     <button
                         type="button"
                         onClick={openAiSummary}
@@ -402,7 +421,7 @@ ${attentionItems}
                         className="inline-flex items-center gap-1.5 rounded-lg bg-indigo-600 px-3 py-1.5 text-xs font-bold text-white transition-colors hover:bg-indigo-500 disabled:cursor-not-allowed disabled:opacity-50"
                     >
                         {aiGenerating ? <Loader2 size={14} className="animate-spin" /> : <Sparkles size={14} />}
-                        {aiGenerating ? '正在生成' : 'AI 工作概要'}
+                        {aiGenerating ? '正在生成' : 'AI 需求概要'}
                     </button>
                 </div>
             </div>
@@ -410,24 +429,31 @@ ${attentionItems}
             <div className="grid grid-cols-2 gap-3 md:grid-cols-3 xl:grid-cols-5">
                 <MetricCard
                     icon={<BarChart3 size={17} />}
-                    label="工作总数"
-                    value={statistics.totalWorks}
-                    hint={`已完成 ${statistics.completedWorks}`}
+                    label="任务总数"
+                    value={statistics.totalTasks}
+                    hint="完成 + 进行中 + 暂停"
                     color="blue"
                 />
                 <MetricCard
                     icon={<CheckCircle2 size={17} />}
-                    label="任务完成率"
-                    value={`${statistics.completionRate}%`}
-                    hint="已取消任务不计入"
+                    label="完成任务数"
+                    value={statistics.completedTasks}
+                    hint="当前已完成任务"
                     color="green"
                 />
                 <MetricCard
                     icon={<Clock3 size={17} />}
                     label="进行中"
                     value={statistics.activeTasks}
-                    hint="含审核与返工"
+                    hint="待承接、待开始、处理中、审核与返工"
                     color="indigo"
+                />
+                <MetricCard
+                    icon={<Sparkles size={17} />}
+                    label="暂停任务数"
+                    value={pausedTasks}
+                    hint="当前已暂停任务"
+                    color="amber"
                 />
                 <MetricCard
                     icon={<CircleAlert size={17} />}
@@ -436,17 +462,10 @@ ${attentionItems}
                     hint="未完成且已过期"
                     color="red"
                 />
-                <MetricCard
-                    icon={<Sparkles size={17} />}
-                    label="风险任务"
-                    value={statistics.riskTasks}
-                    hint="已提交风险报备"
-                    color="amber"
-                />
             </div>
 
             <div className="grid grid-cols-1 gap-4 xl:grid-cols-2">
-                <ChartCard icon={<TrendingUp size={16} className="text-blue-600" />} title="工作趋势" subtitle="新增按创建日期，完成按截止日期">
+                <ChartCard icon={<TrendingUp size={16} className="text-blue-600" />} title="需求趋势" subtitle="新增按创建日期，完成按截止日期">
                     {trendData.some(item => item.createdWorkCount > 0 || item.completedWorkCount > 0) ? (
                         <ResponsiveContainer width="100%" height={250} minWidth={0}>
                             <ComposedChart data={trendData} margin={{ top: 8, right: 12, left: -18, bottom: 0 }}>
@@ -467,7 +486,7 @@ ${attentionItems}
                                     stroke="#2563eb"
                                     strokeWidth={2}
                                     fill="url(#completionTrendFill)"
-                                    name="完成工作"
+                                    name="完成需求"
                                 />
                                 <Line
                                     type="monotone"
@@ -476,14 +495,14 @@ ${attentionItems}
                                     strokeWidth={2}
                                     dot={false}
                                     activeDot={{ r: 4 }}
-                                    name="新增工作"
+                                    name="新增需求"
                                 />
                             </ComposedChart>
                         </ResponsiveContainer>
-                    ) : <EmptyChart text="该时间段内暂无工作趋势数据" />}
+                    ) : <EmptyChart text="该时间段内暂无需求趋势数据" />}
                 </ChartCard>
 
-                <ChartCard icon={<CheckCircle2 size={16} className="text-emerald-600" />} title="工作状态分布" subtitle="区间内工作的当前状态">
+                <ChartCard icon={<CheckCircle2 size={16} className="text-emerald-600" />} title="需求状态分布" subtitle="区间内需求的当前状态">
                     {workStatusData.length > 0 ? (
                         <ResponsiveContainer width="100%" height={250} minWidth={0}>
                             <PieChart>
@@ -499,18 +518,18 @@ ${attentionItems}
                                         <Cell key={item.name} fill={WORK_STATUS_COLORS[item.name] || '#94a3b8'} />
                                     ))}
                                 </Pie>
-                                <Tooltip formatter={value => [`${value} 个`, '工作数']} />
+                                <Tooltip formatter={value => [`${value} 个`, '需求数']} />
                                 <Legend iconType="circle" wrapperStyle={{ fontSize: 12 }} />
                             </PieChart>
                         </ResponsiveContainer>
-                    ) : <EmptyChart text="该时间段内暂无工作" />}
+                    ) : <EmptyChart text="该时间段内暂无需求" />}
                 </ChartCard>
 
                 <ChartCard
                     icon={<Building2 size={16} className="text-indigo-600" />}
                     title="涉及系统任务统计"
                     subtitle={systemTaskData.length > 0
-                        ? `全部展示 ${systemTaskData.length} 个有工作系统，按有效任务量降序`
+                        ? `全部展示 ${systemTaskData.length} 个有需求系统，按有效任务量降序`
                         : "需求、完成与逾期数量"}
                 >
                     {systemTaskData.length > 0 ? (
@@ -543,13 +562,13 @@ ${attentionItems}
                 </ChartCard>
             </div>
 
-            <div className="grid grid-cols-1 gap-4 xl:grid-cols-[minmax(0,1.1fr)_minmax(420px,.9fr)]">
-                <section className="overflow-hidden rounded-xl border border-blue-100 bg-white shadow-sm">
+            <div className="grid items-stretch grid-cols-1 gap-4 xl:h-[800px] xl:grid-cols-[minmax(0,1.1fr)_minmax(420px,.9fr)]">
+                <section className="h-full overflow-hidden rounded-xl border border-blue-100 bg-white shadow-sm">
                     <div className="border-b border-blue-100 bg-blue-50/60 px-4 py-3">
                         <div>
                             <div className="flex items-center gap-2 text-sm font-bold text-slate-800">
                                 <CalendarRange size={17} className="text-blue-600" />
-                                工作日历
+                                需求日历
                             </div>
                             <div className="mt-1 text-xs text-slate-500">按任务截止日期展示未完成事项，点击日期查看明细</div>
                         </div>
@@ -574,8 +593,8 @@ ${attentionItems}
                     </div>
                     <div className="border-t border-slate-100 px-4 py-3">
                         <div className="mb-2 flex items-center justify-between gap-3 text-xs">
-                            <span className="font-bold text-slate-700">{selectedCalendarDate} 工作任务</span>
-                            <span className="rounded-full bg-rose-50 px-2 py-0.5 font-bold text-rose-600">{selectedCalendarWorks.length} 个工作</span>
+                            <span className="font-bold text-slate-700">{selectedCalendarDate} 需求任务</span>
+                            <span className="rounded-full bg-rose-50 px-2 py-0.5 font-bold text-rose-600">{selectedCalendarWorks.length} 个需求</span>
                         </div>
                         {calendarLoading ? (
                             <div className="flex h-20 items-center justify-center text-xs text-slate-400">
@@ -587,7 +606,7 @@ ${attentionItems}
                             <div className="py-3 text-xs text-slate-400">当天没有未完成任务</div>
                         ) : calendarDetailLoading ? (
                             <div className="flex h-20 items-center justify-center text-xs text-slate-400">
-                                <Loader2 size={15} className="mr-2 animate-spin" />加载工作任务树...
+                                <Loader2 size={15} className="mr-2 animate-spin" />加载需求任务树...
                             </div>
                         ) : calendarDetailError ? (
                             <div className="py-3 text-xs text-rose-600">{calendarDetailError}</div>
@@ -598,13 +617,19 @@ ${attentionItems}
                                     const mainTask = tasks.find(task => task.taskRole === 'MAIN');
                                     const subTasks = tasks.filter(task => task.taskRole !== 'MAIN');
                                     const renderTask = (task: WorkTask, isSubTask = false) => (
-                                        <div key={task.id} className={`flex min-w-0 items-center gap-2 rounded-md border border-slate-100 bg-slate-50 px-2.5 py-2 ${isSubTask ? 'ml-5 before:-ml-4 before:text-slate-300 before:content-["└"]' : ''}`}>
-                                            <span className={`shrink-0 rounded px-1.5 py-0.5 text-[10px] font-bold ${isSubTask ? 'bg-slate-200 text-slate-600' : 'bg-blue-100 text-blue-700'}`}>
-                                                {isSubTask ? '子任务' : '主任务'}
-                                            </span>
-                                            <span className="min-w-0 flex-1 truncate text-xs font-bold text-slate-700">{task.title}</span>
-                                            <span className="shrink-0 text-[10px] text-blue-600">{getTaskStageLabel(task.currentStage)}</span>
-                                            <span className="shrink-0 text-[10px] text-slate-500">{renderAssignee(task.assigneeId)}</span>
+                                        <div key={task.id} className={`min-w-0 rounded-md border border-slate-100 bg-slate-50 px-2.5 py-2 ${isSubTask ? 'ml-5 before:-ml-4 before:text-slate-300 before:content-["└"]' : ''}`}>
+                                            <div className="flex min-w-0 items-center gap-2">
+                                                <span className={`shrink-0 rounded px-1.5 py-0.5 text-[10px] font-bold ${isSubTask ? 'bg-slate-200 text-slate-600' : 'bg-blue-100 text-blue-700'}`}>
+                                                    {isSubTask ? '子任务' : '主任务'}
+                                                </span>
+                                                <span className="min-w-0 flex-1 truncate text-xs font-bold text-slate-700">{task.title}</span>
+                                                <span className="shrink-0 text-[10px] text-blue-600">{getTaskStageLabel(task.currentStage)}</span>
+                                                <span className="shrink-0 text-[10px] text-slate-500">{renderAssignee(task.assigneeId)}</span>
+                                            </div>
+                                            <div className="mt-1 flex min-w-0 items-center gap-3 text-[10px] text-slate-500">
+                                                <span className="min-w-0 flex-1 truncate">对应系统：{renderTaskSystems(task.involvedSystemIds)}</span>
+                                                <span className="shrink-0">截止：{formatDateTime(task.deadline)}</span>
+                                            </div>
                                         </div>
                                     );
                                     return (
@@ -626,50 +651,58 @@ ${attentionItems}
                     </div>
                 </section>
 
-                <section className="overflow-hidden rounded-xl border border-slate-200 bg-white shadow-sm">
-                    <div className="flex items-center justify-between border-b border-slate-100 px-4 py-3">
+                <section className="flex h-full min-h-0 flex-col overflow-hidden rounded-xl border border-slate-200 bg-white shadow-sm">
+                    <div className="flex shrink-0 items-center justify-between border-b border-slate-100 px-4 py-3">
                         <div>
                             <div className="flex items-center gap-2 text-sm font-bold text-slate-800">
                                 <CircleAlert size={16} className="text-amber-500" />
                                 重点关注
                             </div>
-                            <div className="mt-1 text-xs text-slate-400">风险与逾期任务，最多展示 10 条</div>
+                            <div className="mt-1 text-xs text-slate-400">展示全部逾期、提测与质量验收时限预警</div>
                         </div>
                         <span className="rounded-full bg-amber-50 px-2 py-0.5 text-xs font-bold text-amber-700">
                             {statistics.attentionItems.length}
                         </span>
                     </div>
                     {statistics.attentionItems.length === 0 ? (
-                        <div className="flex min-h-[280px] flex-col items-center justify-center text-sm text-slate-400">
+                        <div className="flex flex-1 flex-col items-center justify-center text-sm text-slate-400">
                             <CheckCircle2 size={26} className="mb-3 text-emerald-400" />
-                            当前没有风险或逾期任务
+                            当前没有逾期或阶段时限预警
                         </div>
                     ) : (
-                        <div className="max-h-[380px] divide-y divide-slate-100 overflow-y-auto">
+                        <div className="min-h-0 flex-1 divide-y divide-slate-100 overflow-y-auto">
                             {statistics.attentionItems.map(item => (
                                 <div key={item.taskId} className="px-4 py-3 transition-colors hover:bg-slate-50">
                                     <div className="flex items-start justify-between gap-3">
                                         <div className="min-w-0">
-                                            <div className="truncate text-sm font-bold text-slate-800">{item.taskTitle}</div>
+                                            <div className="flex items-center gap-2">
+                                                <span className={`shrink-0 rounded px-1.5 py-0.5 text-[10px] font-bold ${item.taskRole === 'MAIN' ? 'bg-blue-100 text-blue-700' : 'bg-slate-200 text-slate-600'}`}>
+                                                    {item.taskRole === 'MAIN' ? '主任务' : '子任务'}
+                                                </span>
+                                                <span className="min-w-0 truncate text-sm font-bold text-slate-800">{item.taskTitle}</span>
+                                            </div>
                                             <div className="mt-1 truncate text-xs text-slate-400">{item.workTitle}</div>
                                         </div>
                                         <div className="flex shrink-0 items-center gap-1">
-                                            {item.riskReported && (
-                                                <span className="rounded bg-amber-50 px-1.5 py-0.5 text-[11px] font-bold text-amber-700">风险</span>
-                                            )}
                                             {item.overdue && (
                                                 <span className="rounded bg-rose-50 px-1.5 py-0.5 text-[11px] font-bold text-rose-600">逾期</span>
+                                            )}
+                                            {item.attentionType === 'TEST_SUBMISSION' && (
+                                                <span className="rounded bg-blue-50 px-1.5 py-0.5 text-[11px] font-bold text-blue-700">提测预警</span>
+                                            )}
+                                            {item.attentionType === 'QUALITY_ACCEPTANCE' && (
+                                                <span className="rounded bg-purple-50 px-1.5 py-0.5 text-[11px] font-bold text-purple-700">质量验收预警</span>
                                             )}
                                         </div>
                                     </div>
                                     <div className="mt-2 flex flex-wrap items-center gap-x-3 gap-y-1 text-xs text-slate-500">
                                         <span>{renderAssignee(item.assigneeId)}</span>
                                         <span>{getTaskStatusLabel(item.status)}</span>
-                                        <span>截止 {formatDate(item.deadline)}</span>
+                                        <span>任务截止日期 {formatDateTime(item.deadline)}</span>
                                     </div>
-                                    {item.riskNote && (
-                                        <div className="mt-2 line-clamp-2 rounded-md bg-amber-50/70 px-2.5 py-2 text-xs leading-5 text-amber-800">
-                                            {item.riskNote}
+                                    {item.attentionMessage && (
+                                        <div className={`mt-2 rounded-md px-2.5 py-2 text-xs leading-5 ${item.overdue ? 'bg-rose-50/70 text-rose-800' : 'bg-blue-50/70 text-blue-800'}`}>
+                                            {item.attentionMessage}
                                         </div>
                                     )}
                                 </div>
@@ -683,7 +716,7 @@ ${attentionItems}
                 title={(
                     <span className="flex items-center gap-2 text-slate-800">
                         <Bot size={18} className="text-indigo-600" />
-                        AI 工作概要
+                        AI 需求概要
                     </span>
                 )}
                 footer={null}
@@ -718,8 +751,8 @@ ${attentionItems}
                         <div className="mb-3 rounded-xl bg-indigo-50 p-3 text-indigo-500">
                             <Bot size={24} />
                         </div>
-                        <div className="text-sm font-bold text-slate-700">正在准备工作概要</div>
-                        <div className="mt-1 max-w-sm text-xs leading-5 text-slate-400">AI 将严格基于当前统计数据归纳，不会改动工作或任务信息。</div>
+                        <div className="text-sm font-bold text-slate-700">正在准备需求概要</div>
+                        <div className="mt-1 max-w-sm text-xs leading-5 text-slate-400">AI 将严格基于当前统计数据归纳，不会改动需求或任务信息。</div>
                     </div>
                 )}
             </Modal>

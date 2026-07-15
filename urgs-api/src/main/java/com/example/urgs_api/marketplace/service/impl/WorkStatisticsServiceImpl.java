@@ -15,6 +15,8 @@ import org.springframework.stereotype.Service;
 
 import java.time.LocalDate;
 import java.time.LocalDateTime;
+import java.time.DayOfWeek;
+import java.time.format.DateTimeFormatter;
 import java.util.Comparator;
 import java.util.LinkedHashMap;
 import java.util.LinkedHashSet;
@@ -25,14 +27,15 @@ import java.util.stream.Collectors;
 
 @Service
 public class WorkStatisticsServiceImpl implements WorkStatisticsService {
+    private static final DateTimeFormatter DEADLINE_FORMATTER = DateTimeFormatter.ofPattern("yyyy-MM-dd HH:mm");
     private static final String UNASSIGNED = "UNASSIGNED";
-    private static final Set<String> ACTIVE_TASK_STATUSES = Set.of(
-            TaskStatus.IN_PROGRESS.name(),
-            TaskStatus.WAITING_REVIEW.name(),
-            TaskStatus.REWORK.name());
     private static final Set<String> CLOSED_TASK_STATUSES = Set.of(
             TaskStatus.COMPLETED.name(),
             TaskStatus.CANCELLED.name());
+    private static final String STAGE_TEST_SUBMISSION_COMPLETED = "TEST_SUBMISSION_COMPLETED";
+    private static final String STAGE_QUALITY_ACCEPTANCE_COMPLETED = "QUALITY_ACCEPTANCE_COMPLETED";
+    private static final int TEST_SUBMISSION_WARNING_WORKDAYS = 9;
+    private static final int QUALITY_ACCEPTANCE_WARNING_WORKDAYS = 3;
 
     @Autowired
     private WorkService workService;
@@ -73,11 +76,14 @@ public class WorkStatisticsServiceImpl implements WorkStatisticsService {
                 .filter(work -> WorkStatus.COMPLETED.name().equals(normalizeStatus(work.getStatus())))
                 .count());
 
+        int totalTasks = (int) tasks.stream()
+                .filter(task -> !TaskStatus.CANCELLED.name().equals(normalizeStatus(task.getStatus())))
+                .count();
         int completedTasks = (int) tasks.stream()
                 .filter(this::isCompletedTask)
                 .count();
         int activeTasks = (int) tasks.stream()
-                .filter(task -> ACTIVE_TASK_STATUSES.contains(normalizeStatus(task.getStatus())))
+                .filter(this::isInProgressTask)
                 .count();
         int overdueTasks = (int) tasks.stream()
                 .filter(task -> isOverdueTask(task, now))
@@ -85,17 +91,14 @@ public class WorkStatisticsServiceImpl implements WorkStatisticsService {
         int riskTasks = (int) tasks.stream()
                 .filter(task -> Boolean.TRUE.equals(task.getStageRiskReported()))
                 .count();
-        long effectiveTaskCount = tasks.stream()
-                .filter(task -> !TaskStatus.CANCELLED.name().equals(normalizeStatus(task.getStatus())))
-                .count();
-
+        statistics.setTotalTasks(totalTasks);
         statistics.setCompletedTasks(completedTasks);
         statistics.setActiveTasks(activeTasks);
         statistics.setOverdueTasks(overdueTasks);
         statistics.setRiskTasks(riskTasks);
-        statistics.setCompletionRate(effectiveTaskCount == 0
+        statistics.setCompletionRate(totalTasks == 0
                 ? 0
-                : (int) Math.round(completedTasks * 100.0 / effectiveTaskCount));
+                : (int) Math.round(completedTasks * 100.0 / totalTasks));
 
         statistics.setWorkStatusDistribution(buildStatusDistribution(
                 works.stream().map(Work::getStatus).collect(Collectors.toList()),
@@ -351,12 +354,12 @@ public class WorkStatisticsServiceImpl implements WorkStatisticsService {
             Map<String, Work> workById,
             LocalDateTime now) {
         return tasks.stream()
-                .filter(task -> Boolean.TRUE.equals(task.getStageRiskReported()) || isOverdueTask(task, now))
+                .filter(task -> isOverdueTask(task, now)
+                        || getStageDeadlineAlert(task, now) != null)
                 .sorted(Comparator
-                        .comparing((WorkTask task) -> !Boolean.TRUE.equals(task.getStageRiskReported()))
-                        .thenComparing(task -> !isOverdueTask(task, now))
+                        .comparing((WorkTask task) -> !isOverdueTask(task, now))
+                        .thenComparing(task -> getStageDeadlineAlert(task, now) == null)
                         .thenComparing(WorkTask::getDeadline, Comparator.nullsLast(Comparator.naturalOrder())))
-                .limit(10)
                 .map(task -> {
                     Work work = workById.get(task.getWorkId());
                     WorkStatisticsDTO.AttentionItem item = new WorkStatisticsDTO.AttentionItem();
@@ -364,43 +367,130 @@ public class WorkStatisticsServiceImpl implements WorkStatisticsService {
                     item.setWorkTitle(work == null ? "-" : work.getTitle());
                     item.setTaskId(task.getId());
                     item.setTaskTitle(task.getTitle());
+                    item.setTaskRole(task.getTaskRole());
                     item.setAssigneeId(task.getAssigneeId());
                     item.setStatus(task.getStatus());
                     item.setDeadline(task.getDeadline());
                     item.setOverdue(isOverdueTask(task, now));
-                    item.setRiskReported(Boolean.TRUE.equals(task.getStageRiskReported()));
-                    item.setRiskNote(latestRiskNote(task.getStageRiskNote()));
+                    StageDeadlineAlert alert = getStageDeadlineAlert(task, now);
+                    if (item.getOverdue()) {
+                        item.setAttentionMessage("应于 " + formatDeadline(task.getDeadline())
+                                + " 前完成，当前仍未完成，已超过截止时间");
+                    } else if (alert != null) {
+                        item.setAttentionType(alert.type());
+                        item.setAttentionMessage(alert.message());
+                        item.setRemainingWorkdays(alert.remainingWorkdays());
+                    }
                     return item;
                 })
                 .collect(Collectors.toList());
+    }
+
+    private StageDeadlineAlert getStageDeadlineAlert(WorkTask task, LocalDateTime now) {
+        if (task.getDeadline() == null
+                || CLOSED_TASK_STATUSES.contains(normalizeStatus(task.getStatus()))
+                || TaskStatus.PAUSED.name().equals(normalizeStatus(task.getStatus()))) {
+            return null;
+        }
+        int remainingWorkdays = countRemainingWorkdays(now.toLocalDate(), task.getDeadline().toLocalDate());
+        if (remainingWorkdays < 0) {
+            return null;
+        }
+        if (STAGE_TEST_SUBMISSION_COMPLETED.equals(task.getCurrentStage())
+                && remainingWorkdays <= TEST_SUBMISSION_WARNING_WORKDAYS) {
+            return new StageDeadlineAlert(
+                    "TEST_SUBMISSION",
+                    buildStageWarningMessage(task.getDeadline(), now, TEST_SUBMISSION_WARNING_WORKDAYS,
+                            "完成提测", remainingWorkdays, "提测"),
+                    remainingWorkdays);
+        }
+        if (STAGE_QUALITY_ACCEPTANCE_COMPLETED.equals(task.getCurrentStage())
+                && remainingWorkdays <= QUALITY_ACCEPTANCE_WARNING_WORKDAYS) {
+            return new StageDeadlineAlert(
+                    "QUALITY_ACCEPTANCE",
+                    buildStageWarningMessage(task.getDeadline(), now, QUALITY_ACCEPTANCE_WARNING_WORKDAYS,
+                            "完成质量验收", remainingWorkdays, "质量验收"),
+                    remainingWorkdays);
+        }
+        return null;
+    }
+
+    private String buildStageWarningMessage(LocalDateTime taskDeadline, LocalDateTime now, int advanceWorkdays,
+            String stageAction, int remainingWorkdays, String warningName) {
+        LocalDateTime stagePlanDeadline = subtractWorkdays(taskDeadline, advanceWorkdays);
+        int overdueStageWorkdays = countElapsedWorkdays(stagePlanDeadline.toLocalDate(), now.toLocalDate());
+        String stageProgress = overdueStageWorkdays > 0
+                ? "当前仍未完成，已超过该阶段计划 " + overdueStageWorkdays + " 个工作日"
+                : "当前仍未完成，今日为该阶段计划完成日";
+        return "任务截止日期为 " + formatDeadline(taskDeadline) + "；"
+                + stageAction + "应于 " + formatDeadline(stagePlanDeadline) + " 前完成，"
+                + stageProgress + "；距任务截止日期还有 " + remainingWorkdays + " 个工作日，触发"
+                + warningName + "预警";
+    }
+
+    private String formatDeadline(LocalDateTime deadline) {
+        return deadline == null ? "-" : deadline.format(DEADLINE_FORMATTER);
+    }
+
+    private int countRemainingWorkdays(LocalDate currentDate, LocalDate deadlineDate) {
+        if (deadlineDate.isBefore(currentDate)) {
+            return -1;
+        }
+        int workdays = 0;
+        for (LocalDate date = currentDate.plusDays(1); !date.isAfter(deadlineDate); date = date.plusDays(1)) {
+            if (date.getDayOfWeek() != DayOfWeek.SATURDAY && date.getDayOfWeek() != DayOfWeek.SUNDAY) {
+                workdays++;
+            }
+        }
+        return workdays;
+    }
+
+    private LocalDateTime subtractWorkdays(LocalDateTime deadline, int workdays) {
+        LocalDate date = deadline.toLocalDate();
+        int subtracted = 0;
+        while (subtracted < workdays) {
+            date = date.minusDays(1);
+            if (date.getDayOfWeek() != DayOfWeek.SATURDAY && date.getDayOfWeek() != DayOfWeek.SUNDAY) {
+                subtracted++;
+            }
+        }
+        return LocalDateTime.of(date, deadline.toLocalTime());
+    }
+
+    private int countElapsedWorkdays(LocalDate stagePlanDate, LocalDate currentDate) {
+        if (!currentDate.isAfter(stagePlanDate)) {
+            return 0;
+        }
+        int workdays = 0;
+        for (LocalDate date = stagePlanDate.plusDays(1); !date.isAfter(currentDate); date = date.plusDays(1)) {
+            if (date.getDayOfWeek() != DayOfWeek.SATURDAY && date.getDayOfWeek() != DayOfWeek.SUNDAY) {
+                workdays++;
+            }
+        }
+        return workdays;
+    }
+
+    private record StageDeadlineAlert(String type, String message, int remainingWorkdays) {
     }
 
     private boolean isCompletedTask(WorkTask task) {
         return TaskStatus.COMPLETED.name().equals(normalizeStatus(task.getStatus()));
     }
 
+    private boolean isInProgressTask(WorkTask task) {
+        String status = normalizeStatus(task.getStatus());
+        return !CLOSED_TASK_STATUSES.contains(status) && !TaskStatus.PAUSED.name().equals(status);
+    }
+
     private boolean isOverdueTask(WorkTask task, LocalDateTime now) {
         return task.getDeadline() != null
                 && task.getDeadline().isBefore(now)
-                && !CLOSED_TASK_STATUSES.contains(normalizeStatus(task.getStatus()));
+                && !CLOSED_TASK_STATUSES.contains(normalizeStatus(task.getStatus()))
+                && !TaskStatus.PAUSED.name().equals(normalizeStatus(task.getStatus()));
     }
 
     private String normalizeStatus(String status) {
         return status == null ? "UNKNOWN" : status.trim().toUpperCase();
-    }
-
-    private String latestRiskNote(String riskNote) {
-        if (isBlank(riskNote)) {
-            return null;
-        }
-        String[] lines = riskNote.split("\\R");
-        for (int index = lines.length - 1; index >= 0; index--) {
-            String line = lines[index].trim();
-            if (!line.isEmpty()) {
-                return line.length() > 200 ? line.substring(0, 200) + "..." : line;
-            }
-        }
-        return null;
     }
 
     private boolean isBlank(String value) {
