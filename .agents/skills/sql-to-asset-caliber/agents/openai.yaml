@@ -1,4 +1,4 @@
 interface:
   display_name: "SQL 监管资产口径提炼"
   short_description: "从加工 SQL 和监管证据生成可回填的监管表与元素业务口径"
-  default_prompt: "使用 $sql-to-asset-caliber 分析这段加工 SQL，并生成可确认后回填到监管资产管理的表级与字段或指标级业务口径。"
+  default_prompt: "使用 $sql-to-asset-caliber 在我提供的监管系统编码范围内分析这段加工 SQL；未提供表、字段或指标名称时主动查询定位，并生成可确认后回填的业务口径。"

@@ -426,6 +426,30 @@ class RegulatoryMarketWorkflowMiddleware(AgentMiddleware[Any, Any, Any]):
     SQL_PATTERN = re.compile(
         r"(?is)\b(SELECT|INSERT|DELETE|UPDATE|CREATE|ALTER|DROP)\b.*?(?=。|；|$)"
     )
+    def __init__(self, allowed_systems: list[str] | tuple[str, ...] | None = None) -> None:
+        self.allowed_systems = tuple(
+            dict.fromkeys(
+                str(item).strip().upper()
+                for item in allowed_systems or []
+                if str(item).strip()
+            )
+        )
+
+    def _out_of_scope_systems(self, calls: list[ToolCall]) -> list[str]:
+        if not self.allowed_systems:
+            return []
+        return list(
+            dict.fromkeys(
+                system_code
+                for call in calls
+                if (
+                    system_code := str(
+                        (call.get("args") or {}).get("system_code") or ""
+                    ).strip().upper()
+                )
+                and system_code not in self.allowed_systems
+            )
+        )
 
     @staticmethod
     def _tool_calls(messages: list[Any]) -> list[ToolCall]:
@@ -482,6 +506,29 @@ class RegulatoryMarketWorkflowMiddleware(AgentMiddleware[Any, Any, Any]):
                 continue
             return cls._parse_tool_payload(message)
         return None
+
+    @classmethod
+    def _has_confirmed_teller_evidence(cls, messages: list[Any]) -> bool:
+        payload = cls._latest_development_context(messages)
+        if not payload or payload.get("ok") is False:
+            return False
+        table_confirmed = any(
+            isinstance(table, dict) and table.get("name") == "IE_001_103"
+            for table in payload.get("tables") or []
+        )
+        field_confirmed = any(
+            isinstance(element, dict)
+            and element.get("name") == "SFSTGY"
+            and (
+                element.get("codeTableCode") == "EAST_SFBZ"
+                or (
+                    isinstance(element.get("codeTable"), dict)
+                    and element["codeTable"].get("tableCode") == "EAST_SFBZ"
+                )
+            )
+            for element in payload.get("selectedElements") or []
+        )
+        return table_confirmed and field_confirmed
 
     @staticmethod
     def _missing_context_answer(
@@ -571,6 +618,13 @@ class RegulatoryMarketWorkflowMiddleware(AgentMiddleware[Any, Any, Any]):
         search_tables: list[int] = []
         confirmed_elements: list[int] = []
         search_elements: list[int] = []
+        requested_code_tables = {
+            str((call.get("args") or {}).get("table_code") or "")
+            for message in messages
+            if isinstance(message, AIMessage)
+            for call in (message.tool_calls or [])
+            if call.get("name") == "get_regulatory_code_values"
+        }
 
         def append_id(target: list[int], value: Any) -> None:
             try:
@@ -589,6 +643,17 @@ class RegulatoryMarketWorkflowMiddleware(AgentMiddleware[Any, Any, Any]):
             name = str(getattr(message, "name", "") or "")
             if name == "get_regulatory_table":
                 append_id(confirmed_tables, payload.get("id"))
+                for element in payload.get("elements") or []:
+                    if not isinstance(element, dict):
+                        continue
+                    code_table = element.get("codeTable")
+                    code_table_code = (
+                        code_table.get("tableCode")
+                        if isinstance(code_table, dict)
+                        else element.get("codeTableCode")
+                    )
+                    if code_table_code in requested_code_tables:
+                        append_id(confirmed_elements, element.get("id"))
             elif name == "get_regulatory_element":
                 append_id(confirmed_elements, payload.get("id"))
                 append_id(confirmed_tables, payload.get("tableId"))
@@ -662,6 +727,25 @@ class RegulatoryMarketWorkflowMiddleware(AgentMiddleware[Any, Any, Any]):
         current_turn_calls = self._tool_calls(current_turn_messages)
         user_text = self._last_user_text(messages)
 
+        out_of_scope_systems = self._out_of_scope_systems(current_turn_calls)
+        if out_of_scope_systems:
+            requested_scope = "、".join(out_of_scope_systems)
+            allowed_scope = "、".join(self.allowed_systems)
+            return {
+                "messages": [
+                    last_message.model_copy(
+                        update={
+                            "content": (
+                                f"当前请求允许访问的监管系统仅为 {allowed_scope}；"
+                                f"{requested_scope} 不在当前访问范围内，因此无法查询其监管资产。"
+                                "这不表示相关资产不存在或未接入；如需查询，请先申请对应系统权限。"
+                            ),
+                            "tool_calls": [],
+                        }
+                    )
+                ]
+            }
+
         execution_request = any(
             term in user_text
             for term in ("执行 DELETE", "执行 UPDATE", "执行 DROP", "执行 ALTER")
@@ -721,15 +805,24 @@ class RegulatoryMarketWorkflowMiddleware(AgentMiddleware[Any, Any, Any]):
         if missing_date_request and any(
             call.get("name") == "validate_generated_sql" for call in last_message.tool_calls
         ):
+            teller_evidence_confirmed = self._has_confirmed_teller_evidence(
+                current_turn_messages
+            )
+            content = (
+                "IE_001_103 已确认实体柜员标志为 SFSTGY，码表为 EAST_SFBZ，"
+                "码值为“是”。指标设计中的统计日期待确认；"
+                "在日期字段和统计周期确认前不生成或校验 SQL。"
+                if teller_evidence_confirmed
+                else (
+                    "指标设计中的统计日期待确认；在日期字段和统计周期确认前，"
+                    "不生成或校验 SQL，也不编造日期字段。"
+                )
+            )
             return {
                 "messages": [
                     last_message.model_copy(
                         update={
-                            "content": (
-                                "IE_001_103 已确认实体柜员标志为 SFSTGY，码表为 EAST_SFBZ，"
-                                "码值为“是”。指标设计中的统计日期待确认；"
-                                "在日期字段和统计周期确认前不生成或校验 SQL。"
-                            ),
+                            "content": content,
                             "tool_calls": [],
                         }
                     )
@@ -1105,9 +1198,18 @@ def create_runtime_agent(
             RegulatoryCodeEvidenceMiddleware(),
         ]
     if agent_code == REGULATORY_MARKET_ASSISTANT_AGENT_CODE:
+        allowed_systems = [
+            str(item).strip()
+            for item in (runtime_context or {}).get("allowed_systems") or []
+            if str(item).strip()
+        ]
+        access_scope = "、".join(dict.fromkeys(allowed_systems))
         effective_system_prompt = (
             f"{effective_system_prompt}\n\n"
             "## 监管集市运行时工具策略（优先于前文）\n"
+            f"- 当前请求允许访问的监管系统仅为：{access_scope}。"
+            "用户请求清单外系统时，必须明确说明受当前访问范围限制；"
+            "不得把权限过滤后的空结果表述为资产不存在、未接入或表名错误。\n"
             "- 只能调用当前 Skill 的监管集市工具和进度工具；不得尝试文件、Shell 或其他平台工具。\n"
             "- 禁止以相同参数重复调用工具；同一目标换关键词搜索最多 3 次。\n"
             "- 发现物理绑定、字段、码值、统计日期、粒度或 JOIN 证据缺失时，"
@@ -1115,7 +1217,7 @@ def create_runtime_agent(
             "- 单轮最多 14 次业务工具调用；达到上限前必须基于已有证据作答。"
         ).strip()
         runtime_kwargs["middleware"][:0] = [
-            RegulatoryMarketWorkflowMiddleware(),
+            RegulatoryMarketWorkflowMiddleware(allowed_systems=allowed_systems),
             BusinessToolCallLimitMiddleware(
                 run_limit=REGULATORY_MARKET_ASSISTANT_TOOL_CALL_HARD_LIMIT,
                 exit_behavior="continue",

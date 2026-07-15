@@ -1,6 +1,6 @@
 ---
 name: sql-to-asset-caliber
-description: Use when the user provides existing processing SQL and asks to analyze its table logic, field logic, indicator logic, filters, calculations, or code-value meaning; map that evidence to regulatory-market table descriptions, field descriptions, indicators, physical bindings, and value domains; then draft, review, or update the corresponding asset-management table and field business caliber. Do not use to design new processing SQL from a business requirement.
+description: Use when the user provides existing processing SQL and a regulatory system code, then asks to analyze table logic, field logic, indicator logic, filters, calculations, or code-value meaning; locate omitted table, field, or indicator targets within that system; map SQL evidence to regulatory-market descriptions, physical bindings, formulas, and value domains; then draft, review, or update the corresponding asset-management business caliber. Do not use to design new processing SQL from a business requirement.
 ---
 
 # SQL 到资产业务口径
@@ -18,12 +18,22 @@ description: Use when the user provides existing processing SQL and asks to anal
 
 ## 输入门槛
 
-开始前至少取得：
+开始前必须取得：
 
 - 完整加工 SQL，而不是截断片段；
+- 用户明确提供的监管系统编码 `systemCode`；该编码是资产查询的强制范围和唯一依据；
+- 目标环境或数据源，避免同名物理表误匹配。
+
+以下信息允许从 SQL 和监管集市中补充定位：
+
 - SQL 方言；无法确定时从语法和项目配置推断并标注；
-- 目标资产表，或能从 `INSERT INTO`、`MERGE INTO`、CTAS 等语句唯一识别的目标表；
-- 目标环境或数据源，避免同名表误匹配。
+- 监管资产表名、字段名或指标名；
+- 目标物理表，或能从 `INSERT INTO`、`MERGE INTO`、CTAS 等语句识别的目标表；
+- 目标字段清单及其与监管字段/指标的映射。
+
+禁止从系统中文名、SQL Schema、表名前缀、存储过程变量（如 `V_SYSTEM`）、程序名称或历史相似记录推断、替换监管系统编码。用户没有提供 `systemCode` 时停止资产查询并只补问该编码。
+
+用户未提供监管表名、字段名或指标名时，不要立即要求用户补充。先限定在用户提供的 `systemCode` 内，利用 SQL 目标表、目标列、中文注释、物理绑定和监管集市搜索主动定位；只有完成候选查询后仍无法唯一确认时，才展示候选及证据并请用户选择。
 
 缺少完整目标列清单、SQL 使用 `SELECT *`、动态 SQL 无法展开，或同名目标资产不唯一时，先补取表结构或请用户确认。不要把不完整映射写入资产。
 
@@ -54,6 +64,12 @@ description: Use when the user provides existing processing SQL and asks to anal
 
 用监管系统编码、监管表名和字段/指标名定位唯一的 `RegTable` 与 `RegElement`。记录资产 ID、类型、当前中文名、当前业务口径和更新时间。
 
+- 始终把用户提供的 `systemCode` 带入查询；搜索结果超出该系统范围时直接排除。
+- 用户提供监管表名时，以该名称为搜索锚点，并通过系统编码、物理绑定和详情证据验证唯一性。
+- 用户只提供字段名或指标名时，先在指定系统内搜索元素，再根据元素所属 `tableId` 回溯监管表并读取完整 `table-bundle`。
+- 用户未提供监管表、字段或指标名称时，从 SQL 目标物理表和目标列开始，依次匹配物理绑定、精确名称、业务编码和中文注释；对候选表读取 `table-bundle` 后再确认。
+- 选定监管表后，枚举其全部 `FIELD` 和 `INDICATOR` 元素；优先分析本次 SQL 实际赋值、计算、过滤或关联到的元素，不要求用户逐个报出名称。
+
 - 目标监管资产不存在时，报告缺口，不要顺带创建资产。
 - SQL 目标字段无法通过物理绑定或明确映射关联到监管元素时，单独列出“结构差异”。
 - 资产字段未被本次 SQL 赋值时，不推测其口径，也不清空已有内容。
@@ -72,6 +88,13 @@ description: Use when the user provides existing processing SQL and asks to anal
 在 URGS 中，先使用客户端的 `search` 命令定位候选，再对确认的表使用 `table-bundle`。若返回 `complete=false` 或非空 `warnings`，把缺失证据列为待确认，不对受影响字段自动回填。
 
 仅名称相似、没有绑定或精确映射的候选，置信度设为“低”，只进入待确认项，不参与自动写回。
+
+#### 指标查询与分析
+
+- 用用户提供的 `systemCode` 和指标名、目标列名、SQL 中文注释或表达式业务词搜索指标候选，保留类型为 `INDICATOR` 的元素；没有指标名时也要检查候选表的指标列表。
+- 对候选指标读取元素详情及所属表的 `table-bundle`，获取指标公式、取数 SQL、代码片段、填报说明、校验规则、值域、码表、物理字段绑定和当前业务口径。
+- 展开 SQL 中与指标相关的聚合、算术表达式、`CASE`、窗口、去重、日期和过滤条件，与监管公式逐项核对，分析统计对象、粒度、周期、分子、分母、单位、精度、正负号和异常处理。
+- SQL 公式与监管指标公式一致且绑定明确时形成高置信度口径；部分一致或缺少直接绑定时形成中置信度草稿；存在冲突、公式缺失或仅名称相似时列为待确认，不自行裁决。
 
 ### 5. 归纳业务规则
 
@@ -144,6 +167,8 @@ description: Use when the user provides existing processing SQL and asks to anal
 
 ## 硬性约束
 
+- 不推断监管系统编码；`systemCode` 必须由用户明确提供，并原样用于资产查询范围。
+- 不因用户未提供监管表名、字段名或指标名就放弃查询；先在指定系统内主动搜索、回溯所属表并分析候选元素。
 - 不逐句翻译 SQL，不把函数名、别名和临时表名堆成业务描述。
 - 不凭同名字段猜 JOIN、监管映射或码值含义。
 - 不执行用户提供的加工 SQL。

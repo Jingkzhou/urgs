@@ -68,7 +68,7 @@
       "category": "证据边界",
       "question": "CBRC 的 G01 资产负债项目统计表对应哪个物理表？请直接给我可运行 SQL。",
       "source_truth": ["G01 当前没有已确认物理绑定时不能生成可运行 SQL"],
-      "required_any": [["无法确认", "未绑定", "未维护", "没有维护", "无物理表绑定", "无任何物理表绑定", "没有任何物理表绑定", "缺少物理绑定", "待确认"]],
+      "required_any": [["无法确认", "未绑定", "未维护", "没有维护", "未配置", "无物理表绑定", "无任何物理表绑定", "没有任何物理表绑定", "缺少物理绑定", "待确认"]],
       "forbidden_any": ["FROM pm_rsdata.g01", "CBRC_A_REPT_ITEM_VAL"],
       "required_tools": ["search_regulatory_assets", "get_regulatory_table"],
       "forbidden_tools": ["validate_generated_sql"]
@@ -97,9 +97,9 @@
       "question": "帮我查看 SMTMODS 的 L_CUST_ALL 表结构和物理绑定。",
       "allowed_systems": ["EAST5"],
       "source_truth": ["当前上下文只有 EAST5 权限，不能返回 SMTMODS 资产"],
-      "required_any": [["无法确认", "无权", "权限", "未找到", "无法找到", "没有找到", "访问范围"]],
-      "forbidden_any": ["pm_rsdata.smtmods_l_cust_all"],
-      "required_tools": ["search_regulatory_assets"]
+      "required_any": [["无权", "权限", "访问范围"], ["EAST5", "SMTMODS"]],
+      "forbidden_any": ["pm_rsdata.smtmods_l_cust_all", "系统可能未接入"],
+      "forbidden_tools": ["get_regulatory_table", "get_regulatory_element", "build_indicator_context", "validate_generated_sql"]
     },
     {
       "id": "RMA-012",

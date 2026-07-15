@@ -317,8 +317,67 @@ def test_regulatory_market_assistant_uses_loop_detection_and_tool_limit(
     assert any(
         isinstance(item, RegulatoryMarketWorkflowMiddleware) for item in captured["middleware"]
     )
+    workflow = next(
+        item
+        for item in captured["middleware"]
+        if isinstance(item, RegulatoryMarketWorkflowMiddleware)
+    )
+    assert workflow.allowed_systems == ("EAST5",)
     assert "不得尝试文件、Shell" in captured["system_prompt"]
     assert "最多 14 次业务工具调用" in captured["system_prompt"]
+    assert "允许访问的监管系统仅为：EAST5" in captured["system_prompt"]
+    assert "不得把权限过滤后的空结果表述为资产不存在" in captured["system_prompt"]
+
+
+def test_regulatory_market_workflow_blocks_out_of_scope_system_before_search() -> None:
+    middleware = RegulatoryMarketWorkflowMiddleware(allowed_systems=["EAST5"])
+    proposed_search = AIMessage(
+        content="",
+        tool_calls=[{
+            "name": "search_regulatory_assets",
+            "args": {"keyword": "L_CUST_ALL", "system_code": "SMTMODS"},
+            "id": "search-call",
+            "type": "tool_call",
+        }],
+    )
+
+    update = middleware.after_model(
+        {
+            "messages": [
+                HumanMessage(content="帮我查看 SMTMODS 的 L_CUST_ALL 表结构和物理绑定。"),
+                proposed_search,
+            ]
+        },
+        None,
+    )
+
+    assert update is not None
+    final = update["messages"][0]
+    assert final.tool_calls == []
+    assert "仅为 EAST5" in final.content
+    assert "SMTMODS 不在当前访问范围内" in final.content
+    assert "不表示相关资产不存在或未接入" in final.content
+
+
+def test_regulatory_market_workflow_scope_check_handles_numeric_systems_without_sql_false_positive() -> None:
+    middleware = RegulatoryMarketWorkflowMiddleware(allowed_systems=["EAST5"])
+
+    assert middleware._out_of_scope_systems([
+        {
+            "name": "search_regulatory_assets",
+            "args": {"keyword": "G01", "system_code": "1104"},
+            "id": "numeric-system-search",
+            "type": "tool_call",
+        }
+    ]) == ["1104"]
+    assert middleware._out_of_scope_systems([
+        {
+            "name": "validate_generated_sql",
+            "args": {"sql": "SELECT field_name FROM demo"},
+            "id": "sql-validation",
+            "type": "tool_call",
+        }
+    ]) == []
 
 
 def test_regulatory_market_workflow_forces_user_sql_validation() -> None:
@@ -521,6 +580,38 @@ def test_regulatory_market_workflow_does_not_reuse_stale_asset_candidates() -> N
     assert call["args"]["table_ids"] == []
 
 
+def test_regulatory_market_workflow_selects_elements_for_requested_code_tables() -> None:
+    table_result = ToolMessage(
+        content=json.dumps(
+            {
+                "id": "101",
+                "elements": [
+                    {"id": "11", "name": "SFSTGY", "codeTable": {"tableCode": "EAST_SFBZ"}},
+                    {"id": "12", "name": "GYQXJB", "codeTable": {"tableCode": "EAST_GYQXJB"}},
+                ],
+            }
+        ),
+        name="get_regulatory_table",
+        tool_call_id="table-call",
+    )
+    code_call = AIMessage(
+        content="",
+        tool_calls=[{
+            "name": "get_regulatory_code_values",
+            "args": {"table_code": "EAST_SFBZ"},
+            "id": "code-call",
+            "type": "tool_call",
+        }],
+    )
+
+    table_ids, element_ids = RegulatoryMarketWorkflowMiddleware._candidate_ids(
+        [table_result, code_call]
+    )
+
+    assert table_ids == [101]
+    assert element_ids == [11]
+
+
 def test_regulatory_market_workflow_rejects_execution_request_without_tool_call() -> None:
     middleware = RegulatoryMarketWorkflowMiddleware()
     answer = AIMessage(content="不能执行 DELETE。", id="answer-1")
@@ -610,11 +701,25 @@ def test_regulatory_market_workflow_stops_sql_validation_when_date_is_missing() 
             "type": "tool_call",
         }],
     )
+    evidence = ToolMessage(
+        content=json.dumps(
+            {
+                "tables": [{"name": "IE_001_103"}],
+                "selectedElements": [{
+                    "name": "SFSTGY",
+                    "codeTable": {"tableCode": "EAST_SFBZ"},
+                }],
+            }
+        ),
+        name="build_indicator_context",
+        tool_call_id="context-call",
+    )
 
     update = middleware.after_model(
         {
             "messages": [
                 HumanMessage(content="设计实体柜员数指标，但缺少统计日期时不要编造日期字段。"),
+                evidence,
                 proposed_validation,
             ]
         },
@@ -628,6 +733,126 @@ def test_regulatory_market_workflow_stops_sql_validation_when_date_is_missing() 
     assert "EAST_SFBZ" in final.content
     assert "统计日期待确认" in final.content
     assert "不生成或校验 SQL" in final.content
+
+
+def test_regulatory_market_workflow_uses_generic_missing_date_response_without_teller_evidence() -> None:
+    middleware = RegulatoryMarketWorkflowMiddleware()
+    proposed_validation = AIMessage(
+        content="",
+        tool_calls=[{
+            "name": "validate_generated_sql",
+            "args": {"sql": "SELECT COUNT(*) FROM loan_fact"},
+            "id": "validate-call",
+            "type": "tool_call",
+        }],
+    )
+
+    update = middleware.after_model(
+        {
+            "messages": [
+                HumanMessage(content="开发贷款余额指标，但缺少统计日期。"),
+                proposed_validation,
+            ]
+        },
+        None,
+    )
+
+    assert update is not None
+    final = update["messages"][0]
+    assert "统计日期待确认" in final.content
+    assert "IE_001_103" not in final.content
+    assert "SFSTGY" not in final.content
+
+
+def test_regulatory_market_workflow_uses_only_latest_context_for_missing_date_response() -> None:
+    middleware = RegulatoryMarketWorkflowMiddleware()
+    teller_context = ToolMessage(
+        content=json.dumps(
+            {
+                "tables": [{"name": "IE_001_103"}],
+                "selectedElements": [{
+                    "name": "SFSTGY",
+                    "codeTable": {"tableCode": "EAST_SFBZ"},
+                }],
+            }
+        ),
+        name="build_indicator_context",
+        tool_call_id="teller-context-call",
+    )
+    loan_context = ToolMessage(
+        content=json.dumps(
+            {
+                "tables": [{"name": "LOAN_FACT"}],
+                "selectedElements": [{"name": "LOAN_BALANCE"}],
+            }
+        ),
+        name="build_indicator_context",
+        tool_call_id="loan-context-call",
+    )
+    proposed_validation = AIMessage(
+        content="",
+        tool_calls=[{
+            "name": "validate_generated_sql",
+            "args": {"sql": "SELECT SUM(loan_balance) FROM loan_fact"},
+            "id": "validate-call",
+            "type": "tool_call",
+        }],
+    )
+
+    update = middleware.after_model(
+        {
+            "messages": [
+                HumanMessage(content="开发贷款余额指标，但缺少统计日期。"),
+                teller_context,
+                loan_context,
+                proposed_validation,
+            ]
+        },
+        None,
+    )
+
+    assert update is not None
+    final = update["messages"][0]
+    assert "统计日期待确认" in final.content
+    assert "IE_001_103" not in final.content
+    assert "SFSTGY" not in final.content
+
+
+def test_regulatory_market_workflow_does_not_confirm_teller_from_echoed_tool_text() -> None:
+    middleware = RegulatoryMarketWorkflowMiddleware()
+    echoed_failure = ToolMessage(
+        content=json.dumps(
+            {"ok": False, "error": "未找到 IE_001_103 SFSTGY EAST_SFBZ"},
+            ensure_ascii=False,
+        ),
+        name="build_indicator_context",
+        tool_call_id="context-call",
+    )
+    proposed_validation = AIMessage(
+        content="",
+        tool_calls=[{
+            "name": "validate_generated_sql",
+            "args": {"sql": "SELECT COUNT(*) FROM loan_fact"},
+            "id": "validate-call",
+            "type": "tool_call",
+        }],
+    )
+
+    update = middleware.after_model(
+        {
+            "messages": [
+                HumanMessage(content="开发贷款余额指标，但缺少统计日期。"),
+                echoed_failure,
+                proposed_validation,
+            ]
+        },
+        None,
+    )
+
+    assert update is not None
+    final = update["messages"][0]
+    assert "IE_001_103" not in final.content
+    assert "SFSTGY" not in final.content
 
 
 def test_regulatory_market_workflow_forces_context_before_indicator_completion() -> None:

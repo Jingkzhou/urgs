@@ -50,6 +50,7 @@ import java.util.ArrayList;
 import java.util.Collection;
 import java.util.Collections;
 import java.util.Deque;
+import java.util.IdentityHashMap;
 import java.util.LinkedHashMap;
 import java.util.LinkedHashSet;
 import java.util.List;
@@ -288,6 +289,7 @@ public class RegulatoryMarketContextService {
         LinkedHashSet<Long> tableIds = distinctIds(request.tableIds());
         LinkedHashSet<Long> elementIds = distinctIds(request.elementIds());
         boolean hasExplicitTables = !tableIds.isEmpty();
+        boolean hasExplicitElements = !elementIds.isEmpty();
         LinkedHashSet<Long> explicitTableIds = new LinkedHashSet<>(tableIds);
         List<String> keywords = request.keywords() == null ? List.of() : request.keywords().stream()
                 .filter(StringUtils::isNotBlank)
@@ -300,7 +302,7 @@ public class RegulatoryMarketContextService {
             for (SearchItem item : response.items()) {
                 if ("REG_TABLE".equals(item.assetType()) && !hasExplicitTables) {
                     tableIds.add(Long.valueOf(item.assetId()));
-                } else if ("REG_ELEMENT".equals(item.assetType())) {
+                } else if ("REG_ELEMENT".equals(item.assetType()) && !hasExplicitElements) {
                     Long parentId = Long.valueOf(item.parentId());
                     if (hasExplicitTables && !explicitTableIds.contains(parentId)) {
                         continue;
@@ -439,6 +441,7 @@ public class RegulatoryMarketContextService {
         }
         columnReferences.stream()
                 .filter(column -> StringUtils.isBlank(column.qualifier()))
+                .filter(column -> !column.allowedProjectionAliasReference())
                 .distinct()
                 .forEach(reference -> {
                     String column = reference.column();
@@ -625,6 +628,7 @@ public class RegulatoryMarketContextService {
         private final Set<String> derivedTables = new LinkedHashSet<>();
         private final Map<String, Set<String>> derivedColumns = new LinkedHashMap<>();
         private final Deque<List<String>> sourceScopes = new ArrayDeque<>();
+        private final Deque<Set<Column>> allowedProjectionAliasScopes = new ArrayDeque<>();
 
         @Override
         public <S> Void visit(PlainSelect plainSelect, S context) {
@@ -636,9 +640,28 @@ public class RegulatoryMarketContextService {
                 }
             }
             sourceScopes.push(List.copyOf(sources));
+            Set<String> projectionAliases = plainSelect.getSelectItems().stream()
+                    .map(SelectItem::getAlias)
+                    .filter(Objects::nonNull)
+                    .map(alias -> normalizeIdentifier(alias.getName()))
+                    .collect(Collectors.toSet());
+            Set<Column> allowedProjectionAliasReferences = Collections.newSetFromMap(
+                    new IdentityHashMap<>());
+            if (plainSelect.getOrderByElements() != null) {
+                plainSelect.getOrderByElements().forEach(orderBy -> {
+                    if (orderBy.getExpression() instanceof Column column
+                            && (column.getTable() == null
+                                    || StringUtils.isBlank(column.getTable().getName()))
+                            && projectionAliases.contains(normalizeIdentifier(column.getColumnName()))) {
+                        allowedProjectionAliasReferences.add(column);
+                    }
+                });
+            }
+            allowedProjectionAliasScopes.push(allowedProjectionAliasReferences);
             try {
                 return super.visit(plainSelect, context);
             } finally {
+                allowedProjectionAliasScopes.pop();
                 sourceScopes.pop();
             }
         }
@@ -717,7 +740,9 @@ public class RegulatoryMarketContextService {
             columns.add(new ColumnReference(
                     table == null ? null : table.getFullyQualifiedName(),
                     column.getColumnName(),
-                    sourceScopes.isEmpty() ? List.of() : sourceScopes.peek()));
+                    sourceScopes.isEmpty() ? List.of() : sourceScopes.peek(),
+                    !allowedProjectionAliasScopes.isEmpty()
+                            && allowedProjectionAliasScopes.peek().contains(column)));
             return super.visit(column, context);
         }
 
@@ -928,7 +953,11 @@ public class RegulatoryMarketContextService {
     private record TableReference(String qualifiedName, String shortName, String alias) {
     }
 
-    private record ColumnReference(String qualifier, String column, List<String> scopeSources) {
+    private record ColumnReference(
+            String qualifier,
+            String column,
+            List<String> scopeSources,
+            boolean allowedProjectionAliasReference) {
     }
 
     private record PhysicalCatalog(

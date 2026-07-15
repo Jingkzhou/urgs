@@ -71,6 +71,11 @@ class RegulatoryMarketContextServiceTest {
                 elements.forEach(element -> element.setPhysicalFields(List.of()));
             }
 
+            @Override
+            public void enrichElement(RegElement element) {
+                element.setPhysicalFields(List.of());
+            }
+
             private void bindPhysicalTable(RegTable table) {
                 PhysicalTableBindingDTO binding = new PhysicalTableBindingDTO();
                 binding.setModelTableId("model-table-1");
@@ -250,6 +255,30 @@ class RegulatoryMarketContextServiceTest {
         assertFalse(result.valid());
         assertTrue(result.errors().stream()
                 .anyMatch(error -> error.contains("未限定字段 AMOUNT 的来源表")));
+    }
+
+    @Test
+    void allowsProjectionAliasesInOrderBy() {
+        stubPhysicalCatalog();
+        var result = service.validateSql(new SqlValidationRequest(
+                "SELECT t.AMOUNT AS total_amount FROM CORE.LOAN_FACT t ORDER BY total_amount",
+                List.of(),
+                "1104"));
+
+        assertTrue(result.valid());
+        assertTrue(result.checkedColumns().contains("t.AMOUNT"));
+    }
+
+    @Test
+    void rejectsProjectionAliasesInWhereClause() {
+        stubPhysicalCatalog();
+        var result = service.validateSql(new SqlValidationRequest(
+                "SELECT t.AMOUNT AS total_amount FROM CORE.LOAN_FACT t WHERE total_amount > 0",
+                List.of(),
+                "1104"));
+
+        assertFalse(result.valid());
+        assertTrue(result.errors().stream().anyMatch(error -> error.contains("total_amount")));
     }
 
     @Test
@@ -448,6 +477,39 @@ class RegulatoryMarketContextServiceTest {
 
         assertEquals(List.of("1"), result.tables().stream().map(table -> table.id()).toList());
         assertTrue(result.evidence().stream().noneMatch(item -> item.startsWith("REG_TABLE:2@")));
+    }
+
+    @Test
+    void developmentContextDoesNotExpandExplicitElementsWithKeywordMatches() {
+        RegTable table = regulatoryTable(1L);
+        when(regTableService.getById(1L)).thenReturn(table);
+        when(regTableService.list(org.mockito.ArgumentMatchers.<Wrapper<RegTable>>any()))
+                .thenReturn(List.of(table));
+        RegElement explicit = new RegElement();
+        explicit.setId(11L);
+        explicit.setTableId(1L);
+        explicit.setName("SFSTGY");
+        explicit.setStatus(1);
+        when(regElementService.getById(11L)).thenReturn(explicit);
+        RegElement keywordMatch = new RegElement();
+        keywordMatch.setId(12L);
+        keywordMatch.setTableId(1L);
+        keywordMatch.setName("GYQXJB");
+        keywordMatch.setStatus(1);
+        when(regElementService.list(org.mockito.ArgumentMatchers.<Wrapper<RegElement>>any()))
+                .thenReturn(List.of(keywordMatch));
+        when(regElementService.count(org.mockito.ArgumentMatchers.<Wrapper<RegElement>>any()))
+                .thenReturn(1L);
+
+        var result = service.buildDevelopmentContext(new DevelopmentContextRequest(
+                "开发实体柜员数",
+                List.of("柜员"),
+                List.of(1L),
+                List.of(11L),
+                "1104"));
+
+        assertEquals(List.of("11"), result.selectedElements().stream()
+                .map(element -> element.id()).toList());
     }
 
     private void stubDuplicateTableNames() {

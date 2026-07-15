@@ -21,6 +21,8 @@ export URGS_ALLOWED_SYSTEMS="1104,1105"
 
 以下命令中的 `SKILL_DIR` 是包含当前 `SKILL.md` 的目录。Agent 必须从已加载 Skill 的实际路径解析它，不要假设当前工作目录就是 Skill 目录。
 
+监管系统编码必须由用户明确提供，并原样用于 `--system-code` 和授权范围校验。不要从系统中文名、SQL Schema、表名前缀、存储过程变量或程序名称推断编码。
+
 ```bash
 SKILL_DIR="<path-to-sql-to-asset-caliber>"
 ```
@@ -33,6 +35,10 @@ python3 "$SKILL_DIR/scripts/regulatory_market_client.py" search \
   --system-code "1104" \
   --limit 20
 ```
+
+用户未提供监管表名、字段名或指标名时，先从 SQL 中提取目标物理表、目标列和中文注释作为多个搜索词，逐次调用 `search`，但每次都必须限定同一个用户提供的 `systemCode`。搜索结果中的表和元素只是候选：字段或指标命中后，根据其所属表 ID 读取 `table-bundle`，再结合物理绑定和 SQL 映射确认。
+
+查询指标时，检查搜索结果和 `table-bundle` 中类型为 `INDICATOR` 的元素，并按需调用 `element` 取得公式、取数 SQL、代码片段、值域、码表和校验规则。即使用户没有给出指标名，只要 SQL 含有聚合、比例、算术派生、窗口或其他指标计算，也要主动检查候选表中的指标并完成匹配分析。
 
 从搜索结果确认唯一的监管表 ID 后，一次读取表、字段/指标、物理绑定和关联码值：
 

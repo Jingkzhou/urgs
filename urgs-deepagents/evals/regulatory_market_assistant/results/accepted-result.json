@@ -19,9 +19,9 @@
     "failed": 0,
     "pass_rate": 1.0,
     "average_score": 1.0,
-    "average_duration_seconds": 11.6359,
-    "p95_duration_seconds": 24.152,
-    "maximum_duration_seconds": 26.822,
+    "average_duration_seconds": 11.2398,
+    "p95_duration_seconds": 22.089,
+    "maximum_duration_seconds": 26.377,
     "total_tool_calls": 90,
     "maximum_tool_calls": 8
   },
