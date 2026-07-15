@@ -225,7 +225,7 @@ const TaskMarket: React.FC = () => {
                                 <div className="space-y-3 mb-6">
                                     {task.workTitle && (
                                         <div className="flex flex-col text-xs text-slate-500 bg-slate-50 p-2.5 rounded-xl">
-                                            <span className="font-bold">所属工作：</span>
+                                            <span className="font-bold">所属需求：</span>
                                             <span className="truncate">{task.workTitle}</span>
                                         </div>
                                     )}
@@ -369,7 +369,7 @@ const renderApplicationList = (
                                 <span className="text-xs text-slate-400">{application.taskPoints || 0} 积分</span>
                             </div>
                             <h3 className="font-black text-slate-800 truncate">{application.taskTitle || application.taskId}</h3>
-                            <p className="text-xs text-slate-500 mt-1 truncate">{application.workTitle || '未关联工作'}</p>
+                            <p className="text-xs text-slate-500 mt-1 truncate">{application.workTitle || '未关联需求'}</p>
                         </div>
                         {application.status === 'PENDING' && (
                             <button

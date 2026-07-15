@@ -17,6 +17,7 @@ import java.time.LocalDate;
 import java.time.LocalDateTime;
 import java.time.DayOfWeek;
 import java.time.format.DateTimeFormatter;
+import java.util.ArrayList;
 import java.util.Comparator;
 import java.util.LinkedHashMap;
 import java.util.LinkedHashSet;
@@ -29,6 +30,10 @@ import java.util.stream.Collectors;
 public class WorkStatisticsServiceImpl implements WorkStatisticsService {
     private static final DateTimeFormatter DEADLINE_FORMATTER = DateTimeFormatter.ofPattern("yyyy-MM-dd HH:mm");
     private static final String UNASSIGNED = "UNASSIGNED";
+    private static final Set<String> ACTIVE_TASK_STATUSES = Set.of(
+            TaskStatus.IN_PROGRESS.name(),
+            TaskStatus.WAITING_REVIEW.name(),
+            TaskStatus.REWORK.name());
     private static final Set<String> CLOSED_TASK_STATUSES = Set.of(
             TaskStatus.COMPLETED.name(),
             TaskStatus.CANCELLED.name());
@@ -60,6 +65,16 @@ public class WorkStatisticsServiceImpl implements WorkStatisticsService {
                 .ge(Work::getCreateTime, startAt)
                 .lt(Work::getCreateTime, endExclusive)
                 .list();
+        var completedTrendQuery = workService.lambdaQuery()
+                .eq(Work::getStatus, WorkStatus.COMPLETED.name())
+                .ge(Work::getDeadline, startAt)
+                .lt(Work::getDeadline, endExclusive);
+        if (publisherId != null) {
+            completedTrendQuery.eq(Work::getPublisherId, publisherId);
+        }
+        Map<String, Work> trendWorksById = new LinkedHashMap<>();
+        works.forEach(work -> trendWorksById.put(work.getId(), work));
+        completedTrendQuery.list().forEach(work -> trendWorksById.put(work.getId(), work));
         Map<String, Work> workById = works.stream()
                 .collect(Collectors.toMap(Work::getId, work -> work));
         List<WorkTask> tasks = works.isEmpty()
@@ -75,15 +90,21 @@ public class WorkStatisticsServiceImpl implements WorkStatisticsService {
         statistics.setCompletedWorks((int) works.stream()
                 .filter(work -> WorkStatus.COMPLETED.name().equals(normalizeStatus(work.getStatus())))
                 .count());
+        statistics.setActiveWorks((int) works.stream()
+                .filter(work -> WorkStatus.ACTIVE.name().equals(normalizeStatus(work.getStatus())))
+                .count());
+        statistics.setPausedWorks((int) works.stream()
+                .filter(work -> WorkStatus.PAUSED.name().equals(normalizeStatus(work.getStatus())))
+                .count());
+        statistics.setOverdueWorks((int) works.stream()
+                .filter(work -> isOverdueWork(work, now))
+                .count());
 
-        int totalTasks = (int) tasks.stream()
-                .filter(task -> !TaskStatus.CANCELLED.name().equals(normalizeStatus(task.getStatus())))
-                .count();
         int completedTasks = (int) tasks.stream()
                 .filter(this::isCompletedTask)
                 .count();
         int activeTasks = (int) tasks.stream()
-                .filter(this::isInProgressTask)
+                .filter(task -> ACTIVE_TASK_STATUSES.contains(normalizeStatus(task.getStatus())))
                 .count();
         int overdueTasks = (int) tasks.stream()
                 .filter(task -> isOverdueTask(task, now))
@@ -91,14 +112,16 @@ public class WorkStatisticsServiceImpl implements WorkStatisticsService {
         int riskTasks = (int) tasks.stream()
                 .filter(task -> Boolean.TRUE.equals(task.getStageRiskReported()))
                 .count();
-        statistics.setTotalTasks(totalTasks);
+        long effectiveTaskCount = tasks.stream()
+                .filter(task -> !TaskStatus.CANCELLED.name().equals(normalizeStatus(task.getStatus())))
+                .count();
         statistics.setCompletedTasks(completedTasks);
         statistics.setActiveTasks(activeTasks);
         statistics.setOverdueTasks(overdueTasks);
         statistics.setRiskTasks(riskTasks);
-        statistics.setCompletionRate(totalTasks == 0
+        statistics.setCompletionRate(effectiveTaskCount == 0
                 ? 0
-                : (int) Math.round(completedTasks * 100.0 / totalTasks));
+                : (int) Math.round(completedTasks * 100.0 / effectiveTaskCount));
 
         statistics.setWorkStatusDistribution(buildStatusDistribution(
                 works.stream().map(Work::getStatus).collect(Collectors.toList()),
@@ -110,7 +133,7 @@ public class WorkStatisticsServiceImpl implements WorkStatisticsService {
         Map<String, List<WorkTask>> tasksByWorkId = tasks.stream()
                 .collect(Collectors.groupingBy(WorkTask::getWorkId));
         statistics.setSystemTaskStats(buildSystemTaskStats(works, tasksByWorkId, now));
-        statistics.setWorkTrend(buildWorkTrend(works, startDate, endDate));
+        statistics.setWorkTrend(buildWorkTrend(new ArrayList<>(trendWorksById.values()), startDate, endDate));
         statistics.setAssigneeWorkloads(buildAssigneeWorkloads(tasks, now));
         statistics.setAttentionItems(buildAttentionItems(tasks, workById, now));
         return statistics;
@@ -477,16 +500,20 @@ public class WorkStatisticsServiceImpl implements WorkStatisticsService {
         return TaskStatus.COMPLETED.name().equals(normalizeStatus(task.getStatus()));
     }
 
-    private boolean isInProgressTask(WorkTask task) {
-        String status = normalizeStatus(task.getStatus());
-        return !CLOSED_TASK_STATUSES.contains(status) && !TaskStatus.PAUSED.name().equals(status);
-    }
-
     private boolean isOverdueTask(WorkTask task, LocalDateTime now) {
         return task.getDeadline() != null
                 && task.getDeadline().isBefore(now)
                 && !CLOSED_TASK_STATUSES.contains(normalizeStatus(task.getStatus()))
                 && !TaskStatus.PAUSED.name().equals(normalizeStatus(task.getStatus()));
+    }
+
+    private boolean isOverdueWork(Work work, LocalDateTime now) {
+        String status = normalizeStatus(work.getStatus());
+        return work.getDeadline() != null
+                && work.getDeadline().isBefore(now)
+                && !WorkStatus.COMPLETED.name().equals(status)
+                && !WorkStatus.CANCELLED.name().equals(status)
+                && !WorkStatus.PAUSED.name().equals(status);
     }
 
     private String normalizeStatus(String status) {

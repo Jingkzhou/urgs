@@ -189,10 +189,6 @@ const WorkStatistics: React.FC = () => {
         name: renderAssignee(item.assigneeId),
         pendingCount: Math.max(item.activeCount - item.pausedCount - item.overdueCount, 0),
     })), [statistics, assigneeLabels]);
-    const pausedTasks = useMemo(
-        () => statistics?.taskStatusDistribution.find(item => item.name === 'PAUSED')?.value || 0,
-        [statistics]
-    );
     const systemTaskData = useMemo(
         () => statistics?.systemTaskStats || [],
         [statistics]
@@ -429,43 +425,43 @@ ${attentionItems}
             <div className="grid grid-cols-2 gap-3 md:grid-cols-3 xl:grid-cols-5">
                 <MetricCard
                     icon={<BarChart3 size={17} />}
-                    label="任务总数"
-                    value={statistics.totalTasks}
-                    hint="完成 + 进行中 + 暂停"
+                    label="需求总数"
+                    value={statistics.totalWorks}
+                    hint="按需求创建时间统计"
                     color="blue"
                 />
                 <MetricCard
                     icon={<CheckCircle2 size={17} />}
-                    label="完成任务数"
-                    value={statistics.completedTasks}
-                    hint="当前已完成任务"
+                    label="完成需求数"
+                    value={statistics.completedWorks}
+                    hint="当前已完成需求"
                     color="green"
                 />
                 <MetricCard
                     icon={<Clock3 size={17} />}
                     label="进行中"
-                    value={statistics.activeTasks}
-                    hint="待承接、待开始、处理中、审核与返工"
+                    value={statistics.activeWorks}
+                    hint="当前进行中需求"
                     color="indigo"
                 />
                 <MetricCard
                     icon={<Sparkles size={17} />}
-                    label="暂停任务数"
-                    value={pausedTasks}
-                    hint="当前已暂停任务"
+                    label="暂停需求数"
+                    value={statistics.pausedWorks}
+                    hint="当前已暂停需求"
                     color="amber"
                 />
                 <MetricCard
                     icon={<CircleAlert size={17} />}
-                    label="逾期任务"
-                    value={statistics.overdueTasks}
-                    hint="未完成且已过期"
+                    label="逾期需求"
+                    value={statistics.overdueWorks}
+                    hint="未完成且已过期需求"
                     color="red"
                 />
             </div>
 
             <div className="grid grid-cols-1 gap-4 xl:grid-cols-2">
-                <ChartCard icon={<TrendingUp size={16} className="text-blue-600" />} title="需求趋势" subtitle="新增按创建日期，完成按截止日期">
+                <ChartCard icon={<TrendingUp size={16} className="text-blue-600" />} title="需求趋势" subtitle="按统计时间展示新建与完成需求">
                     {trendData.some(item => item.createdWorkCount > 0 || item.completedWorkCount > 0) ? (
                         <ResponsiveContainer width="100%" height={250} minWidth={0}>
                             <ComposedChart data={trendData} margin={{ top: 8, right: 12, left: -18, bottom: 0 }}>
@@ -568,7 +564,7 @@ ${attentionItems}
                         <div>
                             <div className="flex items-center gap-2 text-sm font-bold text-slate-800">
                                 <CalendarRange size={17} className="text-blue-600" />
-                                需求日历
+                              日历
                             </div>
                             <div className="mt-1 text-xs text-slate-500">按任务截止日期展示未完成事项，点击日期查看明细</div>
                         </div>
@@ -623,7 +619,7 @@ ${attentionItems}
                                                     {isSubTask ? '子任务' : '主任务'}
                                                 </span>
                                                 <span className="min-w-0 flex-1 truncate text-xs font-bold text-slate-700">{task.title}</span>
-                                                <span className="shrink-0 text-[10px] text-blue-600">{getTaskStageLabel(task.currentStage)}</span>
+                                                <span className="shrink-0 text-[10px] text-blue-600">{getTaskStageLabel(task.currentStage, task.status)}</span>
                                                 <span className="shrink-0 text-[10px] text-slate-500">{renderAssignee(task.assigneeId)}</span>
                                             </div>
                                             <div className="mt-1 flex min-w-0 items-center gap-3 text-[10px] text-slate-500">

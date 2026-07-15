@@ -111,7 +111,7 @@ public class WorkTaskServiceImpl extends ServiceImpl<WorkTaskMapper, WorkTask> i
 
         dtoPage.setRecords(taskPage.getRecords().stream().map(task -> {
             Work work = workService.getById(task.getWorkId());
-            // 已发布或进行中的工作可以进入任务市场；草稿和已取消工作不可见。
+            // 已发布或进行中的需求可以进入任务市场；草稿和已取消需求不可见。
             if (work == null || WorkStatus.DRAFT.name().equals(work.getStatus())
                     || WorkStatus.CANCELLED.name().equals(work.getStatus())) {
                 return null;
@@ -582,13 +582,13 @@ public class WorkTaskServiceImpl extends ServiceImpl<WorkTaskMapper, WorkTask> i
 
         Work work = workService.getById(task.getWorkId());
         if (work == null) {
-            throw new IllegalStateException("所属工作不存在");
+            throw new IllegalStateException("所属需求不存在");
         }
         if (WorkStatus.CANCELLED.name().equals(work.getStatus())) {
-            throw new IllegalStateException("所属工作已取消，不能单独重新开启任务");
+            throw new IllegalStateException("所属需求已取消，不能单独重新开启任务");
         }
         if (!userId.equals(task.getAssigneeId()) && !userId.equals(work.getPublisherId())) {
-            throw new IllegalStateException("只有任务负责人或工作发布人可以重新开启任务");
+            throw new IllegalStateException("只有任务负责人或需求发布人可以重新开启任务");
         }
 
         TaskStatus targetStatus = StringUtils.hasText(task.getAssigneeId())
@@ -737,7 +737,7 @@ public class WorkTaskServiceImpl extends ServiceImpl<WorkTaskMapper, WorkTask> i
         ensureWorkOperable(task);
         Work work = workService.getById(task.getWorkId());
         if (work == null || !userId.equals(work.getPublisherId())) {
-            throw new IllegalStateException("只有工作发布人可以追加风险跟踪记录");
+            throw new IllegalStateException("只有需求发布人可以追加风险跟踪记录");
         }
         if (!StringUtils.hasText(trackingNote)) {
             throw new IllegalArgumentException("跟踪内容不能为空");
@@ -792,7 +792,7 @@ public class WorkTaskServiceImpl extends ServiceImpl<WorkTaskMapper, WorkTask> i
                 .findFirst()
                 .orElse(null);
         if (mainTask == null) {
-            throw new IllegalStateException("工作缺少主任务，无法聚合状态");
+            throw new IllegalStateException("需求缺少主任务，无法聚合状态");
         }
         List<WorkTask> unfinishedTasks = tasks.stream()
                 .filter(task -> !TaskStatus.COMPLETED.name().equals(task.getStatus())
@@ -827,7 +827,7 @@ public class WorkTaskServiceImpl extends ServiceImpl<WorkTaskMapper, WorkTask> i
     private void ensureWorkOperable(WorkTask task) {
         Work work = workService.getById(task.getWorkId());
         if (work != null && WorkStatus.PAUSED.name().equals(work.getStatus())) {
-            throw new IllegalStateException("工作已暂停，不允许操作任务");
+            throw new IllegalStateException("需求已暂停，不允许操作任务");
         }
     }
 
@@ -1051,7 +1051,7 @@ public class WorkTaskServiceImpl extends ServiceImpl<WorkTaskMapper, WorkTask> i
 
     private List<MaintenanceRecord> getAssetMaintenanceRecords(Work work, WorkTask task, boolean assigneeRequired) {
         if (work == null || !StringUtils.hasText(work.getRequirementNumber())) {
-            throw new IllegalStateException("工作缺少需求编号，无法校验资产管理维护记录");
+            throw new IllegalStateException("需求缺少需求编号，无法校验资产管理维护记录");
         }
         String assigneeName = getTaskAssigneeName(task, assigneeRequired);
         if (!StringUtils.hasText(assigneeName)) {

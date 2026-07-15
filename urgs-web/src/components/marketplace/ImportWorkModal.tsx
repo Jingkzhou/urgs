@@ -5,7 +5,7 @@ import { message } from 'antd';
 import { importWorks, WorkImportDTO } from '../../api/marketplace';
 
 const TEMPLATE_HEADERS = [
-    '工作名称',
+    '需求名称',
     '详细描述',
     '优先级',
     '截止日期',
@@ -19,7 +19,7 @@ const TEMPLATE_HEADERS = [
 ] as const;
 
 const REQUIRED_HEADERS = [
-    '工作名称',
+    '需求名称',
     '详细描述',
     '优先级',
     '申请部门',
@@ -106,7 +106,7 @@ const parsePrimarySystem = (value: unknown) => {
 
 const validateRow = (row: TemplateRow, rowNumber: number): ParsedWorkRow => {
     const errors: string[] = [];
-    const title = toText(row['工作名称']);
+    const title = toText(row['需求名称']);
     const description = toText(row['详细描述']);
     const priority = toText(row['优先级']);
     const deadline = parseDeadline(row['截止日期']);
@@ -118,7 +118,7 @@ const validateRow = (row: TemplateRow, rowNumber: number): ParsedWorkRow => {
     const primarySystemName = toText(row['主系统名称']);
     const projectType = toText(row['项目类型']);
 
-    if (title.length < 2 || title.length > 200) errors.push('工作名称需为2到200个字符');
+    if (title.length < 2 || title.length > 200) errors.push('需求名称需为2到200个字符');
     if (description.length < 10) errors.push('详细描述至少10个字符');
     if (!PRIORITIES.includes(priority as typeof PRIORITIES[number])) errors.push('优先级只能是P0、P1、P2、P3');
     if (deadline === null) errors.push('截止日期格式应为yyyy-MM-dd');
@@ -162,7 +162,7 @@ const downloadTemplate = () => {
 
     const instructions = [
         ['字段', '是否必填', '填写说明', '示例'],
-        ['工作名称', '是', '2到200个字符', '监管报送需求优化'],
+        ['需求名称', '是', '2到200个字符', '监管报送需求优化'],
         ['详细描述', '是', '至少10个字符', '完成监管报送需求的分析、开发与上线'],
         ['优先级', '是', '仅支持P0、P1、P2、P3', 'P2'],
         ['截止日期', '否', '格式：yyyy-MM-dd，可填写任意有效日期', '2026-07-01'],
@@ -179,9 +179,9 @@ const downloadTemplate = () => {
     instructionSheet['!rows'] = [{ hpt: 24 }];
 
     const workbook = XLSX.utils.book_new();
-    XLSX.utils.book_append_sheet(workbook, templateSheet, '工作导入模板');
+    XLSX.utils.book_append_sheet(workbook, templateSheet, '需求导入模板');
     XLSX.utils.book_append_sheet(workbook, instructionSheet, '填写说明');
-    XLSX.writeFile(workbook, '工作导入模板.xlsx');
+    XLSX.writeFile(workbook, '需求导入模板.xlsx');
 };
 
 const ImportWorkModal: React.FC<ImportWorkModalProps> = ({ isOpen, onClose, onSuccess }) => {
@@ -221,7 +221,7 @@ const ImportWorkModal: React.FC<ImportWorkModalProps> = ({ isOpen, onClose, onSu
             }
 
             const workbook = XLSX.read(await file.arrayBuffer(), { type: 'array', cellDates: true });
-            const sheet = workbook.Sheets['工作导入模板'] || workbook.Sheets[workbook.SheetNames[0]];
+            const sheet = workbook.Sheets['需求导入模板'] || workbook.Sheets[workbook.SheetNames[0]];
             if (!sheet) throw new Error('文件中没有可读取的工作表');
 
             const matrix = XLSX.utils.sheet_to_json<unknown[]>(sheet, { header: 1, defval: '' });
@@ -234,7 +234,7 @@ const ImportWorkModal: React.FC<ImportWorkModalProps> = ({ isOpen, onClose, onSu
             const rows = XLSX.utils.sheet_to_json<TemplateRow>(sheet, { defval: '', raw: true })
                 .filter(row => Object.values(row).some(value => toText(value) !== ''));
             if (rows.length === 0) throw new Error('模板中没有可导入的数据');
-            if (rows.length > 500) throw new Error('单次最多导入500条工作');
+            if (rows.length > 500) throw new Error('单次最多导入500条需求');
 
             setParsedRows(rows.map((row, index) => validateRow(row, index + 2)));
         } catch (error) {
@@ -251,13 +251,13 @@ const ImportWorkModal: React.FC<ImportWorkModalProps> = ({ isOpen, onClose, onSu
         setImporting(true);
         try {
             const result = await importWorks(validRows.map(row => row.data));
-            message.success(`成功导入${result.importedCount}条工作`);
+            message.success(`成功导入${result.importedCount}条需求`);
             reset();
             onSuccess();
             onClose();
         } catch (error) {
             console.error('Import works failed', error);
-            message.error(error instanceof Error ? error.message : '工作导入失败');
+            message.error(error instanceof Error ? error.message : '需求导入失败');
         } finally {
             setImporting(false);
         }
@@ -271,8 +271,8 @@ const ImportWorkModal: React.FC<ImportWorkModalProps> = ({ isOpen, onClose, onSu
             <div className="relative w-full max-w-3xl overflow-hidden rounded-2xl border border-slate-200 bg-white shadow-2xl">
                 <div className="flex items-center justify-between border-b border-slate-100 px-6 py-4">
                     <div>
-                        <h2 className="text-lg font-bold text-slate-800">导入工作</h2>
-                        <p className="mt-1 text-sm text-slate-500">仅导入工作信息，主任务由系统自动创建</p>
+                        <h2 className="text-lg font-bold text-slate-800">导入需求</h2>
+                        <p className="mt-1 text-sm text-slate-500">仅导入需求信息，主任务由系统自动创建</p>
                     </div>
                     <button
                         type="button"
@@ -290,7 +290,7 @@ const ImportWorkModal: React.FC<ImportWorkModalProps> = ({ isOpen, onClose, onSu
                             <FileSpreadsheet size={20} className="text-blue-600" />
                             <div>
                                 <div className="text-sm font-bold text-blue-900">先下载标准模板</div>
-                                <div className="text-xs text-blue-700">不要增加任务字段；每条工作会生成同名、0积分的主任务</div>
+                                <div className="text-xs text-blue-700">不要增加任务字段；每条需求会生成同名、0积分的主任务</div>
                             </div>
                         </div>
                         <button
@@ -312,7 +312,7 @@ const ImportWorkModal: React.FC<ImportWorkModalProps> = ({ isOpen, onClose, onSu
                         />
                         <div className="flex items-center justify-between gap-4">
                             <div className="min-w-0">
-                                <div className="text-sm font-bold text-slate-700">选择已填写的工作模板</div>
+                                <div className="text-sm font-bold text-slate-700">选择已填写的需求模板</div>
                                 <div className="mt-1 truncate text-xs text-slate-400">{fileName || '支持 .xlsx、.xls，单次最多500条，文件不超过10MB'}</div>
                             </div>
                             <button

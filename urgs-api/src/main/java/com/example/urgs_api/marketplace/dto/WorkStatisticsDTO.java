@@ -13,7 +13,9 @@ public class WorkStatisticsDTO {
     private LocalDate endDate;
     private Integer totalWorks;
     private Integer completedWorks;
-    private Integer totalTasks;
+    private Integer activeWorks;
+    private Integer pausedWorks;
+    private Integer overdueWorks;
     private Integer completedTasks;
     private Integer activeTasks;
     private Integer overdueTasks;

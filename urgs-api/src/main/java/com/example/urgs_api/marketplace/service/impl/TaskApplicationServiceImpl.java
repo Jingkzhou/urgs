@@ -71,7 +71,7 @@ public class TaskApplicationServiceImpl extends ServiceImpl<TaskApplicationMappe
         if (work == null || WorkStatus.DRAFT.name().equals(work.getStatus())
                 || WorkStatus.CANCELLED.name().equals(work.getStatus())
                 || WorkStatus.COMPLETED.name().equals(work.getStatus())) {
-            throw new IllegalStateException("所属工作当前不可竞标");
+            throw new IllegalStateException("所属需求当前不可竞标");
         }
         if (applicantId.equals(work.getPublisherId())) {
             throw new IllegalStateException("发布人不能竞标自己发布的任务");

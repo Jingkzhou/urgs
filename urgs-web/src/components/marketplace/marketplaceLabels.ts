@@ -30,13 +30,22 @@ export const getTaskStatusLabel = (status?: string) => {
 };
 
 export const taskStageLabelMap: Record<string, string> = {
-    TEST_SUBMISSION_COMPLETED: '提测阶段完成',
-    QUALITY_ACCEPTANCE_COMPLETED: '质量验收完成',
+    TEST_SUBMISSION_COMPLETED: '提测中',
+    QUALITY_ACCEPTANCE_COMPLETED: '质量验收中',
     ASSET_REVIEW: '资产审核准备',
-    LAUNCH: '上线',
+    LAUNCH: '上线中',
 };
 
-export const getTaskStageLabel = (stage?: string) => {
-    if (!stage) return '提测阶段完成';
+export const getTaskStageLabel = (stage?: string, status?: string) => {
+    if (!stage) return '提测中';
+    if (stage === 'ASSET_REVIEW') {
+        if (status === 'WAITING_REVIEW') return '资产同步审核中';
+        if (status === 'REWORK') return '资产同步审核退回';
+    }
+    if (stage === 'LAUNCH') {
+        if (status === 'WAITING_REVIEW') return '上线验收中';
+        if (status === 'REWORK') return '上线验收退回';
+        if (status === 'COMPLETED') return '已上线';
+    }
     return taskStageLabelMap[stage] || stage;
 };

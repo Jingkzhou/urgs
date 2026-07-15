@@ -348,7 +348,7 @@ const MyTasks: React.FC<MyTasksProps> = ({ todoFocus }) => {
             setAssetReviewReqId(reqId);
             setAssetReviewWorkTitle(taskDetail?.workTitle || task.title);
             if (!reqId) {
-                setAssetReviewError('当前工作没有需求编号，无法匹配资产管理维护记录');
+                setAssetReviewError('当前需求没有需求编号，无法匹配资产管理维护记录');
                 return;
             }
 
@@ -444,7 +444,7 @@ const MyTasks: React.FC<MyTasksProps> = ({ todoFocus }) => {
             ? '重新提交资产同步审核'
             : '提交资产同步审核';
         if (task.currentStage === 'LAUNCH') return '上线完成，进入验收';
-        return `完成${getTaskStageLabel(task.currentStage)}阶段`;
+        return `完成${getTaskStageLabel(task.currentStage, task.status)}阶段`;
     };
 
     const handleReleaseTask = async (task: TaskMarketDTO) => {
@@ -463,7 +463,7 @@ const MyTasks: React.FC<MyTasksProps> = ({ todoFocus }) => {
             await reopenTask(task.id);
             await fetchTasks();
         } catch (error) {
-            alert('重新开启任务失败，所属工作可能已取消');
+            alert('重新开启任务失败，所属需求可能已取消');
         }
     };
 
@@ -681,7 +681,7 @@ const MyTasks: React.FC<MyTasksProps> = ({ todoFocus }) => {
                             <div className="mb-3 rounded-lg border border-slate-100 bg-slate-50 px-3 py-2 text-xs">
                                 <div className="flex flex-wrap items-center gap-x-3 gap-y-1">
                                     <span className="font-bold text-slate-700 truncate max-w-full">
-                                        工作：{task.workTitle || '-'}
+                                        需求：{task.workTitle || '-'}
                                     </span>
                                     <span className="text-slate-400">|</span>
                                     <span className="font-bold text-cyan-700">
@@ -699,7 +699,7 @@ const MyTasks: React.FC<MyTasksProps> = ({ todoFocus }) => {
                             <div className="flex flex-wrap items-center gap-2 mb-3 text-xs">
                                 {!isIssueTrackingTask(task) && (
                                     <span className="px-2 py-1 rounded bg-blue-50 text-blue-700 font-bold">
-                                        当前阶段：{getTaskStageLabel(task.currentStage)}
+                                        当前阶段：{getTaskStageLabel(task.currentStage, task.status)}
                                     </span>
                                 )}
                                 {task.stageRiskReported && (
@@ -823,7 +823,7 @@ const MyTasks: React.FC<MyTasksProps> = ({ todoFocus }) => {
                                 </div>
                                 <div className="bg-slate-50 border border-slate-100 rounded-lg p-3">
                                     <div className="text-slate-400 mb-1">当前阶段</div>
-                                    <div className="font-bold text-blue-700">{getTaskStageLabel(assetReviewTask.currentStage)}</div>
+                                    <div className="font-bold text-blue-700">{getTaskStageLabel(assetReviewTask.currentStage, assetReviewTask.status)}</div>
                                 </div>
                                 <div className="bg-slate-50 border border-slate-100 rounded-lg p-3">
                                     <div className="text-slate-400 mb-1">同步变更记录</div>
@@ -1262,7 +1262,7 @@ const MyTasks: React.FC<MyTasksProps> = ({ todoFocus }) => {
                             <div>
                                 <h3 className="font-bold text-slate-800">阶段风险报备</h3>
                                 <p className="text-xs text-slate-500 mt-1">
-                                    {riskTask.title} · {getTaskStageLabel(riskTask.currentStage)}
+                                    {riskTask.title} · {getTaskStageLabel(riskTask.currentStage, riskTask.status)}
                                 </p>
                             </div>
                             <button onClick={() => setRiskTask(null)} className="p-1.5 hover:bg-slate-100 rounded">

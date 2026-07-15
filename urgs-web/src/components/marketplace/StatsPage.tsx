@@ -377,9 +377,9 @@ const StatsPage: React.FC = () => {
                 />
                 <MetricCard
                     icon={<CheckCircle2 size={17} />}
-                    label="工作完成率"
+                    label="需求完成率"
                     value={`${completionRate}%`}
-                    hint={`${formatNumber(teamKpi?.completedWorks)} / ${formatNumber(teamKpi?.totalWorks)} 个工作`}
+                    hint={`${formatNumber(teamKpi?.completedWorks)} / ${formatNumber(teamKpi?.totalWorks)} 个需求`}
                     tone="emerald"
                 />
                 <MetricCard
@@ -813,7 +813,7 @@ const MemberDetailModal: React.FC<{
                                         <thead className="sticky top-0 z-10 bg-slate-50 text-xs font-bold text-slate-500 shadow-[0_1px_0_0_#e2e8f0]">
                                             <tr>
                                                 <th className="w-[250px] px-4 py-3 text-left">任务</th>
-                                                <th className="w-[210px] px-4 py-3 text-left">所属工作</th>
+                                                <th className="w-[210px] px-4 py-3 text-left">所属需求</th>
                                                 <th className="w-[130px] px-4 py-3 text-left">状态 / 阶段</th>
                                                 <th className="w-[160px] px-4 py-3 text-left">截止日期</th>
                                                 <th className="w-[110px] px-4 py-3 text-right">积分</th>
@@ -836,7 +836,7 @@ const MemberDetailModal: React.FC<{
                                                         <span className={`rounded px-1.5 py-0.5 text-xs font-bold ${getTaskStatusBadgeClass(task.status)}`}>
                                                             {getTaskStatusLabel(task.status)}
                                                         </span>
-                                                        <div className="mt-1 text-xs text-slate-400">{getTaskStageLabel(task.currentStage)}</div>
+                                                        <div className="mt-1 text-xs text-slate-400">{getTaskStageLabel(task.currentStage, task.status)}</div>
                                                     </td>
                                                     <td className="px-4 py-3 text-xs">
                                                         <div className={isOverdueTask(task) ? 'font-bold text-rose-600' : 'text-slate-600'}>

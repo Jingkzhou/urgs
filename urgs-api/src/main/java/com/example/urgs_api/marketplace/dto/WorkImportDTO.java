@@ -10,8 +10,8 @@ import java.time.LocalDateTime;
 
 @Data
 public class WorkImportDTO {
-    @NotBlank(message = "工作名称不能为空")
-    @Size(max = 200, message = "工作名称不能超过200个字符")
+    @NotBlank(message = "需求名称不能为空")
+    @Size(max = 200, message = "需求名称不能超过200个字符")
     private String title;
 
     @NotBlank(message = "详细描述不能为空")

@@ -346,7 +346,7 @@ public class WorkTaskController {
                 .eq(WorkTask::getTaskRole, TASK_ROLE_MAIN)
                 .one();
         if (mainTask == null) {
-            throw new IllegalStateException("工作缺少主任务，不能添加子任务");
+            throw new IllegalStateException("需求缺少主任务，不能添加子任务");
         }
         return mainTask.getId();
     }

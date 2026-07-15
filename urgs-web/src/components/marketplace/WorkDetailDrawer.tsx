@@ -497,7 +497,7 @@ const WorkDetailDrawer: React.FC<WorkDetailDrawerProps> = ({ workId, isOpen, onC
 
     return (
         <Modal
-            title="工作详情"
+            title="需求详情"
             open={isOpen}
             onCancel={onClose}
             footer={null}
@@ -592,7 +592,7 @@ const WorkDetailDrawer: React.FC<WorkDetailDrawerProps> = ({ workId, isOpen, onC
                     </section>
 
                     <section>
-                        <Title level={5}>工作描述</Title>
+                        <Title level={5}>需求描述</Title>
                         <Paragraph className="text-slate-600 whitespace-pre-wrap bg-slate-50/50 p-4 rounded-xl border border-slate-100">
                             {work.description || '暂无详细描述'}
                         </Paragraph>
@@ -605,9 +605,9 @@ const WorkDetailDrawer: React.FC<WorkDetailDrawerProps> = ({ workId, isOpen, onC
                             className="flex w-full items-center justify-between gap-4 px-4 py-3 text-left hover:bg-slate-50"
                         >
                             <div>
-                                <Title level={5} className="!mb-0">工作资产变更汇总</Title>
+                                <Title level={5} className="!mb-0">需求资产变更汇总</Title>
                                 <div className="mt-1 text-xs text-slate-400">
-                                    {work.requirementNumber ? `需求编号 ${work.requirementNumber} + 任务承接人` : '按工作任务汇总'}
+                                    {work.requirementNumber ? `需求编号 ${work.requirementNumber} + 任务承接人` : '按需求任务汇总'}
                                 </div>
                             </div>
                             <div className="flex shrink-0 items-center gap-3">
@@ -667,7 +667,7 @@ const WorkDetailDrawer: React.FC<WorkDetailDrawerProps> = ({ workId, isOpen, onC
                                                         </td>
                                                         <td className="px-4 py-2.5 text-slate-600">
                                                             {getTaskStatusLabel(task.status)}
-                                                            {!isIssueTrackingTask(task) ? ` / ${getTaskStageLabel(task.currentStage)}` : ''}
+                                                            {!isIssueTrackingTask(task) ? ` / ${getTaskStageLabel(task.currentStage, task.status)}` : ''}
                                                         </td>
                                                         <td className="px-4 py-2.5 font-bold text-cyan-700">
                                                             {getTaskAssetRecordCount(task)} 条
@@ -683,7 +683,7 @@ const WorkDetailDrawer: React.FC<WorkDetailDrawerProps> = ({ workId, isOpen, onC
                                 </div>
 
                                 {workSummaryRecords.length === 0 ? (
-                                    <Empty image={Empty.PRESENTED_IMAGE_SIMPLE} description="当前工作暂无资产变更记录" />
+                                    <Empty image={Empty.PRESENTED_IMAGE_SIMPLE} description="当前需求暂无资产变更记录" />
                                 ) : (
                                     <div className="overflow-x-auto rounded-lg border border-slate-200">
                                         <table className="w-full min-w-[900px] text-xs">
@@ -771,7 +771,7 @@ const WorkDetailDrawer: React.FC<WorkDetailDrawerProps> = ({ workId, isOpen, onC
                                         <div className="mb-1 flex flex-wrap items-center gap-2">
                                             <span className="font-bold text-slate-800">{task.title}</span>
                                             {!isIssueTrackingTask(task) && (
-                                                <Tag color="blue" className="text-xs">{getTaskStageLabel(task.currentStage)}</Tag>
+                                                <Tag color="blue" className="text-xs">{getTaskStageLabel(task.currentStage, task.status)}</Tag>
                                             )}
                                             <span className="text-slate-500">负责人：{renderAssignee(task.assigneeId) || '-'}</span>
                                         </div>
@@ -804,7 +804,7 @@ const WorkDetailDrawer: React.FC<WorkDetailDrawerProps> = ({ workId, isOpen, onC
                                                 <Tag color={getAssignModeColor(mainTask.assignMode)} className="text-xs">{getAssignModeLabel(mainTask.assignMode)}</Tag>
                                                 <Tag color={getStatusColor(mainTask.status)} className="text-xs">{getTaskStatusLabel(mainTask.status)}</Tag>
                                                 {!isIssueTrackingTask(mainTask) && (
-                                                    <Tag color="blue" className="text-xs">{getTaskStageLabel(mainTask.currentStage)}</Tag>
+                                                    <Tag color="blue" className="text-xs">{getTaskStageLabel(mainTask.currentStage, mainTask.status)}</Tag>
                                                 )}
                                                 {mainTask.stageRiskReported && <Tag color="warning" className="text-xs">已报备风险</Tag>}
                                             </div>
@@ -882,7 +882,7 @@ const WorkDetailDrawer: React.FC<WorkDetailDrawerProps> = ({ workId, isOpen, onC
                                                                 <Tag color={getAssignModeColor(task.assignMode)} className="text-xs">{getAssignModeLabel(task.assignMode)}</Tag>
                                                                 <Tag color={getStatusColor(task.status)} className="text-xs">{getTaskStatusLabel(task.status)}</Tag>
                                                                 {!isIssueTrackingTask(task) && (
-                                                                    <Tag color="blue" className="text-xs">{getTaskStageLabel(task.currentStage)}</Tag>
+                                                                    <Tag color="blue" className="text-xs">{getTaskStageLabel(task.currentStage, task.status)}</Tag>
                                                                 )}
                                                                 {task.stageRiskReported && <Tag color="warning" className="text-xs">已报备风险</Tag>}
                                                             </div>
@@ -1115,7 +1115,7 @@ const WorkDetailDrawer: React.FC<WorkDetailDrawerProps> = ({ workId, isOpen, onC
                                 ['任务名称', detailTask.title],
                                 ['任务层级', detailTask.taskRole === 'MAIN' ? '主任务' : '子任务'],
                                 ['任务状态', getTaskStatusLabel(detailTask.status)],
-                                ['当前阶段', isIssueTrackingTask(detailTask) ? '不适用' : getTaskStageLabel(detailTask.currentStage)],
+                                ['当前阶段', isIssueTrackingTask(detailTask) ? '不适用' : getTaskStageLabel(detailTask.currentStage, detailTask.status)],
                                 ['任务类型', detailTask.taskType],
                                 ['难度', detailTask.difficulty],
                                 ['涉及系统', (detailTask.involvedSystemIds || [])

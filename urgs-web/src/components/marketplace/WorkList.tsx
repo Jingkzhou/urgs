@@ -27,7 +27,7 @@ const downloadCollapsedOutlineWorkbook = (
     );
 
     if (sheetIndex < 0) {
-        throw new Error('未找到导出工作表');
+        throw new Error('未找到导出需求表');
     }
 
     const sheetFile = archive.FileIndex[sheetIndex];
@@ -213,7 +213,7 @@ const WorkList: React.FC<WorkListProps> = ({ todoFocus }) => {
     };
 
     const handlePublish = async (id: string) => {
-        if (!window.confirm("确认要发布该工作到市场吗？发布后不能撤回。")) return;
+        if (!window.confirm("确认要发布该需求到市场吗？发布后不能撤回。")) return;
         try {
             await publishWork(id);
             alert("发布成功");
@@ -224,7 +224,7 @@ const WorkList: React.FC<WorkListProps> = ({ todoFocus }) => {
     };
 
     const handleCancel = async (id: string) => {
-        if (!window.confirm("确定要取消该工作吗？")) return;
+        if (!window.confirm("确定要取消该需求吗？")) return;
         try {
             await cancelWork(id);
             alert("取消成功");
@@ -241,7 +241,7 @@ const WorkList: React.FC<WorkListProps> = ({ todoFocus }) => {
             (total, work) => total + (workTasks[work.id]?.length ?? 0),
             0
         );
-        if (!window.confirm(`确定要删除选中的 ${selectedWorkIds.length} 个工作吗？将同时删除其下 ${selectedTaskCount} 个主/子任务。`)) return;
+        if (!window.confirm(`确定要删除选中的 ${selectedWorkIds.length} 个需求吗？将同时删除其下 ${selectedTaskCount} 个主/子任务。`)) return;
         try {
             await batchDeleteWorks(selectedWorkIds);
             alert("删除成功");
@@ -253,22 +253,22 @@ const WorkList: React.FC<WorkListProps> = ({ todoFocus }) => {
     };
 
     const handlePauseWork = async (work: Work) => {
-        if (!window.confirm(`确定要暂停工作「${work.title}」吗？暂停后所有主任务和子任务均不可操作。`)) return;
+        if (!window.confirm(`确定要暂停需求「${work.title}」吗？暂停后所有主任务和子任务均不可操作。`)) return;
         try {
             await pauseWork(work.id);
             await fetchWorks(currentPage, pageSize);
         } catch (error) {
-            alert('暂停工作失败');
+            alert('暂停需求失败');
         }
     };
 
     const handleResumeWork = async (work: Work) => {
-        if (!window.confirm(`确定要继续工作「${work.title}」吗？继续后主任务和子任务将恢复可操作。`)) return;
+        if (!window.confirm(`确定要继续需求「${work.title}」吗？继续后主任务和子任务将恢复可操作。`)) return;
         try {
             await resumeWork(work.id);
             await fetchWorks(currentPage, pageSize);
         } catch (error) {
-            alert('继续工作失败');
+            alert('继续需求失败');
         }
     };
 
@@ -374,7 +374,7 @@ const WorkList: React.FC<WorkListProps> = ({ todoFocus }) => {
 
         works.forEach(work => {
             const baseInfo = {
-                工作名称: work.title,
+                需求名称: work.title,
                 发布人: publisherLabels[work.publisherId] || work.publisherId,
                 需求编号: work.requirementNumber || '',
                 申请部门: work.applicationDepartment || '',
@@ -389,11 +389,11 @@ const WorkList: React.FC<WorkListProps> = ({ todoFocus }) => {
             };
 
             rows.push({
-                层级: '一级-工作',
+                层级: '一级-需求',
                 ...baseInfo,
-                工作状态: getWorkStatusLabel(work.status),
-                工作积分: work.totalPoints ?? 0,
-                工作内容: work.description || '',
+                需求状态: getWorkStatusLabel(work.status),
+                需求积分: work.totalPoints ?? 0,
+                需求内容: work.description || '',
                 任务角色: '',
                 任务名称: '',
                 任务状态: '',
@@ -414,13 +414,13 @@ const WorkList: React.FC<WorkListProps> = ({ todoFocus }) => {
                 rows.push({
                     层级: `${index === orderedTasks.length - 1 ? '└─' : '├─'} ${task.taskRole === 'MAIN' ? '主任务' : '子任务'}`,
                     ...baseInfo,
-                    工作状态: getWorkStatusLabel(work.status),
-                    工作积分: work.totalPoints ?? 0,
-                    工作内容: work.description || '',
+                    需求状态: getWorkStatusLabel(work.status),
+                    需求积分: work.totalPoints ?? 0,
+                    需求内容: work.description || '',
                     任务角色: task.taskRole === 'MAIN' ? '主任务' : '子任务',
                     任务名称: task.title,
                     任务状态: getTaskStatusLabel(task.status),
-                    任务阶段: isIssueTrackingTask(task) ? '不适用' : getTaskStageLabel(task.currentStage),
+                    任务阶段: isIssueTrackingTask(task) ? '不适用' : getTaskStageLabel(task.currentStage, task.status),
                     任务积分: task.points ?? 0,
                     任务截止日期: formatDate(task.deadline),
                     任务创建时间: formatDateTime(task.createTime),
@@ -460,11 +460,11 @@ const WorkList: React.FC<WorkListProps> = ({ todoFocus }) => {
             { wch: 40 },
         ];
         const workbook = XLSX.utils.book_new();
-        XLSX.utils.book_append_sheet(workbook, worksheet, '我发布的工作');
+        XLSX.utils.book_append_sheet(workbook, worksheet, '我发布的需求');
         downloadCollapsedOutlineWorkbook(
             workbook,
             collapsedRowNumbers,
-            `我发布的工作_${new Date().toISOString().slice(0, 10)}.xlsx`
+            `我发布的需求_${new Date().toISOString().slice(0, 10)}.xlsx`
         );
     };
 
@@ -472,11 +472,11 @@ const WorkList: React.FC<WorkListProps> = ({ todoFocus }) => {
         <div className="relative flex h-full flex-col overflow-y-auto p-6">
             <div className="mb-5 flex flex-wrap items-start justify-between gap-4">
                 <div>
-                    <h2 className="text-xl font-bold text-slate-900">我发布的工作</h2>
+                    <h2 className="text-xl font-bold text-slate-900">我发布的需求</h2>
                     <p className="mt-1 text-sm text-slate-500">
                         {activeView === 'list'
-                            ? '统一查看工作信息、任务进度和风险记录'
-                            : '汇总指定时间段的工作进展、任务现状和风险'}
+                            ? '统一查看需求信息、任务进度和风险记录'
+                            : '汇总指定时间段的需求进展、任务现状和风险'}
                     </p>
                 </div>
                 {activeView === 'list' && (
@@ -542,7 +542,7 @@ const WorkList: React.FC<WorkListProps> = ({ todoFocus }) => {
                         }}
                         className="flex items-center gap-2 rounded-lg bg-slate-900 px-4 py-2 text-sm font-bold text-white transition-colors hover:bg-slate-800"
                     >
-                        <Plus size={16} />新建工作
+                        <Plus size={16} />新建需求
                     </button>
                     </div>
                 )}
@@ -557,7 +557,7 @@ const WorkList: React.FC<WorkListProps> = ({ todoFocus }) => {
                     }`}
                 >
                     <LayoutList size={16} />
-                    工作列表
+                    需求列表
                     {activeView === 'list' && <span className="absolute inset-x-2 bottom-0 h-0.5 rounded-full bg-blue-600" />}
                 </button>
                 <button
@@ -568,7 +568,7 @@ const WorkList: React.FC<WorkListProps> = ({ todoFocus }) => {
                     }`}
                 >
                     <BarChart3 size={16} />
-                    工作统计
+                    需求统计
                     {activeView === 'statistics' && <span className="absolute inset-x-2 bottom-0 h-0.5 rounded-full bg-blue-600" />}
                 </button>
             </div>
@@ -578,7 +578,7 @@ const WorkList: React.FC<WorkListProps> = ({ todoFocus }) => {
             ) : (
                 <>
                     <div className="mb-4 flex flex-wrap items-center gap-3 rounded-xl border border-slate-100 bg-slate-50 px-4 py-3">
-                <span className="text-sm font-bold text-slate-700">工作筛选</span>
+                <span className="text-sm font-bold text-slate-700">需求筛选</span>
                 <select
                     value={statusFilter}
                     onChange={event => {
@@ -663,7 +663,7 @@ const WorkList: React.FC<WorkListProps> = ({ todoFocus }) => {
                 <div className="rounded-xl border border-slate-200 py-16 text-center text-sm text-slate-400">加载中...</div>
             ) : works.length === 0 ? (
                 <div className="rounded-xl border border-dashed border-slate-200 bg-slate-50 py-16 text-center text-sm text-slate-400">
-                    暂无工作，可通过右上角新建或导入。
+                    暂无需求，可通过右上角新建或导入。
                 </div>
             ) : (
                 <div className="overflow-x-auto rounded-xl border border-slate-200 bg-white shadow-sm">
@@ -675,11 +675,11 @@ const WorkList: React.FC<WorkListProps> = ({ todoFocus }) => {
                                     checked={works.length > 0 && selectedWorkIds.length === works.length}
                                     onChange={toggleSelectAll}
                                     className="h-4 w-4 rounded border-slate-300"
-                                    aria-label="全选工作"
+                                    aria-label="全选需求"
                                 />
                                 <span>{selectedWorkIds.length || ''}</span>
                             </div>
-                            <span>工作 / 需求编号</span>
+                            <span>需求名称 / 需求编号</span>
                             <span>发布人</span>
                             <span>申请信息</span>
                             <span>执行人</span>
@@ -698,7 +698,7 @@ const WorkList: React.FC<WorkListProps> = ({ todoFocus }) => {
                                                 checked={selectedWorkIds.includes(work.id)}
                                                 onChange={() => toggleSelected(work.id)}
                                                 className="h-4 w-4 rounded border-slate-300"
-                                                aria-label={`选择工作 ${work.title}`}
+                                                aria-label={`选择需求 ${work.title}`}
                                             />
                                         </div>
                                         <Tooltip title={
@@ -709,7 +709,7 @@ const WorkList: React.FC<WorkListProps> = ({ todoFocus }) => {
                                                 </div>
                                                 {work.description && (
                                                     <div className="border-t border-slate-100 pt-2">
-                                                        <div className="mb-1 text-[11px] font-bold text-slate-400">工作描述</div>
+                                                        <div className="mb-1 text-[11px] font-bold text-slate-400">需求描述</div>
                                                         <pre className="max-h-48 overflow-auto whitespace-pre-wrap rounded-md bg-slate-50 px-2.5 py-2 text-left text-xs leading-5 text-slate-700">{work.description}</pre>
                                                     </div>
                                                 )}
@@ -772,7 +772,7 @@ const WorkList: React.FC<WorkListProps> = ({ todoFocus }) => {
                                                         setIsDrawerOpen(true);
                                                     }}
                                                     className="inline-flex items-center gap-1 rounded-full px-2 py-1 text-xs font-bold text-blue-600 transition-colors hover:bg-blue-50 hover:text-blue-800"
-                                                    title="修改工作"
+                                                    title="修改需求"
                                                 >
                                                     <Edit3 size={13} />编辑
                                                 </button>
@@ -789,7 +789,7 @@ const WorkList: React.FC<WorkListProps> = ({ todoFocus }) => {
                                                 <button
                                                     onClick={() => handleCancel(work.id)}
                                                     className="inline-flex items-center gap-1 rounded-full px-2 py-1 text-xs font-bold text-red-500 transition-colors hover:bg-red-50 hover:text-red-700"
-                                                    title="取消工作"
+                                                    title="取消需求"
                                                 >
                                                     <XCircle size={13} />取消
                                                 </button>
@@ -798,7 +798,7 @@ const WorkList: React.FC<WorkListProps> = ({ todoFocus }) => {
                                                 <button
                                                     onClick={() => handlePauseWork(work)}
                                                     className="inline-flex items-center gap-1 rounded-full px-2 py-1 text-xs font-bold text-amber-600 transition-colors hover:bg-amber-50 hover:text-amber-800"
-                                                    title="暂停工作"
+                                                    title="暂停需求"
                                                 >
                                                     <PauseCircle size={13} />暂停
                                                 </button>
@@ -807,7 +807,7 @@ const WorkList: React.FC<WorkListProps> = ({ todoFocus }) => {
                                                 <button
                                                     onClick={() => handleResumeWork(work)}
                                                     className="inline-flex items-center gap-1 rounded-full px-2 py-1 text-xs font-bold text-green-600 transition-colors hover:bg-green-50 hover:text-green-800"
-                                                    title="继续工作"
+                                                    title="继续需求"
                                                 >
                                                     <Play size={13} />继续
                                                 </button>
@@ -820,14 +820,14 @@ const WorkList: React.FC<WorkListProps> = ({ todoFocus }) => {
                     </div>
                     <div className="flex items-center justify-between border-t border-slate-100 bg-white px-4 py-3">
                         <span className="text-xs text-slate-400">
-                            当前页 {works.length} 个工作{selectedWorkIds.length > 0 ? `，已选择 ${selectedWorkIds.length} 个` : ''}
+                            当前页 {works.length} 个需求{selectedWorkIds.length > 0 ? `，已选择 ${selectedWorkIds.length} 个` : ''}
                         </span>
                         <Pagination
                             current={currentPage}
                             pageSize={pageSize}
                             total={total}
                             showSizeChanger
-                            showTotal={(count) => `共 ${count} 个工作`}
+                            showTotal={(count) => `共 ${count} 个需求`}
                             onChange={(page, size) => {
                                 setCurrentPage(page);
                                 setPageSize(size);

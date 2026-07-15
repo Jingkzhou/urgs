@@ -34,8 +34,8 @@ const mainTaskSchema = taskSchema.superRefine((task, ctx) => {
 });
 
 const workSchema = z.object({
-    title: z.string().min(2, '工作标题至少2个字符'),
-    description: z.string().min(10, '工作描述至少10个字符'),
+    title: z.string().min(2, '需求标题至少2个字符'),
+    description: z.string().min(10, '需求描述至少10个字符'),
     priority: z.enum(['P0', 'P1', 'P2', 'P3', 'P4']),
     deadline: z.string().optional().or(z.literal('')),
     requirementNumber: z.string().optional().or(z.literal('')),
@@ -219,7 +219,7 @@ const CreateWorkDrawer: React.FC<CreateWorkDrawerProps> = ({ isOpen, onClose, on
             })
             .catch(error => {
                 console.error('Load work edit detail failed:', error);
-                alert('加载工作信息失败');
+                alert('加载需求信息失败');
                 onClose();
             })
             .finally(() => setLoadingDetail(false));
@@ -280,7 +280,7 @@ const CreateWorkDrawer: React.FC<CreateWorkDrawerProps> = ({ isOpen, onClose, on
             onSuccess();
         } catch (error) {
             console.error(`${isEdit ? 'Update' : 'Create'} work failed:`, error);
-            alert(isEdit ? '修改工作失败，请重试' : '创建工作失败，请重试');
+            alert(isEdit ? '修改需求失败，请重试' : '创建需求失败，请重试');
         }
     };
 
@@ -300,9 +300,9 @@ const CreateWorkDrawer: React.FC<CreateWorkDrawerProps> = ({ isOpen, onClose, on
             <div className={`fixed inset-y-0 right-0 w-full max-w-2xl bg-white shadow-2xl z-50 transform transition-transform duration-300 ease-in-out flex flex-col ${isOpen ? 'translate-x-0' : 'translate-x-full'}`}>
                 <div className="flex items-center justify-between px-6 py-4 border-b border-slate-100 bg-white">
                     <div>
-                        <h2 className="text-xl font-bold text-slate-800">{isEdit ? '编辑工作' : '发布新工作'}</h2>
+                        <h2 className="text-xl font-bold text-slate-800">{isEdit ? '编辑需求' : '发布新需求'}</h2>
                         <p className="text-sm text-slate-500 mt-1">
-                            {isEdit ? '修改工作、主任务与子任务信息' : '创建一个包含多个子任务的工作集市包'}
+                            {isEdit ? '修改需求、主任务与子任务信息' : '创建一个包含多个子任务的需求集市包'}
                         </p>
                     </div>
                     <button
@@ -326,7 +326,7 @@ const CreateWorkDrawer: React.FC<CreateWorkDrawerProps> = ({ isOpen, onClose, on
 
                             <div>
                                 <label className="block text-sm font-medium text-slate-700 mb-1">
-                                    工作标题 <span className="text-red-500">*</span>
+                                    需求标题 <span className="text-red-500">*</span>
                                 </label>
                                 <input
                                     {...register("title")}
@@ -359,7 +359,7 @@ const CreateWorkDrawer: React.FC<CreateWorkDrawerProps> = ({ isOpen, onClose, on
                                     {...register("description")}
                                     rows={3}
                                     className="w-full px-4 py-2 border border-slate-200 rounded-lg focus:ring-2 focus:ring-red-500 focus:border-red-500 outline-none transition-all resize-none"
-                                    placeholder="详细描述该工作的大致背景与目标..."
+                                    placeholder="详细描述该需求的大致背景与目标..."
                                 />
                                 {errors.description && <p className="text-red-500 text-xs mt-1">{errors.description.message}</p>}
                             </div>
@@ -488,7 +488,7 @@ const CreateWorkDrawer: React.FC<CreateWorkDrawerProps> = ({ isOpen, onClose, on
                         <div className="bg-white p-6 rounded-xl border border-slate-200 shadow-sm space-y-4">
                             <div className="flex items-center justify-between border-b border-slate-100 pb-2 mb-4">
                                 <h3 className="text-base font-bold text-slate-800">主任务 <span className="text-red-500">*</span></h3>
-                                <span className="px-2.5 py-1 rounded bg-red-50 text-red-600 text-xs font-bold">工作收口任务</span>
+                                <span className="px-2.5 py-1 rounded bg-red-50 text-red-600 text-xs font-bold">需求收口任务</span>
                             </div>
 
                             <div>
@@ -628,7 +628,7 @@ const CreateWorkDrawer: React.FC<CreateWorkDrawerProps> = ({ isOpen, onClose, on
                                     {...register("mainTask.description")}
                                     rows={2}
                                     className="w-full px-3 py-1.5 border border-slate-200 rounded-lg text-sm focus:ring-1 focus:ring-red-500 focus:border-red-500 outline-none resize-none"
-                                    placeholder="主任务具体工作内容..."
+                                    placeholder="主任务具体需求内容..."
                                 />
                                 {errors.mainTask?.description && <p className="text-red-500 text-xs mt-1">{errors.mainTask.description.message}</p>}
                             </div>
@@ -650,7 +650,7 @@ const CreateWorkDrawer: React.FC<CreateWorkDrawerProps> = ({ isOpen, onClose, on
                             {errors.tasks?.message && <p className="text-red-500 text-sm font-medium">{errors.tasks.message}</p>}
                             {fields.length === 0 && (
                                 <div className="bg-white rounded-xl border border-dashed border-slate-200 px-4 py-6 text-center text-sm text-slate-400">
-                                    暂无子任务，主任务可单独作为工作收口任务。
+                                    暂无子任务，主任务可单独作为需求收口任务。
                                 </div>
                             )}
 
@@ -819,7 +819,7 @@ const CreateWorkDrawer: React.FC<CreateWorkDrawerProps> = ({ isOpen, onClose, on
                                                     {...register(`tasks.${index}.description` as const)}
                                                     rows={2}
                                                     className="w-full px-3 py-1.5 border border-slate-200 rounded-lg text-sm focus:ring-1 focus:ring-red-500 focus:border-red-500 outline-none resize-none"
-                                                    placeholder="子任务具体工作内容..."
+                                                    placeholder="子任务具体需求内容..."
                                                 />
                                                 {errors.tasks?.[index]?.description && <p className="text-red-500 text-xs mt-1">{errors.tasks[index]?.description?.message}</p>}
                                             </div>

@@ -199,7 +199,7 @@ const ReviewCenter: React.FC<ReviewCenterProps> = ({ todoFocus }) => {
                                     </div>
                                     <div className="bg-slate-50 rounded-lg p-3">
                                         <div className="font-bold text-slate-700 mb-1">当前阶段</div>
-                                        <div>{getTaskStageLabel(task.currentStage)}</div>
+                                        <div>{getTaskStageLabel(task.currentStage, task.status)}</div>
                                     </div>
                                     <div className="bg-slate-50 rounded-lg p-3">
                                         <div className="font-bold text-slate-700 mb-1">任务归属系统</div>
@@ -402,7 +402,7 @@ const ReviewCenter: React.FC<ReviewCenterProps> = ({ todoFocus }) => {
                                                 </div>
                                             </div>
                                             <div>
-                                                <div className="text-xs text-slate-400">工作名称</div>
+                                                <div className="text-xs text-slate-400">需求名称</div>
                                                 <div className="mt-1 text-sm font-bold text-slate-800">
                                                     {activeTask.workTitle || activeTask.title}
                                                 </div>

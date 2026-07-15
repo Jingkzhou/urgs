@@ -18,7 +18,7 @@ const MARKETPLACE_TABS: Array<{
     permission: string;
 }> = [
     { id: 'market', label: '任务大厅', permission: 'marketplace:market' },
-    { id: 'publish', label: '发布工作', permission: 'marketplace:publish' },
+    { id: 'publish', label: '发布需求', permission: 'marketplace:publish' },
     { id: 'mine', label: '个人看板', permission: 'marketplace:mine' },
     { id: 'stats', label: 'KPI 看板', permission: 'marketplace:stats' },
     { id: 'review', label: '验收中心', permission: 'marketplace:review' },
@@ -95,7 +95,7 @@ const MarketplacePage: React.FC = () => {
             <div className="flex flex-col gap-4 xl:flex-row xl:items-center xl:justify-between">
                 <div>
                     <h1 className="text-2xl font-black text-slate-800 tracking-tight">任务中心</h1>
-                    <p className="text-sm text-slate-500 mt-1">认领感兴趣的任务或发布您的工作需求</p>
+                    <p className="text-sm text-slate-500 mt-1">认领感兴趣的任务或发布您的需求</p>
                 </div>
 
                 {visibleTabs.length > 0 && (

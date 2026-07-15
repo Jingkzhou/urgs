@@ -107,7 +107,7 @@ const TaskDetailDrawer: React.FC<TaskDetailDrawerProps> = ({ taskId, isOpen, onC
                             }>
                                 {getTaskStatusLabel(task.status)}
                             </Tag>
-                            {!isIssueTrackingTask(task) && <Tag color="blue">{getTaskStageLabel(task.currentStage)}</Tag>}
+                            {!isIssueTrackingTask(task) && <Tag color="blue">{getTaskStageLabel(task.currentStage, task.status)}</Tag>}
                             {task.stageRiskReported && <Tag color="warning">已报备风险</Tag>}
                         </Space>
                         <Title level={3} className="!mb-0">{task.title}</Title>
@@ -137,15 +137,15 @@ const TaskDetailDrawer: React.FC<TaskDetailDrawerProps> = ({ taskId, isOpen, onC
                     <Divider className="my-0" />
 
                     <section>
-                        <Title level={5}>工作信息</Title>
+                        <Title level={5}>需求信息</Title>
                         <Descriptions column={1} size="small" className="bg-slate-50 p-4 rounded-xl">
-                            <Descriptions.Item label="工作名称">
+                            <Descriptions.Item label="需求名称">
                                 <span className="font-medium">{task.workTitle || '-'}</span>
                             </Descriptions.Item>
                             <Descriptions.Item label="需求编号">
                                 <span className="font-medium text-cyan-700">{task.requirementNumber || '-'}</span>
                             </Descriptions.Item>
-                            <Descriptions.Item label="工作状态">
+                            <Descriptions.Item label="需求状态">
                                 {getWorkStatusLabel(task.workStatus)}
                             </Descriptions.Item>
                             <Descriptions.Item label="申请部门 / 申请人">
@@ -160,10 +160,10 @@ const TaskDetailDrawer: React.FC<TaskDetailDrawerProps> = ({ taskId, isOpen, onC
                             <Descriptions.Item label="项目类型 / 优先级">
                                 {(task.projectType || '-') + ' / ' + (task.workPriority || '-')}
                             </Descriptions.Item>
-                            <Descriptions.Item label="工作截止 / 创建时间">
+                            <Descriptions.Item label="需求截止 / 创建时间">
                                 {formatDateTime(task.workDeadline)} / {formatDateTime(task.workCreateTime)}
                             </Descriptions.Item>
-                            <Descriptions.Item label="工作描述">
+                            <Descriptions.Item label="需求描述">
                                 <span className="whitespace-pre-wrap">{task.workDescription || '-'}</span>
                             </Descriptions.Item>
                         </Descriptions>
@@ -248,7 +248,7 @@ const TaskDetailDrawer: React.FC<TaskDetailDrawerProps> = ({ taskId, isOpen, onC
                                 {task.taskType || '未分类'}{task.difficulty ? ` / ${task.difficulty}` : ''}
                             </Descriptions.Item>
                         )}
-                        <Descriptions.Item label={<Space><Building2 size={14} /> 所属工作</Space>}>
+                        <Descriptions.Item label={<Space><Building2 size={14} /> 所属需求</Space>}>
                             <span className="font-medium">{task.workTitle || '未指定'}</span>
                         </Descriptions.Item>
                         <Descriptions.Item label={<Space><User size={14} /> 发布人</Space>}>

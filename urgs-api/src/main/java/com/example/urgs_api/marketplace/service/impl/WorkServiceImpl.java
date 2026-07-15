@@ -65,7 +65,7 @@ public class WorkServiceImpl extends ServiceImpl<WorkMapper, Work> implements Wo
     @Transactional(rollbackFor = Exception.class)
     public Work createWork(WorkCreateDTO dto, String userId) {
         if (dto.getMainTask() == null) {
-            throw new IllegalArgumentException("工作必须包含一个主任务");
+            throw new IllegalArgumentException("需求必须包含一个主任务");
         }
 
         Work work = new Work();
@@ -118,11 +118,11 @@ public class WorkServiceImpl extends ServiceImpl<WorkMapper, Work> implements Wo
     @Transactional(rollbackFor = Exception.class)
     public Work updateWork(String workId, WorkCreateDTO dto, String userId) {
         if (dto.getMainTask() == null) {
-            throw new IllegalArgumentException("工作必须包含一个主任务");
+            throw new IllegalArgumentException("需求必须包含一个主任务");
         }
         Work work = this.getById(workId);
         if (work == null || !userId.equals(work.getPublisherId())) {
-            throw new IllegalArgumentException("工作不存在或无权操作");
+            throw new IllegalArgumentException("需求不存在或无权操作");
         }
         work.setTitle(dto.getTitle());
         work.setDescription(dto.getDescription());
@@ -193,7 +193,7 @@ public class WorkServiceImpl extends ServiceImpl<WorkMapper, Work> implements Wo
             throw new IllegalArgumentException("导入数据不能为空");
         }
         if (works.size() > 500) {
-            throw new IllegalArgumentException("单次最多导入500条工作");
+            throw new IllegalArgumentException("单次最多导入500条需求");
         }
 
         for (int index = 0; index < works.size(); index++) {
@@ -238,17 +238,17 @@ public class WorkServiceImpl extends ServiceImpl<WorkMapper, Work> implements Wo
     public boolean publishWork(String workId, String userId) {
         Work work = this.getById(workId);
         if (work == null || !work.getPublisherId().equals(userId)) {
-            throw new IllegalArgumentException("工作不存在或无权操作");
+            throw new IllegalArgumentException("需求不存在或无权操作");
         }
         WorkTask mainTask = workTaskService.lambdaQuery()
                 .eq(WorkTask::getWorkId, workId)
                 .eq(WorkTask::getTaskRole, TASK_ROLE_MAIN)
                 .one();
         if (mainTask == null) {
-            throw new IllegalStateException("工作必须包含且仅包含一个主任务");
+            throw new IllegalStateException("需求必须包含且仅包含一个主任务");
         }
         if (!WorkStatus.DRAFT.name().equals(work.getStatus())) {
-            throw new IllegalStateException("只能发布草稿状态的工作");
+            throw new IllegalStateException("只能发布草稿状态的需求");
         }
 
         work.setStatus(WorkStatus.PUBLISHED.name());
@@ -260,7 +260,7 @@ public class WorkServiceImpl extends ServiceImpl<WorkMapper, Work> implements Wo
     public boolean cancelWork(String workId, String userId) {
         Work work = this.getById(workId);
         if (work == null || !work.getPublisherId().equals(userId)) {
-            throw new IllegalArgumentException("工作不存在或无权操作");
+            throw new IllegalArgumentException("需求不存在或无权操作");
         }
         if (WorkStatus.COMPLETED.name().equals(work.getStatus())
                 || WorkStatus.CANCELLED.name().equals(work.getStatus())) {
@@ -291,7 +291,7 @@ public class WorkServiceImpl extends ServiceImpl<WorkMapper, Work> implements Wo
     public boolean pauseWork(String workId, String userId) {
         Work work = this.getById(workId);
         if (work == null || !work.getPublisherId().equals(userId)) {
-            throw new IllegalArgumentException("工作不存在或无权操作");
+            throw new IllegalArgumentException("需求不存在或无权操作");
         }
         if (!Set.of(
                 WorkStatus.PUBLISHED.name(),
@@ -308,7 +308,7 @@ public class WorkServiceImpl extends ServiceImpl<WorkMapper, Work> implements Wo
                     .set(WorkTask::getStatus, TaskStatus.PAUSED.name())
                     .update();
             if (!tasksPaused) {
-                throw new IllegalStateException("工作任务暂停失败");
+                throw new IllegalStateException("需求任务暂停失败");
             }
         }
         return success;
@@ -319,10 +319,10 @@ public class WorkServiceImpl extends ServiceImpl<WorkMapper, Work> implements Wo
     public boolean resumeWork(String workId, String userId) {
         Work work = this.getById(workId);
         if (work == null || !work.getPublisherId().equals(userId)) {
-            throw new IllegalArgumentException("工作不存在或无权操作");
+            throw new IllegalArgumentException("需求不存在或无权操作");
         }
         if (!WorkStatus.PAUSED.name().equals(work.getStatus())) {
-            throw new IllegalStateException("只有已暂停的工作可以继续");
+            throw new IllegalStateException("只有已暂停的需求可以继续");
         }
 
         List<WorkTask> tasks = workTaskService.lambdaQuery()
@@ -350,7 +350,7 @@ public class WorkServiceImpl extends ServiceImpl<WorkMapper, Work> implements Wo
     @Transactional(rollbackFor = Exception.class)
     public int batchDeleteWorks(List<String> workIds, String userId, boolean allowAnyPublisher) {
         if (workIds == null || workIds.isEmpty()) {
-            throw new IllegalArgumentException("请选择要删除的工作");
+            throw new IllegalArgumentException("请选择要删除的需求");
         }
 
         List<String> distinctWorkIds = workIds.stream()
@@ -358,7 +358,7 @@ public class WorkServiceImpl extends ServiceImpl<WorkMapper, Work> implements Wo
                 .distinct()
                 .collect(Collectors.toList());
         if (distinctWorkIds.isEmpty()) {
-            throw new IllegalArgumentException("请选择要删除的工作");
+            throw new IllegalArgumentException("请选择要删除的需求");
         }
 
         List<Work> works = this.lambdaQuery()
@@ -366,7 +366,7 @@ public class WorkServiceImpl extends ServiceImpl<WorkMapper, Work> implements Wo
                 .list();
         if (works.size() != distinctWorkIds.size()
                 || (!allowAnyPublisher && works.stream().anyMatch(work -> !userId.equals(work.getPublisherId())))) {
-            throw new IllegalArgumentException("工作不存在或无权操作");
+            throw new IllegalArgumentException("需求不存在或无权操作");
         }
 
         List<WorkTask> tasks = workTaskService.lambdaQuery()

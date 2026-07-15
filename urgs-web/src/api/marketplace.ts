@@ -374,7 +374,9 @@ export interface WorkStatistics {
     endDate: string;
     totalWorks: number;
     completedWorks: number;
-    totalTasks: number;
+    activeWorks: number;
+    pausedWorks: number;
+    overdueWorks: number;
     completedTasks: number;
     activeTasks: number;
     overdueTasks: number;
