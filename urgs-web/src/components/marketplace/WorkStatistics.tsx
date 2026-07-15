@@ -35,15 +35,17 @@ import {
 import dayjs from 'dayjs';
 import {
     getIncompleteWorkCalendarTasks,
+    getWorkTasks,
     getWorkStatistics,
     WorkCalendarTask,
     WorkStatistics as WorkStatisticsData,
     WorkStatisticsAssigneeWorkload,
     WorkStatisticsSystemTask,
+    WorkTask,
 } from '../../api/marketplace';
 import { streamChatResponse } from '../../api/chat';
 import { searchUsers } from '../../api/user';
-import { getTaskStatusLabel, getWorkStatusLabel } from './marketplaceLabels';
+import { getTaskStageLabel, getTaskStatusLabel, getWorkStatusLabel } from './marketplaceLabels';
 
 const WORK_STATUS_COLORS: Record<string, string> = {
     DRAFT: '#94a3b8',
@@ -73,6 +75,9 @@ const WorkStatistics: React.FC = () => {
     const [calendarTasks, setCalendarTasks] = useState<WorkCalendarTask[]>([]);
     const [calendarLoading, setCalendarLoading] = useState(true);
     const [calendarLoadError, setCalendarLoadError] = useState('');
+    const [calendarWorkTasks, setCalendarWorkTasks] = useState<Record<string, WorkTask[]>>({});
+    const [calendarDetailLoading, setCalendarDetailLoading] = useState(false);
+    const [calendarDetailError, setCalendarDetailError] = useState('');
     const aiAbortControllerRef = useRef<AbortController | null>(null);
     const minStartDate = useMemo(() => dayjs(endDate).subtract(366, 'day').format('YYYY-MM-DD'), [endDate]);
     const maxEndDate = useMemo(() => {
@@ -180,6 +185,63 @@ const WorkStatistics: React.FC = () => {
     }, {}), [calendarTasks]);
     const selectedCalendarDate = calendarDate.format('YYYY-MM-DD');
     const selectedCalendarTasks = calendarTasksByDate[selectedCalendarDate] || [];
+    const selectedCalendarWorks = useMemo(() => Array.from(new Map(
+        selectedCalendarTasks.map(task => [task.workId, { id: task.workId, title: task.workTitle }])
+    ).values()), [selectedCalendarTasks]);
+
+    useEffect(() => {
+        let cancelled = false;
+        if (selectedCalendarWorks.length === 0) {
+            setCalendarWorkTasks({});
+            setCalendarDetailError('');
+            setCalendarDetailLoading(false);
+            return undefined;
+        }
+
+        const loadCalendarWorkDetails = async () => {
+            setCalendarDetailLoading(true);
+            setCalendarDetailError('');
+            try {
+                const detailEntries = await Promise.all(selectedCalendarWorks.map(async work => [
+                    work.id,
+                    await getWorkTasks(work.id),
+                ] as const));
+                if (cancelled) return;
+
+                const taskMap = Object.fromEntries(detailEntries) as Record<string, WorkTask[]>;
+                setCalendarWorkTasks(taskMap);
+                const assigneeIds = Array.from(new Set(Object.values(taskMap)
+                    .flat()
+                    .map(task => task.assigneeId)
+                    .filter((id): id is string => Boolean(id))));
+                const assigneeEntries = await Promise.all(assigneeIds.map(async assigneeId => {
+                    try {
+                        const users = await searchUsers(assigneeId);
+                        const matched = users.find(user => user.id.toString() === assigneeId) || users[0];
+                        return [assigneeId, matched?.name || assigneeId] as const;
+                    } catch {
+                        return [assigneeId, assigneeId] as const;
+                    }
+                }));
+                if (!cancelled) {
+                    setAssigneeLabels(previous => ({ ...previous, ...Object.fromEntries(assigneeEntries) }));
+                }
+            } catch (error) {
+                console.error('Failed to fetch calendar work details', error);
+                if (!cancelled) {
+                    setCalendarWorkTasks({});
+                    setCalendarDetailError('工作任务明细加载失败，请稍后重试');
+                }
+            } finally {
+                if (!cancelled) setCalendarDetailLoading(false);
+            }
+        };
+
+        loadCalendarWorkDetails();
+        return () => {
+            cancelled = true;
+        };
+    }, [selectedCalendarWorks]);
 
     const buildAiPrompt = (data: WorkStatisticsData) => {
         const workStatuses = data.workStatusDistribution
@@ -512,8 +574,8 @@ ${attentionItems}
                     </div>
                     <div className="border-t border-slate-100 px-4 py-3">
                         <div className="mb-2 flex items-center justify-between gap-3 text-xs">
-                            <span className="font-bold text-slate-700">{selectedCalendarDate} 截止任务</span>
-                            <span className="rounded-full bg-rose-50 px-2 py-0.5 font-bold text-rose-600">{selectedCalendarTasks.length}</span>
+                            <span className="font-bold text-slate-700">{selectedCalendarDate} 工作任务</span>
+                            <span className="rounded-full bg-rose-50 px-2 py-0.5 font-bold text-rose-600">{selectedCalendarWorks.length} 个工作</span>
                         </div>
                         {calendarLoading ? (
                             <div className="flex h-20 items-center justify-center text-xs text-slate-400">
@@ -521,19 +583,44 @@ ${attentionItems}
                             </div>
                         ) : calendarLoadError ? (
                             <div className="py-3 text-xs text-rose-600">{calendarLoadError}</div>
-                        ) : selectedCalendarTasks.length === 0 ? (
+                        ) : selectedCalendarWorks.length === 0 ? (
                             <div className="py-3 text-xs text-slate-400">当天没有未完成任务</div>
+                        ) : calendarDetailLoading ? (
+                            <div className="flex h-20 items-center justify-center text-xs text-slate-400">
+                                <Loader2 size={15} className="mr-2 animate-spin" />加载工作任务树...
+                            </div>
+                        ) : calendarDetailError ? (
+                            <div className="py-3 text-xs text-rose-600">{calendarDetailError}</div>
                         ) : (
-                            <div className="max-h-36 space-y-2 overflow-y-auto pr-1">
-                                {selectedCalendarTasks.map(task => (
-                                    <div key={task.taskId} className="rounded-md bg-slate-50 px-2.5 py-2">
-                                        <div className="truncate text-xs font-bold text-slate-700">{task.taskTitle}</div>
-                                        <div className="mt-1 flex items-center justify-between gap-2 text-[11px] text-slate-400">
-                                            <span className="truncate">{task.workTitle}</span>
-                                            <span className="shrink-0">{getTaskStatusLabel(task.status)} · {dayjs(task.deadline).format('HH:mm')}</span>
+                            <div className="max-h-72 space-y-3 overflow-y-auto pr-1">
+                                {selectedCalendarWorks.map(work => {
+                                    const tasks = calendarWorkTasks[work.id] || [];
+                                    const mainTask = tasks.find(task => task.taskRole === 'MAIN');
+                                    const subTasks = tasks.filter(task => task.taskRole !== 'MAIN');
+                                    const renderTask = (task: WorkTask, isSubTask = false) => (
+                                        <div key={task.id} className={`flex min-w-0 items-center gap-2 rounded-md border border-slate-100 bg-slate-50 px-2.5 py-2 ${isSubTask ? 'ml-5 before:-ml-4 before:text-slate-300 before:content-["└"]' : ''}`}>
+                                            <span className={`shrink-0 rounded px-1.5 py-0.5 text-[10px] font-bold ${isSubTask ? 'bg-slate-200 text-slate-600' : 'bg-blue-100 text-blue-700'}`}>
+                                                {isSubTask ? '子任务' : '主任务'}
+                                            </span>
+                                            <span className="min-w-0 flex-1 truncate text-xs font-bold text-slate-700">{task.title}</span>
+                                            <span className="shrink-0 text-[10px] text-blue-600">{getTaskStageLabel(task.currentStage)}</span>
+                                            <span className="shrink-0 text-[10px] text-slate-500">{renderAssignee(task.assigneeId)}</span>
                                         </div>
-                                    </div>
-                                ))}
+                                    );
+                                    return (
+                                        <div key={work.id} className="rounded-lg border border-slate-200 bg-white p-2.5">
+                                            <div className="mb-2 flex items-center justify-between gap-2 border-b border-slate-100 pb-2">
+                                                <span className="min-w-0 truncate text-xs font-bold text-slate-800">{work.title}</span>
+                                                <span className="shrink-0 text-[10px] text-slate-400">{tasks.length} 个任务</span>
+                                            </div>
+                                            <div className="space-y-1.5">
+                                                {mainTask ? renderTask(mainTask) : null}
+                                                {subTasks.map(task => renderTask(task, true))}
+                                                {tasks.length === 0 && <div className="py-1 text-[11px] text-slate-400">暂无任务</div>}
+                                            </div>
+                                        </div>
+                                    );
+                                })}
                             </div>
                         )}
                     </div>
