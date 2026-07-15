@@ -11,6 +11,8 @@ public interface GitRepositoryRepository extends JpaRepository<GitRepository, Lo
 
     List<GitRepository> findBySsoId(Long ssoId);
 
+    List<GitRepository> findBySsoIdIn(List<Long> ssoIds);
+
     List<GitRepository> findByPlatform(String platform);
 
     Optional<GitRepository> findByCloneUrl(String cloneUrl);

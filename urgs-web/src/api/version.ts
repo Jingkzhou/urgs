@@ -39,8 +39,14 @@ export interface GitRepository {
 export const getGitRepositories = (params?: { ssoId?: number; platform?: string }) =>
     get<GitRepository[]>('/api/version/repos', params || {});
 
+export const getManagedGitRepositories = () =>
+    get<GitRepository[]>('/api/version/repos/management');
+
 export const getRepoPrCounts = () =>
     get<Record<string, number>>('/api/version/repos/pr-counts');
+
+export const getManagedRepoPrCounts = () =>
+    get<Record<string, number>>('/api/version/repos/management/pr-counts');
 
 export const createGitRepository = (data: GitRepository) =>
     post<GitRepository>('/api/version/repos', data);

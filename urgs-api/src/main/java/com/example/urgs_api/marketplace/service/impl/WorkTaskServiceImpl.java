@@ -890,6 +890,8 @@ public class WorkTaskServiceImpl extends ServiceImpl<WorkTaskMapper, WorkTask> i
             }
         }
 
+        dto.setAssigneeName(resolveUserName(task.getAssigneeId()));
+
         if (AssignMode.COMPETE.name().equals(task.getAssignMode())) {
             long count = taskApplicationService.lambdaQuery()
                     .eq(com.example.urgs_api.marketplace.model.TaskApplication::getTaskId, task.getId())

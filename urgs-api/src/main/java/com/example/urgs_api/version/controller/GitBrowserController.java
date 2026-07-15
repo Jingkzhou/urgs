@@ -9,6 +9,7 @@ import com.example.urgs_api.version.service.GitPlatformService;
 import lombok.RequiredArgsConstructor;
 import org.springframework.http.ResponseEntity;
 import org.springframework.web.bind.annotation.*;
+import com.example.urgs_api.auth.annotation.RequirePermission;
 
 import java.util.List;
 
@@ -201,6 +202,7 @@ public class GitBrowserController {
      * 获取用户在 GitLab 上的项目列表
      */
     @GetMapping("/sync")
+    @RequirePermission("sys:repo:query")
     public ResponseEntity<List<com.example.urgs_api.version.dto.GitProjectVO>> listGitLabProjects(
             @RequestAttribute(value = "userId", required = false) Long userId) {
         if (userId == null) {
@@ -220,6 +222,7 @@ public class GitBrowserController {
      * 导入选中的仓库
      */
     @PostMapping("/import")
+    @RequirePermission("sys:repo:add")
     public ResponseEntity<Void> importRepositories(
             @RequestBody com.example.urgs_api.version.dto.GitImportRequest request,
             @RequestAttribute(value = "userId", required = false) Long userId) {

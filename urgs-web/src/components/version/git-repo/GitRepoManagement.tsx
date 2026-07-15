@@ -1,10 +1,11 @@
 import React, { useState, useEffect } from 'react';
 import { Table, Button, Modal, Form, Input, Select, Tag, Space, message, Popconfirm, Switch } from 'antd';
 import { Plus, GitBranch, Trash2, Edit, ExternalLink, RefreshCw, LayoutList, LayoutGrid, MoreHorizontal, GitPullRequest } from 'lucide-react';
-import { getGitRepositories, createGitRepository, updateGitRepository, deleteGitRepository, getSsoList, GitRepository, SsoConfig, getRepoPrCounts, syncGitLabProjects, importGitRepositories } from '@/api/version';
+import { getGitRepositories, getManagedGitRepositories, createGitRepository, updateGitRepository, deleteGitRepository, getSsoList, GitRepository, SsoConfig, getRepoPrCounts, getManagedRepoPrCounts, syncGitLabProjects, importGitRepositories } from '@/api/version';
 import GitRepoDetail from './GitRepoDetail';
 import PageHeader from '../../common/PageHeader';
 import StatusTag from '../../common/StatusTag';
+import { hasPermission } from '@/utils/permission';
 
 const { Option } = Select;
 
@@ -46,7 +47,14 @@ const parseFullNameFromCloneUrl = (cloneUrl?: string): string | null => {
     return fallback ? fallback : null;
 };
 
-const GitRepoManagement: React.FC = () => {
+interface GitRepoManagementProps {
+    manageable?: boolean;
+}
+
+const GitRepoManagement: React.FC<GitRepoManagementProps> = ({ manageable = false }) => {
+    const canAdd = manageable && hasPermission('sys:repo:add');
+    const canEdit = manageable && hasPermission('sys:repo:edit');
+    const canDelete = manageable && hasPermission('sys:repo:del');
     const [repos, setRepos] = useState<GitRepository[]>([]);
     const [ssoList, setSsoList] = useState<SsoConfig[]>([]);
     const [loading, setLoading] = useState(false);
@@ -66,8 +74,8 @@ const GitRepoManagement: React.FC = () => {
         setLoading(true);
         try {
             const [data, prCounts] = await Promise.all([
-                getGitRepositories(),
-                getRepoPrCounts().catch(() => ({}))
+                manageable ? getManagedGitRepositories() : getGitRepositories(),
+                (manageable ? getManagedRepoPrCounts() : getRepoPrCounts()).catch(() => ({}))
             ]);
 
             const reposWithCounts = (data || [])
@@ -246,10 +254,12 @@ const GitRepoManagement: React.FC = () => {
                         icon={<ExternalLink size={14} />}
                         onClick={() => window.open(record.cloneUrl, '_blank')}
                     />
-                    <Button type="text" icon={<Edit size={14} />} onClick={() => handleEdit(record)} />
-                    <Popconfirm title="确定删除？" onConfirm={() => handleDelete(record.id!)}>
-                        <Button type="text" danger icon={<Trash2 size={14} />} />
-                    </Popconfirm>
+                    {canEdit && <Button type="text" icon={<Edit size={14} />} onClick={() => handleEdit(record)} />}
+                    {canDelete && (
+                        <Popconfirm title="确定删除？" onConfirm={() => handleDelete(record.id!)}>
+                            <Button type="text" danger icon={<Trash2 size={14} />} />
+                        </Popconfirm>
+                    )}
                 </Space>
             ),
         },
@@ -287,10 +297,12 @@ const GitRepoManagement: React.FC = () => {
                             </button>
                         </div>
                         <Button icon={<RefreshCw className="w-4 h-4" />} onClick={fetchRepos}>刷新</Button>
-                        <Button icon={<GitBranch className="w-4 h-4" />} onClick={handleOpenSync}>同步 GitLab 项目</Button>
-                        <Button type="primary" icon={<Plus className="w-4 h-4" />} onClick={handleAdd}>
-                            添加仓库
-                        </Button>
+                        {canAdd && <Button icon={<GitBranch className="w-4 h-4" />} onClick={handleOpenSync}>同步 GitLab 项目</Button>}
+                        {canAdd && (
+                            <Button type="primary" icon={<Plus className="w-4 h-4" />} onClick={handleAdd}>
+                                添加仓库
+                            </Button>
+                        )}
                     </Space>
                 }
             />
@@ -334,11 +346,13 @@ const GitRepoManagement: React.FC = () => {
                                             </div>
                                         </div>
                                     </div>
-                                    <Popconfirm title="确定删除？" onConfirm={() => handleDelete(repo.id!)}>
-                                        <button className="text-slate-300 hover:text-red-500 transition-colors p-1">
-                                            <Trash2 size={16} />
-                                        </button>
-                                    </Popconfirm>
+                                    {canDelete && (
+                                        <Popconfirm title="确定删除？" onConfirm={() => handleDelete(repo.id!)}>
+                                            <button className="text-slate-300 hover:text-red-500 transition-colors p-1">
+                                                <Trash2 size={16} />
+                                            </button>
+                                        </Popconfirm>
+                                    )}
                                 </div>
 
                                 <div className="flex-1 space-y-3 mb-4">
@@ -368,11 +382,13 @@ const GitRepoManagement: React.FC = () => {
                                     >
                                         进入仓库
                                     </Button>
-                                    <Button
-                                        icon={<Edit size={14} />}
-                                        size="small"
-                                        onClick={() => handleEdit(repo)}
-                                    />
+                                    {canEdit && (
+                                        <Button
+                                            icon={<Edit size={14} />}
+                                            size="small"
+                                            onClick={() => handleEdit(repo)}
+                                        />
+                                    )}
                                 </div>
                             </div>
                         );

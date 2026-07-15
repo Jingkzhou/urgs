@@ -159,6 +159,7 @@ export interface TaskMarketDTO extends WorkTask {
     workUpdateTime?: string;
     publisherName: string;
     publisherAvatar: string;
+    assigneeName?: string;
     applicationCount: number;
     versionChangeSnapshots?: TaskVersionChangeSnapshot[];
 }

@@ -796,6 +796,16 @@ const CreateWorkDrawer: React.FC<CreateWorkDrawerProps> = ({ isOpen, onClose, on
                                             )}
 
                                             <div>
+                                                <label className="block text-xs font-medium text-slate-500 mb-1">截止日期</label>
+                                                <input
+                                                    type="datetime-local"
+                                                    {...register(`tasks.${index}.deadline` as const)}
+                                                    className="w-full px-3 py-1.5 border border-slate-200 rounded-lg text-sm focus:ring-1 focus:ring-red-500 focus:border-red-500 outline-none"
+                                                />
+                                                {errors.tasks?.[index]?.deadline && <p className="text-red-500 text-xs mt-1">{errors.tasks[index]?.deadline?.message}</p>}
+                                            </div>
+
+                                            <div>
                                                 <label className="block text-xs font-medium text-slate-500 mb-1">技能要求补充 (可选)</label>
                                                 <input
                                                     {...register(`tasks.${index}.requiredSkills` as const)}

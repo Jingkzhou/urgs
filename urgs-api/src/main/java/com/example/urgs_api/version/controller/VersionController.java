@@ -5,6 +5,8 @@ import com.example.urgs_api.version.entity.GitRepository;
 import com.example.urgs_api.version.service.AppSystemService;
 import com.example.urgs_api.version.service.GitRepositoryService;
 import com.example.urgs_api.version.service.GitPlatformService;
+import com.example.urgs_api.system.service.SysSystemService;
+import com.example.urgs_api.auth.annotation.RequirePermission;
 import lombok.RequiredArgsConstructor;
 
 import org.springframework.http.ResponseEntity;
@@ -23,6 +25,7 @@ public class VersionController {
     private final AppSystemService appSystemService;
     private final GitRepositoryService gitRepositoryService;
     private final GitPlatformService gitPlatformService;
+    private final SysSystemService sysSystemService;
 
     // ===== 应用系统 API =====
 
@@ -65,7 +68,7 @@ public class VersionController {
     public Map<Long, Integer> getRepoPrCounts(@RequestAttribute(value = "userId", required = false) Long userId) {
         if (userId == null)
             userId = 1L;
-        List<GitRepository> repos = gitRepositoryService.findAll(userId);
+        List<GitRepository> repos = findReposForUserSystems(userId);
 
         // Parallel stream for faster fetching
         return repos.parallelStream()
@@ -86,17 +89,26 @@ public class VersionController {
             userId = 1L; // Fallback for dev environment or default user
         }
 
-        // 1. Fetch filtered list from DB
-        List<GitRepository> dbRepos;
-        if (ssoId != null) {
-            dbRepos = gitRepositoryService.findBySsoId(userId, ssoId);
-        } else if (platform != null) {
-            dbRepos = gitRepositoryService.findByPlatform(userId, platform);
-        } else {
-            dbRepos = gitRepositoryService.findAll(userId);
-        }
+        return findReposForUserSystems(userId).stream()
+                .filter(repo -> ssoId == null || ssoId.equals(repo.getSsoId()))
+                .filter(repo -> platform == null || platform.equalsIgnoreCase(repo.getPlatform()))
+                .toList();
+    }
 
-        return dbRepos;
+    /** 系统管理使用的全量仓库维护列表。 */
+    @GetMapping("/repos/management")
+    @RequirePermission("sys:repo:query")
+    public List<GitRepository> listManagedRepos() {
+        return gitRepositoryService.findAll();
+    }
+
+    @GetMapping("/repos/management/pr-counts")
+    @RequirePermission("sys:repo:query")
+    public Map<Long, Integer> getManagedRepoPrCounts() {
+        return gitRepositoryService.findAll().parallelStream()
+                .collect(java.util.stream.Collectors.toMap(
+                        GitRepository::getId,
+                        repo -> gitPlatformService.getOpenPrCount(repo.getId())));
     }
 
     @GetMapping("/repos/{id}")
@@ -107,6 +119,7 @@ public class VersionController {
     }
 
     @PostMapping("/repos")
+    @RequirePermission("sys:repo:add")
     public GitRepository createRepo(@RequestBody GitRepository repo,
             @RequestAttribute(value = "userId", required = false) Long userId) {
         Long currentUserId = userId != null ? userId : 1L;
@@ -120,6 +133,7 @@ public class VersionController {
     }
 
     @PutMapping("/repos/{id}")
+    @RequirePermission("sys:repo:edit")
     public ResponseEntity<GitRepository> updateRepo(@PathVariable Long id, @RequestBody GitRepository repo) {
         try {
             return ResponseEntity.ok(gitRepositoryService.update(id, repo));
@@ -129,9 +143,18 @@ public class VersionController {
     }
 
     @DeleteMapping("/repos/{id}")
+    @RequirePermission("sys:repo:del")
     public ResponseEntity<Void> deleteRepo(@PathVariable Long id) {
         gitRepositoryService.delete(id);
         return ResponseEntity.ok().build();
+    }
+
+    private List<GitRepository> findReposForUserSystems(Long userId) {
+        List<Long> systemIds = sysSystemService.getSystems(userId, false).stream()
+                .map(system -> system.getId())
+                .filter(java.util.Objects::nonNull)
+                .toList();
+        return gitRepositoryService.findBySsoIds(systemIds);
     }
 
     // ===== 概览统计 API =====

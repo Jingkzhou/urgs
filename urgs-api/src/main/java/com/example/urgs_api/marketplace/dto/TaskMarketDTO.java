@@ -28,6 +28,7 @@ public class TaskMarketDTO extends WorkTask {
     private LocalDateTime workUpdateTime;
     private String publisherName;
     private String publisherAvatar;
+    private String assigneeName;
     private Integer applicationCount;
     private List<TaskAuditLogDTO> auditLogs;
     private List<MaintenanceRecord> assetMaintenanceRecords;

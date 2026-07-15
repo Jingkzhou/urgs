@@ -202,6 +202,18 @@ const ReviewCenter: React.FC<ReviewCenterProps> = ({ todoFocus }) => {
                                         <div>{getTaskStageLabel(task.currentStage)}</div>
                                     </div>
                                     <div className="bg-slate-50 rounded-lg p-3">
+                                        <div className="font-bold text-slate-700 mb-1">任务归属系统</div>
+                                        <div>{task.owningSystem || task.primarySystemName || '-'}</div>
+                                    </div>
+                                    <div className="bg-slate-50 rounded-lg p-3">
+                                        <div className="font-bold text-slate-700 mb-1">负责人</div>
+                                        <div>{task.assigneeName || '-'}</div>
+                                    </div>
+                                    <div className="bg-slate-50 rounded-lg p-3">
+                                        <div className="font-bold text-slate-700 mb-1">终止日期</div>
+                                        <div>{formatRecordTime(task.deadline)}</div>
+                                    </div>
+                                    <div className="bg-slate-50 rounded-lg p-3">
                                         <div className="font-bold text-slate-700 mb-1">返工/延期</div>
                                         <div>{task.reworkCount || 0} 次 / {task.delayReported ? '已报备' : '未报备'}</div>
                                     </div>

@@ -53,6 +53,16 @@ public class GitRepositoryService {
     }
 
     /**
+     * 根据用户可访问的归属系统获取仓库列表。
+     */
+    public List<GitRepository> findBySsoIds(List<Long> ssoIds) {
+        if (ssoIds == null || ssoIds.isEmpty()) {
+            return List.of();
+        }
+        return repository.findBySsoIdIn(ssoIds);
+    }
+
+    /**
      * 按创建者和平台类型过滤记录获取仓库列表
      *
      * @param userId   用户 ID
