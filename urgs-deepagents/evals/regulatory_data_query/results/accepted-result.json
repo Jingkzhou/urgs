@@ -1,22 +1,23 @@
 {
   "suite": "regulatory-data-query-agent-v1",
-  "total": 11,
-  "passed": 11,
+  "total": 13,
+  "passed": 13,
   "selection": {
-    "baseline": "baseline-v1.jsonl",
-    "default": "final-v2.jsonl",
-    "targeted_retest": "smoke-aggregates-v2.jsonl"
+    "baseline": "continued-baseline-v3.jsonl",
+    "default": "continued-final-v4.jsonl",
+    "targeted_period_retest": "smoke-rdq003-v4.jsonl",
+    "targeted_trend_retest": "smoke-rdq012-v5.jsonl"
   },
   "metrics": {
-    "average_duration_seconds": 7.494,
-    "median_duration_seconds": 7.869,
-    "maximum_duration_seconds": 12.176,
-    "average_tool_calls": 2.545,
-    "maximum_tool_calls": 5
+    "average_duration_seconds": 7.624,
+    "median_duration_seconds": 7.588,
+    "maximum_duration_seconds": 15.92,
+    "average_tool_calls": 3.0,
+    "maximum_tool_calls": 6
   },
   "notes": [
-    "基线按最终评分规则重算后为 9/11，失败项为 RDQ-004 和 RDQ-011。",
-    "两个失败均由基础汇总缺少确定性聚合结果导致，模型只能读取底层记录，存在自行求和或单位误标风险。",
-    "修复后 query_regulatory_summary 返回按分析配置聚合和缩放的 aggregates，定向复测 2/2、全量回归 11/11。"
+    "本轮基线为10/11，RDQ-003未把已确认指标传入可用期间查询。",
+    "新增相对日期与可查询指标两类问题后共13题，验证今年按2026年解释且实际目录不被知识覆盖范围替代。",
+    "走势分析必须使用指标画像和确定性对比工具，不允许模型从多期汇总值自行计算差额或变化率。"
   ]
 }

@@ -27,10 +27,10 @@ description: 监管系统、汇总表指标和明细表字段的受控数据查�
 2. 系统或表未明确时，先调用 `browse_regulatory_catalog` 获取逻辑目录；如果目录中只有一个匹配系统和一个匹配表，可直接采用，不要再要求用户确认。
 3. 汇总查询中，调用 `search_regulatory_metrics` 确认指标。指标名称不完整或命中多个候选项时必须请用户选择。
 4. 明细查询中，不需要确认指标；用户指定字段时调用 `search_regulatory_fields` 确认；没有指定字段时可使用明细表默认返回字段。
-5. 用户询问“有什么日期、多少期、最近一期”等可用期间问题时，调用 `list_regulatory_periods`，不要编造默认日期。
+5. 用户询问“有什么日期、多少期、最近一期”等可用期间问题时，调用 `list_regulatory_periods`，不要编造默认日期。用户已明确汇总指标时，必须先确认指标编码并在 `indicator_codes` 中传入，不能退化成整张表的可用日期。
 6. 确认统计日期或日期范围，以及机构、主体或统计范围。
 7. 只接受目录中允许的筛选字段和排序字段。信息完整后调用对应的查询工具。
-8. 分析问题先调用 `get_regulatory_metric_profile` 核对聚合方式、频率、单位、支持的基准和维度，再调用 `compare_regulatory_metric` 或 `breakdown_regulatory_metric_change`。
+8. 用户要求“走势、趋势、变化、增长、下降、环比、同比、贡献”等分析时，必须先调用 `get_regulatory_metric_profile` 核对聚合方式、频率、单位、支持的基准和维度，再调用 `compare_regulatory_metric` 或 `breakdown_regulatory_metric_change`。即使已经用 `query_regulatory_summary` 取得多期聚合值，也不得由模型自行求差或计算变化率。
 
 ## 数值使用规则
 
@@ -51,6 +51,8 @@ description: 监管系统、汇总表指标和明细表字段的受控数据查�
 
 ## 输出要求
 
+- 用户询问“能查哪些指标/字段”时，先用 `browse_regulatory_catalog` 确认实际已接入的系统和表，再对目标汇总表调用 `search_regulatory_metrics`、对目标明细表调用 `search_regulatory_fields`；不得用知识库中的理论覆盖范围代替实际查询目录。
+- `browse_regulatory_catalog` 返回零系统、零表或无匹配项时，立即基于该工具结果说明当前实际查询目录为空或未匹配；不得改用 `ls`、`glob`、`grep`、`read_file` 等文件工具翻查 Skill、源码或本地目录，也不得声称某个未返回的监管系统已接入。
 - 只基于工具返回的数据作答，说明系统、逻辑表、指标或返回字段、日期范围、机构范围和附加筛选条件。
 - 日期列表问题只回答工具返回的可用日期和筛选范围，不顺带给出指标值。
 - 明细最多展示 5 条，并说明是否发生截断。

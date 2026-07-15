@@ -240,6 +240,8 @@ def test_regulatory_knowledge_agent_uses_loop_detection_and_global_circuit_break
     assert loop_detector.warning_threshold < loop_detector.critical_threshold
     assert "不使用固定 8 次" in captured["system_prompt"]
     assert "异常熔断上限" in captured["system_prompt"]
+    assert "不得为了穷举所有可能性逐页遍历" in captured["system_prompt"]
+    assert "不得把单笔贷款金额、贷款余额等同于单户授信总额" in captured["system_prompt"]
 
 
 def test_regulatory_graph_depth_covers_hard_tool_budget() -> None:
@@ -605,7 +607,7 @@ def test_router_route_does_not_use_response_format_tool_choice(monkeypatch) -> N
     captured_kwargs: dict[str, object] = {}
 
     class FakeRouter:
-        def invoke(self, payload: dict[str, object]) -> dict[str, object]:
+        async def ainvoke(self, payload: dict[str, object]) -> dict[str, object]:
             return {
                 "messages": [
                     {
@@ -647,6 +649,38 @@ def test_router_route_does_not_use_response_format_tool_choice(monkeypatch) -> N
     assert response.status_code == 200
     assert response.json()["agent_code"] == "general-agent"
     assert "response_format" not in captured_kwargs
+
+
+def test_router_route_reuses_data_query_agent_for_catalog_followup(monkeypatch) -> None:
+    monkeypatch.setattr(
+        "urgs_deepagents_service.main.build_chat_model", lambda settings, model: object()
+    )
+
+    client = TestClient(app)
+    response = client.post(
+        "/v1/router/route",
+        json={
+            "message": "都能查哪些指标？",
+            "current_agent_code": "regulatory-data-query-agent",
+            "conversation_context": "用户：查询各项存款。\n助手：当前目录未找到匹配指标。",
+            "agents": [
+                {
+                    "agent_code": "regulatory-data-query-agent",
+                    "agent_name": "监管指标数据查询助手",
+                    "agent_type": "SPECIALIST",
+                },
+                {
+                    "agent_code": "regulatory-knowledge-agent",
+                    "agent_name": "监管助手",
+                    "agent_type": "SPECIALIST",
+                },
+            ],
+        },
+    )
+
+    assert response.status_code == 200
+    assert response.json()["agent_code"] == "regulatory-data-query-agent"
+    assert response.json()["reused_current_agent"] is True
 
 
 def test_parse_default_config_strips_chat_completions_suffix() -> None:

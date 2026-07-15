@@ -1,0 +1,21 @@
+{
+  "suite": "regulatory-agent-routing-v1",
+  "total": 45,
+  "passed": 45,
+  "selection": {
+    "baseline": "baseline-v1.jsonl",
+    "default": "final-v2.jsonl",
+    "post_restart_smoke": "post-restart-smoke-v2.jsonl",
+    "repetitions_per_question": 3
+  },
+  "metrics": {
+    "average_duration_seconds": 2.598,
+    "median_duration_seconds": 2.883,
+    "maximum_duration_seconds": 4.704
+  },
+  "notes": [
+    "15类首轮、续问和切换场景连续运行3轮，全部选择预期Agent。",
+    "数据目录能力续问复用监管数据查询助手，指标定义和报送口径切换监管知识助手。",
+    "独立路由接口与聊天编排统一使用run_router，消除两套提示与判定逻辑。"
+  ]
+}

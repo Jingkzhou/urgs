@@ -195,6 +195,58 @@
         }
       ],
       "required_tool_result_any": [["aggregates", "76", "万元"]]
+    },
+    {
+      "id": "RDQ-012",
+      "category": "相对日期",
+      "question": "分析今年以来信贷监管测试系统贷款指标汇总表中，机构1200的各项贷款余额走势。",
+      "required_any": [
+        ["2026"],
+        ["2026-01-31", "2026年1月", "2026-01"],
+        ["2026-02-28", "2026年2月", "2026-02"],
+        ["70"],
+        ["76"],
+        ["万元"]
+      ],
+      "required_tools": ["get_regulatory_metric_profile", "compare_regulatory_metric"],
+      "required_tool_args": [
+        {
+          "name": "compare_regulatory_metric",
+          "contains": {
+            "system_code": "credit",
+            "table_code": "loan_summary",
+            "indicator_code": "loan_balance",
+            "current_date": "2026-02-28",
+            "baseline": "PREVIOUS_PERIOD",
+            "organization": "1200"
+          }
+        }
+      ],
+      "forbidden_any": ["今年指2025年", "2025年以来"]
+    },
+    {
+      "id": "RDQ-013",
+      "category": "可查询指标",
+      "question": "信贷监管测试系统的贷款指标汇总表都能查哪些指标？只列实际可查询的指标。",
+      "required_any": [["各项贷款余额"], ["不良贷款余额"]],
+      "required_tools": ["browse_regulatory_catalog", "search_regulatory_metrics"],
+      "forbidden_tools": [
+        "query_regulatory_summary",
+        "query_regulatory_detail",
+        "compare_regulatory_metric",
+        "breakdown_regulatory_metric_change"
+      ],
+      "required_tool_args": [
+        {
+          "name": "search_regulatory_metrics",
+          "contains": {
+            "system_code": "credit",
+            "table_code": "loan_summary",
+            "keyword": "贷款"
+          }
+        }
+      ],
+      "forbidden_any": ["G01", "1104全量指标"]
     }
   ]
 }

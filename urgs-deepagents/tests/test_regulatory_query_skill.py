@@ -40,6 +40,20 @@ TOOLS = [
 ]
 
 
+def test_packaged_skill_requires_metric_scoped_periods_and_stops_on_empty_catalog() -> None:
+    instructions = (
+        Path(__file__).parents[1]
+        / "skills"
+        / REGULATORY_DATA_QUERY_SKILL_CODE
+        / "SKILL.md"
+    ).read_text(encoding="utf-8")
+
+    assert "必须先确认指标编码并在 `indicator_codes` 中传入" in instructions
+    assert "即使已经用 `query_regulatory_summary` 取得多期聚合值" in instructions
+    assert "不得用知识库中的理论覆盖范围代替实际查询目录" in instructions
+    assert "不得改用 `ls`、`glob`、`grep`、`read_file`" in instructions
+
+
 def _manifest(*, enabled: bool = True) -> dict[str, Any]:
     return {
         "skill_code": REGULATORY_DATA_QUERY_SKILL_CODE,

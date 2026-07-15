@@ -51,3 +51,11 @@ def test_collect_tool_summary_keeps_tool_arguments() -> None:
 
     assert result["tool_calls"] == ["grep"]
     assert result["tool_call_details"][0]["args"]["pattern"] == "同业存放"
+
+
+def test_eval_uses_regulatory_knowledge_graph_budget() -> None:
+    evaluation_graph_config = EVAL_MODULE["evaluation_graph_config"]
+
+    result = evaluation_graph_config(SimpleNamespace(recursion_limit=100))
+
+    assert result["recursion_limit"] > 100

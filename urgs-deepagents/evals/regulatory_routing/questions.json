@@ -1,0 +1,150 @@
+{
+  "suite": "regulatory-agent-routing-v1",
+  "description": "监管数据查询助手与监管知识助手的多轮路由评测，覆盖首轮选择、能力目录续问、槽位补充和知识切换。",
+  "agents": [
+    {
+      "agent_code": "regulatory-data-query-agent",
+      "agent_name": "监管指标数据查询助手",
+      "agent_type": "SPECIALIST",
+      "description": "查询已接入监管系统中的实际指标、表、期间和业务数据，并执行确定性对比分析。",
+      "capability_tags": ["监管数据查询", "指标查询", "趋势分析", "数据目录"]
+    },
+    {
+      "agent_code": "regulatory-knowledge-agent",
+      "agent_name": "监管助手",
+      "agent_type": "SPECIALIST",
+      "description": "回答监管指标定义、业务口径、字段含义、报送要求、制度依据和知识覆盖范围。",
+      "capability_tags": ["监管知识", "指标口径", "报送规则", "制度依据"]
+    },
+    {
+      "agent_code": "general-agent",
+      "agent_name": "通用助手",
+      "agent_type": "GENERAL",
+      "description": "处理不属于专业监管查询或监管知识的通用任务。"
+    }
+  ],
+  "questions": [
+    {
+      "id": "RRT-001",
+      "category": "首轮数据查询",
+      "message": "帮我查一下6月份各项存款和5月份有什么区别，分析今年各项存款的走势。",
+      "expected_agent_code": "regulatory-data-query-agent"
+    },
+    {
+      "id": "RRT-002",
+      "category": "能力目录续问",
+      "message": "都能查哪些指标？",
+      "current_agent_code": "regulatory-data-query-agent",
+      "conversation_context": "用户：帮我查一下6月份各项存款和5月份有什么区别，分析今年各项存款的走势。\n助手：当前已接入目录中没有匹配的各项存款指标。",
+      "expected_agent_code": "regulatory-data-query-agent",
+      "expected_reused_current_agent": true
+    },
+    {
+      "id": "RRT-003",
+      "category": "能力目录续问",
+      "message": "现在能查什么数据？",
+      "current_agent_code": "regulatory-data-query-agent",
+      "conversation_context": "用户：查询各项存款。\n助手：当前目录未找到匹配指标。",
+      "expected_agent_code": "regulatory-data-query-agent",
+      "expected_reused_current_agent": true
+    },
+    {
+      "id": "RRT-004",
+      "category": "能力目录续问",
+      "message": "支持哪些指标？",
+      "current_agent_code": "regulatory-data-query-agent",
+      "conversation_context": "用户：查询监管数据。\n助手：请从已接入目录中选择。",
+      "expected_agent_code": "regulatory-data-query-agent",
+      "expected_reused_current_agent": true
+    },
+    {
+      "id": "RRT-005",
+      "category": "能力目录续问",
+      "message": "可以查询哪些系统和表？",
+      "current_agent_code": "regulatory-data-query-agent",
+      "conversation_context": "用户：查询监管数据。\n助手：需要先确认系统和表。",
+      "expected_agent_code": "regulatory-data-query-agent",
+      "expected_reused_current_agent": true
+    },
+    {
+      "id": "RRT-006",
+      "category": "能力目录续问",
+      "message": "有哪些日期可选？",
+      "current_agent_code": "regulatory-data-query-agent",
+      "conversation_context": "用户：查询信贷监管测试系统的各项贷款余额。\n助手：已确认系统、表和指标，需要选择统计日期。",
+      "expected_agent_code": "regulatory-data-query-agent",
+      "expected_reused_current_agent": true
+    },
+    {
+      "id": "RRT-007",
+      "category": "数据槽位续问",
+      "message": "那就查最近一期。",
+      "current_agent_code": "regulatory-data-query-agent",
+      "conversation_context": "用户：查询机构1200的各项贷款余额。\n助手：可用日期为2026-02-28、2026-01-31。",
+      "expected_agent_code": "regulatory-data-query-agent",
+      "expected_reused_current_agent": true
+    },
+    {
+      "id": "RRT-008",
+      "category": "数据槽位续问",
+      "message": "那总行呢？",
+      "current_agent_code": "regulatory-data-query-agent",
+      "conversation_context": "用户：查询2026-02-28的各项贷款余额。\n助手：请提供机构范围。",
+      "expected_agent_code": "regulatory-data-query-agent",
+      "expected_reused_current_agent": true
+    },
+    {
+      "id": "RRT-009",
+      "category": "切换监管知识",
+      "message": "那各项存款的监管口径是什么？",
+      "current_agent_code": "regulatory-data-query-agent",
+      "conversation_context": "用户：查询各项存款。\n助手：当前目录未找到匹配指标。",
+      "expected_agent_code": "regulatory-knowledge-agent",
+      "expected_reused_current_agent": false
+    },
+    {
+      "id": "RRT-010",
+      "category": "切换监管知识",
+      "message": "这些指标的定义和报送要求呢？",
+      "current_agent_code": "regulatory-data-query-agent",
+      "conversation_context": "用户：都能查哪些指标？\n助手：当前可查询各项贷款余额和不良贷款余额。",
+      "expected_agent_code": "regulatory-knowledge-agent",
+      "expected_reused_current_agent": false
+    },
+    {
+      "id": "RRT-011",
+      "category": "首轮监管知识",
+      "message": "G01表中各项存款的定义和填报口径是什么？",
+      "expected_agent_code": "regulatory-knowledge-agent"
+    },
+    {
+      "id": "RRT-012",
+      "category": "切回数据查询",
+      "message": "直接查2026年6月各项存款余额。",
+      "current_agent_code": "regulatory-knowledge-agent",
+      "conversation_context": "用户：各项存款的监管口径是什么？\n助手：已说明指标定义和填报范围。",
+      "expected_agent_code": "regulatory-data-query-agent",
+      "expected_reused_current_agent": false
+    },
+    {
+      "id": "RRT-013",
+      "category": "无上下文能力查询",
+      "message": "系统现在都能查哪些指标？",
+      "expected_agent_code": "regulatory-data-query-agent"
+    },
+    {
+      "id": "RRT-014",
+      "category": "知识优先级",
+      "message": "各项存款的字段含义是什么？",
+      "current_agent_code": "regulatory-data-query-agent",
+      "expected_agent_code": "regulatory-knowledge-agent",
+      "expected_reused_current_agent": false
+    },
+    {
+      "id": "RRT-015",
+      "category": "通用任务",
+      "message": "帮我写一封会议通知邮件。",
+      "expected_agent_code": "general-agent"
+    }
+  ]
+}

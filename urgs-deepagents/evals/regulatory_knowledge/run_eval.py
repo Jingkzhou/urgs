@@ -25,6 +25,7 @@ DEFAULT_PROMPT_SQL = (
     "V105__Refine_Regulatory_Knowledge_Agent_Retrieval.sql"
 )
 GLOBAL_FORBIDDEN = ("让我先验证", "Worker 引用", "内部思考", "I need to verify")
+AGENT_CODE = "regulatory-knowledge-agent"
 
 
 def parse_args() -> argparse.Namespace:
@@ -71,6 +72,12 @@ def configure_runtime() -> None:
         os.environ.setdefault("DEEPAGENTS_INTERNAL_API_TOKEN", token_file.read_text().strip())
     os.environ.setdefault("DEEPAGENTS_URGS_API_URL", "http://127.0.0.1:8080")
     sys.path.insert(0, str(DEEPAGENTS_DIR / "src"))
+
+
+def evaluation_graph_config(settings: Any) -> dict[str, Any]:
+    from urgs_deepagents_service.runtime import agent_graph_config
+
+    return agent_graph_config(settings, AGENT_CODE)
 
 
 class QuestionTimeoutError(TimeoutError):
@@ -192,7 +199,7 @@ def main() -> int:
     from urgs_deepagents_service.config import get_settings
     from urgs_deepagents_service.model_config import build_chat_model
     from urgs_deepagents_service.orchestrator.utils import assistant_text_from_output
-    from urgs_deepagents_service.runtime import create_runtime_agent, graph_config
+    from urgs_deepagents_service.runtime import create_runtime_agent
 
     suite = json.loads(args.questions.read_text(encoding="utf-8"))
     questions = suite["questions"]
@@ -277,7 +284,7 @@ def main() -> int:
         allow_write=False,
         workspace_root=str(args.vault),
         debug=args.debug,
-        agent_code="regulatory-knowledge-agent",
+        agent_code=AGENT_CODE,
     )
 
     passed = sum(int(record["grading"]["passed"]) for record in existing_records.values())
@@ -300,7 +307,7 @@ def main() -> int:
                     signal.setitimer(signal.ITIMER_REAL, args.question_timeout_seconds)
                 result = agent.invoke(
                     {"messages": question["question"]},
-                    config=graph_config(settings),
+                    config=evaluation_graph_config(settings),
                 )
                 answer = assistant_text_from_output(result)
                 tool_summary = collect_tool_summary(result)

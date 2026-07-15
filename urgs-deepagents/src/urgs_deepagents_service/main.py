@@ -1,4 +1,3 @@
-import json
 from collections.abc import AsyncIterator
 from contextlib import asynccontextmanager
 from hmac import compare_digest
@@ -12,6 +11,7 @@ from urgs_deepagents_service.config import get_settings
 from urgs_deepagents_service.model_config import build_chat_model, check_model_config_ready
 from urgs_deepagents_service.observability import request_context_middleware, setup_logging
 from urgs_deepagents_service.orchestrator import stream_orchestration
+from urgs_deepagents_service.orchestrator.router import run_router
 from urgs_deepagents_service.orchestrator.utils import (
     assistant_text_from_output,
     chunk_text,
@@ -29,7 +29,6 @@ from urgs_deepagents_service.runtime import (
 )
 from urgs_deepagents_service.runtime import (
     build_agent_kwargs,
-    create_control_agent,
     create_runtime_agent,
     graph_config,
 )
@@ -45,27 +44,6 @@ from urgs_deepagents_service.sse import StreamContext, sanitize_text, serialize,
 
 UPSTREAM_REPOSITORY = "https://github.com/langchain-ai/deepagents"
 UPSTREAM_COMMIT = "4ffea88690418207b5e4fa800ee8c1abfa454bec"
-ROUTER_SYSTEM_PROMPT = """你是 URGS 的 Router Agent，负责把用户任务分发给最合适的业务 Agent。
-
-规则：
-1. 只能从请求提供的 agents 列表中选择一个 agent_code。
-2. 优先选择最匹配的专业 Agent。
-3. 如果没有专业 Agent 适合，选择 agent_type=GENERAL 的通用 Agent；
-   如果列表中存在 general-agent，优先选择 general-agent。
-4. 不允许创造新的 agent_code，不允许使用列表外的 Agent。
-5. 如果任务需要多个 Agent 协作，仍然先选择主责 Agent，并设置 requires_collaboration=true。
-6. 只返回 JSON 对象，不要输出 Markdown，不要输出解释性正文。
-
-JSON 字段：
-{
-  "agent_code": "从 agents 列表选择的编码",
-  "confidence": 0.0 到 1.0 的数字,
-  "reason": "选择原因",
-  "task_type": "任务类型",
-  "requires_collaboration": false,
-  "collaboration_plan": ""
-}
-"""
 
 
 @asynccontextmanager
@@ -93,70 +71,6 @@ def _agent_runtime_kwargs(request: InvokeRequest, settings: Any) -> dict[str, An
         workspace_root=None,
         debug=request.debug,
     )
-
-
-def _agent_catalog_text(request: RouterRouteRequest) -> str:
-    rows: list[str] = []
-    for agent in request.agents:
-        rows.append(
-            json.dumps(
-                {
-                    "agent_code": agent.agent_code,
-                    "agent_name": agent.agent_name,
-                    "agent_type": agent.agent_type,
-                    "build_mode": agent.build_mode,
-                    "description": agent.description,
-                    "capability_tags": agent.capability_tags,
-                    "routing_examples": agent.routing_examples,
-                    "sort_order": agent.sort_order,
-                },
-                ensure_ascii=False,
-            )
-        )
-    return "\n".join(rows)
-
-
-def _router_user_prompt(request: RouterRouteRequest) -> str:
-    current_agent = next(
-        (
-            agent
-            for agent in request.agents
-            if agent.agent_code == request.current_agent_code
-        ),
-        None,
-    )
-    current_section = ""
-    if current_agent is not None:
-        current_section = (
-            "当前会话上一次自动路由使用的 Agent（软绑定，可复用也可切换）：\n"
-            f"{json.dumps(current_agent.model_dump(), ensure_ascii=False)}\n\n"
-        )
-    history_section = ""
-    if request.conversation_context and request.conversation_context.strip():
-        history_section = f"历史对话上下文：\n{request.conversation_context.strip()}\n\n"
-    return (
-        "用户任务：\n"
-        f"{request.message}\n\n"
-        f"{history_section}"
-        f"{current_section}"
-        "可选 agents，每行一个 JSON：\n"
-        f"{_agent_catalog_text(request)}\n\n"
-        "请选择唯一主责 Agent；如果当前 Agent 仍然最合适，可以复用，否则请重新路由。"
-    )
-
-
-def _route_response_from_result(result: Any) -> RouterRouteResponse:
-    value = _serialize(result)
-    if isinstance(value, dict):
-        structured = value.get("structured_response")
-        if structured:
-            return RouterRouteResponse.model_validate(structured)
-    text = _assistant_text_from_output(result).strip()
-    start = text.find("{")
-    end = text.rfind("}")
-    if start >= 0 and end > start:
-        return RouterRouteResponse.model_validate(json.loads(text[start : end + 1]))
-    raise ValueError("Router Agent 未返回结构化路由结果")
 
 
 async def _stream_deep_agent(request: InvokeRequest, settings: Any) -> AsyncIterator[str]:
@@ -377,31 +291,27 @@ def create_app() -> FastAPI:
         tags=["router"],
         dependencies=[Depends(require_internal_auth)],
     )
-    def route(request: RouterRouteRequest) -> RouterRouteResponse:
+    async def route(request: RouterRouteRequest) -> RouterRouteResponse:
         if not request.agents:
             raise HTTPException(status_code=400, detail="agents 不能为空")
         try:
             model = build_chat_model(settings, request.model or settings.model)
-            router = create_control_agent(
+            decision = await run_router(
                 model=model,
-                system_prompt=ROUTER_SYSTEM_PROMPT,
-                debug=request.debug,
+                user_message=request.message,
+                agents=request.agents,
+                current_agent_code=request.current_agent_code,
+                conversation_context=request.conversation_context or "",
             )
-            result = router.invoke(
-                {"messages": [{"role": "user", "content": _router_user_prompt(request)}]}
+            return RouterRouteResponse(
+                agent_code=decision.agent_code,
+                confidence=decision.confidence,
+                reason=decision.reason,
+                task_type=decision.task_type,
+                requires_collaboration=decision.is_complex,
+                collaboration_plan=decision.collaboration_plan,
+                reused_current_agent=decision.reused_current_agent,
             )
-            decision = _route_response_from_result(result)
-            allowed_agent_codes = {agent.agent_code for agent in request.agents}
-            if decision.agent_code not in allowed_agent_codes:
-                raise HTTPException(
-                    status_code=422,
-                    detail=f"Router Agent 返回了未注册的 agent_code: {decision.agent_code}",
-                )
-            decision.reused_current_agent = (
-                request.current_agent_code in allowed_agent_codes
-                and decision.agent_code == request.current_agent_code
-            )
-            return decision
         except HTTPException:
             raise
         except Exception as exc:
