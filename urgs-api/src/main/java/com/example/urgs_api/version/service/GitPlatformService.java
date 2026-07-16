@@ -5,6 +5,7 @@ import com.example.urgs_api.version.dto.GitTag;
 import com.example.urgs_api.version.dto.GitCommit;
 import com.example.urgs_api.version.dto.GitCommitDiff;
 import com.example.urgs_api.version.dto.GitFileContent;
+import com.example.urgs_api.version.dto.GitFileDownload;
 import com.example.urgs_api.version.dto.GitFileEntry;
 import com.example.urgs_api.version.entity.GitRepository;
 import com.fasterxml.jackson.databind.JsonNode;
@@ -20,7 +21,10 @@ import java.net.http.HttpRequest;
 import java.net.http.HttpResponse;
 import java.time.Duration;
 import java.util.ArrayList;
+import java.util.Base64;
+import java.util.LinkedHashMap;
 import java.util.List;
+import java.util.Map;
 
 /**
  * Git 平台 API 服务
@@ -30,6 +34,8 @@ import java.util.List;
 @Service
 @RequiredArgsConstructor
 public class GitPlatformService {
+
+    private static final int MAX_FILE_SIZE_BYTES = 5 * 1024 * 1024;
 
     private final GitRepositoryService gitRepositoryService;
     private final ObjectMapper objectMapper;
@@ -253,6 +259,71 @@ public class GitPlatformService {
         } catch (Exception e) {
             log.error("获取文件内容失败: repoId={}, ref={}, path={}", repoId, ref, path, e);
             throw new RuntimeException("获取文件内容失败: " + e.getMessage());
+        }
+    }
+
+    /**
+     * 下载文件原始字节，避免二进制文件经过字符串转换后损坏。
+     */
+    public GitFileDownload downloadFile(Long repoId, String ref, String path) {
+        GitRepository repo = gitRepositoryService.findById(repoId)
+                .orElseThrow(() -> new RuntimeException("仓库不存在: " + repoId));
+        String effectiveRef = ref == null || ref.isBlank()
+                ? (repo.getDefaultBranch() == null ? "master" : repo.getDefaultBranch())
+                : ref.trim();
+        String normalizedPath = normalizeRepositoryPath(path);
+
+        try {
+            return switch (repo.getPlatform().toLowerCase()) {
+                case "gitee" -> downloadGiteeFile(repo, effectiveRef, normalizedPath);
+                case "github" -> downloadGitHubFile(repo, effectiveRef, normalizedPath);
+                case "gitlab" -> downloadGitLabFile(repo, effectiveRef, normalizedPath);
+                default -> throw new IllegalArgumentException("不支持的平台: " + repo.getPlatform());
+            };
+        } catch (IllegalArgumentException e) {
+            throw e;
+        } catch (Exception e) {
+            log.error("下载 Git 文件失败: repoId={}, ref={}, path={}", repoId, effectiveRef, normalizedPath, e);
+            throw new RuntimeException("下载 Git 文件失败: " + e.getMessage());
+        }
+    }
+
+    /**
+     * 在远程 Git 仓库写入文件。内容统一使用 Base64，以兼容文本编辑和二进制文件上传。
+     */
+    public void saveFile(Long repoId, String branch, String path, String contentBase64, String commitMessage,
+            String fileSha, boolean overwrite) {
+        GitRepository repo = gitRepositoryService.findById(repoId)
+                .orElseThrow(() -> new RuntimeException("仓库不存在: " + repoId));
+        String effectiveBranch = branch == null || branch.isBlank()
+                ? (repo.getDefaultBranch() == null ? "master" : repo.getDefaultBranch())
+                : branch.trim();
+        String normalizedPath = normalizeRepositoryPath(path);
+        String normalizedContent = normalizeBase64Content(contentBase64);
+        String effectiveMessage = commitMessage == null || commitMessage.isBlank()
+                ? (overwrite ? "更新 " : "新增 ") + normalizedPath
+                : commitMessage.trim();
+        String token = repo.getAccessToken();
+
+        if (token == null || token.isBlank()) {
+            throw new IllegalArgumentException("请先在个人信息中配置 " + repo.getPlatform() + " 访问令牌");
+        }
+
+        try {
+            switch (repo.getPlatform().toLowerCase()) {
+                case "gitee" -> saveGiteeFile(repo, effectiveBranch, normalizedPath, normalizedContent,
+                        effectiveMessage, fileSha, overwrite, token);
+                case "github" -> saveGitHubFile(repo, effectiveBranch, normalizedPath, normalizedContent,
+                        effectiveMessage, fileSha, overwrite, token);
+                case "gitlab" -> saveGitLabFile(repo, effectiveBranch, normalizedPath, normalizedContent,
+                        effectiveMessage, overwrite, token);
+                default -> throw new IllegalArgumentException("不支持的平台: " + repo.getPlatform());
+            }
+        } catch (IllegalArgumentException e) {
+            throw e;
+        } catch (Exception e) {
+            log.error("写入 Git 文件失败: repoId={}, branch={}, path={}", repoId, effectiveBranch, normalizedPath, e);
+            throw new RuntimeException("写入 Git 文件失败: " + e.getMessage());
         }
     }
 
@@ -883,6 +954,49 @@ public class GitPlatformService {
                 .build();
     }
 
+    private GitFileDownload downloadGiteeFile(GitRepository repo, String ref, String path) throws Exception {
+        String url = String.format("https://gitee.com/api/v5/repos/%s/contents/%s?ref=%s",
+                repo.getFullName(), path, ref);
+        if (repo.getAccessToken() != null && !repo.getAccessToken().isEmpty()) {
+            url += "&access_token=" + repo.getAccessToken();
+        }
+        return toGitFileDownload(httpGet(url), path);
+    }
+
+    private void saveGiteeFile(GitRepository repo, String branch, String path, String contentBase64,
+            String commitMessage, String fileSha, boolean overwrite, String token) throws Exception {
+        Map<String, Object> body = new LinkedHashMap<>();
+        body.put("access_token", token);
+        body.put("content", contentBase64);
+        body.put("message", commitMessage);
+        body.put("branch", branch);
+
+        if (overwrite) {
+            body.put("sha", resolveGiteeFileSha(repo, branch, path, fileSha));
+        }
+
+        String url = String.format("https://gitee.com/api/v5/repos/%s/contents/%s", repo.getFullName(),
+                encodeRepositoryPath(path));
+        String payload = objectMapper.writeValueAsString(body);
+        if (overwrite) {
+            httpPut(url, payload, null, null);
+        } else {
+            httpPost(url, payload, null, null);
+        }
+    }
+
+    private String resolveGiteeFileSha(GitRepository repo, String branch, String path, String fileSha)
+            throws Exception {
+        if (fileSha != null && !fileSha.isBlank()) {
+            return fileSha;
+        }
+        String resolvedSha = getGiteeFileContent(repo, branch, path).getSha();
+        if (resolvedSha == null || resolvedSha.isBlank()) {
+            throw new IllegalArgumentException("无法读取文件版本，请刷新后重试");
+        }
+        return resolvedSha;
+    }
+
     private void createGiteeBranch(GitRepository repo, String branchName, String refs, String token) throws Exception {
         String url = String.format("https://gitee.com/api/v5/repos/%s/branches", repo.getFullName());
         // 在 body 中使用提供的 token
@@ -1429,6 +1543,40 @@ public class GitPlatformService {
                 .build();
     }
 
+    private GitFileDownload downloadGitHubFile(GitRepository repo, String ref, String path) throws Exception {
+        String url = String.format("https://api.github.com/repos/%s/contents/%s?ref=%s",
+                repo.getFullName(), path, ref);
+        return toGitFileDownload(httpGetWithAuth(url, repo.getAccessToken(), "Bearer"), path);
+    }
+
+    private void saveGitHubFile(GitRepository repo, String branch, String path, String contentBase64,
+            String commitMessage, String fileSha, boolean overwrite, String token) throws Exception {
+        Map<String, Object> body = new LinkedHashMap<>();
+        body.put("message", commitMessage);
+        body.put("content", contentBase64);
+        body.put("branch", branch);
+
+        if (overwrite) {
+            body.put("sha", resolveGitHubFileSha(repo, branch, path, fileSha));
+        }
+
+        String url = String.format("https://api.github.com/repos/%s/contents/%s", repo.getFullName(),
+                encodeRepositoryPath(path));
+        httpPut(url, objectMapper.writeValueAsString(body), token, "Bearer");
+    }
+
+    private String resolveGitHubFileSha(GitRepository repo, String branch, String path, String fileSha)
+            throws Exception {
+        if (fileSha != null && !fileSha.isBlank()) {
+            return fileSha;
+        }
+        String resolvedSha = getGitHubFileContent(repo, branch, path).getSha();
+        if (resolvedSha == null || resolvedSha.isBlank()) {
+            throw new IllegalArgumentException("无法读取文件版本，请刷新后重试");
+        }
+        return resolvedSha;
+    }
+
     private void createGitHubBranch(GitRepository repo, String branchName, String sha, String token) throws Exception {
         String url = String.format("https://api.github.com/repos/%s/git/refs", repo.getFullName());
         String body = String.format("{\"ref\":\"refs/heads/%s\",\"sha\":\"%s\"}", branchName, sha);
@@ -1583,6 +1731,35 @@ public class GitPlatformService {
                 .build();
     }
 
+    private GitFileDownload downloadGitLabFile(GitRepository repo, String ref, String path) throws Exception {
+        String url = String.format("%s/projects/%s/repository/files/%s?ref=%s",
+                getGitLabApiBase(repo),
+                getGitLabProjectId(repo),
+                java.net.URLEncoder.encode(path, java.nio.charset.StandardCharsets.UTF_8),
+                ref);
+        return toGitFileDownload(httpGetWithAuth(url, repo.getAccessToken(), "PRIVATE-TOKEN"), path);
+    }
+
+    private void saveGitLabFile(GitRepository repo, String branch, String path, String contentBase64,
+            String commitMessage, boolean overwrite, String token) throws Exception {
+        String apiBase = getGitLabApiBase(repo);
+        String projectId = getGitLabProjectId(repo);
+        String url = String.format("%s/projects/%s/repository/files/%s", apiBase, projectId,
+                java.net.URLEncoder.encode(path, java.nio.charset.StandardCharsets.UTF_8));
+        Map<String, Object> body = new LinkedHashMap<>();
+        body.put("branch", branch);
+        body.put("content", contentBase64);
+        body.put("commit_message", commitMessage);
+        body.put("encoding", "base64");
+        String payload = objectMapper.writeValueAsString(body);
+
+        if (overwrite) {
+            httpPut(url, payload, token, "PRIVATE-TOKEN");
+        } else {
+            httpPost(url, payload, token, "PRIVATE-TOKEN");
+        }
+    }
+
     private List<GitFileEntry> getGitLabFileTree(GitRepository repo, String ref, String path) throws Exception {
         String apiBase = getGitLabApiBase(repo);
         // GitLab 需要 project ID，这里使用 URL 编码的 fullName
@@ -1601,10 +1778,12 @@ public class GitPlatformService {
             }
 
             for (JsonNode node : response) {
+                boolean isDirectory = node.path("type").asText().equals("tree");
                 entries.add(GitFileEntry.builder()
                         .name(node.path("name").asText())
                         .path(node.path("path").asText())
-                        .type(node.path("type").asText().equals("tree") ? "dir" : "file")
+                        .type(isDirectory ? "dir" : "file")
+                        .size(isDirectory ? null : getGitLabBlobSize(repo, node.path("id").asText()))
                         .sha(node.path("id").asText())
                         .build());
             }
@@ -1623,6 +1802,21 @@ public class GitPlatformService {
         });
 
         return entries;
+    }
+
+    private Long getGitLabBlobSize(GitRepository repo, String blobSha) {
+        if (blobSha == null || blobSha.isBlank()) {
+            return null;
+        }
+        try {
+            String url = String.format("%s/projects/%s/repository/blobs/%s",
+                    getGitLabApiBase(repo), getGitLabProjectId(repo), blobSha);
+            JsonNode response = httpGetWithAuth(url, repo.getAccessToken(), "PRIVATE-TOKEN");
+            return response.path("size").isNumber() ? response.path("size").asLong() : null;
+        } catch (Exception e) {
+            log.debug("获取 GitLab 文件大小失败: repo={}, blob={}", repo.getId(), blobSha, e);
+            return null;
+        }
     }
 
     private List<GitBranch> getGitLabBranches(GitRepository repo) throws Exception {
@@ -2131,6 +2325,59 @@ public class GitPlatformService {
         String url = String.format("%s/projects/%s/repository/tags/%s",
                 apiBase, projectId, java.net.URLEncoder.encode(tagName, "UTF-8"));
         httpDelete(url, token, "PRIVATE-TOKEN");
+    }
+
+    private String normalizeRepositoryPath(String path) {
+        if (path == null || path.isBlank()) {
+            throw new IllegalArgumentException("文件路径不能为空");
+        }
+        String normalizedPath = path.trim().replace('\\', '/').replaceFirst("^/+", "");
+        for (String segment : normalizedPath.split("/")) {
+            if (segment.isBlank() || ".".equals(segment) || "..".equals(segment)) {
+                throw new IllegalArgumentException("文件路径不合法");
+            }
+        }
+        return normalizedPath;
+    }
+
+    private GitFileDownload toGitFileDownload(JsonNode response, String path) {
+        String encodedContent = response.path("content").asText();
+        byte[] content;
+        try {
+            content = encodedContent == null || encodedContent.isBlank()
+                    ? new byte[0]
+                    : Base64.getDecoder().decode(encodedContent.replaceAll("\\s", ""));
+        } catch (IllegalArgumentException e) {
+            throw new IllegalArgumentException("远程文件内容编码无效");
+        }
+        String fileName = response.path("file_name").asText(response.path("name").asText());
+        if (fileName == null || fileName.isBlank()) {
+            fileName = path.substring(path.lastIndexOf('/') + 1);
+        }
+        return GitFileDownload.builder().name(fileName).content(content).build();
+    }
+
+    private String normalizeBase64Content(String contentBase64) {
+        if (contentBase64 == null) {
+            throw new IllegalArgumentException("文件内容不能为空");
+        }
+        byte[] content;
+        try {
+            content = Base64.getDecoder().decode(contentBase64);
+        } catch (IllegalArgumentException e) {
+            throw new IllegalArgumentException("文件内容编码无效");
+        }
+        if (content.length > MAX_FILE_SIZE_BYTES) {
+            throw new IllegalArgumentException("单个文件不能超过 5MB");
+        }
+        return Base64.getEncoder().encodeToString(content);
+    }
+
+    private String encodeRepositoryPath(String path) {
+        return java.util.Arrays.stream(path.split("/"))
+                .map(segment -> java.net.URLEncoder.encode(segment, java.nio.charset.StandardCharsets.UTF_8)
+                        .replace("+", "%20"))
+                .collect(java.util.stream.Collectors.joining("/"));
     }
 
     // ==================== HTTP Helpers ====================

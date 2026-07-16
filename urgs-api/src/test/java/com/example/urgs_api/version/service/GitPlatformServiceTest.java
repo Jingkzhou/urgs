@@ -1,6 +1,8 @@
 package com.example.urgs_api.version.service;
 
 import com.example.urgs_api.version.dto.GitPullRequest;
+import com.example.urgs_api.version.dto.GitFileDownload;
+import com.example.urgs_api.version.dto.GitFileEntry;
 import com.example.urgs_api.version.entity.GitRepository;
 import com.fasterxml.jackson.databind.ObjectMapper;
 import org.junit.jupiter.api.BeforeEach;
@@ -18,6 +20,7 @@ import java.util.Optional;
 import static org.junit.jupiter.api.Assertions.*;
 import static org.mockito.ArgumentMatchers.any;
 import static org.mockito.Mockito.*;
+import org.mockito.ArgumentCaptor;
 
 @ExtendWith(MockitoExtension.class)
 class GitPlatformServiceTest {
@@ -63,6 +66,73 @@ class GitPlatformServiceTest {
         assertEquals("Test PR", prs.get(0).getTitle());
         assertEquals("open", prs.get(0).getState());
         assertEquals("gitee", repo.getPlatform());
+    }
+
+    @Test
+    void saveFile_GitLabCreatesCommitOnSelectedBranch() throws Exception {
+        Long repoId = 10L;
+        GitRepository repo = new GitRepository();
+        repo.setId(repoId);
+        repo.setPlatform("gitlab");
+        repo.setFullName("owner/repo");
+        repo.setCloneUrl("https://gitlab.example.com/owner/repo.git");
+        repo.setAccessToken("token");
+
+        when(gitRepositoryService.findById(repoId)).thenReturn(Optional.of(repo));
+        when(httpClient.send(any(HttpRequest.class), any(HttpResponse.BodyHandler.class))).thenReturn(httpResponse);
+        when(httpResponse.statusCode()).thenReturn(201);
+
+        gitPlatformService.saveFile(repoId, "feature/upload", "docs/readme.md", "aGVsbG8=", "上传说明", null,
+                false);
+
+        ArgumentCaptor<HttpRequest> requestCaptor = ArgumentCaptor.forClass(HttpRequest.class);
+        verify(httpClient).send(requestCaptor.capture(), any(HttpResponse.BodyHandler.class));
+        HttpRequest request = requestCaptor.getValue();
+        assertEquals("POST", request.method());
+        assertTrue(request.uri().toString().contains("/repository/files/docs%2Freadme.md"));
+        assertEquals("token", request.headers().firstValue("PRIVATE-TOKEN").orElse(null));
+    }
+
+    @Test
+    void downloadFile_GitLabReturnsOriginalBytes() throws Exception {
+        Long repoId = 11L;
+        GitRepository repo = new GitRepository();
+        repo.setId(repoId);
+        repo.setPlatform("gitlab");
+        repo.setFullName("owner/repo");
+        repo.setAccessToken("token");
+
+        when(gitRepositoryService.findById(repoId)).thenReturn(Optional.of(repo));
+        when(httpClient.send(any(HttpRequest.class), any(HttpResponse.BodyHandler.class))).thenReturn(httpResponse);
+        when(httpResponse.statusCode()).thenReturn(200);
+        when(httpResponse.body()).thenReturn("{\"file_name\":\"binary.dat\",\"content\":\"AAECAw==\"}");
+
+        GitFileDownload file = gitPlatformService.downloadFile(repoId, "main", "docs/binary.dat");
+
+        assertEquals("binary.dat", file.getName());
+        assertArrayEquals(new byte[] { 0, 1, 2, 3 }, file.getContent());
+    }
+
+    @Test
+    void getFileTree_GitLabIncludesBlobSize() throws Exception {
+        Long repoId = 12L;
+        GitRepository repo = new GitRepository();
+        repo.setId(repoId);
+        repo.setPlatform("gitlab");
+        repo.setFullName("owner/repo");
+        repo.setAccessToken("token");
+
+        when(gitRepositoryService.findById(repoId)).thenReturn(Optional.of(repo));
+        when(httpClient.send(any(HttpRequest.class), any(HttpResponse.BodyHandler.class))).thenReturn(httpResponse);
+        when(httpResponse.statusCode()).thenReturn(200);
+        when(httpResponse.body())
+                .thenReturn("[{\"name\":\"README.md\",\"path\":\"README.md\",\"type\":\"blob\",\"id\":\"blob-sha\"}]",
+                        "{\"size\":1536}");
+
+        List<GitFileEntry> files = gitPlatformService.getFileTree(repoId, "main", "");
+
+        assertEquals(1, files.size());
+        assertEquals(1536L, files.get(0).getSize());
     }
 
     @Test

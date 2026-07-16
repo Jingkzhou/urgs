@@ -1,9 +1,9 @@
 import React, { useState, useEffect, useRef } from 'react';
-import { Tabs, Button, Tag, Space, Avatar, Select, Input, Spin, message, Dropdown, MenuProps } from 'antd';
-import { ArrowLeft, GitBranch, Copy, ExternalLink, Settings, ShieldCheck, Play, Rocket, ClipboardList, Code, Folder, FileText, Clock, ChevronRight, X, Plus, GitPullRequest, CircleDot, FilePlus, FolderPlus, Upload } from 'lucide-react';
+import { Tabs, Button, Tag, Space, Avatar, Select, Input, Spin, message, Dropdown, Modal } from 'antd';
+import { ArrowLeft, GitBranch, Copy, ShieldCheck, Play, Rocket, ClipboardList, Code, Folder, FileText, Clock, ChevronRight, X, GitPullRequest, Upload, Pencil, Download } from 'lucide-react';
 
 const { Option } = Select;
-import { GitRepository, SsoConfig, GitFileEntry, GitBranch as GitBranchType, GitCommit, GitFileContent, GitCommitDiff, getRepoFileTree, getRepoBranches, getRepoLatestCommit, getRepoFileContent, getRepoCommitDetail } from '@/api/version';
+import { GitRepository, SsoConfig, GitFileEntry, GitBranch as GitBranchType, GitCommit, GitFileContent, getRepoFileTree, getRepoBranches, getRepoLatestCommit, getRepoFileContent, getRepoCommitDetail, saveRepoFile, downloadRepoFile } from '@/api/version';
 import { useBreadcrumbs } from '../../../context/BreadcrumbContext';
 import CommitList from './CommitList';
 import CommitDetail from './CommitDetail';
@@ -16,44 +16,35 @@ import DeploymentManagement from '../DeploymentManagement';
 import ReleaseLedger from '../ReleaseLedger';
 import AICodeAudit from '../AICodeAudit';
 
-// Menu items for the Plus button
-const plusMenuItems: MenuProps['items'] = [
-    {
-        key: 'new-pr',
-        label: '新建 Pull Request',
-        icon: <GitPullRequest size={16} />,
-    },
-    {
-        key: 'new-issue',
-        label: '新建 Issue',
-        icon: <CircleDot size={16} />,
-    },
-    {
-        type: 'divider',
-    },
-    {
-        key: 'new-file',
-        label: '新建文件',
-        icon: <FileText size={16} />,
-    },
-    {
-        key: 'new-diagram',
-        label: '新建 Diagram 文件',
-        icon: <FilePlus size={16} />,
-    },
-    {
-        key: 'new-folder',
-        label: '新建文件夹',
-        icon: <FolderPlus size={16} />,
-    },
-    {
-        key: 'new-submodule',
-        label: '新建子模块',
-        icon: <Folder size={16} />,
-    },
+const MAX_UPLOAD_SIZE = 5 * 1024 * 1024;
 
-];
+type FileEditorState = {
+    mode: 'edit' | 'upload';
+    path: string;
+    content?: string;
+    contentBase64?: string;
+    fileSha?: string;
+    fileName?: string;
+    size?: number;
+};
 
+const bytesToBase64 = (bytes: Uint8Array) => {
+    const chunkSize = 0x8000;
+    let binary = '';
+    for (let index = 0; index < bytes.length; index += chunkSize) {
+        binary += String.fromCharCode(...bytes.subarray(index, index + chunkSize));
+    }
+    return window.btoa(binary);
+};
+
+const textToBase64 = (content: string) => bytesToBase64(new TextEncoder().encode(content));
+
+const formatFileSize = (size?: number) => {
+    if (size === undefined || size === null) return '-';
+    if (size < 1024) return `${size} B`;
+    if (size < 1024 * 1024) return `${(size / 1024).toFixed(1)} KB`;
+    return `${(size / (1024 * 1024)).toFixed(1)} MB`;
+};
 
 interface Props {
     repo: GitRepository;
@@ -75,10 +66,15 @@ const GitRepoDetail: React.FC<Props> = ({ repo, ssoList, onBack }) => {
     const [files, setFiles] = useState<GitFileEntry[]>([]);
     const [latestCommit, setLatestCommit] = useState<GitCommit | null>(null);
     const [loading, setLoading] = useState(false);
+    const [treeVersion, setTreeVersion] = useState(0);
 
     // 文件内容查看状态
     const [viewingFile, setViewingFile] = useState<GitFileContent | null>(null);
     const [fileLoading, setFileLoading] = useState(false);
+    const [fileEditor, setFileEditor] = useState<FileEditorState | null>(null);
+    const [commitMessage, setCommitMessage] = useState('');
+    const [fileSaving, setFileSaving] = useState(false);
+    const uploadInputRef = useRef<HTMLInputElement>(null);
 
 
 
@@ -138,7 +134,11 @@ const GitRepoDetail: React.FC<Props> = ({ repo, ssoList, onBack }) => {
                 getRepoLatestCommit(repo.id, currentRef)
             ])
                 .then(([filesData, commitData]) => {
-                    setFiles(filesData || []);
+                    setFiles((filesData || []).map(file => ({
+                        ...file,
+                        lastCommitMessage: file.lastCommitMessage || commitData?.message?.split('\n')[0],
+                        lastCommitDate: file.lastCommitDate || commitData?.committedAt
+                    })));
                     setLatestCommit(commitData);
                 })
                 .catch(err => {
@@ -147,7 +147,7 @@ const GitRepoDetail: React.FC<Props> = ({ repo, ssoList, onBack }) => {
                 })
                 .finally(() => setLoading(false));
         }
-    }, [repo.id, currentRef, currentPath, viewingFile]);
+    }, [repo.id, currentRef, currentPath, viewingFile, treeVersion]);
 
     // Load Commits
     // Load Commits logic moved to CommitList component
@@ -184,6 +184,106 @@ const GitRepoDetail: React.FC<Props> = ({ repo, ssoList, onBack }) => {
                     message.error('获取文件内容失败');
                 })
                 .finally(() => setFileLoading(false));
+        }
+    };
+
+    const handleEditFile = () => {
+        if (!viewingFile) {
+            return;
+        }
+        setFileEditor({
+            mode: 'edit',
+            path: viewingFile.path,
+            content: viewingFile.content || '',
+            fileSha: viewingFile.sha
+        });
+        setCommitMessage(`更新 ${viewingFile.path}`);
+    };
+
+    const handleDownloadFile = async () => {
+        if (!repo.id || !viewingFile) {
+            return;
+        }
+        try {
+            const blob = await downloadRepoFile(repo.id, viewingFile.path, currentRef);
+            const objectUrl = URL.createObjectURL(blob);
+            const anchor = document.createElement('a');
+            anchor.href = objectUrl;
+            anchor.download = viewingFile.name;
+            document.body.appendChild(anchor);
+            anchor.click();
+            anchor.remove();
+            URL.revokeObjectURL(objectUrl);
+            message.success('文件已开始下载');
+        } catch (error) {
+            console.error('下载 Git 文件失败', error);
+            message.error('下载文件失败，请稍后重试');
+        }
+    };
+
+    const handleUploadFile = async (event: React.ChangeEvent<HTMLInputElement>) => {
+        const file = event.target.files?.[0];
+        event.target.value = '';
+        if (!file) {
+            return;
+        }
+        if (file.size > MAX_UPLOAD_SIZE) {
+            message.error('单个文件不能超过 5MB');
+            return;
+        }
+
+        try {
+            const contentBase64 = bytesToBase64(new Uint8Array(await file.arrayBuffer()));
+            const targetPath = currentPath ? `${currentPath}/${file.name}` : file.name;
+            setFileEditor({
+                mode: 'upload',
+                path: targetPath,
+                contentBase64,
+                fileName: file.name,
+                size: file.size
+            });
+            setCommitMessage(`上传 ${targetPath}`);
+        } catch (error) {
+            console.error('读取上传文件失败', error);
+            message.error('读取上传文件失败');
+        }
+    };
+
+    const handleSaveFile = async () => {
+        if (!repo.id || !fileEditor) {
+            return;
+        }
+        const path = fileEditor.path.trim().replace(/^\/+/, '');
+        if (!path) {
+            message.error('请输入仓库内文件路径');
+            return;
+        }
+        if (!commitMessage.trim()) {
+            message.error('请输入提交说明');
+            return;
+        }
+
+        setFileSaving(true);
+        try {
+            await saveRepoFile(repo.id, {
+                path,
+                branch: currentRef,
+                contentBase64: fileEditor.mode === 'edit'
+                    ? textToBase64(fileEditor.content || '')
+                    : fileEditor.contentBase64 || '',
+                commitMessage: commitMessage.trim(),
+                fileSha: fileEditor.fileSha,
+                overwrite: fileEditor.mode === 'edit'
+            });
+            message.success(fileEditor.mode === 'edit' ? '文件已更新并提交' : '文件已上传并提交');
+            setFileEditor(null);
+            setViewingFile(null);
+            setTreeVersion(version => version + 1);
+        } catch (error: any) {
+            console.error('保存 Git 文件失败', error);
+            message.error(error?.message || '保存失败，请检查仓库写入权限');
+        } finally {
+            setFileSaving(false);
         }
     };
 
@@ -271,7 +371,7 @@ const GitRepoDetail: React.FC<Props> = ({ repo, ssoList, onBack }) => {
                         <span className="text-slate-400">|</span>
                         <span>{lines.length} 行</span>
                         <span className="text-slate-400">|</span>
-                        <span>{(viewingFile.size / 1024).toFixed(1)} KB</span>
+                        <span>{formatFileSize(viewingFile.size)}</span>
                     </div>
                     <div className="flex items-center gap-2">
                         <Button
@@ -283,6 +383,21 @@ const GitRepoDetail: React.FC<Props> = ({ repo, ssoList, onBack }) => {
                             }}
                         >
                             复制
+                        </Button>
+                        <Button
+                            size="small"
+                            type="primary"
+                            icon={<Pencil size={13} />}
+                            onClick={handleEditFile}
+                        >
+                            编辑
+                        </Button>
+                        <Button
+                            size="small"
+                            icon={<Download size={13} />}
+                            onClick={handleDownloadFile}
+                        >
+                            下载
                         </Button>
                         <Button
                             size="small"
@@ -314,6 +429,66 @@ const GitRepoDetail: React.FC<Props> = ({ repo, ssoList, onBack }) => {
         );
     };
 
+    const renderFileEditorModal = () => (
+        <Modal
+            open={Boolean(fileEditor)}
+            title={fileEditor?.mode === 'edit' ? `编辑 ${fileEditor.path}` : '上传文件并提交'}
+            width={960}
+            destroyOnClose
+            onCancel={() => !fileSaving && setFileEditor(null)}
+            footer={[
+                <Button key="cancel" onClick={() => setFileEditor(null)} disabled={fileSaving}>取消</Button>,
+                <Button key="save" type="primary" loading={fileSaving} onClick={handleSaveFile}>
+                    提交到 {currentRef}
+                </Button>
+            ]}
+        >
+            {fileEditor && (
+                <div className="space-y-4">
+                    <div>
+                        <label className="mb-1.5 block text-sm font-medium text-slate-700">仓库内路径</label>
+                        <Input
+                            value={fileEditor.path}
+                            disabled={fileEditor.mode === 'edit'}
+                            onChange={event => setFileEditor(current => current ? { ...current, path: event.target.value } : current)}
+                            placeholder="例如 src/example.ts"
+                        />
+                        {fileEditor.mode === 'upload' && (
+                            <div className="mt-1.5 text-xs text-slate-400">文件将上传到当前目录，可在此修改目标路径。</div>
+                        )}
+                    </div>
+
+                    {fileEditor.mode === 'edit' ? (
+                        <div>
+                            <label className="mb-1.5 block text-sm font-medium text-slate-700">文件内容</label>
+                            <Input.TextArea
+                                value={fileEditor.content}
+                                onChange={event => setFileEditor(current => current ? { ...current, content: event.target.value } : current)}
+                                autoSize={{ minRows: 18, maxRows: 28 }}
+                                className="font-mono text-xs"
+                                spellCheck={false}
+                            />
+                        </div>
+                    ) : (
+                        <div className="rounded-lg border border-blue-100 bg-blue-50 px-4 py-3 text-sm text-blue-800">
+                            已选择 <span className="font-medium">{fileEditor.fileName}</span>
+                            {typeof fileEditor.size === 'number' && `（${(fileEditor.size / 1024).toFixed(1)} KB）`}
+                        </div>
+                    )}
+
+                    <div>
+                        <label className="mb-1.5 block text-sm font-medium text-slate-700">提交说明</label>
+                        <Input
+                            value={commitMessage}
+                            onChange={event => setCommitMessage(event.target.value)}
+                            placeholder="说明本次修改内容"
+                        />
+                    </div>
+                </div>
+            )}
+        </Modal>
+    );
+
     const items = [
         {
             key: 'code',
@@ -321,6 +496,7 @@ const GitRepoDetail: React.FC<Props> = ({ repo, ssoList, onBack }) => {
             children: (
                 <Spin spinning={loading || fileLoading}>
                     <div className="space-y-4">
+                        <input ref={uploadInputRef} type="file" className="hidden" onChange={handleUploadFile} />
                         {/* Toolbar & Branch Selector */}
                         <div className="flex justify-between items-center">
                             <div className="flex items-center gap-2">
@@ -363,9 +539,14 @@ const GitRepoDetail: React.FC<Props> = ({ repo, ssoList, onBack }) => {
                                         }}
                                     />
                                 </Space.Compact>
-                                <Dropdown menu={{ items: plusMenuItems }} placement="bottomRight" arrow>
-                                    <Button type="primary" className="bg-orange-500 hover:bg-orange-600 border-none" icon={<Plus size={16} />}></Button>
-                                </Dropdown>
+                                <Button
+                                    type="primary"
+                                    icon={<Upload size={15} />}
+                                    onClick={() => uploadInputRef.current?.click()}
+                                    className="bg-blue-600 hover:bg-blue-700"
+                                >
+                                    上传文件
+                                </Button>
                             </Space>
                         </div>
 
@@ -432,7 +613,7 @@ const GitRepoDetail: React.FC<Props> = ({ repo, ssoList, onBack }) => {
                                                         {file.lastCommitMessage || '-'}
                                                     </td>
                                                     <td className="px-4 py-2.5 text-right text-slate-400">
-                                                        {file.type === 'file' && file.size ? `${(file.size / 1024).toFixed(1)} KB` : '-'}
+                                                        {file.type === 'file' ? formatFileSize(file.size) : '-'}
                                                     </td>
                                                 </tr>
                                             ))}
@@ -638,7 +819,7 @@ const GitRepoDetail: React.FC<Props> = ({ repo, ssoList, onBack }) => {
                         <Tag>{currentRef}</Tag>
                         <span className="text-slate-500 text-sm">{lines.length} 行</span>
                         <span className="text-slate-400">|</span>
-                        <span className="text-slate-500 text-sm">{(viewingFile.size / 1024).toFixed(1)} KB</span>
+                        <span className="text-slate-500 text-sm">{formatFileSize(viewingFile.size)}</span>
                         <Button
                             size="small"
                             icon={<Copy size={12} />}
@@ -648,6 +829,21 @@ const GitRepoDetail: React.FC<Props> = ({ repo, ssoList, onBack }) => {
                             }}
                         >
                             复制
+                        </Button>
+                        <Button
+                            size="small"
+                            type="primary"
+                            icon={<Pencil size={13} />}
+                            onClick={handleEditFile}
+                        >
+                            编辑
+                        </Button>
+                        <Button
+                            size="small"
+                            icon={<Download size={13} />}
+                            onClick={handleDownloadFile}
+                        >
+                            下载
                         </Button>
                     </div>
                 </div>
@@ -669,6 +865,7 @@ const GitRepoDetail: React.FC<Props> = ({ repo, ssoList, onBack }) => {
                         </tbody>
                     </table>
                 </div>
+                {renderFileEditorModal()}
             </div>
         );
     }
@@ -679,6 +876,7 @@ const GitRepoDetail: React.FC<Props> = ({ repo, ssoList, onBack }) => {
             <div className="px-6">
                 <Tabs activeKey={activeTab} onChange={setActiveTab} items={items} />
             </div>
+            {renderFileEditorModal()}
         </div>
     );
 };

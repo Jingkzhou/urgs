@@ -283,7 +283,7 @@ public class WorkTaskController {
             @PathVariable String id,
             @RequestBody TaskReviewDTO dto) {
         String userId = getEffectiveUserId(headerUserId, attrUserId);
-        workTaskService.reviewTask(id, dto, resolveAuthorizedPublisherIdByTask(id, userId));
+        workTaskService.reviewTask(id, dto, userId, resolveAuthorizedPublisherIdByTask(id, userId));
         return ResponseEntity.ok().build();
     }
 

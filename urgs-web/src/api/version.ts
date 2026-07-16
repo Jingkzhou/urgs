@@ -152,6 +152,21 @@ export interface GitFileContent {
 export const getRepoFileContent = (repoId: number, path: string, ref?: string) =>
     get<GitFileContent>(`/api/version/repos/${repoId}/file`, { path, ref: ref || '' });
 
+export const downloadRepoFile = (repoId: number, path: string, ref?: string) =>
+    get<Blob>(`/api/version/repos/${repoId}/file/download`, { path, ref: ref || '' }, { isBlob: true });
+
+export interface GitFileSaveRequest {
+    path: string;
+    branch: string;
+    contentBase64: string;
+    commitMessage: string;
+    fileSha?: string;
+    overwrite: boolean;
+}
+
+export const saveRepoFile = (repoId: number, data: GitFileSaveRequest) =>
+    put<void>(`/api/version/repos/${repoId}/file`, data);
+
 export const getRepoCommits = (repoId: number, params?: { ref?: string; page?: number; perPage?: number }) =>
     get<GitCommit[]>(`/api/version/repos/${repoId}/commits`, params || {});
 

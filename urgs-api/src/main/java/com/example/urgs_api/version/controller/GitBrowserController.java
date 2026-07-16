@@ -4,14 +4,20 @@ import com.example.urgs_api.version.dto.GitBranch;
 import com.example.urgs_api.version.dto.GitTag;
 import com.example.urgs_api.version.dto.GitCommit;
 import com.example.urgs_api.version.dto.GitFileContent;
+import com.example.urgs_api.version.dto.GitFileDownload;
 import com.example.urgs_api.version.dto.GitFileEntry;
+import com.example.urgs_api.version.dto.GitFileSaveRequest;
 import com.example.urgs_api.version.service.GitPlatformService;
 import lombok.RequiredArgsConstructor;
 import org.springframework.http.ResponseEntity;
+import org.springframework.http.ContentDisposition;
+import org.springframework.http.HttpHeaders;
+import org.springframework.http.MediaType;
 import org.springframework.web.bind.annotation.*;
 import com.example.urgs_api.auth.annotation.RequirePermission;
 
 import java.util.List;
+import java.nio.charset.StandardCharsets;
 
 /**
  * Git 仓库浏览 API
@@ -110,6 +116,42 @@ public class GitBrowserController {
             @RequestParam(required = false, defaultValue = "") String ref) {
         GitFileContent content = gitPlatformService.getFileContent(repoId, ref, path);
         return ResponseEntity.ok(content);
+    }
+
+    /**
+     * 下载指定版本的原始文件。
+     */
+    @GetMapping("/{repoId}/file/download")
+    public ResponseEntity<byte[]> downloadFile(
+            @PathVariable Long repoId,
+            @RequestParam String path,
+            @RequestParam(required = false, defaultValue = "") String ref) {
+        GitFileDownload file = gitPlatformService.downloadFile(repoId, ref, path);
+        return ResponseEntity.ok()
+                .header(HttpHeaders.CONTENT_DISPOSITION, ContentDisposition.attachment()
+                        .filename(file.getName(), StandardCharsets.UTF_8)
+                        .build()
+                        .toString())
+                .contentType(MediaType.APPLICATION_OCTET_STREAM)
+                .body(file.getContent());
+    }
+
+    /**
+     * 在指定分支创建或更新文件，并提交到远程 Git 仓库。
+     */
+    @PutMapping("/{repoId}/file")
+    public ResponseEntity<Void> saveFile(
+            @PathVariable Long repoId,
+            @RequestBody GitFileSaveRequest request) {
+        gitPlatformService.saveFile(
+                repoId,
+                request.getBranch(),
+                request.getPath(),
+                request.getContentBase64(),
+                request.getCommitMessage(),
+                request.getFileSha(),
+                Boolean.TRUE.equals(request.getOverwrite()));
+        return ResponseEntity.ok().build();
     }
 
     /**

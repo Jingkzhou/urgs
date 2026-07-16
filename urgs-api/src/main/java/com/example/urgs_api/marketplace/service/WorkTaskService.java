@@ -51,7 +51,7 @@ public interface WorkTaskService extends IService<WorkTask> {
 
     boolean submitForReview(String taskId, TaskSubmissionDTO dto, String userId);
 
-    boolean reviewTask(String taskId, TaskReviewDTO dto, String reviewerId);
+    boolean reviewTask(String taskId, TaskReviewDTO dto, String reviewerId, String authorizedPublisherId);
 
     void logTaskAction(String taskId, String operatorId, String action, String detail);
 

@@ -418,14 +418,14 @@ public class WorkTaskServiceImpl extends ServiceImpl<WorkTaskMapper, WorkTask> i
 
     @Override
     @Transactional(rollbackFor = Exception.class)
-    public boolean reviewTask(String taskId, TaskReviewDTO dto, String reviewerId) {
+    public boolean reviewTask(String taskId, TaskReviewDTO dto, String reviewerId, String authorizedPublisherId) {
         WorkTask task = this.getById(taskId);
         if (task == null) {
             throw new IllegalArgumentException("任务不存在");
         }
         ensureWorkOperable(task);
         Work work = workService.getById(task.getWorkId());
-        if (work == null || !work.getPublisherId().equals(reviewerId)) {
+        if (work == null || !work.getPublisherId().equals(authorizedPublisherId)) {
             throw new IllegalStateException("只有需求发布人可以验收任务");
         }
 
