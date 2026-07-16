@@ -73,4 +73,38 @@ class LineageServiceTest {
         assertTrue(scopedClause.contains("BELONGS_TO"));
         assertTrue(legacyClause.contains("table: $tableName"));
     }
+
+    @Test
+    void tableGraphCollectsAllStatementEvidenceInsteadOfOnlyRepresentativeSnippet() {
+        String query = ReflectionTestUtils.invokeMethod(
+                lineageService,
+                "buildTableLineageQuery",
+                "MATCH (startNode) ",
+                "DERIVES_TO|FILTERS",
+                2,
+                "both");
+
+        assertTrue(query.contains("statementUidGroups"));
+        assertTrue(query.contains("AS statementUids"));
+    }
+
+    @Test
+    void evidenceStatementUidsAreDeduplicatedAndBounded() {
+        List<String> values = new java.util.ArrayList<>();
+        values.add("stmt-1");
+        values.add("stmt-1");
+        values.add(" ");
+        for (int index = 2; index <= 520; index++) {
+            values.add("stmt-" + index);
+        }
+
+        List<String> normalized = ReflectionTestUtils.invokeMethod(
+                lineageService,
+                "normalizeEvidenceStatementUids",
+                values);
+
+        assertEquals(500, normalized.size());
+        assertEquals("stmt-1", normalized.get(0));
+        assertEquals(500, normalized.stream().distinct().count());
+    }
 }

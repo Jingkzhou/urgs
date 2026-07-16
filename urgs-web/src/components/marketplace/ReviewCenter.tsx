@@ -22,6 +22,20 @@ interface ReviewCenterProps {
 
 type ReviewExecutionStatus = 'idle' | 'running' | 'success' | 'error';
 
+interface ReviewTaskFilters {
+    system: string;
+    requirementNumber: string;
+    deadlineStart: string;
+    deadlineEnd: string;
+}
+
+const EMPTY_REVIEW_TASK_FILTERS: ReviewTaskFilters = {
+    system: '',
+    requirementNumber: '',
+    deadlineStart: '',
+    deadlineEnd: '',
+};
+
 const getRequestErrorMessage = (error: unknown, fallback: string) => {
     const rawMessage = error instanceof Error ? error.message : '';
     if (!rawMessage) return fallback;
@@ -38,6 +52,8 @@ const ReviewCenter: React.FC<ReviewCenterProps> = ({ todoFocus }) => {
     const [historyTasks, setHistoryTasks] = useState<TaskReviewHistoryDTO[]>([]);
     const [historyPage, setHistoryPage] = useState(1);
     const [historyTotal, setHistoryTotal] = useState(0);
+    const [filters, setFilters] = useState<ReviewTaskFilters>(EMPTY_REVIEW_TASK_FILTERS);
+    const [appliedFilters, setAppliedFilters] = useState<ReviewTaskFilters>(EMPTY_REVIEW_TASK_FILTERS);
     const [loading, setLoading] = useState(false);
     const [activeTask, setActiveTask] = useState<TaskMarketDTO | null>(null);
     const [detailTaskId, setDetailTaskId] = useState<string | null>(null);
@@ -66,12 +82,26 @@ const ReviewCenter: React.FC<ReviewCenterProps> = ({ todoFocus }) => {
         setReviewExecutionLogs(logs => [...logs, `${time}  ${message}`]);
     };
 
-    const fetchTasks = async () => {
+    const fetchTasks = async (queryFilters = appliedFilters) => {
         setLoading(true);
         try {
             const [pendingRes, historyRes] = await Promise.all([
-                getPendingReviewTasks({ current: 1, size: 50 }),
-                getReviewHistoryTasks({ current: historyPage, size: 20 }),
+                getPendingReviewTasks({
+                    current: 1,
+                    size: 50,
+                    system: queryFilters.system || undefined,
+                    requirementNumber: queryFilters.requirementNumber || undefined,
+                    deadlineStart: queryFilters.deadlineStart ? `${queryFilters.deadlineStart}T00:00:00` : undefined,
+                    deadlineEnd: queryFilters.deadlineEnd ? `${queryFilters.deadlineEnd}T23:59:59` : undefined,
+                }),
+                getReviewHistoryTasks({
+                    current: historyPage,
+                    size: 20,
+                    system: queryFilters.system || undefined,
+                    requirementNumber: queryFilters.requirementNumber || undefined,
+                    deadlineStart: queryFilters.deadlineStart ? `${queryFilters.deadlineStart}T00:00:00` : undefined,
+                    deadlineEnd: queryFilters.deadlineEnd ? `${queryFilters.deadlineEnd}T23:59:59` : undefined,
+                }),
             ]);
             setTasks(pendingRes?.records || []);
             setHistoryTasks(historyRes?.records || []);
@@ -85,7 +115,28 @@ const ReviewCenter: React.FC<ReviewCenterProps> = ({ todoFocus }) => {
 
     useEffect(() => {
         fetchTasks();
-    }, [historyPage]);
+    }, [historyPage, appliedFilters]);
+
+    const applyFilters = () => {
+        const nextFilters = {
+            system: filters.system.trim(),
+            requirementNumber: filters.requirementNumber.trim(),
+            deadlineStart: filters.deadlineStart,
+            deadlineEnd: filters.deadlineEnd,
+        };
+        setAppliedFilters(nextFilters);
+        if (historyPage !== 1) {
+            setHistoryPage(1);
+        }
+    };
+
+    const clearFilters = () => {
+        setFilters(EMPTY_REVIEW_TASK_FILTERS);
+        setAppliedFilters(EMPTY_REVIEW_TASK_FILTERS);
+        if (historyPage !== 1) {
+            setHistoryPage(1);
+        }
+    };
 
     useEffect(() => {
         if (!todoFocus || todoFocus.targetTab !== 'review') return;
@@ -369,6 +420,18 @@ const ReviewCenter: React.FC<ReviewCenterProps> = ({ todoFocus }) => {
                             </div>
                             <div className="grid grid-cols-1 gap-2 text-xs sm:grid-cols-3">
                                 <div className="rounded-lg bg-slate-50 p-2">
+                                    <div className="mb-1 text-slate-400">系统</div>
+                                    <div className="font-bold text-slate-700">{record.owningSystem || record.primarySystemName || '-'}</div>
+                                </div>
+                                <div className="rounded-lg bg-slate-50 p-2">
+                                    <div className="mb-1 text-slate-400">发起人</div>
+                                    <div className="font-bold text-slate-700">{record.publisherName || record.publisherId || '-'}</div>
+                                </div>
+                                <div className="rounded-lg bg-slate-50 p-2">
+                                    <div className="mb-1 text-slate-400">发起时间</div>
+                                    <div className="font-bold text-slate-700">{formatRecordTime(record.workCreateTime)}</div>
+                                </div>
+                                <div className="rounded-lg bg-slate-50 p-2">
                                     <div className="mb-1 text-slate-400">审核人</div>
                                     <div className="font-bold text-slate-700">{record.reviewerName || record.reviewerId || '-'}</div>
                                 </div>
@@ -423,6 +486,54 @@ const ReviewCenter: React.FC<ReviewCenterProps> = ({ todoFocus }) => {
             <div className="mb-6">
                 <h2 className="text-xl font-bold text-slate-800">审核中心</h2>
                 <p className="text-sm text-slate-500 mt-1">集中处理资产同步审核和上线验收</p>
+            </div>
+
+            <div className="mb-4 flex flex-wrap items-center gap-3 rounded-xl border border-slate-100 bg-slate-50 px-4 py-3">
+                <span className="text-sm font-bold text-slate-700">筛选</span>
+                <input
+                    value={filters.system}
+                    onChange={event => setFilters(previous => ({ ...previous, system: event.target.value }))}
+                    placeholder="系统"
+                    className="rounded-lg border border-slate-200 bg-white px-3 py-1.5 text-sm text-slate-700 outline-none focus:border-blue-400"
+                />
+                <input
+                    value={filters.requirementNumber}
+                    onChange={event => setFilters(previous => ({ ...previous, requirementNumber: event.target.value }))}
+                    placeholder="需求编号"
+                    className="rounded-lg border border-slate-200 bg-white px-3 py-1.5 text-sm text-slate-700 outline-none focus:border-blue-400"
+                />
+                <span className="text-sm text-slate-500">截止日期</span>
+                <input
+                    type="date"
+                    value={filters.deadlineStart}
+                    max={filters.deadlineEnd || undefined}
+                    onChange={event => setFilters(previous => ({ ...previous, deadlineStart: event.target.value }))}
+                    className="rounded-lg border border-slate-200 bg-white px-3 py-1.5 text-sm text-slate-700"
+                />
+                <span className="text-sm text-slate-400">至</span>
+                <input
+                    type="date"
+                    value={filters.deadlineEnd}
+                    min={filters.deadlineStart || undefined}
+                    onChange={event => setFilters(previous => ({ ...previous, deadlineEnd: event.target.value }))}
+                    className="rounded-lg border border-slate-200 bg-white px-3 py-1.5 text-sm text-slate-700"
+                />
+                <button
+                    type="button"
+                    onClick={applyFilters}
+                    className="rounded-lg bg-blue-600 px-3 py-1.5 text-sm font-bold text-white transition-colors hover:bg-blue-700"
+                >
+                    查询
+                </button>
+                {(filters.system || filters.requirementNumber || filters.deadlineStart || filters.deadlineEnd) && (
+                    <button
+                        type="button"
+                        onClick={clearFilters}
+                        className="rounded-lg px-3 py-1.5 text-sm font-bold text-blue-600 transition-colors hover:bg-blue-50"
+                    >
+                        清除筛选
+                    </button>
+                )}
             </div>
 
             {loading ? (

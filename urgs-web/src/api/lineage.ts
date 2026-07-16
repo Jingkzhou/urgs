@@ -67,6 +67,29 @@ export interface LineageGraphResponse {
     relationLevel?: LineageGraphRelationLevel;
 }
 
+export interface LineageRelationEvidenceRequest {
+    relationId?: string;
+    statementUids?: string[];
+    sourceTable?: string;
+    sourceColumn?: string;
+    targetTable?: string;
+    targetColumn?: string;
+    relationType?: string;
+}
+
+export interface LineageRelationEvidence {
+    statementUid: string;
+    statementHash?: string;
+    statementIndex?: number;
+    snippet: string;
+    sourceFiles: string[];
+    sourceColumns: string[];
+    targetColumns: string[];
+    relationTypes: string[];
+    confidences: string[];
+    ambiguityCodes: string[];
+}
+
 /**
  * Get lineage graph data (仅 DERIVES_TO 关系)
  * @param tableName name of the table to search
@@ -99,6 +122,9 @@ export const getLineageGraph = (
     }
     return get('/api/metadata/lineage/graph', params) as Promise<LineageGraphResponse>;
 };
+
+export const getLineageRelationEvidence = (data: LineageRelationEvidenceRequest) =>
+    post<LineageRelationEvidence[]>('/api/metadata/lineage/relations/evidence', data);
 
 /**
  * Search tables by keyword with pagination

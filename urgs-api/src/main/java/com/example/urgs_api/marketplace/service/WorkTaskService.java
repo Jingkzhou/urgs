@@ -29,9 +29,22 @@ public interface WorkTaskService extends IService<WorkTask> {
             LocalDateTime deadlineStart,
             LocalDateTime deadlineEnd);
 
-    Page<TaskMarketDTO> getReviewTasks(Page<WorkTask> page, String publisherId, boolean history);
+    Page<TaskMarketDTO> getReviewTasks(
+            Page<WorkTask> page,
+            String publisherId,
+            boolean history,
+            String system,
+            String requirementNumber,
+            LocalDateTime deadlineStart,
+            LocalDateTime deadlineEnd);
 
-    Page<TaskReviewHistoryDTO> getReviewHistory(Page<TaskReviewHistoryDTO> page, String publisherId);
+    Page<TaskReviewHistoryDTO> getReviewHistory(
+            Page<TaskReviewHistoryDTO> page,
+            String publisherId,
+            String system,
+            String requirementNumber,
+            LocalDateTime deadlineStart,
+            LocalDateTime deadlineEnd);
 
     boolean claimTask(String taskId, String userId);
 

@@ -13,6 +13,11 @@ public class TaskReviewHistoryDTO {
     private String workId;
     private String workTitle;
     private String requirementNumber;
+    private String owningSystem;
+    private String primarySystemName;
+    private String publisherId;
+    private String publisherName;
+    private LocalDateTime workCreateTime;
     private String reviewType;
     private String decision;
     private String action;

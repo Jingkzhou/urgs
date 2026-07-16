@@ -15,6 +15,7 @@ import java.net.URLEncoder;
 import java.nio.charset.StandardCharsets;
 import com.alibaba.excel.EasyExcel;
 import com.example.urgs_api.metadata.dto.LineageExportDTO;
+import com.example.urgs_api.metadata.dto.LineageRelationEvidenceRequest;
 
 @Service
 /**
@@ -268,6 +269,107 @@ public class LineageService {
         }
     }
 
+    public List<Map<String, Object>> getRelationEvidence(LineageRelationEvidenceRequest request) {
+        if (request == null) {
+            return Collections.emptyList();
+        }
+        List<String> statementUids = normalizeEvidenceStatementUids(request.getStatementUids());
+        if (statementUids.isEmpty() && hasText(request.getRelationId())) {
+            statementUids = loadRelationStatementUids(request.getRelationId());
+        }
+        if (statementUids.isEmpty()) {
+            return Collections.emptyList();
+        }
+
+        String relationType = normalizeUpper(request.getRelationType());
+        if (!ALL_LINEAGE_RELATION_TYPES.contains(relationType)) {
+            relationType = "";
+        }
+        String query = "MATCH (stmt:SqlStatement) "
+                + "WHERE stmt.statementUid IN $statementUids "
+                + "OPTIONAL MATCH (fact:LineageFact)-[:IN_STATEMENT]->(stmt) "
+                + "WHERE ($sourceTable = '' OR toUpper(coalesce(fact.sourceTable, '')) = $sourceTable) "
+                + "  AND ($sourceColumn = '' OR toUpper(coalesce(fact.sourceColumn, '')) = $sourceColumn) "
+                + "  AND ($targetTable = '' OR toUpper(coalesce(fact.targetTable, '')) = $targetTable) "
+                + "  AND ($targetColumn = '' OR toUpper(coalesce(fact.targetColumn, '')) = $targetColumn) "
+                + "  AND ($relationType = '' OR toUpper(coalesce(fact.relationType, '')) = $relationType) "
+                + "RETURN stmt.statementUid AS statementUid, "
+                + "       coalesce(stmt.statementHash, '') AS statementHash, "
+                + "       coalesce(stmt.statementIndex, 0) AS statementIndex, "
+                + "       coalesce(stmt.sqlText, '') AS snippet, "
+                + "       coalesce(stmt.sourceFiles, []) AS sourceFiles, "
+                + "       [value IN collect(DISTINCT coalesce(fact.sourceColumn, '')) WHERE value <> ''] AS sourceColumns, "
+                + "       [value IN collect(DISTINCT coalesce(fact.targetColumn, '')) WHERE value <> ''] AS targetColumns, "
+                + "       [value IN collect(DISTINCT coalesce(fact.relationType, '')) WHERE value <> ''] AS relationTypes, "
+                + "       [value IN collect(DISTINCT coalesce(fact.confidence, '')) WHERE value <> ''] AS confidences, "
+                + "       [value IN collect(DISTINCT coalesce(fact.ambiguityCode, '')) WHERE value <> ''] AS ambiguityCodes "
+                + "ORDER BY coalesce(sourceFiles[0], ''), statementIndex, statementUid";
+        Map<String, Object> params = new HashMap<>();
+        params.put("statementUids", statementUids);
+        params.put("sourceTable", normalizeUpper(request.getSourceTable()));
+        params.put("sourceColumn", normalizeUpper(request.getSourceColumn()));
+        params.put("targetTable", normalizeUpper(request.getTargetTable()));
+        params.put("targetColumn", normalizeUpper(request.getTargetColumn()));
+        params.put("relationType", relationType);
+
+        List<Map<String, Object>> evidence = new ArrayList<>();
+        try (Session session = driver.session()) {
+            Result result = session.run(query, params);
+            while (result.hasNext()) {
+                var record = result.next();
+                Map<String, Object> item = new LinkedHashMap<>();
+                item.put("statementUid", record.get("statementUid").asString(""));
+                item.put("statementHash", record.get("statementHash").asString(""));
+                item.put("statementIndex", record.get("statementIndex").asLong(0));
+                item.put("snippet", record.get("snippet").asString(""));
+                item.put("sourceFiles", record.get("sourceFiles").asList(value -> value.asString("")));
+                item.put("sourceColumns", record.get("sourceColumns").asList(value -> value.asString("")));
+                item.put("targetColumns", record.get("targetColumns").asList(value -> value.asString("")));
+                item.put("relationTypes", record.get("relationTypes").asList(value -> value.asString("")));
+                item.put("confidences", record.get("confidences").asList(value -> value.asString("")));
+                item.put("ambiguityCodes", record.get("ambiguityCodes").asList(value -> value.asString("")));
+                evidence.add(item);
+            }
+        }
+        return evidence;
+    }
+
+    private List<String> loadRelationStatementUids(String relationId) {
+        String query = "MATCH ()-[r]->() WHERE elementId(r) = $relationId "
+                + "RETURN CASE "
+                + "  WHEN size(coalesce(r.statementUids, [])) > 0 THEN r.statementUids "
+                + "  WHEN coalesce(r.statementUid, '') <> '' THEN [r.statementUid] "
+                + "  ELSE [] END AS statementUids";
+        try (Session session = driver.session()) {
+            Result result = session.run(query, Map.of("relationId", relationId));
+            if (!result.hasNext()) {
+                return Collections.emptyList();
+            }
+            return normalizeEvidenceStatementUids(
+                    result.next().get("statementUids").asList(value -> value.asString("")));
+        }
+    }
+
+    private List<String> normalizeEvidenceStatementUids(List<String> values) {
+        if (values == null || values.isEmpty()) {
+            return Collections.emptyList();
+        }
+        return values.stream()
+                .filter(this::hasText)
+                .map(String::trim)
+                .distinct()
+                .limit(500)
+                .toList();
+    }
+
+    private boolean hasText(String value) {
+        return value != null && !value.trim().isEmpty();
+    }
+
+    private String normalizeUpper(String value) {
+        return hasText(value) ? value.trim().toUpperCase(Locale.ROOT) : "";
+    }
+
     private List<String> normalizeNodeTypes(List<String> nodeTypes) {
         Set<String> allowed = Set.of("TABLE", "COLUMN", "SQL_TASK", "ANALYSIS");
         if (nodeTypes == null || nodeTypes.isEmpty()) {
@@ -488,11 +590,16 @@ public class LineageService {
                 long snippetCount = record.get("snippetCount").asLong(0);
                 List<String> relationLevels = record.get("relationLevels").asList(value -> value.asString());
                 List<String> lineageOrigins = record.get("lineageOrigins").asList(value -> value.asString());
+                List<String> statementUids = record.get("statementUids").asList(value -> value.asString()).stream()
+                        .filter(this::hasText)
+                        .distinct()
+                        .toList();
 
                 addNode(sourceTable, nodes, seenNodes);
                 addNode(targetTable, nodes, seenNodes);
                 addTableEdge(sourceTable, targetTable, relType, relationCount, snippet, sourceFiles,
                         sourceColumns, targetColumns, fallbackCount, snippetCount, relationLevels, lineageOrigins,
+                        statementUids,
                         edges, seenEdges);
             }
         }
@@ -555,6 +662,7 @@ public class LineageService {
                 "     collect(coalesce(r.relationLevels, [])) AS relationLevelGroups, " +
                 "     collect(DISTINCT coalesce(r.lineageOrigin, '')) AS lineageOrigins, " +
                 "     collect(coalesce(r.lineageOrigins, [])) AS lineageOriginGroups, " +
+                "     collect(CASE WHEN size(coalesce(r.statementUids, [])) > 0 THEN r.statementUids WHEN coalesce(r.statementUid, '') <> '' THEN [r.statementUid] ELSE [] END) AS statementUidGroups, " +
                 "     collect(DISTINCT coalesce(r.snippet, '')) AS snippets, " +
                 "     collect(coalesce(r.sourceFiles, [])) AS sourceFileGroups, " +
                 "     collect(DISTINCT coalesce(r.source_file, coalesce(r.sourceFile, ''))) AS sourceFileNames " +
@@ -563,6 +671,7 @@ public class LineageService {
                 "       [column IN nodeTargetColumns + reduce(columns = [], group IN relationTargetColumnGroups | columns + group) + [column IN relationTargetColumnNames WHERE column <> ''] WHERE column <> ''] AS targetColumns, " +
                 "       [level IN relationLevels + reduce(levels = [], group IN relationLevelGroups | levels + group) WHERE level <> ''] AS relationLevels, " +
                 "       [origin IN lineageOrigins + reduce(origins = [], group IN lineageOriginGroups | origins + group) WHERE origin <> ''] AS lineageOrigins, " +
+                "       reduce(statementUids = [], group IN statementUidGroups | statementUids + group) AS statementUids, " +
                 "       [snippet IN snippets WHERE snippet <> ''][0] AS snippet, " +
                 "       reduce(files = [], group IN sourceFileGroups | files + group) + [file IN sourceFileNames WHERE file <> ''] AS sourceFiles " +
                 "ORDER BY relationCount DESC " +
@@ -752,11 +861,23 @@ public class LineageService {
     private void addEdge(Relationship rel, List<Map<String, Object>> edges, Set<String> seenEdges) {
         if (!seenEdges.contains(rel.elementId())) {
             Map<String, Object> edgeData = new HashMap<>();
+            Map<String, Object> properties = new HashMap<>(rel.asMap());
+            List<String> statementUids = objectStringList(properties.get("statementUids"));
+            if (statementUids.isEmpty() && hasText(Objects.toString(properties.get("statementUid"), ""))) {
+                statementUids = List.of(Objects.toString(properties.get("statementUid")));
+            }
+            List<String> snippets = objectStringList(properties.get("snippets"));
+            int evidenceCount = !statementUids.isEmpty()
+                    ? statementUids.size()
+                    : (!snippets.isEmpty() ? snippets.size()
+                            : (hasText(Objects.toString(properties.get("snippet"), "")) ? 1 : 0));
+            properties.put("statementUids", statementUids);
+            properties.put("evidenceCount", evidenceCount);
             edgeData.put("id", rel.elementId());
             edgeData.put("source", rel.startNodeElementId());
             edgeData.put("target", rel.endNodeElementId());
             edgeData.put("type", rel.type());
-            edgeData.put("properties", rel.asMap());
+            edgeData.put("properties", properties);
             edges.add(edgeData);
             seenEdges.add(rel.elementId());
         }
@@ -765,6 +886,7 @@ public class LineageService {
     private void addTableEdge(Node sourceTable, Node targetTable, String relType, long relationCount,
             String snippet, List<String> sourceFiles, List<String> sourceColumns, List<String> targetColumns,
             long fallbackCount, long snippetCount, List<String> relationLevels, List<String> lineageOrigins,
+            List<String> statementUids,
             List<Map<String, Object>> edges, Set<String> seenEdges) {
         String edgeId = sourceTable.elementId() + "::" + targetTable.elementId() + "::" + relType;
         if (!seenEdges.contains(edgeId)) {
@@ -779,6 +901,8 @@ public class LineageService {
             properties.put("fallbackRelationCount", fallbackCount);
             properties.put("fieldRelationCount", fieldRelationCount);
             properties.put("snippetCount", snippetCount);
+            properties.put("statementUids", statementUids);
+            properties.put("evidenceCount", statementUids.isEmpty() ? snippetCount : statementUids.size());
             properties.put("hasSnippet", snippetCount > 0 || (snippet != null && !snippet.isBlank()));
             properties.put("relationLevels", relationLevels.stream().filter(Objects::nonNull).distinct().toList());
             properties.put("lineageOrigins", lineageOrigins.stream().filter(Objects::nonNull).distinct().toList());
@@ -795,6 +919,18 @@ public class LineageService {
             edges.add(edgeData);
             seenEdges.add(edgeId);
         }
+    }
+
+    private List<String> objectStringList(Object value) {
+        if (!(value instanceof Collection<?> collection)) {
+            return Collections.emptyList();
+        }
+        return collection.stream()
+                .filter(Objects::nonNull)
+                .map(String::valueOf)
+                .filter(this::hasText)
+                .distinct()
+                .toList();
     }
 
     private int normalizeDepth(int depth) {

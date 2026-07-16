@@ -172,10 +172,17 @@ public class WorkTaskController {
             @RequestHeader(value = "X-User-Id", required = false) String headerUserId,
             @RequestAttribute(value = "userId", required = false) Long attrUserId,
             @RequestParam(defaultValue = "1") int current,
-            @RequestParam(defaultValue = "10") int size) {
+            @RequestParam(defaultValue = "10") int size,
+            @RequestParam(required = false) String system,
+            @RequestParam(required = false) String requirementNumber,
+            @RequestParam(required = false)
+            @DateTimeFormat(iso = DateTimeFormat.ISO.DATE_TIME) LocalDateTime deadlineStart,
+            @RequestParam(required = false)
+            @DateTimeFormat(iso = DateTimeFormat.ISO.DATE_TIME) LocalDateTime deadlineEnd) {
         String userId = getEffectiveUserId(headerUserId, attrUserId);
         Page<WorkTask> page = new Page<>(current, size);
-        Page<TaskMarketDTO> resultPage = workTaskService.getReviewTasks(page, resolveReviewPublisherId(userId), false);
+        Page<TaskMarketDTO> resultPage = workTaskService.getReviewTasks(
+                page, resolveReviewPublisherId(userId), false, system, requirementNumber, deadlineStart, deadlineEnd);
         return PageResult.of(resultPage);
     }
 
@@ -184,10 +191,17 @@ public class WorkTaskController {
             @RequestHeader(value = "X-User-Id", required = false) String headerUserId,
             @RequestAttribute(value = "userId", required = false) Long attrUserId,
             @RequestParam(defaultValue = "1") int current,
-            @RequestParam(defaultValue = "20") int size) {
+            @RequestParam(defaultValue = "20") int size,
+            @RequestParam(required = false) String system,
+            @RequestParam(required = false) String requirementNumber,
+            @RequestParam(required = false)
+            @DateTimeFormat(iso = DateTimeFormat.ISO.DATE_TIME) LocalDateTime deadlineStart,
+            @RequestParam(required = false)
+            @DateTimeFormat(iso = DateTimeFormat.ISO.DATE_TIME) LocalDateTime deadlineEnd) {
         String userId = getEffectiveUserId(headerUserId, attrUserId);
         Page<TaskReviewHistoryDTO> page = new Page<>(current, size);
-        Page<TaskReviewHistoryDTO> resultPage = workTaskService.getReviewHistory(page, resolveReviewPublisherId(userId));
+        Page<TaskReviewHistoryDTO> resultPage = workTaskService.getReviewHistory(
+                page, resolveReviewPublisherId(userId), system, requirementNumber, deadlineStart, deadlineEnd);
         return PageResult.of(resultPage);
     }
 

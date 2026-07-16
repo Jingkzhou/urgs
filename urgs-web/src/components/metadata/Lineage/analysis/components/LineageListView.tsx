@@ -1,8 +1,8 @@
 import React, { useMemo, useState } from 'react';
-import { Table, Tag, Tooltip, Empty, Typography, Button } from 'antd';
+import { Table, Tag, Tooltip, Empty, Typography, Button, Modal } from 'antd';
 import { NodeData, LinkData, RELATION_STYLES } from '../types';
 import { FileTextOutlined } from '@ant-design/icons';
-import CodeModal from './CodeModal';
+import RelationEvidencePanel, { getLinkEvidenceCount } from './RelationEvidencePanel';
 import { buildNodeRanks, splitQualifiedTitle, sameTableLoose } from '../utils/lineageGraphDensity';
 import type { EndToEndRelation, LineageDisplayMode } from '../utils/endToEndLineage';
 
@@ -58,13 +58,7 @@ const LineageListView: React.FC<LineageListViewProps> = ({
     selectedTable,
     selectedField
 }) => {
-    const [codeModalVisible, setCodeModalVisible] = useState(false);
-    const [selectedCode, setSelectedCode] = useState<{
-        code: string;
-        sourceFile?: string;
-        linkType?: string;
-        highlightTerms?: string[];
-    } | null>(null);
+    const [selectedEvidence, setSelectedEvidence] = useState<any | null>(null);
 
     const endToEndTableData = useMemo(() => endToEndRelations.map((relation) => ({
         key: relation.key,
@@ -122,9 +116,10 @@ const LineageListView: React.FC<LineageListViewProps> = ({
 
             // Handle source file
             const sourceFiles = link.properties?.sourceFiles;
-            const sourceFile = Array.isArray(sourceFiles)
-                ? sourceFiles[0]
-                : (sourceFiles || link.properties?.source_file || link.properties?.sourceFile);
+            const normalizedSourceFiles = normalizeArray(
+                sourceFiles || link.properties?.source_file || link.properties?.sourceFile
+            );
+            const sourceFile = normalizedSourceFiles[0];
 
             return {
                 key: link.id || `${index}`,
@@ -146,6 +141,9 @@ const LineageListView: React.FC<LineageListViewProps> = ({
                 targetColumnTooltip: targetColumns.join('、'),
                 snippet: link.properties?.snippet,
                 sourceFile: sourceFile,
+                sourceFiles: normalizedSourceFiles,
+                evidenceCount: getLinkEvidenceCount(link),
+                link,
                 isHighlighted: (selectedField && (link.sourceColumnId === selectedField.colId || link.targetColumnId === selectedField.colId)) ||
                     (!selectedField && selectedTable && (sameTableLoose(sourceTable, selectedTable) || sameTableLoose(targetTable, selectedTable)))
             };
@@ -159,15 +157,7 @@ const LineageListView: React.FC<LineageListViewProps> = ({
         ));
     }, [nodes, links, selectedTable, selectedField]);
 
-    const handleViewCode = (record: any) => {
-        setSelectedCode({
-            code: record.snippet,
-            sourceFile: record.sourceFile,
-            linkType: record.relationType,
-            highlightTerms: [record.sourceColumn, record.targetColumn].filter(Boolean)
-        });
-        setCodeModalVisible(true);
-    };
+    const handleViewEvidence = (record: any) => setSelectedEvidence(record);
 
     const columns = [
         {
@@ -251,11 +241,13 @@ const LineageListView: React.FC<LineageListViewProps> = ({
             dataIndex: 'sourceFile',
             key: 'sourceFile',
             width: 150,
-            render: (text: string) => (
+            render: (text: string, record: any) => (
                 text ? (
-                    <Tooltip title={text}>
+                    <Tooltip title={record.sourceFiles.join('\n')}>
                         <Text type="secondary" style={{ fontSize: 12 }}>
-                            {text.split('/').pop()}
+                            {record.sourceFiles.length > 1
+                                ? `${record.sourceFiles.length} 个文件`
+                                : text.split('/').pop()}
                         </Text>
                     </Tooltip>
                 ) : <Text type="secondary" style={{ fontSize: 12 }}>-</Text>
@@ -263,18 +255,21 @@ const LineageListView: React.FC<LineageListViewProps> = ({
             sorter: (a: any, b: any) => (a.sourceFile || '').localeCompare(b.sourceFile || ''),
         },
         {
-            title: '逻辑/源码',
+            title: 'SQL 证据',
             key: 'action',
-            width: 100,
+            width: 130,
             align: 'center' as const,
             render: (_: any, record: any) => (
-                record.snippet ? (
-                    <Tooltip title="查看源码逻辑">
+                record.evidenceCount > 0 || record.snippet ? (
+                    <Tooltip title={`查看 ${record.evidenceCount || 1} 段 SQL 证据`}>
                         <Button
-                            type="text"
+                            type="link"
+                            size="small"
                             icon={<FileTextOutlined style={{ color: '#1890ff' }} />}
-                            onClick={() => handleViewCode(record)}
-                        />
+                            onClick={() => handleViewEvidence(record)}
+                        >
+                            {record.evidenceCount || 1} 段
+                        </Button>
                     </Tooltip>
                 ) : <Text type="secondary" style={{ fontSize: 12 }}>-</Text>
             ),
@@ -414,15 +409,23 @@ const LineageListView: React.FC<LineageListViewProps> = ({
                 }}
                 rowClassName={(record) => record.isHighlighted ? 'bg-blue-50' : ''}
             />
-            {selectedCode && (
-                <CodeModal
-                    visible={codeModalVisible}
-                    onClose={() => setCodeModalVisible(false)}
-                    code={selectedCode.code}
-                    sourceFile={selectedCode.sourceFile}
-                    linkType={selectedCode.linkType}
-                    highlightTerms={selectedCode.highlightTerms}
-                />
+            {selectedEvidence && (
+                <Modal
+                    open
+                    title={`${selectedEvidence.sourceTable}.${selectedEvidence.sourceColumn} → ${selectedEvidence.targetTable}.${selectedEvidence.targetColumn}`}
+                    footer={null}
+                    width={920}
+                    onCancel={() => setSelectedEvidence(null)}
+                >
+                    <RelationEvidencePanel
+                        active
+                        link={selectedEvidence.link}
+                        sourceTable={selectedEvidence.sourceTable}
+                        targetTable={selectedEvidence.targetTable}
+                        sourceColumn={selectedEvidence.sourceColumn}
+                        targetColumn={selectedEvidence.targetColumn}
+                    />
+                </Modal>
             )}
             <style>{`
                 .bg-blue-50 {

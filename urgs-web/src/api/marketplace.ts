@@ -239,6 +239,11 @@ export interface TaskReviewHistoryDTO {
     workId?: string;
     workTitle?: string;
     requirementNumber?: string;
+    owningSystem?: string;
+    primarySystemName?: string;
+    publisherId?: string;
+    publisherName?: string;
+    workCreateTime?: string;
     reviewType: 'ASSET_REVIEW' | 'ACCEPTANCE';
     decision: 'APPROVE' | 'REJECT' | 'CANCEL' | 'TRANSFER' | string;
     action: string;
@@ -495,8 +500,19 @@ export const getAssigneeTasks = (userId: string, params: {
     deadlineEnd?: string;
 }) =>
     get<PageResponse<TaskMarketDTO>>(`/api/marketplace/tasks/assignee/${encodeURIComponent(userId)}`, params);
-export const getPendingReviewTasks = (params: any) => get<PageResponse<TaskMarketDTO>>('/api/marketplace/tasks/review/pending', params);
-export const getReviewHistoryTasks = (params: any) => get<PageResponse<TaskReviewHistoryDTO>>('/api/marketplace/tasks/review/history', params);
+export type ReviewTaskQueryParams = Record<string, string | number | boolean | undefined> & {
+    current: number;
+    size: number;
+    system?: string;
+    requirementNumber?: string;
+    deadlineStart?: string;
+    deadlineEnd?: string;
+};
+
+export const getPendingReviewTasks = (params: ReviewTaskQueryParams) =>
+    get<PageResponse<TaskMarketDTO>>('/api/marketplace/tasks/review/pending', params);
+export const getReviewHistoryTasks = (params: ReviewTaskQueryParams) =>
+    get<PageResponse<TaskReviewHistoryDTO>>('/api/marketplace/tasks/review/history', params);
 export const claimTask = (id: string) => post(`/api/marketplace/tasks/${id}/claim`);
 export const releaseTask = (id: string) => put(`/api/marketplace/tasks/${id}/release`);
 export const reopenTask = (id: string) => put(`/api/marketplace/tasks/${id}/reopen`);

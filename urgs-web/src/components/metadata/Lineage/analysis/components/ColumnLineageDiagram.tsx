@@ -4,8 +4,8 @@ import type { ElkNode, ElkPoint } from 'elkjs/lib/elk-api';
 import { Button, Descriptions, Empty, Modal, Tag, Tooltip } from 'antd';
 import { Maximize2, ZoomIn, ZoomOut } from 'lucide-react';
 import { LinkData, NodeData, RELATION_STYLES } from '../types';
-import CodeModal from './CodeModal';
 import LineageImpactPanel from './LineageImpactPanel';
+import RelationEvidencePanel, { getLinkEvidenceCount } from './RelationEvidencePanel';
 import {
     TABLE_LEVEL_COLUMN,
     buildDensityGraph,
@@ -42,13 +42,6 @@ interface LayoutNode {
     height: number;
     rank: number;
     columns: { id: string; name: string; synthetic?: boolean }[];
-}
-
-interface SelectedCode {
-    code: string;
-    sourceFile?: string;
-    linkType?: string;
-    highlightTerms?: string[];
 }
 
 interface SelectedRelation {
@@ -93,16 +86,6 @@ const getRelationMarkerId = (type?: string) => (
     `column-lineage-arrow-${normalizeRelationType(type).replace(/[^a-zA-Z0-9_-]/g, '-')}`
 );
 
-const getLinkCode = (link: LinkData) => {
-    const value = link.properties?.snippet
-        || link.properties?.sql
-        || link.properties?.expression
-        || link.properties?.logic
-        || link.properties?.sourceCode
-        || link.properties?.code;
-    return value ? String(value) : '';
-};
-
 const getSourceFile = (link: LinkData) => {
     const sourceFiles = link.properties?.sourceFiles;
     if (Array.isArray(sourceFiles)) {
@@ -128,23 +111,6 @@ const getRelationLevelLabel = (level?: string) => {
         default:
             return level || '字段/表级聚合';
     }
-};
-
-const getLinkHighlightTerms = (link: LinkData, nodes: NodeData[]) => {
-    const sourceNode = nodes.find(node => node.id === link.sourceNodeId);
-    const targetNode = nodes.find(node => node.id === link.targetNodeId);
-    const sourceCol = sourceNode?.columns.find(col => col.id === link.sourceColumnId);
-    const targetCol = targetNode?.columns.find(col => col.id === link.targetColumnId);
-    return Array.from(new Set([
-        sourceCol?.name,
-        targetCol?.name,
-        link.properties?.sourceColumn,
-        link.properties?.sourceColumnName,
-        link.properties?.targetColumn,
-        link.properties?.targetColumnName,
-        ...normalizeArray(link.properties?.sourceColumns),
-        ...normalizeArray(link.properties?.targetColumns),
-    ].filter((value): value is string => typeof value === 'string' && value.trim().length > 0)));
 };
 
 const buildColumnUsage = (links: LinkData[]) => {
@@ -392,8 +358,6 @@ const ColumnLineageDiagram: React.FC<ColumnLineageDiagramProps> = ({
     const relationOptions = useMemo(() => collectRelationOptions(links), [links]);
     const relationOptionsKey = relationOptions.join('|');
     const [selectedRelationTypes, setSelectedRelationTypes] = useState<string[]>([]);
-    const [codeModalVisible, setCodeModalVisible] = useState(false);
-    const [selectedCode, setSelectedCode] = useState<SelectedCode | null>(null);
     const [relationModalVisible, setRelationModalVisible] = useState(false);
     const [selectedRelation, setSelectedRelation] = useState<SelectedRelation | null>(null);
 
@@ -799,43 +763,21 @@ const ColumnLineageDiagram: React.FC<ColumnLineageDiagramProps> = ({
     const handleLinkClick = (link: LinkData) => {
         setFocusedLinkId(link.id);
         setFocusedNodeId(null);
-        const isTableLevelRelation = !link.sourceColumnId && !link.targetColumnId;
-        if (isTableLevelRelation) {
-            const sourceNode = displayNodes.find(node => node.id === link.sourceNodeId) || nodes.find(node => node.id === link.sourceNodeId);
-            const targetNode = displayNodes.find(node => node.id === link.targetNodeId) || nodes.find(node => node.id === link.targetNodeId);
-            setSelectedRelation({
-                link,
-                sourceTable: sourceNode?.title || link.properties?.sourceTable || '-',
-                targetTable: targetNode?.title || link.properties?.targetTable || '-',
-                sourceColumns: normalizeArray(link.properties?.sourceColumns),
-                targetColumns: normalizeArray(link.properties?.targetColumns),
-                sourceFile: getSourceFile(link),
-            });
-            setRelationModalVisible(true);
-            return;
-        }
-        const code = getLinkCode(link);
-        if (!code) {
-            const sourceNode = displayNodes.find(node => node.id === link.sourceNodeId) || nodes.find(node => node.id === link.sourceNodeId);
-            const targetNode = displayNodes.find(node => node.id === link.targetNodeId) || nodes.find(node => node.id === link.targetNodeId);
-            setSelectedRelation({
-                link,
-                sourceTable: sourceNode?.title || link.properties?.sourceTable || '-',
-                targetTable: targetNode?.title || link.properties?.targetTable || '-',
-                sourceColumns: normalizeArray(link.properties?.sourceColumns),
-                targetColumns: normalizeArray(link.properties?.targetColumns),
-                sourceFile: getSourceFile(link),
-            });
-            setRelationModalVisible(true);
-            return;
-        }
-        setSelectedCode({
-            code,
+        const sourceNode = displayNodes.find(node => node.id === link.sourceNodeId)
+            || nodes.find(node => node.id === link.sourceNodeId);
+        const targetNode = displayNodes.find(node => node.id === link.targetNodeId)
+            || nodes.find(node => node.id === link.targetNodeId);
+        const sourceColumn = sourceNode?.columns.find(column => column.id === link.sourceColumnId)?.name;
+        const targetColumn = targetNode?.columns.find(column => column.id === link.targetColumnId)?.name;
+        setSelectedRelation({
+            link,
+            sourceTable: sourceNode?.title || link.properties?.sourceTable || '-',
+            targetTable: targetNode?.title || link.properties?.targetTable || '-',
+            sourceColumns: sourceColumn ? [sourceColumn] : normalizeArray(link.properties?.sourceColumns),
+            targetColumns: targetColumn ? [targetColumn] : normalizeArray(link.properties?.targetColumns),
             sourceFile: getSourceFile(link),
-            linkType: normalizeRelationType(link.type),
-            highlightTerms: getLinkHighlightTerms(link, displayNodes),
         });
-        setCodeModalVisible(true);
+        setRelationModalVisible(true);
     };
 
     const updateZoom = (
@@ -991,9 +933,10 @@ const ColumnLineageDiagram: React.FC<ColumnLineageDiagramProps> = ({
                         const strokeColor = isActive ? style.highlightColor : style.color;
                         const markerId = getRelationMarkerId(relationType);
                         const opacity = hasRelationshipFocus && !isActive ? 0.3 : 1;
+                        const evidenceCount = getLinkEvidenceCount(link);
                         return (
                             <g key={link.id}>
-                                <title>{`${getRelationLabel(relationType)}：${sourceKey} → ${targetKey}`}</title>
+                                <title>{`${getRelationLabel(relationType)}：${sourceKey} → ${targetKey}，SQL 证据 ${evidenceCount} 段`}</title>
                                 <path
                                     d={geometry.path}
                                     fill="none"
@@ -1005,16 +948,41 @@ const ColumnLineageDiagram: React.FC<ColumnLineageDiagramProps> = ({
                                     opacity={opacity}
                                     pointerEvents="none"
                                 />
-                                <circle
-                                    cx={geometry.midpoint.x}
-                                    cy={geometry.midpoint.y}
-                                    r={isActive ? 5 : 4}
-                                    fill={strokeColor}
-                                    stroke="#f1f2f4"
-                                    strokeWidth={2}
-                                    opacity={opacity}
-                                    pointerEvents="none"
-                                />
+                                {evidenceCount > 1 ? (
+                                    <g opacity={opacity} pointerEvents="none">
+                                        <rect
+                                            x={geometry.midpoint.x - 15}
+                                            y={geometry.midpoint.y - 10}
+                                            width={30}
+                                            height={20}
+                                            rx={10}
+                                            fill="#ffffff"
+                                            stroke={strokeColor}
+                                            strokeWidth={1.5}
+                                        />
+                                        <text
+                                            x={geometry.midpoint.x}
+                                            y={geometry.midpoint.y + 4}
+                                            textAnchor="middle"
+                                            fontSize={11}
+                                            fontWeight={700}
+                                            fill={strokeColor}
+                                        >
+                                            {evidenceCount}
+                                        </text>
+                                    </g>
+                                ) : (
+                                    <circle
+                                        cx={geometry.midpoint.x}
+                                        cy={geometry.midpoint.y}
+                                        r={isActive ? 5 : 4}
+                                        fill={strokeColor}
+                                        stroke="#f1f2f4"
+                                        strokeWidth={2}
+                                        opacity={opacity}
+                                        pointerEvents="none"
+                                    />
+                                )}
                                 <path
                                     d={geometry.path}
                                     fill="none"
@@ -1202,27 +1170,16 @@ const ColumnLineageDiagram: React.FC<ColumnLineageDiagramProps> = ({
                 onFocusTable={handleFocusNode}
                 onOpenTable={onTableDoubleClick}
             />
-            {selectedCode ? (
-                <CodeModal
-                    visible={codeModalVisible}
-                    onClose={() => setCodeModalVisible(false)}
-                    code={selectedCode.code}
-                    title="逻辑/源码"
-                    sourceFile={selectedCode.sourceFile}
-                    linkType={selectedCode.linkType}
-                    highlightTerms={selectedCode.highlightTerms}
-                />
-            ) : null}
             {selectedRelation ? (
                 <Modal
                     open={relationModalVisible}
                     title="关系来源详情"
-                    footer={(
+                    footer={!selectedRelation.link.sourceColumnId && !selectedRelation.link.targetColumnId ? (
                         <Button type="primary" onClick={() => void handleAnalyzeTableRelation()} loading={fieldLoading}>
                             字段级分析该表关系
                         </Button>
-                    )}
-                    width={720}
+                    ) : null}
+                    width={920}
                     onCancel={() => setRelationModalVisible(false)}
                 >
                     <Descriptions size="small" bordered column={1}>
@@ -1258,9 +1215,19 @@ const ColumnLineageDiagram: React.FC<ColumnLineageDiagramProps> = ({
                             {formatDetailList(normalizeArray(selectedRelation.link.properties?.lineageOrigins))}
                         </Descriptions.Item>
                         <Descriptions.Item label="说明">
-                            当前是表级归并关系，不能用任意一段 SQL 对字段做模糊匹配。请进入字段级分析，查看这两张表之间的实际字段边及其 SQL 证据。
+                            {selectedRelation.link.sourceColumnId || selectedRelation.link.targetColumnId
+                                ? '每段 SQL 都是当前字段关系的独立证据，不会与其他处理步骤拼接。'
+                                : '当前是表级归并关系，SQL 作为多份独立证据展示；进入字段级分析可查看实际字段边。'}
                         </Descriptions.Item>
                     </Descriptions>
+                    <RelationEvidencePanel
+                        active={relationModalVisible}
+                        link={selectedRelation.link}
+                        sourceTable={selectedRelation.sourceTable}
+                        targetTable={selectedRelation.targetTable}
+                        sourceColumn={selectedRelation.sourceColumns[0]}
+                        targetColumn={selectedRelation.targetColumns[0]}
+                    />
                 </Modal>
             ) : null}
         </div>

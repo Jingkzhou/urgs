@@ -1,5 +1,6 @@
 package com.example.urgs_api.metadata.controller;
 
+import com.example.urgs_api.metadata.dto.LineageRelationEvidenceRequest;
 import com.example.urgs_api.metadata.service.LineageService;
 import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.web.bind.annotation.*;
@@ -86,6 +87,11 @@ public class LineageController {
     @GetMapping("/relations/{elementId}")
     public Map<String, Object> getRelationDetails(@PathVariable String elementId) {
         return lineageService.getRelationDetails(elementId);
+    }
+
+    @PostMapping("/relations/evidence")
+    public List<Map<String, Object>> getRelationEvidence(@RequestBody LineageRelationEvidenceRequest request) {
+        return lineageService.getRelationEvidence(request);
     }
 
     /**

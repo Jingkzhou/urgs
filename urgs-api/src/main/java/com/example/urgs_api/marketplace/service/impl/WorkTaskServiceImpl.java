@@ -209,20 +209,41 @@ public class WorkTaskServiceImpl extends ServiceImpl<WorkTaskMapper, WorkTask> i
     }
 
     @Override
-    public Page<TaskMarketDTO> getReviewTasks(Page<WorkTask> page, String publisherId, boolean history) {
+    public Page<TaskMarketDTO> getReviewTasks(
+            Page<WorkTask> page,
+            String publisherId,
+            boolean history,
+            String system,
+            String requirementNumber,
+            LocalDateTime deadlineStart,
+            LocalDateTime deadlineEnd) {
         Page<TaskMarketDTO> dtoPage = new Page<>(page.getCurrent(), page.getSize());
         LambdaQueryWrapper<WorkTask> query = new LambdaQueryWrapper<>();
+        LambdaQueryWrapper<Work> workQuery = new LambdaQueryWrapper<>();
         if (StringUtils.hasText(publisherId)) {
-            List<String> workIds = workService.lambdaQuery()
-                    .eq(Work::getPublisherId, publisherId)
-                    .list()
-                    .stream()
-                    .map(Work::getId)
-                    .toList();
-            if (workIds.isEmpty()) {
-                return dtoPage;
-            }
-            query.in(WorkTask::getWorkId, workIds);
+            workQuery.eq(Work::getPublisherId, publisherId);
+        }
+        if (StringUtils.hasText(system)) {
+            String keyword = system.trim();
+            workQuery.and(wrapper -> wrapper.like(Work::getOwningSystem, keyword)
+                    .or()
+                    .like(Work::getPrimarySystemName, keyword));
+        }
+        if (StringUtils.hasText(requirementNumber)) {
+            workQuery.like(Work::getRequirementNumber, requirementNumber.trim());
+        }
+        List<String> workIds = workService.list(workQuery).stream()
+                .map(Work::getId)
+                .toList();
+        if (workIds.isEmpty()) {
+            return dtoPage;
+        }
+        query.in(WorkTask::getWorkId, workIds);
+        if (deadlineStart != null) {
+            query.ge(WorkTask::getDeadline, deadlineStart);
+        }
+        if (deadlineEnd != null) {
+            query.le(WorkTask::getDeadline, deadlineEnd);
         }
         if (history) {
             query.isNotNull(WorkTask::getReviewedAt)
@@ -241,12 +262,27 @@ public class WorkTaskServiceImpl extends ServiceImpl<WorkTaskMapper, WorkTask> i
     }
 
     @Override
-    public Page<TaskReviewHistoryDTO> getReviewHistory(Page<TaskReviewHistoryDTO> page, String publisherId) {
-        List<Work> works = StringUtils.hasText(publisherId)
-                ? workService.lambdaQuery()
-                        .eq(Work::getPublisherId, publisherId)
-                        .list()
-                : workService.list();
+    public Page<TaskReviewHistoryDTO> getReviewHistory(
+            Page<TaskReviewHistoryDTO> page,
+            String publisherId,
+            String system,
+            String requirementNumber,
+            LocalDateTime deadlineStart,
+            LocalDateTime deadlineEnd) {
+        LambdaQueryWrapper<Work> workQuery = new LambdaQueryWrapper<>();
+        if (StringUtils.hasText(publisherId)) {
+            workQuery.eq(Work::getPublisherId, publisherId);
+        }
+        if (StringUtils.hasText(system)) {
+            String keyword = system.trim();
+            workQuery.and(wrapper -> wrapper.like(Work::getOwningSystem, keyword)
+                    .or()
+                    .like(Work::getPrimarySystemName, keyword));
+        }
+        if (StringUtils.hasText(requirementNumber)) {
+            workQuery.like(Work::getRequirementNumber, requirementNumber.trim());
+        }
+        List<Work> works = workService.list(workQuery);
         Page<TaskReviewHistoryDTO> resultPage = new Page<>(page.getCurrent(), page.getSize());
         if (works.isEmpty()) {
             return resultPage;
@@ -254,9 +290,15 @@ public class WorkTaskServiceImpl extends ServiceImpl<WorkTaskMapper, WorkTask> i
 
         Map<String, Work> workMap = works.stream()
                 .collect(Collectors.toMap(Work::getId, Function.identity()));
-        List<WorkTask> tasks = this.lambdaQuery()
-                .in(WorkTask::getWorkId, workMap.keySet())
-                .list();
+        LambdaQueryWrapper<WorkTask> taskQuery = new LambdaQueryWrapper<WorkTask>()
+                .in(WorkTask::getWorkId, workMap.keySet());
+        if (deadlineStart != null) {
+            taskQuery.ge(WorkTask::getDeadline, deadlineStart);
+        }
+        if (deadlineEnd != null) {
+            taskQuery.le(WorkTask::getDeadline, deadlineEnd);
+        }
+        List<WorkTask> tasks = this.list(taskQuery);
         if (tasks.isEmpty()) {
             return resultPage;
         }
@@ -278,10 +320,19 @@ public class WorkTaskServiceImpl extends ServiceImpl<WorkTaskMapper, WorkTask> i
                 ? Collections.emptyMap()
                 : userMapper.selectBatchIds(reviewerIds).stream()
                         .collect(Collectors.toMap(user -> user.getId().toString(), Function.identity()));
+        List<String> publisherIds = works.stream()
+                .map(Work::getPublisherId)
+                .filter(StringUtils::hasText)
+                .distinct()
+                .toList();
+        Map<String, User> publisherMap = publisherIds.isEmpty()
+                ? Collections.emptyMap()
+                : userMapper.selectBatchIds(publisherIds).stream()
+                        .collect(Collectors.toMap(user -> user.getId().toString(), Function.identity()));
 
         BeanUtils.copyProperties(reviewLogPage, resultPage, "records");
         resultPage.setRecords(reviewLogPage.getRecords().stream()
-                .map(log -> buildReviewHistoryDTO(log, taskMap, workMap, reviewerMap))
+                .map(log -> buildReviewHistoryDTO(log, taskMap, workMap, reviewerMap, publisherMap))
                 .collect(Collectors.toList()));
         return resultPage;
     }
@@ -937,11 +988,13 @@ public class WorkTaskServiceImpl extends ServiceImpl<WorkTaskMapper, WorkTask> i
             TaskLog log,
             Map<String, WorkTask> taskMap,
             Map<String, Work> workMap,
-            Map<String, User> reviewerMap) {
+            Map<String, User> reviewerMap,
+            Map<String, User> publisherMap) {
         TaskReviewHistoryDTO dto = new TaskReviewHistoryDTO();
         WorkTask task = taskMap.get(log.getTaskId());
         Work work = task == null ? null : workMap.get(task.getWorkId());
         User reviewer = reviewerMap.get(log.getOperatorId());
+        User publisher = work == null ? null : publisherMap.get(work.getPublisherId());
 
         dto.setId(log.getId());
         dto.setTaskId(log.getTaskId());
@@ -950,6 +1003,13 @@ public class WorkTaskServiceImpl extends ServiceImpl<WorkTaskMapper, WorkTask> i
         dto.setWorkId(task != null ? task.getWorkId() : null);
         dto.setWorkTitle(work != null ? work.getTitle() : null);
         dto.setRequirementNumber(work != null ? work.getRequirementNumber() : null);
+        dto.setOwningSystem(work != null ? work.getOwningSystem() : null);
+        dto.setPrimarySystemName(work != null ? work.getPrimarySystemName() : null);
+        dto.setPublisherId(work != null ? work.getPublisherId() : null);
+        dto.setPublisherName(publisher != null && StringUtils.hasText(publisher.getName())
+                ? publisher.getName()
+                : work != null ? work.getPublisherId() : null);
+        dto.setWorkCreateTime(work != null ? work.getCreateTime() : null);
         dto.setReviewType(log.getAction().startsWith("ASSET_REVIEW_") ? "ASSET_REVIEW" : "ACCEPTANCE");
         dto.setDecision(resolveReviewDecision(log.getAction()));
         dto.setAction(log.getAction());
