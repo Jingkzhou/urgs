@@ -84,12 +84,26 @@ const buildTableGraph = (
         }
     });
 
-    const hasTableLevelEdges = rawEdges.some(edge =>
-        edge.type !== 'BELONGS_TO' && tableIdMap.has(edge.source) && tableIdMap.has(edge.target)
+    const resolveTableId = (nodeId: string) => (
+        colToTableId.get(nodeId) || (tableIdMap.has(nodeId) ? nodeId : undefined)
     );
+    const connectedTableIds = new Set<string>();
+    rawEdges.forEach(edge => {
+        if (edge.type === 'BELONGS_TO') {
+            return;
+        }
+        const sourceTableId = resolveTableId(edge.source);
+        const targetTableId = resolveTableId(edge.target);
+        if (sourceTableId) {
+            connectedTableIds.add(sourceTableId);
+        }
+        if (targetTableId) {
+            connectedTableIds.add(targetTableId);
+        }
+    });
 
     tableMap.forEach((node, tableName) => {
-        if (!hasTableLevelEdges && node.columns.length === 0) {
+        if (node.columns.length === 0 && !connectedTableIds.has(node.id)) {
             tableMap.delete(tableName);
             return;
         }
@@ -105,8 +119,8 @@ const buildTableGraph = (
         if (edge.type === 'BELONGS_TO') {
             return;
         }
-        const sourceTableId = colToTableId.get(edge.source) || (tableIdMap.has(edge.source) ? edge.source : undefined);
-        const targetTableId = colToTableId.get(edge.target) || (tableIdMap.has(edge.target) ? edge.target : undefined);
+        const sourceTableId = resolveTableId(edge.source);
+        const targetTableId = resolveTableId(edge.target);
         if (!sourceTableId || !targetTableId) {
             return;
         }

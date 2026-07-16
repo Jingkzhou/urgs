@@ -14,9 +14,10 @@ import java.nio.file.Paths;
 import java.nio.file.StandardCopyOption;
 import java.util.ArrayList;
 import java.util.Comparator;
+import java.util.Enumeration;
 import java.util.List;
 import java.util.zip.ZipEntry;
-import java.util.zip.ZipInputStream;
+import java.util.zip.ZipFile;
 
 @Slf4j
 @Component
@@ -156,13 +157,12 @@ public class LineageUploadInputPreparer {
     }
 
     private void extractZipToDirectory(Path zipPath, Path targetDir, List<String> preparedPaths) throws Exception {
-        try (InputStream inputStream = Files.newInputStream(zipPath);
-                ZipInputStream zipInputStream = new ZipInputStream(inputStream)) {
-            ZipEntry entry;
-            while ((entry = zipInputStream.getNextEntry()) != null) {
+        try (ZipFile zipFile = new ZipFile(zipPath.toFile())) {
+            Enumeration<? extends ZipEntry> entries = zipFile.entries();
+            while (entries.hasMoreElements()) {
+                ZipEntry entry = entries.nextElement();
                 String entryName = StringUtils.cleanPath(entry.getName());
                 if (!StringUtils.hasText(entryName) || entryName.startsWith("__MACOSX/")) {
-                    zipInputStream.closeEntry();
                     continue;
                 }
 
@@ -175,10 +175,11 @@ public class LineageUploadInputPreparer {
                     Files.createDirectories(targetPath);
                 } else {
                     Files.createDirectories(targetPath.getParent());
-                    Files.copy(zipInputStream, targetPath, StandardCopyOption.REPLACE_EXISTING);
+                    try (InputStream entryInputStream = zipFile.getInputStream(entry)) {
+                        Files.copy(entryInputStream, targetPath, StandardCopyOption.REPLACE_EXISTING);
+                    }
                     preparedPaths.add(targetDir.relativize(targetPath).toString().replace('\\', '/'));
                 }
-                zipInputStream.closeEntry();
             }
         }
     }

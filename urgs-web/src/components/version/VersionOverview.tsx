@@ -88,6 +88,11 @@ const getRepositoryWebUrl = (repository: GitRepository) => {
     return /^https?:\/\//i.test(url) ? url.replace(/\.git$/, '') : '';
 };
 
+const normalizeRepositoryId = (id: unknown): number | null => {
+    const value = typeof id === 'number' ? id : Number(id);
+    return Number.isSafeInteger(value) && value > 0 ? value : null;
+};
+
 const VersionOverview: React.FC = () => {
     const [repositories, setRepositories] = useState<GitRepository[]>([]);
     const [activities, setActivities] = useState<RepositoryActivity[]>([]);
@@ -125,9 +130,10 @@ const VersionOverview: React.FC = () => {
             ]);
 
             const nextRepositories = repoData || [];
-            const repositoriesWithId = nextRepositories.filter(
-                (repository): repository is GitRepository & { id: number } => typeof repository.id === 'number'
-            );
+            const repositoriesWithId = nextRepositories.flatMap(repository => {
+                const id = normalizeRepositoryId(repository.id);
+                return id === null ? [] : [{ ...repository, id }];
+            });
             const commitResults = await Promise.allSettled(
                 repositoriesWithId.map(repository => (
                     getRepoLatestCommit(repository.id, repository.defaultBranch || '')

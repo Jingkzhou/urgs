@@ -262,6 +262,23 @@ const GitRepoDetail: React.FC<Props> = ({ repo, ssoList, onBack }) => {
             message.error('请输入提交说明');
             return;
         }
+        const existingFile = files.find(file => file.type === 'file' && file.path === path);
+        const overwrite = fileEditor.mode === 'edit' || Boolean(existingFile);
+        if (fileEditor.mode === 'upload' && existingFile) {
+            const confirmed = await new Promise<boolean>(resolve => {
+                Modal.confirm({
+                    title: '文件已存在',
+                    content: `当前分支已存在 ${path}，是否覆盖后提交？`,
+                    okText: '覆盖并提交',
+                    cancelText: '取消',
+                    onOk: () => resolve(true),
+                    onCancel: () => resolve(false)
+                });
+            });
+            if (!confirmed) {
+                return;
+            }
+        }
 
         setFileSaving(true);
         try {
@@ -272,10 +289,10 @@ const GitRepoDetail: React.FC<Props> = ({ repo, ssoList, onBack }) => {
                     ? textToBase64(fileEditor.content || '')
                     : fileEditor.contentBase64 || '',
                 commitMessage: commitMessage.trim(),
-                fileSha: fileEditor.fileSha,
-                overwrite: fileEditor.mode === 'edit'
+                fileSha: fileEditor.fileSha || existingFile?.sha,
+                overwrite
             });
-            message.success(fileEditor.mode === 'edit' ? '文件已更新并提交' : '文件已上传并提交');
+            message.success(overwrite ? '文件已覆盖并提交' : '文件已上传并提交');
             setFileEditor(null);
             setViewingFile(null);
             setTreeVersion(version => version + 1);
@@ -470,10 +487,17 @@ const GitRepoDetail: React.FC<Props> = ({ repo, ssoList, onBack }) => {
                             />
                         </div>
                     ) : (
-                        <div className="rounded-lg border border-blue-100 bg-blue-50 px-4 py-3 text-sm text-blue-800">
-                            已选择 <span className="font-medium">{fileEditor.fileName}</span>
-                            {typeof fileEditor.size === 'number' && `（${(fileEditor.size / 1024).toFixed(1)} KB）`}
-                        </div>
+                        <>
+                            <div className="rounded-lg border border-blue-100 bg-blue-50 px-4 py-3 text-sm text-blue-800">
+                                已选择 <span className="font-medium">{fileEditor.fileName}</span>
+                                {typeof fileEditor.size === 'number' && `（${(fileEditor.size / 1024).toFixed(1)} KB）`}
+                            </div>
+                            {files.some(file => file.type === 'file' && file.path === fileEditor.path.trim().replace(/^\/+/, '')) && (
+                                <div className="rounded-lg border border-amber-200 bg-amber-50 px-4 py-3 text-sm text-amber-700">
+                                    当前分支已存在同名文件，提交后将覆盖其内容。
+                                </div>
+                            )}
+                        </>
                     )}
 
                     <div>

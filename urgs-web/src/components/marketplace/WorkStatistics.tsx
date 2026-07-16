@@ -198,6 +198,12 @@ const WorkStatistics: React.FC = () => {
         tasksByDate[date] = [...(tasksByDate[date] || []), task];
         return tasksByDate;
     }, {}), [calendarTasks]);
+    const calendarWorksByDate = useMemo(() => Object.fromEntries(
+        Object.entries(calendarTasksByDate).map(([date, tasks]) => [
+            date,
+            Array.from(new Set(tasks.map(task => task.workId))),
+        ])
+    ) as Record<string, string[]>, [calendarTasksByDate]);
     const selectedCalendarDate = calendarDate.format('YYYY-MM-DD');
     const selectedCalendarTasks = calendarTasksByDate[selectedCalendarDate] || [];
     const selectedCalendarWorks = useMemo(() => Array.from(new Map(
@@ -577,10 +583,10 @@ ${attentionItems}
                                 onSelect={setCalendarDate}
                                 onPanelChange={setCalendarDate}
                                 dateCellRender={date => {
-                                    const taskCount = calendarTasksByDate[date.format('YYYY-MM-DD')]?.length || 0;
-                                    return taskCount > 0 ? (
+                                    const requirementCount = calendarWorksByDate[date.format('YYYY-MM-DD')]?.length || 0;
+                                    return requirementCount > 0 ? (
                                         <div className="mt-0.5 truncate rounded bg-rose-50 px-1 text-center text-[10px] font-bold leading-4 text-rose-600">
-                                            {taskCount}
+                                            {requirementCount}
                                         </div>
                                     ) : null;
                                 }}

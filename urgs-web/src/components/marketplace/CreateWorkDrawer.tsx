@@ -79,6 +79,12 @@ const defaultValues: WorkFormValues = {
     tasks: [{ assignMode: 'ASSIGN', points: 10, taskType: '开发', difficulty: '中等', involvedSystemIds: [], title: '', description: '' }]
 };
 
+const defaultDeadlineTime = (value: string) => {
+    if (!value) return '';
+    const [date, time] = value.split('T');
+    return `${date}T${!time || time === '00:00' ? '23:59' : time}`;
+};
+
 const toInputDateTime = (value?: string) => {
     if (!value) return '';
     const date = new Date(value);
@@ -370,7 +376,14 @@ const CreateWorkDrawer: React.FC<CreateWorkDrawerProps> = ({ isOpen, onClose, on
                                 </label>
                                 <input
                                     type="datetime-local"
-                                    {...register("deadline")}
+                                    {...register("deadline", {
+                                        onChange: event => {
+                                            const value = defaultDeadlineTime(event.target.value);
+                                            if (value !== event.target.value) {
+                                                setValue('deadline', value, { shouldDirty: true });
+                                            }
+                                        },
+                                    })}
                                     className="w-full px-4 py-2 border border-slate-200 rounded-lg focus:ring-2 focus:ring-red-500 focus:border-red-500 outline-none transition-all"
                                 />
                                 {errors.deadline && <p className="text-red-500 text-xs mt-1">{errors.deadline.message}</p>}
@@ -557,7 +570,14 @@ const CreateWorkDrawer: React.FC<CreateWorkDrawerProps> = ({ isOpen, onClose, on
                                     <label className="block text-xs font-medium text-slate-500 mb-1">截止日期</label>
                                     <input
                                         type="datetime-local"
-                                        {...register("mainTask.deadline")}
+                                        {...register("mainTask.deadline", {
+                                            onChange: event => {
+                                                const value = defaultDeadlineTime(event.target.value);
+                                                if (value !== event.target.value) {
+                                                    setValue('mainTask.deadline', value, { shouldDirty: true });
+                                                }
+                                            },
+                                        })}
                                         className="w-full px-3 py-1.5 border border-slate-200 rounded-lg text-sm focus:ring-1 focus:ring-red-500 focus:border-red-500 outline-none"
                                     />
                                     {errors.mainTask?.deadline && <p className="text-red-500 text-xs mt-1">{errors.mainTask.deadline.message}</p>}
@@ -799,7 +819,14 @@ const CreateWorkDrawer: React.FC<CreateWorkDrawerProps> = ({ isOpen, onClose, on
                                                 <label className="block text-xs font-medium text-slate-500 mb-1">截止日期</label>
                                                 <input
                                                     type="datetime-local"
-                                                    {...register(`tasks.${index}.deadline` as const)}
+                                                    {...register(`tasks.${index}.deadline` as const, {
+                                                        onChange: event => {
+                                                            const value = defaultDeadlineTime(event.target.value);
+                                                            if (value !== event.target.value) {
+                                                                setValue(`tasks.${index}.deadline`, value, { shouldDirty: true });
+                                                            }
+                                                        },
+                                                    })}
                                                     className="w-full px-3 py-1.5 border border-slate-200 rounded-lg text-sm focus:ring-1 focus:ring-red-500 focus:border-red-500 outline-none"
                                                 />
                                                 {errors.tasks?.[index]?.deadline && <p className="text-red-500 text-xs mt-1">{errors.tasks[index]?.deadline?.message}</p>}
