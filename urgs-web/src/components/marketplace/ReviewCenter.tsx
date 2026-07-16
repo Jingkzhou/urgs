@@ -1,5 +1,5 @@
-import React, { useEffect, useState } from 'react';
-import { CheckCircle2, Clock3, Eye, RotateCcw, XCircle } from 'lucide-react';
+import React, { useEffect, useRef, useState } from 'react';
+import { AlertCircle, CheckCircle2, Clock3, Eye, Loader2, RotateCcw, XCircle } from 'lucide-react';
 import {
     AssetMaintenanceRecord,
     getPendingReviewTasks,
@@ -20,6 +20,19 @@ interface ReviewCenterProps {
     todoFocus?: MarketplaceTodoFocus | null;
 }
 
+type ReviewExecutionStatus = 'idle' | 'running' | 'success' | 'error';
+
+const getRequestErrorMessage = (error: unknown, fallback: string) => {
+    const rawMessage = error instanceof Error ? error.message : '';
+    if (!rawMessage) return fallback;
+    try {
+        const response = JSON.parse(rawMessage);
+        return response?.message || fallback;
+    } catch {
+        return rawMessage;
+    }
+};
+
 const ReviewCenter: React.FC<ReviewCenterProps> = ({ todoFocus }) => {
     const [tasks, setTasks] = useState<TaskMarketDTO[]>([]);
     const [historyTasks, setHistoryTasks] = useState<TaskReviewHistoryDTO[]>([]);
@@ -34,6 +47,24 @@ const ReviewCenter: React.FC<ReviewCenterProps> = ({ todoFocus }) => {
     const [assetReviewRecords, setAssetReviewRecords] = useState<AssetMaintenanceRecord[]>([]);
     const [assetReviewLoading, setAssetReviewLoading] = useState(false);
     const [assetReviewError, setAssetReviewError] = useState('');
+    const [reviewExecutionStatus, setReviewExecutionStatus] = useState<ReviewExecutionStatus>('idle');
+    const [reviewExecutionLogs, setReviewExecutionLogs] = useState<string[]>([]);
+    const [reviewExecutionError, setReviewExecutionError] = useState('');
+    const [reviewElapsedSeconds, setReviewElapsedSeconds] = useState(0);
+    const reviewSubmittingRef = useRef(false);
+
+    const reviewSubmitting = reviewExecutionStatus === 'running';
+
+    useEffect(() => {
+        if (!reviewSubmitting) return;
+        const timer = window.setInterval(() => setReviewElapsedSeconds(value => value + 1), 1000);
+        return () => window.clearInterval(timer);
+    }, [reviewSubmitting]);
+
+    const appendExecutionLog = (message: string) => {
+        const time = new Date().toLocaleTimeString([], { hour12: false });
+        setReviewExecutionLogs(logs => [...logs, `${time}  ${message}`]);
+    };
 
     const fetchTasks = async () => {
         setLoading(true);
@@ -125,6 +156,11 @@ const ReviewCenter: React.FC<ReviewCenterProps> = ({ todoFocus }) => {
 
     const openReview = (task: TaskMarketDTO, decision: TaskReviewDTO['decision']) => {
         setActiveTask(task);
+        setReviewExecutionStatus('idle');
+        setReviewExecutionLogs([]);
+        setReviewExecutionError('');
+        setReviewElapsedSeconds(0);
+        reviewSubmittingRef.current = false;
         setForm({
             decision,
             qualityScore: decision === 'APPROVE' && !isAssetReviewTask(task) ? 4 : undefined,
@@ -140,30 +176,70 @@ const ReviewCenter: React.FC<ReviewCenterProps> = ({ todoFocus }) => {
     };
 
     const closeReview = () => {
+        if (reviewSubmittingRef.current) return;
         setActiveTask(null);
         setAssetReviewRecords([]);
         setAssetReviewLoading(false);
         setAssetReviewError('');
+        setReviewExecutionStatus('idle');
+        setReviewExecutionLogs([]);
+        setReviewExecutionError('');
+        setReviewElapsedSeconds(0);
+        reviewSubmittingRef.current = false;
     };
 
     const submitReview = async () => {
-        if (!activeTask) return;
+        if (!activeTask || reviewSubmittingRef.current) return;
         if (form.decision === 'APPROVE' && !isAssetReviewTask(activeTask) && !form.qualityScore) {
             alert('通过验收必须填写质量评分');
             return;
         }
+        reviewSubmittingRef.current = true;
+        const assetApprove = form.decision === 'APPROVE' && isAssetReviewTask(activeTask);
+        setReviewExecutionStatus('running');
+        setReviewExecutionLogs([]);
+        setReviewExecutionError('');
+        setReviewElapsedSeconds(0);
+        appendExecutionLog('审核请求已发送，操作按钮已锁定');
+        if (assetApprove) {
+            appendExecutionLog('后台将依次匹配仓库、合并 master MR 并固化版本快照');
+        } else {
+            appendExecutionLog('后台正在保存审核决定与任务状态');
+        }
+
+        const phaseTimers = assetApprove ? [
+            window.setTimeout(() => appendExecutionLog('正在扫描当前审核人可访问的 Git 仓库'), 800),
+            window.setTimeout(() => appendExecutionLog('正在等待仓库合并和版本快照处理完成'), 2500),
+        ] : [];
+
         try {
             await reviewTask(activeTask.id, form);
-            closeReview();
+            phaseTimers.forEach(timer => window.clearTimeout(timer));
+            appendExecutionLog('审核处理完成');
+            setReviewExecutionStatus('success');
+            reviewSubmittingRef.current = false;
             if (historyPage === 1) {
-                fetchTasks();
+                await fetchTasks();
             } else {
                 setHistoryPage(1);
             }
+            await new Promise(resolve => window.setTimeout(resolve, 700));
+            setActiveTask(null);
+            setAssetReviewRecords([]);
         } catch (error) {
-            alert('验收处理失败');
+            phaseTimers.forEach(timer => window.clearTimeout(timer));
+            const message = getRequestErrorMessage(error, '验收处理失败');
+            console.error('验收处理失败:', error);
+            appendExecutionLog(`处理失败：${message}`);
+            setReviewExecutionError(message);
+            setReviewExecutionStatus('error');
+            reviewSubmittingRef.current = false;
         }
     };
+
+    const reviewExecutionProgress = reviewExecutionStatus === 'success'
+        ? 100
+        : Math.min(90, 12 + reviewElapsedSeconds * 3);
 
     const renderPendingTasks = () => {
         if (tasks.length === 0) {
@@ -513,11 +589,51 @@ const ReviewCenter: React.FC<ReviewCenterProps> = ({ todoFocus }) => {
                                     </section>
                                 </div>
                             )}
+                            {reviewExecutionStatus !== 'idle' && (
+                                <section className={`rounded-xl border px-4 py-3 ${
+                                    reviewExecutionStatus === 'error'
+                                        ? 'border-red-200 bg-red-50'
+                                        : reviewExecutionStatus === 'success'
+                                            ? 'border-green-200 bg-green-50'
+                                            : 'border-blue-200 bg-blue-50'
+                                }`} aria-live="polite">
+                                    <div className="flex items-center justify-between gap-3">
+                                        <div className="flex items-center gap-2 text-sm font-bold text-slate-800">
+                                            {reviewExecutionStatus === 'running' && <Loader2 size={17} className="animate-spin text-blue-600" />}
+                                            {reviewExecutionStatus === 'success' && <CheckCircle2 size={17} className="text-green-600" />}
+                                            {reviewExecutionStatus === 'error' && <AlertCircle size={17} className="text-red-600" />}
+                                            {reviewExecutionStatus === 'running' && '正在执行审核处理'}
+                                            {reviewExecutionStatus === 'success' && '审核处理完成'}
+                                            {reviewExecutionStatus === 'error' && '审核处理失败'}
+                                        </div>
+                                        <span className="text-xs font-mono text-slate-500">
+                                            {reviewExecutionStatus === 'running' ? `已等待 ${reviewElapsedSeconds} 秒` : `${reviewElapsedSeconds} 秒`}
+                                        </span>
+                                    </div>
+                                    <div className="mt-3 h-2 overflow-hidden rounded-full bg-white/80">
+                                        <div
+                                            className={`h-full rounded-full transition-all duration-500 ${
+                                                reviewExecutionStatus === 'error' ? 'bg-red-500' : reviewExecutionStatus === 'success' ? 'bg-green-500' : 'bg-blue-500'
+                                            }`}
+                                            style={{ width: `${reviewExecutionProgress}%` }}
+                                        />
+                                    </div>
+                                    <div className="mt-3 max-h-32 space-y-1 overflow-y-auto rounded-lg bg-slate-950 px-3 py-2 font-mono text-[11px] text-slate-200">
+                                        {reviewExecutionLogs.map((log, index) => (
+                                            <div key={`${index}-${log}`}>{log}</div>
+                                        ))}
+                                    </div>
+                                    {reviewExecutionError && (
+                                        <div className="mt-2 break-words text-xs font-medium text-red-700">{reviewExecutionError}</div>
+                                    )}
+                                </section>
+                            )}
                             <div className="border-t border-slate-100 pt-4">
                                 <div className="mb-2 text-sm font-bold text-slate-800">审核处理</div>
                                 <select
                                     value={form.decision}
                                     onChange={e => setForm({ ...form, decision: e.target.value as TaskReviewDTO['decision'] })}
+                                    disabled={reviewSubmitting}
                                     className="w-full border border-slate-200 rounded-lg px-3 py-2 text-sm"
                                 >
                                     <option value="APPROVE">{isAssetReviewTask(activeTask) ? '通过并进入上线' : '通过并结算积分'}</option>
@@ -532,6 +648,7 @@ const ReviewCenter: React.FC<ReviewCenterProps> = ({ todoFocus }) => {
                                             max={5}
                                             value={form.qualityScore || ''}
                                             onChange={e => setForm({ ...form, qualityScore: Number(e.target.value) || undefined })}
+                                            disabled={reviewSubmitting}
                                             className="border border-slate-200 rounded-lg px-3 py-2 text-sm"
                                             placeholder="质量评分1-5"
                                         />
@@ -539,6 +656,7 @@ const ReviewCenter: React.FC<ReviewCenterProps> = ({ todoFocus }) => {
                                             type="number"
                                             value={form.bonusPoints || ''}
                                             onChange={e => setForm({ ...form, bonusPoints: Number(e.target.value) || 0 })}
+                                            disabled={reviewSubmitting}
                                             className="border border-slate-200 rounded-lg px-3 py-2 text-sm"
                                             placeholder="奖励积分"
                                         />
@@ -546,6 +664,7 @@ const ReviewCenter: React.FC<ReviewCenterProps> = ({ todoFocus }) => {
                                             type="number"
                                             value={form.penaltyPoints || ''}
                                             onChange={e => setForm({ ...form, penaltyPoints: Number(e.target.value) || 0 })}
+                                            disabled={reviewSubmitting}
                                             className="border border-slate-200 rounded-lg px-3 py-2 text-sm"
                                             placeholder="惩罚积分"
                                         />
@@ -555,13 +674,27 @@ const ReviewCenter: React.FC<ReviewCenterProps> = ({ todoFocus }) => {
                             <textarea
                                 value={form.reviewComment || ''}
                                 onChange={e => setForm({ ...form, reviewComment: e.target.value })}
+                                disabled={reviewSubmitting}
                                 className="w-full border border-slate-200 rounded-lg px-3 py-2 text-sm min-h-[90px]"
                                 placeholder={isAssetReviewTask(activeTask) ? '资产同步审核意见、退回原因或取消原因' : '验收意见、退回原因或取消原因'}
                             />
                         </div>
                         <div className="px-5 py-4 border-t border-slate-100 flex justify-end gap-2">
-                            <button onClick={closeReview} className="px-4 py-2 text-sm font-bold text-slate-500 hover:bg-slate-50 rounded-lg">取消</button>
-                            <button onClick={submitReview} className="px-4 py-2 text-sm font-bold text-white bg-red-600 hover:bg-red-700 rounded-lg">确认处理</button>
+                            <button
+                                onClick={closeReview}
+                                disabled={reviewSubmitting}
+                                className="px-4 py-2 text-sm font-bold text-slate-500 hover:bg-slate-50 rounded-lg disabled:cursor-not-allowed disabled:opacity-40"
+                            >
+                                取消
+                            </button>
+                            <button
+                                onClick={submitReview}
+                                disabled={reviewSubmitting || assetReviewLoading}
+                                className="inline-flex min-w-32 items-center justify-center gap-2 rounded-lg bg-red-600 px-4 py-2 text-sm font-bold text-white hover:bg-red-700 disabled:cursor-not-allowed disabled:bg-red-400"
+                            >
+                                {reviewSubmitting && <Loader2 size={16} className="animate-spin" />}
+                                {reviewSubmitting ? `处理中 ${reviewElapsedSeconds}s` : '确认处理'}
+                            </button>
                         </div>
                     </div>
                 </div>

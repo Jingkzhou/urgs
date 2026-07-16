@@ -505,7 +505,8 @@ export const advanceTaskStage = (id: string, data?: { assetReviewNote?: string }
 export const reportTaskStageRisk = (id: string, data: { riskNote: string }) => put(`/api/marketplace/tasks/${id}/stage/risk`, data);
 export const appendTaskRiskTracking = (id: string, data: { trackingNote: string }) =>
     put(`/api/marketplace/tasks/${id}/stage/risk/tracking`, data);
-export const reviewTask = (id: string, data: TaskReviewDTO) => put(`/api/marketplace/tasks/${id}/review`, data);
+export const reviewTask = (id: string, data: TaskReviewDTO) =>
+    put(`/api/marketplace/tasks/${id}/review`, data, { timeoutMs: 600000 });
 
 export const applyForTask = (data: TaskApplicationRequest) => post('/api/marketplace/applications/apply', data);
 export const approveApplication = (id: string, data?: { reviewComment?: string }) => put(`/api/marketplace/applications/${id}/approve`, data || {});

@@ -84,3 +84,24 @@ export const getUserGitIdentity = async (
     }
     return res.json();
 };
+
+export const getMyGitIdentity = async (
+    platform: string = 'GITLAB'
+): Promise<UserGitIdentity | null> => {
+    const token = typeof localStorage !== 'undefined' ? localStorage.getItem('auth_token') : null;
+    const headers: Record<string, string> = {
+        'Content-Type': 'application/json'
+    };
+    if (token) {
+        headers['Authorization'] = `Bearer ${token}`;
+    }
+
+    const res = await fetch(`/api/users/profile/git-identity?platform=${encodeURIComponent(platform)}`, { headers });
+    if (res.status === 204 || res.status === 404) {
+        return null;
+    }
+    if (!res.ok) {
+        throw new Error("Failed to fetch current user's git identity");
+    }
+    return res.json();
+};

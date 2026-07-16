@@ -68,13 +68,19 @@ public class TaskVersionMergeService {
             return summary;
         }
 
-        for (GitRepository repo : repos) {
+        log.info("资产审核自动合并开始: taskId={}, reviewerId={}, candidateRepos={}",
+                task == null ? null : task.getId(), reviewerId, repos.size());
+        for (int index = 0; index < repos.size(); index++) {
+            GitRepository repo = repos.get(index);
+            log.info("资产审核自动合并处理仓库: taskId={}, progress={}/{}, repoId={}, repo={}",
+                    task == null ? null : task.getId(), index + 1, repos.size(), repo.getId(), repoLabel(repo));
             mergeRepositoryPullRequests(repo, tokens, requirementNumber, work, task, reviewerId, identity, summary);
         }
-
         if (summary.getMatchedCount() == 0) {
             summary.addSkipped("未找到目标分支为 master 的待合并或已合并 MR");
         }
+        log.info("资产审核自动合并结束: taskId={}, result={}",
+                task == null ? null : task.getId(), summary.toLogText());
         return summary;
     }
 

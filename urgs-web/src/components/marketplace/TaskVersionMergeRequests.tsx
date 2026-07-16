@@ -2,7 +2,7 @@ import React, { useEffect, useMemo, useState } from 'react';
 import { Button, Empty, Modal, Spin, Tag } from 'antd';
 import { ExternalLink, GitPullRequest, GitCommitHorizontal, FileCode2 } from 'lucide-react';
 import type { TaskVersionChangeSnapshot } from '@/api/marketplace';
-import { getUserGitIdentity, UserGitIdentity } from '@/api/user';
+import { getMyGitIdentity, getUserGitIdentity, UserGitIdentity } from '@/api/user';
 import {
     getGitRepositories,
     getPullRequest,
@@ -55,6 +55,7 @@ type VersionChangeSnapshotPayload = {
 interface TaskVersionMergeRequestsProps {
     requirementNumber?: string;
     assigneeId?: string | number;
+    useCurrentUserGitIdentity?: boolean;
     snapshots?: TaskVersionChangeSnapshot[];
     detailFullscreen?: boolean;
     onMatchCountChange?: (count: number) => void;
@@ -434,6 +435,7 @@ const matchPullRequestsForRepo = async (
 const TaskVersionMergeRequests: React.FC<TaskVersionMergeRequestsProps> = ({
     requirementNumber,
     assigneeId,
+    useCurrentUserGitIdentity = false,
     snapshots,
     detailFullscreen = false,
     onMatchCountChange,
@@ -443,13 +445,15 @@ const TaskVersionMergeRequests: React.FC<TaskVersionMergeRequestsProps> = ({
     const [matchedPullRequests, setMatchedPullRequests] = useState<MatchedPullRequest[]>([]);
     const [error, setError] = useState('');
     const [gitIdentity, setGitIdentity] = useState<UserGitIdentity | null>(null);
+    const [gitIdentityLoadFailed, setGitIdentityLoadFailed] = useState(false);
     const [activePr, setActivePr] = useState<MatchedPullRequest | null>(null);
     const [detailLoading, setDetailLoading] = useState(false);
     const [detailPr, setDetailPr] = useState<VersionPullRequest | null>(null);
     const [detailCommits, setDetailCommits] = useState<GitCommit[]>([]);
     const [detailFiles, setDetailFiles] = useState<GitCommitDiff[]>([]);
 
-    const identityRequired = assigneeId !== undefined && assigneeId !== null && String(assigneeId).trim() !== '';
+    const identityRequired = useCurrentUserGitIdentity
+        || (assigneeId !== undefined && assigneeId !== null && String(assigneeId).trim() !== '');
     const snapshotRecords = useMemo(() => buildRecordsFromSnapshots(snapshots), [snapshots]);
     const hasSnapshotRecords = snapshotRecords.length > 0;
 
@@ -485,6 +489,7 @@ const TaskVersionMergeRequests: React.FC<TaskVersionMergeRequestsProps> = ({
             setMatchedPullRequests(snapshotRecords);
             setError('');
             setGitIdentity(null);
+            setGitIdentityLoadFailed(false);
             if (matchTokens.length === 0) {
                 setLoading(false);
                 onMatchCountChange?.(snapshotRecords.length);
@@ -497,14 +502,25 @@ const TaskVersionMergeRequests: React.FC<TaskVersionMergeRequestsProps> = ({
             try {
                 let identity: UserGitIdentity | null = null;
                 if (identityRequired) {
-                    identity = await getUserGitIdentity(assigneeId as string | number).catch(loadError => {
+                    try {
+                        identity = useCurrentUserGitIdentity
+                            ? await getMyGitIdentity()
+                            : await getUserGitIdentity(assigneeId as string | number);
+                    } catch (loadError) {
                         console.error('Failed to load user git identity', loadError);
-                        return null;
-                    });
+                        if (!cancelled) {
+                            setGitIdentityLoadFailed(true);
+                            setError('Git 身份读取失败，请刷新后重试；这不代表承接人未配置 Git 身份');
+                            onMatchCountChange?.(snapshotRecords.length);
+                        }
+                        return;
+                    }
                     if (cancelled) return;
                     setGitIdentity(identity);
                     if (!hasGitIdentity(identity)) {
-                        setError('当前任务承接人未配置 Git 身份，无法确认该人员的版本变更');
+                        setError(useCurrentUserGitIdentity
+                            ? '当前账号未配置 Git 身份，无法确认本人的版本变更'
+                            : '当前任务承接人未配置 Git 身份，无法确认该人员的版本变更');
                         onMatchCountChange?.(snapshotRecords.length);
                         return;
                     }
@@ -549,7 +565,7 @@ const TaskVersionMergeRequests: React.FC<TaskVersionMergeRequestsProps> = ({
         return () => {
             cancelled = true;
         };
-    }, [matchTokenKey, assigneeId, identityRequired, snapshotRecords]);
+    }, [matchTokenKey, assigneeId, identityRequired, snapshotRecords, useCurrentUserGitIdentity]);
 
     const openDetail = async (pullRequest: MatchedPullRequest) => {
         setActivePr(pullRequest);
@@ -640,8 +656,10 @@ const TaskVersionMergeRequests: React.FC<TaskVersionMergeRequestsProps> = ({
                     )}
                     {matchTokens.length > 4 && <Tag className="!m-0">+{matchTokens.length - 4}</Tag>}
                     {identityRequired && identityText && <Tag color="purple" className="!m-0 font-mono">{identityText}</Tag>}
-                    {identityRequired && !loading && !identityText && !hasSnapshotRecords && (
-                        <Tag color="orange" className="!m-0">承接人未配置 Git 身份</Tag>
+                    {identityRequired && !loading && !identityText && !hasSnapshotRecords && !gitIdentityLoadFailed && (
+                        <Tag color="orange" className="!m-0">
+                            {useCurrentUserGitIdentity ? '当前账号未配置 Git 身份' : '承接人未配置 Git 身份'}
+                        </Tag>
                     )}
                 </div>
             </div>

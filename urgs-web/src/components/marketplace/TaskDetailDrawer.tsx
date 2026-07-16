@@ -13,9 +13,16 @@ interface TaskDetailDrawerProps {
     isOpen: boolean;
     onClose: () => void;
     onClaimSuccess?: () => void;
+    useCurrentUserGitIdentity?: boolean;
 }
 
-const TaskDetailDrawer: React.FC<TaskDetailDrawerProps> = ({ taskId, isOpen, onClose, onClaimSuccess }) => {
+const TaskDetailDrawer: React.FC<TaskDetailDrawerProps> = ({
+    taskId,
+    isOpen,
+    onClose,
+    onClaimSuccess,
+    useCurrentUserGitIdentity = false,
+}) => {
     const [task, setTask] = useState<TaskMarketDTO | null>(null);
     const isIssueTrackingTask = (taskValue?: TaskMarketDTO | null) => {
         const taskType = (taskValue?.taskType || '').trim();
@@ -181,6 +188,7 @@ const TaskDetailDrawer: React.FC<TaskDetailDrawerProps> = ({ taskId, isOpen, onC
                     <TaskVersionMergeRequests
                         requirementNumber={task.requirementNumber}
                         assigneeId={task.assigneeId}
+                        useCurrentUserGitIdentity={useCurrentUserGitIdentity}
                         snapshots={task.versionChangeSnapshots}
                     />
 

@@ -156,7 +156,7 @@ public class OAuthController {
                 "expires_in", 7200));
     }
 
-    @GetMapping("/user_info")
+    @RequestMapping(value = "/user_info", method = { RequestMethod.GET, RequestMethod.POST })
     public ResponseEntity<?> userInfo(HttpServletRequest request) {
         Long userId = (Long) request.getAttribute("userId");
         if (userId == null) {

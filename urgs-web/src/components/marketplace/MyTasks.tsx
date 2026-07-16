@@ -795,6 +795,7 @@ const MyTasks: React.FC<MyTasksProps> = ({ todoFocus }) => {
                 isOpen={isDetailOpen}
                 onClose={() => setIsDetailOpen(false)}
                 onClaimSuccess={fetchTasks}
+                useCurrentUserGitIdentity
             />
 
             {assetReviewTask && (
@@ -866,6 +867,7 @@ const MyTasks: React.FC<MyTasksProps> = ({ todoFocus }) => {
                                     <TaskVersionMergeRequests
                                         requirementNumber={assetReviewReqId}
                                         assigneeId={assetReviewTask.assigneeId}
+                                        useCurrentUserGitIdentity
                                         detailFullscreen
                                         onMatchCountChange={setAssetReviewVersionRecordCount}
                                         onLoadingChange={setAssetReviewVersionLoading}
