@@ -203,4 +203,58 @@ class GitPlatformServiceTest {
         assertEquals("test.txt", files.get(0).getNewPath());
         assertEquals("+content", files.get(0).getDiff());
     }
+
+    @Test
+    void mergePullRequest_MissingPersonalToken_ShowsClearError() {
+        Long repoId = 4L;
+        GitRepository repo = new GitRepository();
+        repo.setId(repoId);
+        repo.setPlatform("gitlab");
+        repo.setResolvedAccessToken(null);
+
+        when(gitRepositoryService.findById(repoId)).thenReturn(Optional.of(repo));
+
+        RuntimeException error = assertThrows(RuntimeException.class,
+                () -> gitPlatformService.mergePullRequest(repoId, 1L, "merge"));
+
+        assertTrue(error.getMessage().contains("请先在个人信息中配置 gitlab 访问令牌"));
+        verifyNoInteractions(httpClient);
+    }
+
+    @Test
+    void mergePullRequest_GitHubExplicitlyRejected_ThrowsPlatformMessage() throws Exception {
+        Long repoId = 5L;
+        GitRepository repo = new GitRepository();
+        repo.setId(repoId);
+        repo.setPlatform("github");
+        repo.setFullName("owner/repo");
+        repo.setAccessToken("token");
+
+        when(gitRepositoryService.findById(repoId)).thenReturn(Optional.of(repo));
+        when(httpClient.send(any(HttpRequest.class), any(HttpResponse.BodyHandler.class))).thenReturn(httpResponse);
+        when(httpResponse.statusCode()).thenReturn(200);
+        when(httpResponse.body()).thenReturn("{\"merged\":false,\"message\":\"Base branch was modified\"}");
+
+        RuntimeException error = assertThrows(RuntimeException.class,
+                () -> gitPlatformService.mergePullRequest(repoId, 2L, "merge"));
+
+        assertEquals("合并 PR 失败: Base branch was modified", error.getMessage());
+    }
+
+    @Test
+    void mergePullRequest_GitLabMerged_Succeeds() throws Exception {
+        Long repoId = 6L;
+        GitRepository repo = new GitRepository();
+        repo.setId(repoId);
+        repo.setPlatform("gitlab");
+        repo.setCloneUrl("https://gitlab.example.com/owner/repo.git");
+        repo.setAccessToken("token");
+
+        when(gitRepositoryService.findById(repoId)).thenReturn(Optional.of(repo));
+        when(httpClient.send(any(HttpRequest.class), any(HttpResponse.BodyHandler.class))).thenReturn(httpResponse);
+        when(httpResponse.statusCode()).thenReturn(200);
+        when(httpResponse.body()).thenReturn("{\"state\":\"merged\"}");
+
+        assertDoesNotThrow(() -> gitPlatformService.mergePullRequest(repoId, 3L, "merge"));
+    }
 }

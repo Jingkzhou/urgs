@@ -5,6 +5,7 @@ import com.example.urgs_api.marketplace.model.Work;
 import com.example.urgs_api.marketplace.model.WorkTask;
 import com.example.urgs_api.user.mapper.UserGitIdentityMapper;
 import com.example.urgs_api.user.mapper.UserMapper;
+import com.example.urgs_api.user.model.User;
 import com.example.urgs_api.user.model.UserGitIdentity;
 import com.example.urgs_api.version.entity.GitRepository;
 import com.example.urgs_api.version.service.GitPlatformService;
@@ -21,7 +22,6 @@ import java.util.List;
 import static org.junit.jupiter.api.Assertions.assertThrows;
 import static org.junit.jupiter.api.Assertions.assertTrue;
 import static org.mockito.ArgumentMatchers.any;
-import static org.mockito.Mockito.never;
 import static org.mockito.Mockito.verify;
 import static org.mockito.Mockito.when;
 
@@ -57,7 +57,7 @@ class TaskVersionMergeServiceTest {
     }
 
     @Test
-    void mergeOpenMasterPullRequests_usesTaskSystemReposRegardlessOfCreator() {
+    void mergeOpenMasterPullRequests_usesAllReviewerAccessibleRepos() {
         Work work = new Work();
         work.setRequirementNumber("REQ-20260708");
 
@@ -69,25 +69,27 @@ class TaskVersionMergeServiceTest {
         identity.setGitEmail("developer@example.com");
         when(userGitIdentityMapper.selectOne(any())).thenReturn(identity);
 
-        GitRepository unrelatedRepo = new GitRepository();
-        unrelatedRepo.setId(10L);
-        unrelatedRepo.setSsoId(100L);
-        unrelatedRepo.setEnabled(true);
+        User reviewer = new User();
+        reviewer.setId(77L);
+        when(userMapper.selectById(any())).thenAnswer(invocation ->
+                Long.valueOf(77L).equals(invocation.getArgument(0)) ? reviewer : null);
 
-        GitRepository targetRepo = new GitRepository();
-        targetRepo.setId(20L);
-        targetRepo.setSsoId(200L);
-        targetRepo.setEnabled(true);
+        GitRepository firstRepo = enabledRepo(10L, 100L, "team/first");
+        GitRepository secondRepo = enabledRepo(20L, 200L, "team/second");
+        GitRepository thirdRepo = enabledRepo(30L, 300L, "team/third");
+        GitRepository fourthRepo = enabledRepo(40L, 400L, "team/fourth");
 
-        when(gitRepositoryService.findBySsoIds(List.of(200L))).thenReturn(List.of(targetRepo));
-        when(gitPlatformService.getPullRequests(20L, "all", 1, 100)).thenReturn(List.of());
+        when(gitRepositoryService.findAccessibleByUser(77L))
+                .thenReturn(List.of(firstRepo, secondRepo, thirdRepo, fourthRepo));
+        when(gitPlatformService.getPullRequests(any(), any(), any(), any())).thenReturn(List.of());
 
         taskVersionMergeService.mergeOpenMasterPullRequests(work, task, "77");
 
-        verify(gitRepositoryService).findBySsoIds(List.of(200L));
-        verify(gitRepositoryService, never()).findAll();
-        verify(gitPlatformService, never()).getPullRequests(10L, "all", 1, 100);
+        verify(gitRepositoryService).findAccessibleByUser(77L);
+        verify(gitPlatformService).getPullRequests(10L, "all", 1, 100);
         verify(gitPlatformService).getPullRequests(20L, "all", 1, 100);
+        verify(gitPlatformService).getPullRequests(30L, "all", 1, 100);
+        verify(gitPlatformService).getPullRequests(40L, "all", 1, 100);
     }
 
     @Test
@@ -103,13 +105,18 @@ class TaskVersionMergeServiceTest {
         identity.setGitEmail("developer@example.com");
         when(userGitIdentityMapper.selectOne(any())).thenReturn(identity);
 
+        User reviewer = new User();
+        reviewer.setId(77L);
+        when(userMapper.selectById(any())).thenAnswer(invocation ->
+                Long.valueOf(77L).equals(invocation.getArgument(0)) ? reviewer : null);
+
         GitRepository targetRepo = new GitRepository();
         targetRepo.setId(20L);
         targetRepo.setSsoId(200L);
         targetRepo.setEnabled(true);
         targetRepo.setFullName("team/repo");
 
-        when(gitRepositoryService.findBySsoIds(List.of(200L))).thenReturn(List.of(targetRepo));
+        when(gitRepositoryService.findAccessibleByUser(77L)).thenReturn(List.of(targetRepo));
         when(gitPlatformService.getPullRequests(20L, "all", 1, 100))
                 .thenThrow(new RuntimeException("获取 PR 列表失败: HTTP 401: {\"message\":\"401 Unauthorized\"}"));
 
@@ -118,5 +125,14 @@ class TaskVersionMergeServiceTest {
 
         assertTrue(exception.getMessage().contains("自动合并读取 MR 失败"));
         assertTrue(exception.getMessage().contains("team/repo"));
+    }
+
+    private GitRepository enabledRepo(Long id, Long ssoId, String fullName) {
+        GitRepository repo = new GitRepository();
+        repo.setId(id);
+        repo.setSsoId(ssoId);
+        repo.setEnabled(true);
+        repo.setFullName(fullName);
+        return repo;
     }
 }

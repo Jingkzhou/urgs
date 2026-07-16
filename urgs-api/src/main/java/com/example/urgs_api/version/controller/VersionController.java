@@ -5,7 +5,6 @@ import com.example.urgs_api.version.entity.GitRepository;
 import com.example.urgs_api.version.service.AppSystemService;
 import com.example.urgs_api.version.service.GitRepositoryService;
 import com.example.urgs_api.version.service.GitPlatformService;
-import com.example.urgs_api.system.service.SysSystemService;
 import com.example.urgs_api.auth.annotation.RequirePermission;
 import lombok.RequiredArgsConstructor;
 
@@ -25,7 +24,6 @@ public class VersionController {
     private final AppSystemService appSystemService;
     private final GitRepositoryService gitRepositoryService;
     private final GitPlatformService gitPlatformService;
-    private final SysSystemService sysSystemService;
 
     // ===== 应用系统 API =====
 
@@ -150,11 +148,7 @@ public class VersionController {
     }
 
     private List<GitRepository> findReposForUserSystems(Long userId) {
-        List<Long> systemIds = sysSystemService.getSystems(userId, false).stream()
-                .map(system -> system.getId())
-                .filter(java.util.Objects::nonNull)
-                .toList();
-        return gitRepositoryService.findBySsoIds(systemIds);
+        return gitRepositoryService.findAccessibleByUser(userId);
     }
 
     // ===== 概览统计 API =====

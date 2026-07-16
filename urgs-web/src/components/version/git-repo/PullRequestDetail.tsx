@@ -36,6 +36,16 @@ interface PullRequestDetailProps {
     onBack: () => void;
 }
 
+const getRequestErrorMessage = (error: unknown, fallback: string) => {
+    const rawMessage = error instanceof Error ? error.message : '';
+    if (!rawMessage) return fallback;
+    try {
+        const response = JSON.parse(rawMessage);
+        return response?.message || fallback;
+    } catch {
+        return rawMessage;
+    }
+};
 
 const PullRequestDetail: React.FC<PullRequestDetailProps> = ({ repoId, prId, onBack }) => {
     const [activeTab, setActiveTab] = useState('conversation');
@@ -243,7 +253,8 @@ const PullRequestDetail: React.FC<PullRequestDetailProps> = ({ repoId, prId, onB
                     message.success('合并成功');
                     fetchData(); // Refresh status
                 } catch (error) {
-                    message.error('合并失败');
+                    console.error('合并 Pull Request 失败:', error);
+                    message.error(getRequestErrorMessage(error, '合并失败'));
                 } finally {
                     setActionLoading(false);
                 }

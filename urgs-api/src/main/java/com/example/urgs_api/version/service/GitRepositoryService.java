@@ -67,6 +67,20 @@ public class GitRepositoryService {
     }
 
     /**
+     * 获取指定用户有归属系统权限的全部仓库，与版本管理中心仓库列表保持一致。
+     */
+    public List<GitRepository> findAccessibleByUser(Long userId) {
+        if (userId == null) {
+            return List.of();
+        }
+        List<Long> systemIds = sysSystemService.getSystems(userId, false).stream()
+                .map(system -> system.getId())
+                .filter(java.util.Objects::nonNull)
+                .toList();
+        return findBySsoIds(systemIds);
+    }
+
+    /**
      * 按创建者和平台类型过滤记录获取仓库列表
      *
      * @param userId   用户 ID

@@ -566,25 +566,80 @@ public class GitPlatformService {
      * 合并 PR
      */
     public void mergePullRequest(Long repoId, Long number, String mergeMethod) {
-        GitRepository repo = gitRepositoryService.findById(repoId)
-                .orElseThrow(() -> new RuntimeException("仓库不存在: " + repoId));
-
-        String token = repo.getAccessToken(); // Use repo token
-        if (token == null || token.isEmpty()) {
-            throw new RuntimeException("Repo token required for merge");
-        }
-
         try {
-            switch (repo.getPlatform().toLowerCase()) {
+            GitRepository repo = gitRepositoryService.findById(repoId)
+                    .orElseThrow(() -> new RuntimeException("仓库不存在或当前用户无权访问: " + repoId));
+            String token = repo.getAccessToken();
+            if (token == null || token.isBlank()) {
+                throw new RuntimeException("请先在个人信息中配置 " + repo.getPlatform() + " 访问令牌后再合并");
+            }
+
+            String platform = repo.getPlatform().toLowerCase();
+            log.info("开始调用 Git 平台合并 PR: platform={}, repoId={}, number={}, mergeMethod={}",
+                    platform, repoId, number, mergeMethod);
+            JsonNode response = switch (platform) {
                 case "gitee" -> mergeGiteePullRequest(repo, number, mergeMethod, token);
                 case "gitlab" -> mergeGitLabPullRequest(repo, number, mergeMethod, token);
                 case "github" -> mergeGitHubPullRequest(repo, number, mergeMethod, token);
                 default -> throw new RuntimeException("不支持的平台: " + repo.getPlatform());
-            }
+            };
+            validateMergeResponse(platform, response);
+            log.info("Git 平台合并 PR 成功: platform={}, repoId={}, number={}", platform, repoId, number);
         } catch (Exception e) {
             log.error("合并 PR 失败: repoId={}, number={}", repoId, number, e);
-            throw new RuntimeException("合并 PR 失败: " + e.getMessage());
+            if (e instanceof RuntimeException && e.getMessage() != null && e.getMessage().startsWith("合并 PR 失败")) {
+                throw (RuntimeException) e;
+            }
+            throw new RuntimeException("合并 PR 失败: " + resolvePlatformErrorMessage(e), e);
         }
+    }
+
+    private void validateMergeResponse(String platform, JsonNode response) {
+        if (response == null || response.isNull() || response.isMissingNode()) {
+            log.warn("Git 平台合并接口未返回响应体，无法校验结果: platform={}", platform);
+            return;
+        }
+
+        String platformMessage = extractPlatformMessage(response);
+        if ("github".equals(platform) && response.has("merged") && !response.path("merged").asBoolean()) {
+            throw new RuntimeException("合并 PR 失败: " + platformMessage);
+        }
+        if ("gitlab".equals(platform) && response.hasNonNull("state")
+                && !"merged".equalsIgnoreCase(response.path("state").asText())) {
+            throw new RuntimeException("合并 PR 失败: " + platformMessage);
+        }
+        if ("gitee".equals(platform) && response.has("merged") && !response.path("merged").asBoolean()) {
+            throw new RuntimeException("合并 PR 失败: " + platformMessage);
+        }
+    }
+
+    private String resolvePlatformErrorMessage(Exception error) {
+        String message = error.getMessage();
+        if (message == null || message.isBlank()) {
+            return "Git 平台未返回具体原因，请检查令牌权限、保护分支、审批状态、流水线和代码冲突";
+        }
+        int jsonStart = message.indexOf('{');
+        if (jsonStart >= 0) {
+            try {
+                return extractPlatformMessage(objectMapper.readTree(message.substring(jsonStart)));
+            } catch (Exception ignored) {
+                // 保留原始平台错误，方便前端和日志定位。
+            }
+        }
+        return message;
+    }
+
+    private String extractPlatformMessage(JsonNode response) {
+        String message = response.path("message").asText();
+        if (message == null || message.isBlank()) {
+            message = response.path("error").asText();
+        }
+        if (message == null || message.isBlank()) {
+            message = response.path("merge_error").asText();
+        }
+        return message == null || message.isBlank()
+                ? "Git 平台未确认合并成功，请检查令牌权限、保护分支、审批状态、流水线和代码冲突"
+                : message;
     }
 
     /**
@@ -1093,12 +1148,12 @@ public class GitPlatformService {
         return commits;
     }
 
-    private void mergeGiteePullRequest(GitRepository repo, Long number, String mergeMethod, String token)
+    private JsonNode mergeGiteePullRequest(GitRepository repo, Long number, String mergeMethod, String token)
             throws Exception {
         String url = String.format("https://gitee.com/api/v5/repos/%s/pulls/%d/merge", repo.getFullName(), number);
         // Gitee properties: access_token, merge_method (merge, squash, rebase)
         String body = String.format("{\"access_token\":\"%s\",\"merge_method\":\"%s\"}", token, mergeMethod);
-        httpPut(url, body, null, null);
+        return httpPut(url, body, null, null);
     }
 
     private void closeGiteePullRequest(GitRepository repo, Long number, String token) throws Exception {
@@ -1107,7 +1162,7 @@ public class GitPlatformService {
         httpPatch(url, body, null, null);
     }
 
-    private void mergeGitLabPullRequest(GitRepository repo, Long number, String mergeMethod, String token)
+    private JsonNode mergeGitLabPullRequest(GitRepository repo, Long number, String mergeMethod, String token)
             throws Exception {
         String apiBase = getGitLabApiBase(repo);
         String projectId = getGitLabProjectId(repo);
@@ -1124,7 +1179,7 @@ public class GitPlatformService {
             // GitLab API usually accepts empty body for default merge.
         }
 
-        httpPut(url, "{}", token, "PRIVATE-TOKEN");
+        return httpPut(url, "{}", token, "PRIVATE-TOKEN");
     }
 
     private void closeGitLabPullRequest(GitRepository repo, Long number, String token) throws Exception {
@@ -1139,7 +1194,7 @@ public class GitPlatformService {
         httpPut(url, body, token, "PRIVATE-TOKEN");
     }
 
-    private void mergeGitHubPullRequest(GitRepository repo, Long number, String mergeMethod, String token)
+    private JsonNode mergeGitHubPullRequest(GitRepository repo, Long number, String mergeMethod, String token)
             throws Exception {
         // GitHub: PUT /repos/{owner}/{repo}/pulls/{number}/merge
         String url = String.format("https://api.github.com/repos/%s/pulls/%s/merge", repo.getFullName(), number);
@@ -1148,7 +1203,7 @@ public class GitPlatformService {
         String method = (mergeMethod == null || mergeMethod.isEmpty()) ? "merge" : mergeMethod;
         String body = String.format("{\"merge_method\":\"%s\"}", method);
 
-        httpPut(url, body, token, "Bearer");
+        return httpPut(url, body, token, "Bearer");
     }
 
     private void closeGitHubPullRequest(GitRepository repo, Long number, String token) throws Exception {
@@ -2158,7 +2213,7 @@ public class GitPlatformService {
         }
     }
 
-    private void httpPut(String url, String body, String token, String authType) throws Exception {
+    private JsonNode httpPut(String url, String body, String token, String authType) throws Exception {
         HttpRequest.Builder builder = HttpRequest.newBuilder()
                 .uri(URI.create(url))
                 .header("Content-Type", "application/json")
@@ -2178,6 +2233,10 @@ public class GitPlatformService {
         if (response.statusCode() >= 400) {
             throw new RuntimeException("HTTP PUT " + response.statusCode() + ": " + response.body());
         }
+        if (response.body() == null || response.body().isBlank()) {
+            return null;
+        }
+        return objectMapper.readTree(response.body());
     }
 
     private void httpPatch(String url, String body, String token, String authType) throws Exception {

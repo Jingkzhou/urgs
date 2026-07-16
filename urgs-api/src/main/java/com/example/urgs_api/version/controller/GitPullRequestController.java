@@ -4,6 +4,7 @@ import com.example.urgs_api.version.dto.GitPullRequest;
 import com.example.urgs_api.version.service.GitPlatformService;
 import lombok.Data;
 import lombok.RequiredArgsConstructor;
+import lombok.extern.slf4j.Slf4j;
 import org.springframework.http.ResponseEntity;
 import org.springframework.web.bind.annotation.*;
 
@@ -12,6 +13,7 @@ import java.util.List;
 @RestController
 @RequestMapping("/api/version/repos")
 @RequiredArgsConstructor
+@Slf4j
 public class GitPullRequestController {
 
     private final GitPlatformService gitPlatformService;
@@ -91,9 +93,13 @@ public class GitPullRequestController {
     public ResponseEntity<Void> mergePullRequest(
             @PathVariable Long repoId,
             @PathVariable Long number,
-            @RequestBody(required = false) MergeRequest request) {
+            @RequestBody(required = false) MergeRequest request,
+            @RequestAttribute(value = "userId", required = false) Long userId) {
         String method = request != null && request.getMergeMethod() != null ? request.getMergeMethod() : "merge";
+        log.info("收到合并 PR 请求: userId={}, repoId={}, number={}, mergeMethod={}",
+                userId, repoId, number, method);
         gitPlatformService.mergePullRequest(repoId, number, method);
+        log.info("合并 PR 请求处理完成: userId={}, repoId={}, number={}", userId, repoId, number);
         return ResponseEntity.ok().build();
     }
 

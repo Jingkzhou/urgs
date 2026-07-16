@@ -62,7 +62,7 @@ public class TaskVersionMergeService {
         }
 
         List<String> tokens = buildRequirementTokens(requirementNumber);
-        List<GitRepository> repos = findMergeCandidateRepositories(task);
+        List<GitRepository> repos = findMergeCandidateRepositories(reviewerId);
         if (repos.isEmpty()) {
             summary.addSkipped("未配置可自动合并的 Git 仓库");
             return summary;
@@ -191,7 +191,11 @@ public class TaskVersionMergeService {
     }
 
     private Long resolveAssigneeUserId(String assigneeId) {
-        String normalized = trimToNull(assigneeId);
+        return resolveUserId(assigneeId);
+    }
+
+    private Long resolveUserId(String userId) {
+        String normalized = trimToNull(userId);
         if (normalized == null) {
             return null;
         }
@@ -459,15 +463,11 @@ public class TaskVersionMergeService {
                 || StringUtils.hasText(identity.getGitUserId()));
     }
 
-    private List<GitRepository> findMergeCandidateRepositories(WorkTask task) {
-        Set<Long> involvedSystemIds = resolveInvolvedSystemIds(task);
-        List<GitRepository> repos = involvedSystemIds.isEmpty()
-                ? gitRepositoryService.findAll()
-                : gitRepositoryService.findBySsoIds(new ArrayList<>(involvedSystemIds));
+    private List<GitRepository> findMergeCandidateRepositories(String reviewerId) {
+        Long reviewerUserId = resolveUserId(reviewerId);
+        List<GitRepository> repos = gitRepositoryService.findAccessibleByUser(reviewerUserId);
         return repos.stream()
                 .filter(repo -> repo.getId() != null && !Boolean.FALSE.equals(repo.getEnabled()))
-                .filter(repo -> involvedSystemIds.isEmpty()
-                        || (repo.getSsoId() != null && involvedSystemIds.contains(repo.getSsoId())))
                 .collect(java.util.stream.Collectors.toMap(
                         this::repoBusinessKey,
                         java.util.function.Function.identity(),
@@ -476,15 +476,6 @@ public class TaskVersionMergeService {
                 .values()
                 .stream()
                 .toList();
-    }
-
-    private Set<Long> resolveInvolvedSystemIds(WorkTask task) {
-        if (task == null || task.getInvolvedSystemIds() == null) {
-            return Set.of();
-        }
-        return task.getInvolvedSystemIds().stream()
-                .filter(systemId -> systemId != null)
-                .collect(java.util.stream.Collectors.toCollection(LinkedHashSet::new));
     }
 
     private String repoLabel(GitRepository repo) {

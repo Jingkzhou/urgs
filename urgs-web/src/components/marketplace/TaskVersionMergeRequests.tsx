@@ -333,7 +333,7 @@ const parseSnapshotPayload = (snapshot: TaskVersionChangeSnapshot): VersionChang
 };
 
 const matchedPullRequestKey = (pullRequest: MatchedPullRequest) => (
-    `${normalizeComparable(pullRequest.repoName)}|${pullRequest.number || ''}`
+    `${pullRequest.repoId || normalizeComparable(pullRequest.repoName)}|${pullRequest.number || ''}`
 );
 
 const dedupeMatchedPullRequests = (items: MatchedPullRequest[]) => {
@@ -482,29 +482,13 @@ const TaskVersionMergeRequests: React.FC<TaskVersionMergeRequestsProps> = ({
         let cancelled = false;
 
         const loadMatchedPullRequests = async () => {
-            setMatchedPullRequests([]);
+            setMatchedPullRequests(snapshotRecords);
             setError('');
             setGitIdentity(null);
-            if (snapshotRecords.length > 0) {
+            if (matchTokens.length === 0) {
                 setLoading(false);
-                setMatchedPullRequests(snapshotRecords);
                 onMatchCountChange?.(snapshotRecords.length);
                 onLoadingChange?.(false);
-                if (identityRequired) {
-                    getUserGitIdentity(assigneeId as string | number)
-                        .then(identity => {
-                            if (!cancelled) {
-                                setGitIdentity(identity);
-                            }
-                        })
-                        .catch(loadError => {
-                            console.error('Failed to load user git identity', loadError);
-                        });
-                }
-                return;
-            }
-            if (matchTokens.length === 0) {
-                onMatchCountChange?.(0);
                 return;
             }
 
@@ -521,7 +505,7 @@ const TaskVersionMergeRequests: React.FC<TaskVersionMergeRequestsProps> = ({
                     setGitIdentity(identity);
                     if (!hasGitIdentity(identity)) {
                         setError('当前任务承接人未配置 Git 身份，无法确认该人员的版本变更');
-                        onMatchCountChange?.(0);
+                        onMatchCountChange?.(snapshotRecords.length);
                         return;
                     }
                 }
@@ -539,7 +523,7 @@ const TaskVersionMergeRequests: React.FC<TaskVersionMergeRequestsProps> = ({
                     .filter((result): result is PromiseFulfilledResult<MatchedPullRequest[]> => result.status === 'fulfilled')
                     .flatMap(result => result.value)
                     .sort((a, b) => new Date(b.updatedAt || b.createdAt).getTime() - new Date(a.updatedAt || a.createdAt).getTime());
-                const dedupedMatches = dedupeMatchedPullRequests(matches);
+                const dedupedMatches = dedupeMatchedPullRequests([...snapshotRecords, ...matches]);
                 setMatchedPullRequests(dedupedMatches);
                 onMatchCountChange?.(dedupedMatches.length);
 
@@ -551,7 +535,7 @@ const TaskVersionMergeRequests: React.FC<TaskVersionMergeRequestsProps> = ({
                 if (!cancelled) {
                     console.error('Failed to load matched pull requests', loadError);
                     setError('版本合并请求加载失败');
-                    onMatchCountChange?.(0);
+                    onMatchCountChange?.(snapshotRecords.length);
                 }
             } finally {
                 if (!cancelled) {
@@ -639,16 +623,16 @@ const TaskVersionMergeRequests: React.FC<TaskVersionMergeRequestsProps> = ({
                 <div>
                     <div className="flex items-center gap-2 text-sm font-bold text-slate-800">
                         <GitPullRequest size={16} className="text-purple-500" />
-                        {hasSnapshotRecords ? '版本变更快照' : '版本合并请求'}
+                        {hasSnapshotRecords ? '版本变更记录' : '版本合并请求'}
                     </div>
                     <div className="mt-1 text-xs text-slate-400">
                         {hasSnapshotRecords
-                            ? '展示资产同步审核通过时固化的提交和文件变更'
+                            ? '展示审核通过时固化的快照，并继续显示当前仍匹配的合并请求'
                             : '仅查看合入 master 的合并请求，再按需求编号和承接人 Git 身份匹配'}
                     </div>
                 </div>
                 <div className="flex flex-wrap justify-end gap-1">
-                    {hasSnapshotRecords && <Tag color="cyan" className="!m-0">已固化</Tag>}
+                    {hasSnapshotRecords && <Tag color="cyan" className="!m-0">已固化 {snapshotRecords.length} 条</Tag>}
                     {matchTokens.length > 0 ? matchTokens.slice(0, 4).map(token => (
                         <Tag key={token} color="blue" className="!m-0 font-mono">{token}</Tag>
                     )) : (
