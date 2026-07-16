@@ -18,16 +18,15 @@ import {
 } from '@/api/lineage';
 import { hasPermission } from '@/utils/permission';
 import ReviewIssueTable from './lineage-review/ReviewIssueTable';
+import ReviewIssueDetail from './lineage-review/ReviewIssueDetail';
 import ReviewMetricCards from './lineage-review/ReviewMetricCards';
 import ReviewRecordList from './lineage-review/ReviewRecordList';
 import ReviewTaskTable from './lineage-review/ReviewTaskTable';
 import {
     confirmedProblemTypeLabelMap,
     issueTypeLabelMap,
-    reviewStatusColorMap,
     reviewStatusLabelMap,
     ruleHitLabelMap,
-    severityColorMap,
     severityLabelMap,
     toDisplayLabel,
     verdictLabelMap
@@ -112,7 +111,15 @@ const AICodeReport: React.FC = () => {
             return issues;
         }
         return issues.filter(issue => {
-            const target = [issue.tableName, issue.columnName, issue.issueType, issue.reason]
+            const target = [
+                issue.tableName,
+                issue.columnName,
+                issue.issueType,
+                issue.reason,
+                issue.graphSnapshot?.aiReview?.summary,
+                issue.graphSnapshot?.aiReview?.currentState,
+                issue.graphSnapshot?.aiReview?.expectedState
+            ]
                 .filter(Boolean)
                 .join(' ')
                 .toLowerCase();
@@ -616,86 +623,7 @@ const AICodeReport: React.FC = () => {
                     )
                 }
             >
-                {!selectedIssue ? null : (
-                    <div className="space-y-6">
-                        <Descriptions column={1} size="small" bordered>
-                            <Descriptions.Item label="目标对象">
-                                {selectedIssue.tableName}
-                                {selectedIssue.columnName ? `.${selectedIssue.columnName}` : ''}
-                            </Descriptions.Item>
-                            <Descriptions.Item label="疑点类型">
-                                {toDisplayLabel(selectedIssue.issueType, issueTypeLabelMap)}
-                            </Descriptions.Item>
-                            <Descriptions.Item label="严重级别">
-                                <Tag color={severityColorMap[selectedIssue.severity] || 'default'}>
-                                    {toDisplayLabel(selectedIssue.severity, severityLabelMap)}
-                                </Tag>
-                            </Descriptions.Item>
-                            <Descriptions.Item label="AI 判定">
-                                {toDisplayLabel(selectedIssue.verdict, verdictLabelMap)} / {Number(selectedIssue.confidence || 0).toFixed(2)}
-                            </Descriptions.Item>
-                            <Descriptions.Item label="人工状态">
-                                <Tag color={reviewStatusColorMap[selectedIssue.reviewStatus || ''] || 'default'}>
-                                    {toDisplayLabel(selectedIssue.reviewStatus, reviewStatusLabelMap, '待处理')}
-                                </Tag>
-                            </Descriptions.Item>
-                            <Descriptions.Item label="原因说明">
-                                <div style={{ whiteSpace: 'pre-line' }}>{selectedIssue.reason || '-'}</div>
-                            </Descriptions.Item>
-                            <Descriptions.Item label="确认问题类型">
-                                {toDisplayLabel(selectedIssue.confirmedProblemType, confirmedProblemTypeLabelMap)}
-                            </Descriptions.Item>
-                            <Descriptions.Item label="确认问题描述">
-                                {selectedIssue.confirmedProblemDescription || '-'}
-                            </Descriptions.Item>
-                            <Descriptions.Item label="人工备注">{selectedIssue.reviewerNote || '-'}</Descriptions.Item>
-                        </Descriptions>
-
-                        <Card size="small" title="规则命中">
-                            {(selectedIssue.ruleHits || []).length > 0 ? (
-                                <Space wrap>
-                                    {selectedIssue.ruleHits?.map(item => (
-                                        <Tag key={item}>{toDisplayLabel(item, ruleHitLabelMap)}</Tag>
-                                    ))}
-                                </Space>
-                            ) : (
-                                <Empty image={Empty.PRESENTED_IMAGE_SIMPLE} description="无规则命中" />
-                            )}
-                        </Card>
-
-                        <Card size="small" title="建议来源">
-                            {(selectedIssue.suggestedSources || []).length > 0 ? (
-                                <div className="space-y-2">
-                                    {selectedIssue.suggestedSources?.map(item => (
-                                        <div key={item} className="rounded-lg bg-slate-50 px-3 py-2 text-sm text-slate-600">{item}</div>
-                                    ))}
-                                </div>
-                            ) : (
-                                <Empty image={Empty.PRESENTED_IMAGE_SIMPLE} description="无建议来源" />
-                            )}
-                        </Card>
-
-                        <Card size="small" title="证据引用">
-                            {(selectedIssue.evidenceRefs || []).length > 0 ? (
-                                <div className="space-y-2">
-                                    {selectedIssue.evidenceRefs?.map(item => (
-                                        <div key={item} className="rounded-lg border border-slate-200 px-3 py-2 text-sm text-slate-600">
-                                            {item}
-                                        </div>
-                                    ))}
-                                </div>
-                            ) : (
-                                <Empty image={Empty.PRESENTED_IMAGE_SIMPLE} description="无证据引用" />
-                            )}
-                        </Card>
-
-                        <Card size="small" title="局部证据包">
-                            <pre className="max-h-80 overflow-auto rounded-xl bg-slate-900 p-4 text-xs text-slate-100">
-                                {JSON.stringify(selectedIssue.graphSnapshot || {}, null, 2)}
-                            </pre>
-                        </Card>
-                    </div>
-                )}
+                {selectedIssue ? <ReviewIssueDetail issue={selectedIssue} /> : null}
             </Drawer>
 
             <Drawer

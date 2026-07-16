@@ -13,7 +13,13 @@ public class LineageReviewAIVerdict {
     private String severity;
     private BigDecimal confidence;
     private String verdict;
+    private String summary;
+    private String currentState;
+    private String expectedState;
     private String reason;
+    private String expectedRelationType;
+    private String disposition;
+    private String recommendation;
     private List<String> suggestedSources;
     private List<String> evidenceRefs;
 }

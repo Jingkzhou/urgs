@@ -93,13 +93,23 @@ const ReviewIssueTable: React.FC<ReviewIssueTableProps> = ({
             )
         },
         {
-            title: '原因摘要',
-            dataIndex: 'reason',
-            render: (value?: string) => (
-                <Paragraph className="!mb-0 !text-slate-500" ellipsis={{ rows: 2 }}>
-                    {value || '-'}
-                </Paragraph>
-            )
+            title: 'AI 结论',
+            key: 'summary',
+            render: (_, record) => {
+                const summary = record.graphSnapshot?.aiReview?.summary
+                    || record.reason?.split(/\r?\n/)[0]?.replace(/^结论：/, '')
+                    || '-';
+                return (
+                    <div>
+                        <Paragraph className="!mb-1 !text-slate-600" ellipsis={{ rows: 2 }}>
+                            {summary}
+                        </Paragraph>
+                        <div className="text-xs text-slate-400">
+                            可定位证据 {(record.evidenceRefs || []).length} 条
+                        </div>
+                    </div>
+                );
+            }
         }
     ];
 
@@ -153,6 +163,7 @@ const ReviewIssueTable: React.FC<ReviewIssueTableProps> = ({
                 loading={loading}
                 pagination={{ pageSize: 8 }}
                 locale={{ emptyText: selectedTaskId ? '当前任务暂无疑点' : '请先选择一个分片任务' }}
+                rowClassName="cursor-pointer"
                 onRow={record => ({
                     onClick: () => onSelectIssue(record)
                 })}

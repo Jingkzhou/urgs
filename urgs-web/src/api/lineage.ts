@@ -237,6 +237,38 @@ export interface LineageReviewTask {
     executionProgressRate?: number;
 }
 
+export interface LineageReviewEvidenceItem extends Record<string, unknown> {
+    evidenceId?: string;
+    lineNumber?: number;
+    text?: string;
+    sourceTable?: string;
+    sourceColumn?: string;
+    targetTable?: string;
+    targetColumn?: string;
+    relationType?: string;
+}
+
+export interface LineageReviewAiPresentation {
+    schemaVersion?: string;
+    summary?: string;
+    currentState?: string;
+    expectedState?: string;
+    difference?: string;
+    expectedRelationType?: string;
+    disposition?: string;
+    recommendation?: string;
+    evidenceRefs?: string[];
+    suggestedSources?: string[];
+}
+
+export interface LineageReviewGraphSnapshot extends Record<string, unknown> {
+    sqlSnippet?: string;
+    sqlLines?: LineageReviewEvidenceItem[];
+    programRelations?: LineageReviewEvidenceItem[];
+    graphFieldRelations?: LineageReviewEvidenceItem[];
+    aiReview?: LineageReviewAiPresentation;
+}
+
 export interface LineageReviewIssue {
     id: number;
     taskId: number;
@@ -256,7 +288,7 @@ export interface LineageReviewIssue {
     ruleHits?: string[];
     suggestedSources?: string[];
     evidenceRefs?: string[];
-    graphSnapshot?: Record<string, unknown>;
+    graphSnapshot?: LineageReviewGraphSnapshot;
     fingerprint?: string;
     cacheKey?: string;
     reviewStatus?: string;

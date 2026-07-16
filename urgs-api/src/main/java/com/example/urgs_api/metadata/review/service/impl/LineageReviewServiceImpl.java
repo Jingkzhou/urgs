@@ -4,6 +4,7 @@ import com.baomidou.mybatisplus.core.conditions.query.LambdaQueryWrapper;
 import com.example.urgs_api.metadata.mapper.LineageAnalysisRecordMapper;
 import com.example.urgs_api.metadata.model.LineageAnalysisRecord;
 import com.example.urgs_api.metadata.review.dto.LineageReviewAIVerdict;
+import com.example.urgs_api.metadata.review.dto.LineageReviewAuditResult;
 import com.example.urgs_api.metadata.review.dto.LineageReviewDecisionRequest;
 import com.example.urgs_api.metadata.review.entity.LineageReviewCache;
 import com.example.urgs_api.metadata.review.entity.LineageReviewIssue;
@@ -51,7 +52,7 @@ public class LineageReviewServiceImpl implements LineageReviewService {
     private static final int SQL_AUDIT_LIMIT = 100;
     private static final int SQL_AUDIT_SNIPPET_LIMIT = 12000;
     private static final int AI_REVIEW_DISABLED_BUDGET = 0;
-    private static final String AI_REVIEW_PROMPT_VERSION = "relation-type-v2";
+    private static final String AI_REVIEW_PROMPT_VERSION = "two-pass-evidence-v3";
 
     private final LineageAnalysisRecordMapper analysisRecordMapper;
     private final LineageReviewTaskMapper taskMapper;
@@ -150,9 +151,7 @@ public class LineageReviewServiceImpl implements LineageReviewService {
         if ("PENDING".equalsIgnoreCase(reviewStatus)) {
             query.ne(LineageReviewIssue::getVerdict, "REJECTED");
         }
-        query.orderByDesc(LineageReviewIssue::getSeverity)
-                .orderByDesc(LineageReviewIssue::getConfidence)
-                .orderByDesc(LineageReviewIssue::getCreateTime);
+        query.last("ORDER BY CASE severity WHEN 'HIGH' THEN 1 WHEN 'MEDIUM' THEN 2 ELSE 3 END, confidence DESC, create_time DESC");
         return issueMapper.selectList(query);
     }
 
@@ -480,13 +479,19 @@ public class LineageReviewServiceImpl implements LineageReviewService {
                     if (!aiReviewEnabled) {
                         continue;
                     }
-                    if (aiCallCount >= resolveTaskAiBudget(task)) {
+                    if (aiCallCount + 2 > resolveTaskAiBudget(task)) {
                         continue;
                     }
-                    aiCallCount++;
                     Map<String, Object> evidence = buildSqlAuditEvidence(task, sqlAuditObject);
-                    List<LineageReviewAIVerdict> verdicts = aiService.auditSqlLineage(evidence);
-                    for (LineageReviewAIVerdict verdict : verdicts) {
+                    LineageReviewAuditResult auditResult = aiService.auditSqlLineage(evidence);
+                    aiCallCount += auditResult.getAiCallCount();
+                    if (!auditResult.isSuccess()) {
+                        failedCount++;
+                        log.warn("lineage sql audit AI failed, taskId={}, statementHash={}, reason={}",
+                                taskId, sqlAuditObject.get("statementHash"), auditResult.getFailureReason());
+                        continue;
+                    }
+                    for (LineageReviewAIVerdict verdict : auditResult.getVerdicts()) {
                         LineageReviewIssue issue = buildSqlAuditIssue(task, sqlAuditObject, evidence, verdict);
                         if (issue == null) {
                             continue;
@@ -908,17 +913,21 @@ public class LineageReviewServiceImpl implements LineageReviewService {
     }
 
     private Map<String, Object> buildSqlAuditEvidence(LineageReviewTask task, Map<String, Object> object) {
-        List<Map<String, Object>> graphFieldRelations = StringUtils.hasText(toText(object.get("statementUid")))
+        List<Map<String, Object>> rawGraphFieldRelations = StringUtils.hasText(toText(object.get("statementUid")))
                 ? fieldLevelProgramRelations(object)
                 : loadGraphFieldRelationsForAudit(task, object);
+        String sqlSnippet = truncateSnippet(toText(object.get("snippet")));
+        List<Map<String, Object>> programRelations = indexEvidence(object.get("programRelations"), "PR");
+        List<Map<String, Object>> graphFieldRelations = indexEvidence(rawGraphFieldRelations, "GR");
         Map<String, Object> evidence = new LinkedHashMap<>();
         evidence.put("statementHash", object.get("statementHash"));
         evidence.put("normalizedSnippet", object.get("normalizedSnippet"));
-        evidence.put("sqlSnippet", truncateSnippet(toText(object.get("snippet"))));
+        evidence.put("sqlSnippet", sqlSnippet);
+        evidence.put("sqlLines", buildSqlLineEvidence(sqlSnippet));
         evidence.put("sourceFiles", object.getOrDefault("sourceFiles", List.of()));
-        evidence.put("programRelations", object.getOrDefault("programRelations", List.of()));
+        evidence.put("programRelations", programRelations);
         evidence.put("graphFieldRelations", graphFieldRelations);
-        evidence.put("relationsByType", groupRelationsByType(object.get("programRelations")));
+        evidence.put("relationsByType", groupRelationsByType(programRelations));
         evidence.put("relationTypeDescriptions", relationTypeDescriptions());
         evidence.put("relationCount", object.getOrDefault("relationCount", 0));
         evidence.put("auditInstruction",
@@ -933,6 +942,36 @@ public class LineageReviewServiceImpl implements LineageReviewService {
                         + "如果目标字段由 THEN/ELSE 常量或分类值生成，不得因缺少 DERIVES_TO 判定为疑点。"
                         + "如果某个表已经以 JOINS/FILTERS/CASE_WHEN 等影响关系存在，不要把它判定为来源遗漏。");
         return evidence;
+    }
+
+    private List<Map<String, Object>> buildSqlLineEvidence(String sqlSnippet) {
+        if (!StringUtils.hasText(sqlSnippet)) {
+            return Collections.emptyList();
+        }
+        String[] lines = sqlSnippet.split("\\R", -1);
+        List<Map<String, Object>> indexed = new ArrayList<>();
+        for (int i = 0; i < lines.length; i++) {
+            if (!StringUtils.hasText(lines[i])) {
+                continue;
+            }
+            Map<String, Object> line = new LinkedHashMap<>();
+            line.put("evidenceId", "SQL-L" + String.format("%03d", i + 1));
+            line.put("lineNumber", i + 1);
+            line.put("text", lines[i]);
+            indexed.add(line);
+        }
+        return indexed;
+    }
+
+    private List<Map<String, Object>> indexEvidence(Object value, String prefix) {
+        List<Map<String, Object>> relations = asRelationMapList(value);
+        List<Map<String, Object>> indexed = new ArrayList<>();
+        for (int i = 0; i < relations.size(); i++) {
+            Map<String, Object> relation = new LinkedHashMap<>(relations.get(i));
+            relation.put("evidenceId", prefix + "-" + String.format("%03d", i + 1));
+            indexed.add(relation);
+        }
+        return indexed;
     }
 
     private List<Map<String, Object>> fieldLevelProgramRelations(Map<String, Object> object) {
@@ -1084,12 +1123,14 @@ public class LineageReviewServiceImpl implements LineageReviewService {
                 : verdict.getConfidence());
         issue.setVerdict(StringUtils.hasText(verdict.getVerdict()) ? verdict.getVerdict() : "NEEDS_REVIEW");
         issue.setReason(buildPreciseSqlAuditReason(issueType, tableName, columnName, verdict));
-        issue.setRuleHits(List.of("AI_SQL_LINEAGE_RECHECK", "AI_PROGRAM_LINEAGE_COMPARE"));
+        issue.setRuleHits(List.of("AI_SQL_LINEAGE_RECHECK", "AI_TWO_PASS_VERIFIED", "AI_EVIDENCE_VALIDATED"));
         issue.setSuggestedSources(verdict.getSuggestedSources() == null ? new ArrayList<>() : verdict.getSuggestedSources());
         issue.setEvidenceRefs(new ArrayList<>(verdict.getEvidenceRefs()));
-        issue.setGraphSnapshot(evidence);
+        Map<String, Object> snapshot = new LinkedHashMap<>(evidence);
+        snapshot.put("aiReview", buildAiReviewPresentation(verdict));
+        issue.setGraphSnapshot(snapshot);
         issue.setFingerprint(hashOf(task.getAnalysisRecordId(), task.getPathPrefix(), snippetHash, issueType,
-                verdict.getReason(), String.valueOf(issue.getEvidenceRefs())));
+                tableName, columnName, String.valueOf(issue.getSuggestedSources()), verdict.getExpectedRelationType()));
         issue.setReviewStatus("PENDING");
         issue.setCreateTime(LocalDateTime.now());
         issue.setUpdateTime(LocalDateTime.now());
@@ -1154,7 +1195,8 @@ public class LineageReviewServiceImpl implements LineageReviewService {
             return false;
         }
         return suggestedSources.stream()
-                .allMatch(source -> hasFieldRelation(relations, source.get("table"), source.get("column"), tableName, columnName));
+                .allMatch(source -> hasFieldRelation(relations, source.get("table"), source.get("column"),
+                        tableName, columnName, verdict.getExpectedRelationType()));
     }
 
     private List<Map<String, Object>> asRelationMapList(Object value) {
@@ -1190,10 +1232,11 @@ public class LineageReviewServiceImpl implements LineageReviewService {
     }
 
     private boolean hasFieldRelation(List<Map<String, Object>> relations, String sourceTable, String sourceColumn,
-            String targetTable, String targetColumn) {
+            String targetTable, String targetColumn, String expectedRelationType) {
         return relations.stream().anyMatch(rel -> {
             String relationType = toText(rel.get("relationType"));
-            if (!"DERIVES_TO".equalsIgnoreCase(relationType) && !"CASE_WHEN".equalsIgnoreCase(relationType)) {
+            String requiredType = StringUtils.hasText(expectedRelationType) ? expectedRelationType : "DERIVES_TO";
+            if (!requiredType.equalsIgnoreCase(relationType)) {
                 return false;
             }
             if (!sameQualifiedName(sourceTable, toText(rel.get("sourceTable")))
@@ -1221,18 +1264,32 @@ public class LineageReviewServiceImpl implements LineageReviewService {
     private String buildPreciseSqlAuditReason(String issueType, String tableName, String columnName,
             LineageReviewAIVerdict verdict) {
         String target = StringUtils.hasText(columnName) ? tableName + "." + columnName : tableName;
-        String sourceSummary = verdict.getSuggestedSources() == null || verdict.getSuggestedSources().isEmpty()
-                ? "未给出字段级建议来源"
-                : String.join(", ", verdict.getSuggestedSources());
-        String evidenceSummary = verdict.getEvidenceRefs() == null || verdict.getEvidenceRefs().isEmpty()
-                ? "未给出字段级证据"
-                : String.join("；", verdict.getEvidenceRefs());
-        String relationExpectation = expectedRelationDescription(issueType, verdict);
-        return "现状：" + currentStateDescription(issueType, target, sourceSummary)
-                + "\n期待效果：" + sourceSummary + " 应通过 " + relationExpectation + " 指向 " + target
-                + "\n问题：" + issueTypeDescription(issueType) + "。AI 判断说明：" + toText(verdict.getReason())
-                + "\n证据：" + evidenceSummary
-                + "\n建议排查：" + investigationHint(issueType, verdict);
+        return "结论：" + defaultText(verdict.getSummary(), issueTypeDescription(issueType) + "：" + target)
+                + "\n当前解析：" + defaultText(verdict.getCurrentState(), "程序当前关系需核对")
+                + "\nSQL 期待：" + defaultText(verdict.getExpectedState(), "SQL 期待关系需核对")
+                + "\n关键差异：" + defaultText(verdict.getReason(), "当前解析与 SQL 期待不一致")
+                + "\n证据编号：" + String.join("、", verdict.getEvidenceRefs())
+                + "\n处置建议：" + defaultText(verdict.getDisposition(), "人工复核") + "；"
+                + defaultText(verdict.getRecommendation(), "按证据编号核对 SQL 与字段关系");
+    }
+
+    private Map<String, Object> buildAiReviewPresentation(LineageReviewAIVerdict verdict) {
+        Map<String, Object> presentation = new LinkedHashMap<>();
+        presentation.put("schemaVersion", "two-pass-evidence-v3");
+        presentation.put("summary", verdict.getSummary());
+        presentation.put("currentState", verdict.getCurrentState());
+        presentation.put("expectedState", verdict.getExpectedState());
+        presentation.put("difference", verdict.getReason());
+        presentation.put("expectedRelationType", verdict.getExpectedRelationType());
+        presentation.put("disposition", verdict.getDisposition());
+        presentation.put("recommendation", verdict.getRecommendation());
+        presentation.put("evidenceRefs", verdict.getEvidenceRefs());
+        presentation.put("suggestedSources", verdict.getSuggestedSources());
+        return presentation;
+    }
+
+    private String defaultText(String value, String fallback) {
+        return StringUtils.hasText(value) ? value.trim() : fallback;
     }
 
     private String currentStateDescription(String issueType, String target, String sourceSummary) {

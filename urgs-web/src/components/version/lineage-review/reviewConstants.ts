@@ -58,7 +58,10 @@ export const ruleHitLabelMap: Record<string, string> = {
     NO_DIRECT_DERIVATION: '缺少直接派生关系',
     TOO_MANY_SOURCES: '来源数量过多',
     SAME_NAME_MULTI_TABLE: '同名字段多表匹配',
-    TABLE_LEVEL_RELATION_SPARSE: '表级关系覆盖不足'
+    TABLE_LEVEL_RELATION_SPARSE: '表级关系覆盖不足',
+    AI_SQL_LINEAGE_RECHECK: 'AI 对照 SQL 复核',
+    AI_TWO_PASS_VERIFIED: '候选发现与独立复核',
+    AI_EVIDENCE_VALIDATED: '证据编号已校验'
 };
 
 export const confirmedProblemTypeLabelMap: Record<string, string> = {
