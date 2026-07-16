@@ -34,14 +34,14 @@ class LineageReviewAiServiceTest {
     }
 
     @Test
-    void dropsVerdictWhenEvidenceIdIsNotInCurrentEvidencePack() {
+    void reportsVerificationProtocolFailureWhenEvidenceIdIsNotInCurrentEvidencePack() {
         LineageReviewAiService service = serviceWith(
                 issueResponse("NEEDS_REVIEW", 0.72, List.of("SQL-L001", "PR-001")),
                 issueResponse("CONFIRMED", 0.95, List.of("SQL-L999", "PR-999")));
 
         LineageReviewAuditResult result = service.auditSqlLineage(evidence());
 
-        assertThat(result.isSuccess()).isTrue();
+        assertThat(result.isSuccess()).isFalse();
         assertThat(result.getVerdicts()).isEmpty();
     }
 
@@ -85,13 +85,54 @@ class LineageReviewAiServiceTest {
     }
 
     @Test
-    void dropsWrongSourceWithoutProgramOrGraphRelationEvidence() {
+    void reportsVerificationProtocolFailureWithoutRelationEvidence() {
         LineageReviewAiService service = serviceWith(
                 issueResponse("NEEDS_REVIEW", 0.72, List.of("SQL-L001", "PR-001")),
                 issueResponse("CONFIRMED", 0.95, List.of("SQL-L001")));
 
         LineageReviewAuditResult result = service.auditSqlLineage(evidence());
 
+        assertThat(result.isSuccess()).isFalse();
+        assertThat(result.getVerdicts()).isEmpty();
+    }
+
+    @Test
+    void screensMicroBatchAndKeepsStatementAttribution() {
+        LineageReviewAiService service = serviceWith(issueResponseWithStatement(
+                "stmt-2", "NEEDS_REVIEW", 0.72, List.of("SQL-L001", "PR-001")));
+
+        Map<String, Object> first = new java.util.LinkedHashMap<>(evidence());
+        first.put("statementUid", "stmt-1");
+        Map<String, Object> second = new java.util.LinkedHashMap<>(evidence());
+        second.put("statementUid", "stmt-2");
+        LineageReviewAuditResult result = service.screenSqlBatch(List.of(first, second));
+
+        assertThat(result.isSuccess()).isTrue();
+        assertThat(result.getAiCallCount()).isEqualTo(1);
+        assertThat(result.getVerdicts()).hasSize(1);
+        assertThat(result.getVerdicts().get(0).getStatementUid()).isEqualTo("stmt-2");
+    }
+
+    @Test
+    void verifiesSingleStatementWithOneAiCall() {
+        LineageReviewAiService service = serviceWith(
+                issueResponse("CONFIRMED", 0.91, List.of("SQL-L001", "PR-001")));
+
+        LineageReviewAuditResult result = service.verifySqlLineage(evidence(), List.of());
+
+        assertThat(result.isSuccess()).isTrue();
+        assertThat(result.getAiCallCount()).isEqualTo(1);
+        assertThat(result.getVerdicts()).hasSize(1);
+    }
+
+    @Test
+    void acceptsExplicitlyRejectedVerificationCandidateAsNoIssue() {
+        LineageReviewAiService service = serviceWith(
+                issueResponse("REJECTED", 0.95, List.of("SQL-L001", "PR-001")));
+
+        LineageReviewAuditResult result = service.verifySqlLineage(evidence(), List.of());
+
+        assertThat(result.isSuccess()).isTrue();
         assertThat(result.getVerdicts()).isEmpty();
     }
 
@@ -122,6 +163,15 @@ class LineageReviewAiServiceTest {
 
     private String issueResponse(String verdict, double confidence, List<String> evidenceRefs) {
         return issueResponseFor("WRONG_SOURCE", verdict, confidence, evidenceRefs);
+    }
+
+    private String issueResponseWithStatement(
+            String statementUid,
+            String verdict,
+            double confidence,
+            List<String> evidenceRefs) {
+        return issueResponseFor("WRONG_SOURCE", verdict, confidence, evidenceRefs)
+                .replace("\"issueType\"", "\"statementUid\": \"" + statementUid + "\",\n                    \"issueType\"");
     }
 
     private String issueResponseFor(String issueType, String verdict, double confidence, List<String> evidenceRefs) {

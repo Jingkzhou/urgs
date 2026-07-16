@@ -14,6 +14,12 @@ export interface ReviewProgressSummary {
     reviewedIssues: number;
     reviewRate: number;
     executionRate: number;
+    totalStatements: number;
+    coveredStatements: number;
+    verifiedStatements: number;
+    skippedStatements: number;
+    failedStatementAudits: number;
+    statementCoverageRate: number;
 }
 
 export interface TaskSourceMeta {
@@ -159,6 +165,15 @@ export const calculateReviewProgressSummary = (tasks: LineageReviewTask[]): Revi
     const executionRate = totalTasks > 0
         ? Math.round(tasks.reduce((sum, item) => sum + getTaskExecutionRate(item), 0) / totalTasks)
         : 0;
+    const aiTasks = tasks.filter(item => (item.tokenBudget || 0) > 0);
+    const totalStatements = aiTasks.reduce((sum, item) => sum + (item.objectCount || 0), 0);
+    const coveredStatements = aiTasks.reduce((sum, item) => sum + (item.screenedStatementCount || 0), 0);
+    const verifiedStatements = aiTasks.reduce((sum, item) => sum + (item.verifiedStatementCount || 0), 0);
+    const skippedStatements = aiTasks.reduce((sum, item) => sum + (item.skippedStatementCount || 0), 0);
+    const failedStatementAudits = aiTasks.reduce((sum, item) => sum + (item.failedStatementAuditCount || 0), 0);
+    const statementCoverageRate = totalStatements > 0
+        ? Math.min(100, Math.round(coveredStatements * 100 / totalStatements))
+        : 0;
 
     return {
         totalTasks,
@@ -173,7 +188,13 @@ export const calculateReviewProgressSummary = (tasks: LineageReviewTask[]): Revi
         ignoredIssues,
         reviewedIssues,
         reviewRate,
-        executionRate
+        executionRate,
+        totalStatements,
+        coveredStatements,
+        verifiedStatements,
+        skippedStatements,
+        failedStatementAudits,
+        statementCoverageRate
     };
 };
 

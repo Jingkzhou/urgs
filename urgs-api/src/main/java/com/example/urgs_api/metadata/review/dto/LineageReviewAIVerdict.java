@@ -7,6 +7,7 @@ import java.util.List;
 
 @Data
 public class LineageReviewAIVerdict {
+    private String statementUid;
     private String issueType;
     private String targetTable;
     private String targetColumn;

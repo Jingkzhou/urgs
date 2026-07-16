@@ -235,6 +235,13 @@ export interface LineageReviewTask {
     totalReviewIssueCount?: number;
     reviewCompletionRate?: number;
     executionProgressRate?: number;
+    screenedStatementCount?: number;
+    verifiedStatementCount?: number;
+    noIssueStatementCount?: number;
+    skippedStatementCount?: number;
+    failedStatementAuditCount?: number;
+    highRiskStatementCount?: number;
+    statementCoverageRate?: number;
 }
 
 export interface LineageReviewEvidenceItem extends Record<string, unknown> {
@@ -332,12 +339,25 @@ export const triggerLineageReview = (data: { analysisRecordId: string; forceReru
     post<{ success: boolean; message: string }>('/api/metadata/lineage/review/tasks/trigger', data);
 
 export const clearLineageReviewHistory = () =>
-    del<{ success: boolean; message: string; taskCount: number; issueCount: number; cacheCount: number }>(
+    del<{ success: boolean; message: string; taskCount: number; issueCount: number; statementAuditCount: number; cacheCount: number }>(
         '/api/metadata/lineage/review/history'
     );
 
 export const getLineageReviewTaskSqlPreview = (taskId: number) =>
-    get<Array<{ snippet: string; sourceFiles: string[]; relationCount: number }>>(
+    get<Array<{
+        statementUid?: string;
+        snippet: string;
+        sourceFiles: string[];
+        relationCount: number;
+        auditStatus?: string;
+        riskScore?: number;
+        riskReasons?: string[];
+        highRisk?: boolean;
+        screeningCandidate?: boolean;
+        aiCallCount?: number;
+        auditIssueCount?: number;
+        skipReason?: string;
+    }>>(
         `/api/metadata/lineage/review/tasks/${taskId}/sql-preview`
     );
 

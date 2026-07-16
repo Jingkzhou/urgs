@@ -8,9 +8,11 @@ import com.example.urgs_api.metadata.review.dto.LineageReviewAuditResult;
 import com.example.urgs_api.metadata.review.dto.LineageReviewDecisionRequest;
 import com.example.urgs_api.metadata.review.entity.LineageReviewCache;
 import com.example.urgs_api.metadata.review.entity.LineageReviewIssue;
+import com.example.urgs_api.metadata.review.entity.LineageReviewStatementAudit;
 import com.example.urgs_api.metadata.review.entity.LineageReviewTask;
 import com.example.urgs_api.metadata.review.mapper.LineageReviewCacheMapper;
 import com.example.urgs_api.metadata.review.mapper.LineageReviewIssueMapper;
+import com.example.urgs_api.metadata.review.mapper.LineageReviewStatementAuditMapper;
 import com.example.urgs_api.metadata.review.mapper.LineageReviewTaskMapper;
 import com.example.urgs_api.metadata.review.service.LineageReviewAiService;
 import com.example.urgs_api.metadata.review.service.LineageReviewService;
@@ -49,16 +51,16 @@ public class LineageReviewServiceImpl implements LineageReviewService {
     private static final int TASK_BATCH_SIZE = 200;
     private static final int TASK_AI_BUDGET = 150;
     private static final int RULE_AI_BUDGET = 50;
-    private static final int SQL_AUDIT_LIMIT = 100;
-    private static final int SQL_AUDIT_SNIPPET_LIMIT = 12000;
     private static final int AI_REVIEW_DISABLED_BUDGET = 0;
-    private static final String AI_REVIEW_PROMPT_VERSION = "two-pass-evidence-v3";
+    private static final String AI_REVIEW_PROMPT_VERSION = "hybrid-batch-evidence-v4";
 
     private final LineageAnalysisRecordMapper analysisRecordMapper;
     private final LineageReviewTaskMapper taskMapper;
     private final LineageReviewIssueMapper issueMapper;
     private final LineageReviewCacheMapper cacheMapper;
+    private final LineageReviewStatementAuditMapper statementAuditMapper;
     private final LineageReviewAiService aiService;
+    private final LineageReviewSqlAuditPlanner sqlAuditPlanner;
     private final LineageReviewTaskSummaryService taskSummaryService;
     private final Driver neo4jDriver;
     private final Executor taskExecutor;
@@ -67,7 +69,9 @@ public class LineageReviewServiceImpl implements LineageReviewService {
             LineageReviewTaskMapper taskMapper,
             LineageReviewIssueMapper issueMapper,
             LineageReviewCacheMapper cacheMapper,
+            LineageReviewStatementAuditMapper statementAuditMapper,
             LineageReviewAiService aiService,
+            LineageReviewSqlAuditPlanner sqlAuditPlanner,
             LineageReviewTaskSummaryService taskSummaryService,
             Driver neo4jDriver,
             @Qualifier("aiTaskExecutor") Executor taskExecutor) {
@@ -75,7 +79,9 @@ public class LineageReviewServiceImpl implements LineageReviewService {
         this.taskMapper = taskMapper;
         this.issueMapper = issueMapper;
         this.cacheMapper = cacheMapper;
+        this.statementAuditMapper = statementAuditMapper;
         this.aiService = aiService;
+        this.sqlAuditPlanner = sqlAuditPlanner;
         this.taskSummaryService = taskSummaryService;
         this.neo4jDriver = neo4jDriver;
         this.taskExecutor = taskExecutor;
@@ -234,12 +240,33 @@ public class LineageReviewServiceImpl implements LineageReviewService {
                         taskId, diagnostic.asMap());
             }
         }
+        LambdaQueryWrapper<LineageReviewStatementAudit> statementQuery = new LambdaQueryWrapper<>();
+        statementQuery.eq(LineageReviewStatementAudit::getTaskId, taskId);
+        Map<String, LineageReviewStatementAudit> statementAudits = statementAuditMapper.selectList(statementQuery).stream()
+                .collect(Collectors.toMap(
+                        LineageReviewStatementAudit::getStatementUid,
+                        audit -> audit,
+                        (left, right) -> left,
+                        LinkedHashMap::new));
         for (Map<String, Object> auditObject : loadSqlAuditObjects(task)) {
+            String statementUid = resolveStatementUid(auditObject);
+            LineageReviewStatementAudit statementAudit = statementAudits.get(statementUid);
             Map<String, Object> item = new LinkedHashMap<>();
+            item.put("statementUid", statementUid);
             item.put("statementHash", auditObject.get("statementHash"));
             item.put("snippet", auditObject.get("snippet"));
             item.put("sourceFiles", auditObject.getOrDefault("sourceFiles", List.of()));
             item.put("relationCount", auditObject.getOrDefault("relationCount", 0));
+            if (statementAudit != null) {
+                item.put("auditStatus", statementAudit.getAuditStatus());
+                item.put("riskScore", statementAudit.getRiskScore());
+                item.put("riskReasons", statementAudit.getRiskReasonsJson());
+                item.put("highRisk", statementAudit.getIsHighRisk());
+                item.put("screeningCandidate", statementAudit.getIsScreeningCandidate());
+                item.put("aiCallCount", statementAudit.getAiCallCount());
+                item.put("auditIssueCount", statementAudit.getIssueCount());
+                item.put("skipReason", statementAudit.getSkipReason());
+            }
             results.add(item);
         }
         log.info("[LineageSqlPreviewDiag] marker=sql-preview-pathfix-20260516 taskId={} returnedPreviews={}",
@@ -346,6 +373,9 @@ public class LineageReviewServiceImpl implements LineageReviewService {
         LambdaQueryWrapper<LineageReviewIssue> issueQuery = new LambdaQueryWrapper<>();
         issueQuery.eq(LineageReviewIssue::getTaskId, existing.getId());
         issueMapper.delete(issueQuery);
+        LambdaQueryWrapper<LineageReviewStatementAudit> statementAuditQuery = new LambdaQueryWrapper<>();
+        statementAuditQuery.eq(LineageReviewStatementAudit::getTaskId, existing.getId());
+        statementAuditMapper.delete(statementAuditQuery);
         return existing;
     }
 
@@ -474,45 +504,21 @@ public class LineageReviewServiceImpl implements LineageReviewService {
                 updateTaskProgress(task, processed, issueCount, failedCount, aiCallCount, cacheHits, batchCount);
             }
 
-            for (Map<String, Object> sqlAuditObject : sqlAuditObjects) {
-                try {
-                    if (!aiReviewEnabled) {
-                        continue;
-                    }
-                    if (aiCallCount + 2 > resolveTaskAiBudget(task)) {
-                        continue;
-                    }
-                    Map<String, Object> evidence = buildSqlAuditEvidence(task, sqlAuditObject);
-                    LineageReviewAuditResult auditResult = aiService.auditSqlLineage(evidence);
-                    aiCallCount += auditResult.getAiCallCount();
-                    if (!auditResult.isSuccess()) {
-                        failedCount++;
-                        log.warn("lineage sql audit AI failed, taskId={}, statementHash={}, reason={}",
-                                taskId, sqlAuditObject.get("statementHash"), auditResult.getFailureReason());
-                        continue;
-                    }
-                    for (LineageReviewAIVerdict verdict : auditResult.getVerdicts()) {
-                        LineageReviewIssue issue = buildSqlAuditIssue(task, sqlAuditObject, evidence, verdict);
-                        if (issue == null) {
-                            continue;
-                        }
-                        issueMapper.insert(issue);
-                        if (isFormalIssue(issue)) {
-                            issueCount++;
-                        }
-                    }
-                } catch (Exception ex) {
-                    failedCount++;
-                    log.warn("lineage sql audit failed, taskId={}, object={}", taskId, sqlAuditObject, ex);
-                } finally {
-                    processed++;
-                    updateTaskProgress(task, processed, issueCount, failedCount, aiCallCount, cacheHits, batchCount);
-                }
+            int skippedCount = 0;
+            if (aiReviewEnabled && !sqlAuditObjects.isEmpty()) {
+                SqlAuditRunStats stats = runHybridSqlAudits(task, sqlAuditObjects, forceRerun);
+                processed += stats.processedCount();
+                issueCount += stats.formalIssueCount();
+                failedCount += stats.failedCount();
+                aiCallCount += stats.aiCallCount();
+                cacheHits += stats.cacheHitCount();
+                batchCount += stats.batchCount();
+                skippedCount += stats.skippedCount();
             }
 
-            task.setStatus(failedCount > 0 ? "DEGRADED" : "COMPLETED");
+            task.setStatus(failedCount > 0 || skippedCount > 0 ? "DEGRADED" : "COMPLETED");
             task.setFinishedAt(LocalDateTime.now());
-            task.setLastError(failedCount > 0 ? "部分对象处理失败" : null);
+            task.setLastError(buildTaskAuditWarning(failedCount, skippedCount));
             updateTaskProgress(task, processed, issueCount, failedCount, aiCallCount, cacheHits, batchCount);
         } catch (Exception ex) {
             task.setStatus("FAILED");
@@ -522,6 +528,487 @@ public class LineageReviewServiceImpl implements LineageReviewService {
             taskMapper.updateById(task);
             log.error("lineage review task failed: {}", taskId, ex);
         }
+    }
+
+    private SqlAuditRunStats runHybridSqlAudits(
+            LineageReviewTask task,
+            List<Map<String, Object>> sqlAuditObjects,
+            boolean forceRerun) {
+        int processed = 0;
+        int formalIssueCount = 0;
+        int failedCount = 0;
+        int skippedCount = 0;
+        int aiCallCount = 0;
+        int cacheHitCount = 0;
+        int batchCount = 0;
+
+        List<Map<String, Object>> allEvidencePackages = new ArrayList<>();
+        Map<String, Map<String, Object>> objectsByStatement = new LinkedHashMap<>();
+        Map<String, LineageReviewStatementAudit> auditsByStatement = new LinkedHashMap<>();
+
+        for (Map<String, Object> sqlAuditObject : sqlAuditObjects) {
+            String statementUid = resolveStatementUid(sqlAuditObject);
+            try {
+                LineageReviewSqlAuditPlanner.RiskAssessment risk = sqlAuditPlanner.assess(sqlAuditObject);
+                Map<String, Object> evidence = buildSqlAuditEvidence(task, sqlAuditObject);
+                evidence.put("statementUid", statementUid);
+                evidence.put("contextGroupId", risk.contextGroupId());
+                evidence.put("riskScore", risk.score());
+                evidence.put("riskReasons", risk.reasons());
+                evidence.put("highRisk", risk.highRisk());
+                evidence.put("evidenceHash", buildSqlAuditEvidenceHash(evidence));
+                allEvidencePackages.add(evidence);
+                objectsByStatement.put(statementUid, sqlAuditObject);
+                auditsByStatement.put(statementUid, initializeStatementAudit(task, evidence));
+            } catch (Exception ex) {
+                failedCount++;
+                processed++;
+                log.warn("lineage sql audit evidence build failed, taskId={}, statementUid={}",
+                        task.getId(), statementUid, ex);
+            }
+        }
+
+        List<Map<String, Object>> screeningEvidence = new ArrayList<>();
+        for (Map<String, Object> evidence : allEvidencePackages) {
+            String statementUid = toText(evidence.get("statementUid"));
+            LineageReviewStatementAudit audit = auditsByStatement.get(statementUid);
+            String cacheKey = buildSqlAuditCacheKey(evidence);
+            LineageReviewCache cache = forceRerun ? null : loadCache(cacheKey);
+            List<LineageReviewAIVerdict> cachedVerdicts = readSqlAuditCache(cache);
+            if (cachedVerdicts == null) {
+                screeningEvidence.add(evidence);
+                continue;
+            }
+            PersistedIssueStats persisted = persistSqlAuditVerdicts(
+                    task,
+                    objectsByStatement.get(statementUid),
+                    evidence,
+                    cachedVerdicts);
+            formalIssueCount += persisted.formalCount();
+            markStatementCached(audit, persisted.totalCount(), cache);
+            touchCache(cache);
+            cacheHitCount++;
+            processed++;
+        }
+
+        List<List<Map<String, Object>>> batches = sqlAuditPlanner.buildScreeningBatches(screeningEvidence);
+        for (List<Map<String, Object>> batch : batches) {
+            if (aiCallCount + 1 > resolveTaskAiBudget(task)) {
+                for (Map<String, Object> evidence : batch) {
+                    markStatementSkipped(auditsByStatement.get(toText(evidence.get("statementUid"))),
+                            "AI 初筛预算不足");
+                    skippedCount++;
+                    processed++;
+                }
+                continue;
+            }
+
+            String batchKey = hashOf("SCREENING", batch.stream()
+                    .map(item -> toText(item.get("statementUid")))
+                    .collect(Collectors.joining("|")));
+            batch.forEach(evidence -> markStatementScreening(
+                    auditsByStatement.get(toText(evidence.get("statementUid"))), batchKey));
+            LineageReviewAuditResult screeningResult = aiService.screenSqlBatch(batch);
+            aiCallCount += screeningResult.getAiCallCount();
+            batchCount++;
+
+            Map<String, List<LineageReviewAIVerdict>> candidatesByStatement = screeningResult.getVerdicts().stream()
+                    .filter(verdict -> StringUtils.hasText(verdict.getStatementUid()))
+                    .collect(Collectors.groupingBy(LineageReviewAIVerdict::getStatementUid,
+                            LinkedHashMap::new, Collectors.toList()));
+
+            for (Map<String, Object> evidence : batch) {
+                String statementUid = toText(evidence.get("statementUid"));
+                LineageReviewStatementAudit audit = auditsByStatement.get(statementUid);
+                List<LineageReviewAIVerdict> candidates = candidatesByStatement.getOrDefault(statementUid, List.of());
+                boolean highRisk = Boolean.TRUE.equals(evidence.get("highRisk"));
+                boolean needsVerification = !screeningResult.isSuccess() || highRisk || !candidates.isEmpty();
+                if (!needsVerification) {
+                    markStatementScreenedNoIssue(audit);
+                    processed++;
+                    continue;
+                }
+
+                markStatementWaitingVerification(
+                        audit,
+                        !candidates.isEmpty(),
+                        screeningResult.isSuccess() ? null : screeningResult.getFailureReason());
+                if (aiCallCount + 1 > resolveTaskAiBudget(task)) {
+                    markStatementSkipped(audit, "AI 单句精审预算不足");
+                    skippedCount++;
+                    processed++;
+                    continue;
+                }
+
+                Map<String, Object> verificationEvidence = new LinkedHashMap<>(evidence);
+                verificationEvidence.put("contextStatements",
+                        sqlAuditPlanner.neighborContext(allEvidencePackages, evidence));
+                LineageReviewAuditResult verificationResult = aiService.verifySqlLineage(
+                        verificationEvidence,
+                        candidates);
+                aiCallCount += verificationResult.getAiCallCount();
+                if (!verificationResult.isSuccess()) {
+                    markStatementFailed(audit, verificationResult.getFailureReason());
+                    failedCount++;
+                    processed++;
+                    continue;
+                }
+
+                PersistedIssueStats persisted = persistSqlAuditVerdicts(
+                        task,
+                        objectsByStatement.get(statementUid),
+                        evidence,
+                        verificationResult.getVerdicts());
+                formalIssueCount += persisted.formalCount();
+                markStatementVerified(audit, persisted.totalCount(), verificationResult.getVerdicts());
+                saveSqlAuditCache(buildSqlAuditCacheKey(evidence), evidence, verificationResult.getVerdicts());
+                processed++;
+            }
+            updateTaskProgress(task, processed, formalIssueCount, failedCount,
+                    aiCallCount, cacheHitCount, batchCount);
+        }
+
+        return new SqlAuditRunStats(processed, formalIssueCount, failedCount, skippedCount,
+                aiCallCount, cacheHitCount, batchCount);
+    }
+
+    private String buildTaskAuditWarning(int failedCount, int skippedCount) {
+        if (failedCount <= 0 && skippedCount <= 0) {
+            return null;
+        }
+        List<String> warnings = new ArrayList<>();
+        if (failedCount > 0) {
+            warnings.add("失败语句 " + failedCount + " 条");
+        }
+        if (skippedCount > 0) {
+            warnings.add("预算跳过 " + skippedCount + " 条");
+        }
+        return String.join("；", warnings);
+    }
+
+    private String resolveStatementUid(Map<String, Object> sqlAuditObject) {
+        String statementUid = toText(sqlAuditObject.get("statementUid"));
+        if (!StringUtils.hasText(statementUid)) {
+            statementUid = toText(sqlAuditObject.get("statementHash"));
+        }
+        if (!StringUtils.hasText(statementUid)) {
+            statementUid = hashOf(
+                    normalizeSqlForAudit(toText(sqlAuditObject.get("snippet"))),
+                    String.valueOf(sqlAuditObject.getOrDefault("sourceFiles", List.of())));
+        }
+        return statementUid.length() <= 64 ? statementUid : hashOf(statementUid);
+    }
+
+    private String buildSqlAuditEvidenceHash(Map<String, Object> evidence) {
+        return hashOf(
+                AI_REVIEW_PROMPT_VERSION,
+                toText(evidence.get("statementHash")),
+                toText(evidence.get("normalizedSnippet")),
+                toText(evidence.get("sqlSnippet")),
+                String.valueOf(evidence.getOrDefault("programRelations", List.of())),
+                String.valueOf(evidence.getOrDefault("graphFieldRelations", List.of())));
+    }
+
+    private LineageReviewStatementAudit initializeStatementAudit(
+            LineageReviewTask task,
+            Map<String, Object> evidence) {
+        String statementUid = toText(evidence.get("statementUid"));
+        LambdaQueryWrapper<LineageReviewStatementAudit> query = new LambdaQueryWrapper<>();
+        query.eq(LineageReviewStatementAudit::getTaskId, task.getId())
+                .eq(LineageReviewStatementAudit::getStatementUid, statementUid)
+                .last("LIMIT 1");
+        LineageReviewStatementAudit audit = statementAuditMapper.selectOne(query);
+        boolean isNew = audit == null;
+        if (isNew) {
+            audit = new LineageReviewStatementAudit();
+            audit.setTaskId(task.getId());
+            audit.setStatementUid(statementUid);
+            audit.setCreateTime(LocalDateTime.now());
+        }
+        audit.setStatementHash(toText(evidence.get("statementHash")));
+        audit.setContextGroupId(toText(evidence.get("contextGroupId")));
+        audit.setSourceFilesJson(asStringList(evidence.get("sourceFiles")));
+        audit.setRiskScore(toInteger(evidence.get("riskScore"), 0));
+        audit.setRiskReasonsJson(asStringList(evidence.get("riskReasons")));
+        audit.setIsHighRisk(Boolean.TRUE.equals(evidence.get("highRisk")));
+        audit.setAuditStatus("PENDING");
+        audit.setScreeningBatchKey(null);
+        audit.setIsScreeningCandidate(false);
+        audit.setAiCallCount(0);
+        audit.setIssueCount(0);
+        audit.setSkipReason(null);
+        audit.setEvidenceHash(toText(evidence.get("evidenceHash")));
+        audit.setResultJson(null);
+        audit.setStartedTime(null);
+        audit.setFinishedTime(null);
+        audit.setUpdateTime(LocalDateTime.now());
+        if (isNew) {
+            statementAuditMapper.insert(audit);
+        } else {
+            statementAuditMapper.updateById(audit);
+        }
+        return audit;
+    }
+
+    private String buildSqlAuditCacheKey(Map<String, Object> evidence) {
+        return hashOf(
+                AI_REVIEW_PROMPT_VERSION,
+                aiService.resolveModelName(),
+                toText(evidence.get("evidenceHash")));
+    }
+
+    private List<LineageReviewAIVerdict> readSqlAuditCache(LineageReviewCache cache) {
+        if (cache == null || cache.getResultJson() == null
+                || !"SQL_HYBRID_AUDIT_V4".equals(cache.getResultJson().get("kind"))) {
+            return null;
+        }
+        Object verdictsValue = cache.getResultJson().get("verdicts");
+        if (!(verdictsValue instanceof List<?> verdictValues)) {
+            return List.of();
+        }
+        List<LineageReviewAIVerdict> verdicts = new ArrayList<>();
+        for (Object value : verdictValues) {
+            if (!(value instanceof Map<?, ?> raw)) {
+                continue;
+            }
+            Map<String, Object> item = new LinkedHashMap<>();
+            raw.forEach((key, mapValue) -> {
+                if (key != null) {
+                    item.put(String.valueOf(key), mapValue);
+                }
+            });
+            verdicts.add(mapToVerdict(item));
+        }
+        return verdicts;
+    }
+
+    private LineageReviewAIVerdict mapToVerdict(Map<String, Object> item) {
+        LineageReviewAIVerdict verdict = new LineageReviewAIVerdict();
+        verdict.setStatementUid(toText(item.get("statementUid")));
+        verdict.setIssueType(toText(item.get("issueType")));
+        verdict.setTargetTable(toText(item.get("targetTable")));
+        verdict.setTargetColumn(toText(item.get("targetColumn")));
+        verdict.setSeverity(toText(item.get("severity")));
+        verdict.setConfidence(toBigDecimal(item.get("confidence")));
+        verdict.setVerdict(toText(item.get("verdict")));
+        verdict.setSummary(toText(item.get("summary")));
+        verdict.setCurrentState(toText(item.get("currentState")));
+        verdict.setExpectedState(toText(item.get("expectedState")));
+        verdict.setReason(toText(item.get("reason")));
+        verdict.setExpectedRelationType(toText(item.get("expectedRelationType")));
+        verdict.setDisposition(toText(item.get("disposition")));
+        verdict.setRecommendation(toText(item.get("recommendation")));
+        verdict.setSuggestedSources(asStringList(item.get("suggestedSources")));
+        verdict.setEvidenceRefs(asStringList(item.get("evidenceRefs")));
+        return verdict;
+    }
+
+    private PersistedIssueStats persistSqlAuditVerdicts(
+            LineageReviewTask task,
+            Map<String, Object> sqlAuditObject,
+            Map<String, Object> evidence,
+            List<LineageReviewAIVerdict> verdicts) {
+        if (sqlAuditObject == null || verdicts == null || verdicts.isEmpty()) {
+            return new PersistedIssueStats(0, 0);
+        }
+        int totalCount = 0;
+        int formalCount = 0;
+        for (LineageReviewAIVerdict verdict : verdicts) {
+            LineageReviewIssue issue = buildSqlAuditIssue(task, sqlAuditObject, evidence, verdict);
+            if (issue == null) {
+                continue;
+            }
+            issueMapper.insert(issue);
+            totalCount++;
+            if (isFormalIssue(issue)) {
+                formalCount++;
+            }
+        }
+        return new PersistedIssueStats(totalCount, formalCount);
+    }
+
+    private void markStatementCached(
+            LineageReviewStatementAudit audit,
+            int issueCount,
+            LineageReviewCache cache) {
+        if (audit == null) {
+            return;
+        }
+        audit.setAuditStatus("CACHED");
+        audit.setIssueCount(issueCount);
+        audit.setResultJson(cache == null ? null : cache.getResultJson());
+        audit.setFinishedTime(LocalDateTime.now());
+        updateStatementAudit(audit);
+    }
+
+    private void markStatementSkipped(LineageReviewStatementAudit audit, String reason) {
+        if (audit == null) {
+            return;
+        }
+        audit.setAuditStatus("SKIPPED_BUDGET");
+        audit.setSkipReason(reason);
+        audit.setFinishedTime(LocalDateTime.now());
+        updateStatementAudit(audit);
+    }
+
+    private void markStatementScreening(LineageReviewStatementAudit audit, String batchKey) {
+        if (audit == null) {
+            return;
+        }
+        audit.setAuditStatus("SCREENING");
+        audit.setScreeningBatchKey(batchKey);
+        audit.setAiCallCount((audit.getAiCallCount() == null ? 0 : audit.getAiCallCount()) + 1);
+        audit.setStartedTime(audit.getStartedTime() == null ? LocalDateTime.now() : audit.getStartedTime());
+        updateStatementAudit(audit);
+    }
+
+    private void markStatementScreenedNoIssue(LineageReviewStatementAudit audit) {
+        if (audit == null) {
+            return;
+        }
+        audit.setAuditStatus("SCREENED_NO_ISSUE");
+        audit.setIssueCount(0);
+        audit.setFinishedTime(LocalDateTime.now());
+        updateStatementAudit(audit);
+    }
+
+    private void markStatementWaitingVerification(
+            LineageReviewStatementAudit audit,
+            boolean screeningCandidate,
+            String screeningFailureReason) {
+        if (audit == null) {
+            return;
+        }
+        audit.setAuditStatus("WAITING_VERIFICATION");
+        audit.setIsScreeningCandidate(screeningCandidate);
+        audit.setSkipReason(screeningFailureReason);
+        updateStatementAudit(audit);
+    }
+
+    private void markStatementFailed(LineageReviewStatementAudit audit, String reason) {
+        if (audit == null) {
+            return;
+        }
+        audit.setAuditStatus("FAILED");
+        audit.setAiCallCount((audit.getAiCallCount() == null ? 0 : audit.getAiCallCount()) + 1);
+        audit.setSkipReason(reason);
+        audit.setFinishedTime(LocalDateTime.now());
+        updateStatementAudit(audit);
+    }
+
+    private void markStatementVerified(
+            LineageReviewStatementAudit audit,
+            int issueCount,
+            List<LineageReviewAIVerdict> verdicts) {
+        if (audit == null) {
+            return;
+        }
+        audit.setAuditStatus(issueCount > 0 ? "VERIFIED_ISSUE" : "VERIFIED_NO_ISSUE");
+        audit.setAiCallCount((audit.getAiCallCount() == null ? 0 : audit.getAiCallCount()) + 1);
+        audit.setIssueCount(issueCount);
+        audit.setSkipReason(null);
+        audit.setResultJson(buildSqlAuditResultJson(verdicts));
+        audit.setFinishedTime(LocalDateTime.now());
+        updateStatementAudit(audit);
+    }
+
+    private void updateStatementAudit(LineageReviewStatementAudit audit) {
+        audit.setUpdateTime(LocalDateTime.now());
+        statementAuditMapper.updateById(audit);
+    }
+
+    private void saveSqlAuditCache(
+            String cacheKey,
+            Map<String, Object> evidence,
+            List<LineageReviewAIVerdict> verdicts) {
+        LineageReviewCache cache = loadCache(cacheKey);
+        if (cache == null) {
+            cache = new LineageReviewCache();
+            cache.setCacheKey(cacheKey);
+            cache.setCreateTime(LocalDateTime.now());
+            cache.setHitCount(0);
+        }
+        cache.setFingerprint(toText(evidence.get("evidenceHash")));
+        cache.setAiModel(aiService.resolveModelName());
+        cache.setConfidence(verdicts == null ? BigDecimal.ZERO : verdicts.stream()
+                .map(LineageReviewAIVerdict::getConfidence)
+                .filter(Objects::nonNull)
+                .max(BigDecimal::compareTo)
+                .orElse(BigDecimal.ZERO));
+        cache.setVerdict(verdicts == null || verdicts.isEmpty() ? "NO_ISSUE" : "VERIFIED");
+        cache.setResultJson(buildSqlAuditResultJson(verdicts));
+        cache.setLastHitAt(LocalDateTime.now());
+        cache.setUpdateTime(LocalDateTime.now());
+        if (cache.getId() == null) {
+            cacheMapper.insert(cache);
+        } else {
+            cacheMapper.updateById(cache);
+        }
+    }
+
+    private Map<String, Object> buildSqlAuditResultJson(List<LineageReviewAIVerdict> verdicts) {
+        List<Map<String, Object>> items = new ArrayList<>();
+        if (verdicts != null) {
+            for (LineageReviewAIVerdict verdict : verdicts) {
+                Map<String, Object> item = new LinkedHashMap<>();
+                item.put("statementUid", verdict.getStatementUid());
+                item.put("issueType", verdict.getIssueType());
+                item.put("targetTable", verdict.getTargetTable());
+                item.put("targetColumn", verdict.getTargetColumn());
+                item.put("severity", verdict.getSeverity());
+                item.put("confidence", verdict.getConfidence());
+                item.put("verdict", verdict.getVerdict());
+                item.put("summary", verdict.getSummary());
+                item.put("currentState", verdict.getCurrentState());
+                item.put("expectedState", verdict.getExpectedState());
+                item.put("reason", verdict.getReason());
+                item.put("expectedRelationType", verdict.getExpectedRelationType());
+                item.put("disposition", verdict.getDisposition());
+                item.put("recommendation", verdict.getRecommendation());
+                item.put("suggestedSources", verdict.getSuggestedSources() == null ? List.of() : verdict.getSuggestedSources());
+                item.put("evidenceRefs", verdict.getEvidenceRefs() == null ? List.of() : verdict.getEvidenceRefs());
+                items.add(item);
+            }
+        }
+        Map<String, Object> result = new LinkedHashMap<>();
+        result.put("kind", "SQL_HYBRID_AUDIT_V4");
+        result.put("verdicts", items);
+        return result;
+    }
+
+    private BigDecimal toBigDecimal(Object value) {
+        if (value == null || !StringUtils.hasText(String.valueOf(value))) {
+            return null;
+        }
+        try {
+            return new BigDecimal(String.valueOf(value));
+        } catch (NumberFormatException ex) {
+            return null;
+        }
+    }
+
+    private int toInteger(Object value, int fallback) {
+        if (value instanceof Number number) {
+            return number.intValue();
+        }
+        try {
+            return value == null ? fallback : Integer.parseInt(String.valueOf(value));
+        } catch (NumberFormatException ex) {
+            return fallback;
+        }
+    }
+
+    private record PersistedIssueStats(int totalCount, int formalCount) {
+    }
+
+    private record SqlAuditRunStats(
+            int processedCount,
+            int formalIssueCount,
+            int failedCount,
+            int skippedCount,
+            int aiCallCount,
+            int cacheHitCount,
+            int batchCount) {
     }
 
     private void updateTaskProgress(LineageReviewTask task, int processed, int issueCount,
@@ -628,7 +1115,6 @@ public class LineageReviewServiceImpl implements LineageReviewService {
                      count(fact) AS relationCount
                 WHERE selectedStatementUid <> ''
                 ORDER BY relationCount DESC, selectedStatementUid
-                LIMIT $statementLimit
                 WITH collect(selectedStatementUid) AS selectedStatementUids
                 MATCH (fact:LineageFact)-[:IN_STATEMENT]->(stmt:SqlStatement)
                 WITH selectedStatementUids, fact, stmt,
@@ -663,8 +1149,7 @@ public class LineageReviewServiceImpl implements LineageReviewService {
                     "repoId", task.getRepoId() == null ? "" : String.valueOf(task.getRepoId()),
                     "hasRepoId", hasRepoId,
                     "versionId", task.getVersionId(),
-                    "pathPrefix", filterPath,
-                    "statementLimit", SQL_AUDIT_LIMIT));
+                    "pathPrefix", filterPath));
             while (cursor.hasNext()) {
                 Record record = cursor.next();
                 String statementUid = record.get("statementUid").asString("");
@@ -723,9 +1208,6 @@ public class LineageReviewServiceImpl implements LineageReviewService {
         results.sort((left, right) -> Integer.compare(
                 ((Number) right.getOrDefault("relationCount", 0)).intValue(),
                 ((Number) left.getOrDefault("relationCount", 0)).intValue()));
-        if (results.size() > SQL_AUDIT_LIMIT) {
-            return new ArrayList<>(results.subList(0, SQL_AUDIT_LIMIT));
-        }
         return results;
     }
 
@@ -787,7 +1269,6 @@ public class LineageReviewServiceImpl implements LineageReviewService {
                        coalesce(r.sourceColumns, []) AS sourceColumns,
                        coalesce(r.targetColumns, []) AS targetColumns
                 ORDER BY statementHash, snippet, relationType, sourceTable, sourceColumn
-                LIMIT $rowLimit
                 """;
 
         Map<String, Map<String, Object>> grouped = new LinkedHashMap<>();
@@ -796,8 +1277,7 @@ public class LineageReviewServiceImpl implements LineageReviewService {
                     "repoId", task.getRepoId() == null ? "" : String.valueOf(task.getRepoId()),
                     "hasRepoId", hasRepoId,
                     "versionId", task.getVersionId(),
-                    "pathPrefix", filterPath,
-                    "rowLimit", SQL_AUDIT_LIMIT * 200));
+                    "pathPrefix", filterPath));
             while (cursor.hasNext()) {
                 Record record = cursor.next();
                 String statementHash = record.get("statementHash").asString("");
@@ -877,9 +1357,6 @@ public class LineageReviewServiceImpl implements LineageReviewService {
         results.sort((left, right) -> Integer.compare(
                 ((Number) right.getOrDefault("relationCount", 0)).intValue(),
                 ((Number) left.getOrDefault("relationCount", 0)).intValue()));
-        if (results.size() > SQL_AUDIT_LIMIT) {
-            return new ArrayList<>(results.subList(0, SQL_AUDIT_LIMIT));
-        }
         return results;
     }
 
@@ -916,7 +1393,10 @@ public class LineageReviewServiceImpl implements LineageReviewService {
         List<Map<String, Object>> rawGraphFieldRelations = StringUtils.hasText(toText(object.get("statementUid")))
                 ? fieldLevelProgramRelations(object)
                 : loadGraphFieldRelationsForAudit(task, object);
-        String sqlSnippet = truncateSnippet(toText(object.get("snippet")));
+        String sqlSnippet = toText(object.get("snippet"));
+        if (sqlSnippet == null) {
+            sqlSnippet = "";
+        }
         List<Map<String, Object>> programRelations = indexEvidence(object.get("programRelations"), "PR");
         List<Map<String, Object>> graphFieldRelations = indexEvidence(rawGraphFieldRelations, "GR");
         Map<String, Object> evidence = new LinkedHashMap<>();
@@ -1681,16 +2161,6 @@ public class LineageReviewServiceImpl implements LineageReviewService {
     private boolean isNoIssue(LineageReviewAIVerdict verdict) {
         return "NO_ISSUE".equalsIgnoreCase(verdict.getIssueType())
                 || "REJECTED".equalsIgnoreCase(verdict.getVerdict());
-    }
-
-    private String truncateSnippet(String snippet) {
-        if (!StringUtils.hasText(snippet)) {
-            return "";
-        }
-        if (snippet.length() <= SQL_AUDIT_SNIPPET_LIMIT) {
-            return snippet;
-        }
-        return snippet.substring(0, SQL_AUDIT_SNIPPET_LIMIT) + "\n/* SQL snippet truncated for AI audit */";
     }
 
     private String normalizeSqlForAudit(String sql) {

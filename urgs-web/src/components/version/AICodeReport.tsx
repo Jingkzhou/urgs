@@ -35,6 +35,41 @@ import { buildShardLabel, buildTaskSourceMeta } from './lineage-review/reviewUti
 
 const { TextArea } = Input;
 
+const statementAuditStatusLabelMap: Record<string, string> = {
+    PENDING: '待处理',
+    SCREENING: '初筛中',
+    SCREENED_NO_ISSUE: '初筛无疑点',
+    WAITING_VERIFICATION: '待精审',
+    VERIFIED_ISSUE: '精审有疑点',
+    VERIFIED_NO_ISSUE: '精审无疑点',
+    CACHED: '命中缓存',
+    FAILED: '审核失败',
+    SKIPPED_BUDGET: '预算跳过'
+};
+
+const statementAuditStatusColorMap: Record<string, string> = {
+    PENDING: 'default',
+    SCREENING: 'processing',
+    SCREENED_NO_ISSUE: 'success',
+    WAITING_VERIFICATION: 'processing',
+    VERIFIED_ISSUE: 'warning',
+    VERIFIED_NO_ISSUE: 'success',
+    CACHED: 'cyan',
+    FAILED: 'error',
+    SKIPPED_BUDGET: 'error'
+};
+
+const statementRiskReasonLabelMap: Record<string, string> = {
+    METADATA_AMBIGUITY: '元数据歧义',
+    LOW_CONFIDENCE_RELATION: '低置信关系',
+    IMPLICIT_TARGET_MAPPING: '目标映射不明确',
+    SELECT_STAR: '使用 SELECT *',
+    DYNAMIC_SQL: '动态 SQL',
+    PARSER_VALIDATION_WARNING: '解析校验告警',
+    LONG_SQL: '超长 SQL',
+    HIGH_RELATION_COMPLEXITY: '关系复杂度高'
+};
+
 const AICodeReport: React.FC = () => {
     const [records, setRecords] = useState<LineageAnalysisRecordItem[]>([]);
     const [tasks, setTasks] = useState<LineageReviewTask[]>([]);
@@ -72,9 +107,18 @@ const AICodeReport: React.FC = () => {
     const [selectedMemoryId, setSelectedMemoryId] = useState<number>();
     const [memoryDraft, setMemoryDraft] = useState({ title: '', content: '', status: 'ACTIVE' });
     const [sqlPreviews, setSqlPreviews] = useState<Array<{
+        statementUid?: string;
         snippet: string;
         sourceFiles: string[];
         relationCount: number;
+        auditStatus?: string;
+        riskScore?: number;
+        riskReasons: string[];
+        highRisk?: boolean;
+        screeningCandidate?: boolean;
+        aiCallCount?: number;
+        auditIssueCount?: number;
+        skipReason?: string;
     }>>([]);
 
     const canTrigger = hasPermission('version:ai:trigger');
@@ -461,9 +505,18 @@ const AICodeReport: React.FC = () => {
             const data = await getLineageReviewTaskSqlPreview(task.id);
             const normalized = (data || [])
                 .map(item => ({
+                    statementUid: item.statementUid,
                     snippet: String(item.snippet || '').trim(),
                     sourceFiles: Array.from(new Set((item.sourceFiles || []).filter(Boolean))),
-                    relationCount: item.relationCount || 0
+                    relationCount: item.relationCount || 0,
+                    auditStatus: item.auditStatus,
+                    riskScore: item.riskScore,
+                    riskReasons: item.riskReasons || [],
+                    highRisk: item.highRisk,
+                    screeningCandidate: item.screeningCandidate,
+                    aiCallCount: item.aiCallCount,
+                    auditIssueCount: item.auditIssueCount,
+                    skipReason: item.skipReason
                 }))
                 .filter(item => item.snippet.length > 0);
             setSqlPreviews(normalized);
@@ -499,7 +552,7 @@ const AICodeReport: React.FC = () => {
                 </Button>
                 <Popconfirm
                     title="清空历史校验结果"
-                    description="将删除所有事后校验任务、疑点和 AI 校验缓存，血缘分析批次会保留。"
+                    description="将删除所有事后校验任务、语句审核明细、疑点和 AI 校验缓存，血缘分析批次会保留。"
                     okText="清空"
                     cancelText="取消"
                     okButtonProps={{ danger: true, loading: clearHistoryLoading }}
@@ -642,11 +695,39 @@ const AICodeReport: React.FC = () => {
                     <div className="space-y-4">
                         {sqlPreviews.map((item, index) => (
                             <Card
-                                key={`${index}-${item.relationCount}`}
+                                key={item.statementUid || `${index}-${item.relationCount}`}
                                 size="small"
-                                title={`SQL 片段 ${index + 1}`}
+                                title={
+                                    <div className="flex items-center gap-2">
+                                        <span>SQL 片段 {index + 1}</span>
+                                        {item.auditStatus && (
+                                            <Tag color={statementAuditStatusColorMap[item.auditStatus] || 'default'}>
+                                                {statementAuditStatusLabelMap[item.auditStatus] || item.auditStatus}
+                                            </Tag>
+                                        )}
+                                        {item.highRisk && <Tag color="volcano">高风险</Tag>}
+                                    </div>
+                                }
                                 extra={<span className="text-xs text-slate-400">关联关系 {item.relationCount}</span>}
                             >
+                                {item.auditStatus && (
+                                    <div className="mb-3 flex flex-wrap gap-x-4 gap-y-1 text-xs text-slate-500">
+                                        <span>风险分 {item.riskScore || 0}</span>
+                                        <span>AI 调用 {item.aiCallCount || 0}</span>
+                                        <span>疑点 {item.auditIssueCount || 0}</span>
+                                        <span>{item.screeningCandidate ? '初筛命中候选' : '初筛未命中候选'}</span>
+                                        {item.riskReasons.length > 0 && (
+                                            <span>
+                                                风险原因 {item.riskReasons
+                                                    .map(reason => statementRiskReasonLabelMap[reason] || reason)
+                                                    .join('、')}
+                                            </span>
+                                        )}
+                                    </div>
+                                )}
+                                {item.skipReason && (
+                                    <Alert className="mb-3" type="warning" showIcon message={item.skipReason} />
+                                )}
                                 <div className="mb-3 text-xs text-slate-500">
                                     来源文件：{item.sourceFiles?.length ? item.sourceFiles.join('、') : '未记录'}
                                 </div>

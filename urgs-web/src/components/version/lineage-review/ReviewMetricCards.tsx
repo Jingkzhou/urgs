@@ -1,7 +1,7 @@
 import React from 'react';
 import { Card, Progress, Typography } from 'antd';
 import type { LineageAnalysisRecordItem, LineageReviewTask } from '@/api/lineage';
-import { AlertTriangle, Bot, Database, FolderTree } from 'lucide-react';
+import { AlertTriangle, Bot, Database, FolderTree, ScanSearch } from 'lucide-react';
 import {
     buildShardLabel,
     calculateReviewProgressSummary,
@@ -26,7 +26,7 @@ const ReviewMetricCards: React.FC<ReviewMetricCardsProps> = ({
     const metrics = calculateReviewProgressSummary(tasks);
 
     return (
-        <div className="grid grid-cols-1 gap-4 xl:grid-cols-4">
+        <div className="grid grid-cols-1 gap-4 xl:grid-cols-5">
             <Card bordered={false} className="shadow-sm">
                 <div className="flex items-start justify-between">
                     <div>
@@ -34,6 +34,24 @@ const ReviewMetricCards: React.FC<ReviewMetricCardsProps> = ({
                         <Title level={3} className="!mb-0 !mt-2">{records.length}</Title>
                     </div>
                     <Database className="text-sky-500" size={22} />
+                </div>
+            </Card>
+            <Card bordered={false} className="shadow-sm">
+                <div className="flex items-start justify-between gap-4">
+                    <div className="min-w-0 flex-1">
+                        <Text type="secondary">AI 语句覆盖</Text>
+                        <Title level={3} className="!mb-0 !mt-2">{metrics.statementCoverageRate}%</Title>
+                        <Progress percent={metrics.statementCoverageRate} size="small" showInfo={false} />
+                        <div className="text-xs text-slate-400">
+                            已筛 {metrics.coveredStatements}/{metrics.totalStatements} · 精审 {metrics.verifiedStatements}
+                        </div>
+                        {(metrics.skippedStatements > 0 || metrics.failedStatementAudits > 0) && (
+                            <div className="text-xs text-amber-600">
+                                跳过 {metrics.skippedStatements} · 失败 {metrics.failedStatementAudits}
+                            </div>
+                        )}
+                    </div>
+                    <ScanSearch className="mt-1 text-violet-500" size={22} />
                 </div>
             </Card>
             <Card bordered={false} className="shadow-sm">

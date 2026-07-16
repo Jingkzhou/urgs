@@ -87,6 +87,35 @@ public class LineageReviewAiService {
             严格输出与候选发现阶段相同的 JSON 结构，不要输出 Markdown 或额外解释。没有问题返回 {"issues":[]}。
             """;
 
+    private static final String BATCH_SCREENING_SYSTEM_PROMPT = """
+            你是 SQL 血缘微批量初筛助手。一次会收到多条独立 SQL，每条都有 statementUid。
+            目标是尽量找出需要单句精审的候选，不负责最终确认问题。
+            不得跨 statementUid 混用 SQL、字段或证据编号；每条候选必须返回所属 statementUid。
+            evidenceRefs 只能使用该 statementUid 证据包里的 SQL-L*、PR-*、GR-* 编号，且至少包含一个 SQL-L*。
+            重点检查来源遗漏、错误来源、目标错位、关系类型错误和字段归属不确定。
+            CASE_WHEN、FILTERS、JOINS、GROUPS、ORDERS 不得误判成缺少 DERIVES_TO。
+            严格输出 JSON，不要输出 Markdown 或额外说明。输出结构：
+            {"issues":[{
+              "statementUid":"语句标识",
+              "issueType":"MISSING_SOURCE|WRONG_SOURCE|WRONG_TARGET|WRONG_RELATION_TYPE|UNCERTAIN_MAPPING",
+              "targetTable":"schema.table",
+              "targetColumn":"column_name",
+              "severity":"HIGH|MEDIUM|LOW",
+              "confidence":0.0,
+              "verdict":"NEEDS_REVIEW",
+              "summary":"候选问题摘要",
+              "currentState":"程序当前结果",
+              "expectedState":"SQL期待结果",
+              "reason":"具体差异",
+              "expectedRelationType":"DERIVES_TO|CASE_WHEN|FILTERS|JOINS|GROUPS|ORDERS|CALLS|REFERENCES",
+              "disposition":"调整血缘分析程序|调整代码书写规范|补充物理模型|扩大证据范围|人工复核",
+              "recommendation":"精审重点",
+              "suggestedSources":["schema.table.column"],
+              "evidenceRefs":["SQL-L001","PR-001"]
+            }]}
+            没有候选时返回 {"issues":[]}。
+            """;
+
     private static final Set<String> ALLOWED_ISSUE_TYPES = Set.of(
             "MISSING_SOURCE", "WRONG_SOURCE", "WRONG_TARGET", "WRONG_RELATION_TYPE", "UNCERTAIN_MAPPING");
     private static final Set<String> ALLOWED_SEVERITIES = Set.of("HIGH", "MEDIUM", "LOW");
@@ -135,9 +164,43 @@ public class LineageReviewAiService {
                     VERIFICATION_SYSTEM_PROMPT,
                     buildVerificationPrompt(evidence, candidates));
             List<LineageReviewAIVerdict> verified = parseIssueList(verificationResponse);
-            return LineageReviewAuditResult.success(validateVerdicts(verified, evidence), aiCallCount);
+            return LineageReviewAuditResult.success(validateVerifiedResponse(verified, evidence), aiCallCount);
         } catch (Exception ex) {
             return LineageReviewAuditResult.failed(aiCallCount, safeMessage(ex));
+        }
+    }
+
+    public LineageReviewAuditResult screenSqlBatch(List<Map<String, Object>> evidencePackages) {
+        if (evidencePackages == null || evidencePackages.isEmpty()) {
+            return LineageReviewAuditResult.success(List.of(), 0);
+        }
+        try {
+            String response = aiClient.chat(BATCH_SCREENING_SYSTEM_PROMPT, buildBatchScreeningPrompt(evidencePackages));
+            List<LineageReviewAIVerdict> candidates = parseIssueList(response);
+            List<LineageReviewAIVerdict> validated = validateScreeningCandidates(candidates, evidencePackages);
+            if (validated.size() != candidates.size()) {
+                return LineageReviewAuditResult.failed(1, "AI 初筛候选未通过证据协议校验");
+            }
+            return LineageReviewAuditResult.success(
+                    validated,
+                    1);
+        } catch (Exception ex) {
+            return LineageReviewAuditResult.failed(1, safeMessage(ex));
+        }
+    }
+
+    public LineageReviewAuditResult verifySqlLineage(
+            Map<String, Object> evidence,
+            List<LineageReviewAIVerdict> candidates) {
+        try {
+            String response = aiClient.chat(
+                    VERIFICATION_SYSTEM_PROMPT,
+                    buildVerificationPrompt(evidence, candidates == null ? List.of() : candidates));
+            return LineageReviewAuditResult.success(
+                    validateVerifiedResponse(parseIssueList(response), evidence),
+                    1);
+        } catch (Exception ex) {
+            return LineageReviewAuditResult.failed(1, safeMessage(ex));
         }
     }
 
@@ -216,6 +279,64 @@ public class LineageReviewAiService {
                 """.formatted(RELATION_TYPE_GUIDE, toJson(Map.of("issues", candidates)), toJson(evidence));
     }
 
+    private String buildBatchScreeningPrompt(List<Map<String, Object>> evidencePackages) {
+        return """
+                请对以下微批次中的每条 SQL 独立完成候选初筛。只返回需要进入单句精审的候选。
+
+                [关系类型]
+                %s
+
+                [历史误报记忆]
+                %s
+
+                [SQL证据包列表]
+                %s
+                """.formatted(RELATION_TYPE_GUIDE, loadActiveReviewMemory(), toJson(evidencePackages));
+    }
+
+    private List<LineageReviewAIVerdict> validateScreeningCandidates(
+            List<LineageReviewAIVerdict> candidates,
+            List<Map<String, Object>> evidencePackages) {
+        Map<String, Set<String>> evidenceIdsByStatement = new LinkedHashMap<>();
+        for (Map<String, Object> evidence : evidencePackages) {
+            String statementUid = normalizeText(String.valueOf(evidence.get("statementUid")));
+            if (!StringUtils.hasText(statementUid)) {
+                continue;
+            }
+            evidenceIdsByStatement.put(statementUid, collectEvidenceIds(evidence));
+        }
+
+        Map<String, LineageReviewAIVerdict> unique = new LinkedHashMap<>();
+        for (LineageReviewAIVerdict candidate : candidates) {
+            String statementUid = normalizeText(candidate.getStatementUid());
+            String issueType = normalizeEnum(candidate.getIssueType());
+            if (!evidenceIdsByStatement.containsKey(statementUid) || !ALLOWED_ISSUE_TYPES.contains(issueType)) {
+                continue;
+            }
+            String targetTable = normalizeText(candidate.getTargetTable());
+            String targetColumn = normalizeText(candidate.getTargetColumn());
+            if (!StringUtils.hasText(targetTable) || !StringUtils.hasText(targetColumn)) {
+                continue;
+            }
+            List<String> evidenceRefs = normalizeList(candidate.getEvidenceRefs()).stream()
+                    .filter(evidenceIdsByStatement.get(statementUid)::contains)
+                    .toList();
+            if (evidenceRefs.stream().noneMatch(ref -> ref.startsWith("SQL-L"))) {
+                continue;
+            }
+            candidate.setStatementUid(statementUid);
+            candidate.setIssueType(issueType);
+            candidate.setTargetTable(targetTable);
+            candidate.setTargetColumn(targetColumn);
+            candidate.setEvidenceRefs(evidenceRefs);
+            candidate.setVerdict("NEEDS_REVIEW");
+            String key = String.join("|", statementUid, issueType,
+                    targetTable.toUpperCase(Locale.ROOT), targetColumn.toUpperCase(Locale.ROOT));
+            unique.putIfAbsent(key, candidate);
+        }
+        return new ArrayList<>(unique.values());
+    }
+
     private List<LineageReviewAIVerdict> validateVerdicts(
             List<LineageReviewAIVerdict> verdicts,
             Map<String, Object> evidence) {
@@ -287,6 +408,17 @@ public class LineageReviewAiService {
             }
         }
         return new ArrayList<>(unique.values());
+    }
+
+    private List<LineageReviewAIVerdict> validateVerifiedResponse(
+            List<LineageReviewAIVerdict> verdicts,
+            Map<String, Object> evidence) {
+        List<LineageReviewAIVerdict> validated = validateVerdicts(verdicts, evidence);
+        long nonRejectedCount = verdicts.stream().filter(verdict -> !isRejected(verdict)).count();
+        if (validated.size() != nonRejectedCount) {
+            throw new IllegalArgumentException("AI 精审结果未通过证据协议校验");
+        }
+        return validated;
     }
 
     private void normalizeConfidenceAndVerdict(LineageReviewAIVerdict verdict) {
@@ -408,6 +540,7 @@ public class LineageReviewAiService {
 
     private LineageReviewAIVerdict readVerdict(JsonNode node) {
         LineageReviewAIVerdict verdict = new LineageReviewAIVerdict();
+        verdict.setStatementUid(readText(node, "statementUid", null));
         verdict.setIssueType(readText(node, "issueType", null));
         verdict.setTargetTable(readText(node, "targetTable", null));
         verdict.setTargetColumn(readText(node, "targetColumn", null));

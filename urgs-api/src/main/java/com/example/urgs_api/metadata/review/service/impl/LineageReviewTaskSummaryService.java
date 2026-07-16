@@ -2,8 +2,10 @@ package com.example.urgs_api.metadata.review.service.impl;
 
 import com.baomidou.mybatisplus.core.conditions.query.LambdaQueryWrapper;
 import com.example.urgs_api.metadata.review.entity.LineageReviewIssue;
+import com.example.urgs_api.metadata.review.entity.LineageReviewStatementAudit;
 import com.example.urgs_api.metadata.review.entity.LineageReviewTask;
 import com.example.urgs_api.metadata.review.mapper.LineageReviewIssueMapper;
+import com.example.urgs_api.metadata.review.mapper.LineageReviewStatementAuditMapper;
 import org.springframework.stereotype.Service;
 import org.springframework.util.StringUtils;
 
@@ -18,9 +20,13 @@ import java.util.stream.Collectors;
 public class LineageReviewTaskSummaryService {
 
     private final LineageReviewIssueMapper issueMapper;
+    private final LineageReviewStatementAuditMapper statementAuditMapper;
 
-    public LineageReviewTaskSummaryService(LineageReviewIssueMapper issueMapper) {
+    public LineageReviewTaskSummaryService(
+            LineageReviewIssueMapper issueMapper,
+            LineageReviewStatementAuditMapper statementAuditMapper) {
         this.issueMapper = issueMapper;
+        this.statementAuditMapper = statementAuditMapper;
     }
 
     public void attachSummaries(List<LineageReviewTask> tasks) {
@@ -32,7 +38,7 @@ public class LineageReviewTaskSummaryService {
                 .filter(Objects::nonNull)
                 .toList();
         if (taskIds.isEmpty()) {
-            tasks.forEach(task -> attachIssueSummary(task, Collections.emptyList()));
+            tasks.forEach(task -> attachSummaryFields(task, Collections.emptyList(), Collections.emptyList()));
             return;
         }
 
@@ -42,8 +48,16 @@ public class LineageReviewTaskSummaryService {
         Map<Long, List<LineageReviewIssue>> issueMap = issues.stream()
                 .filter(issue -> issue.getTaskId() != null)
                 .collect(Collectors.groupingBy(LineageReviewIssue::getTaskId));
+        LambdaQueryWrapper<LineageReviewStatementAudit> statementQuery = new LambdaQueryWrapper<>();
+        statementQuery.in(LineageReviewStatementAudit::getTaskId, taskIds);
+        Map<Long, List<LineageReviewStatementAudit>> statementMap = statementAuditMapper.selectList(statementQuery).stream()
+                .filter(audit -> audit.getTaskId() != null)
+                .collect(Collectors.groupingBy(LineageReviewStatementAudit::getTaskId));
 
-        tasks.forEach(task -> attachIssueSummary(task, issueMap.getOrDefault(task.getId(), Collections.emptyList())));
+        tasks.forEach(task -> attachSummaryFields(
+                task,
+                issueMap.getOrDefault(task.getId(), Collections.emptyList()),
+                statementMap.getOrDefault(task.getId(), Collections.emptyList())));
     }
 
     public void attachSummary(LineageReviewTask task) {
@@ -51,15 +65,20 @@ public class LineageReviewTaskSummaryService {
             return;
         }
         if (task.getId() == null) {
-            attachIssueSummary(task, Collections.emptyList());
+            attachSummaryFields(task, Collections.emptyList(), Collections.emptyList());
             return;
         }
-        LambdaQueryWrapper<LineageReviewIssue> query = new LambdaQueryWrapper<>();
-        query.eq(LineageReviewIssue::getTaskId, task.getId());
-        attachIssueSummary(task, issueMapper.selectList(query));
+        LambdaQueryWrapper<LineageReviewIssue> issueQuery = new LambdaQueryWrapper<>();
+        issueQuery.eq(LineageReviewIssue::getTaskId, task.getId());
+        LambdaQueryWrapper<LineageReviewStatementAudit> statementQuery = new LambdaQueryWrapper<>();
+        statementQuery.eq(LineageReviewStatementAudit::getTaskId, task.getId());
+        attachSummaryFields(task, issueMapper.selectList(issueQuery), statementAuditMapper.selectList(statementQuery));
     }
 
-    private void attachIssueSummary(LineageReviewTask task, List<LineageReviewIssue> issues) {
+    private void attachSummaryFields(
+            LineageReviewTask task,
+            List<LineageReviewIssue> issues,
+            List<LineageReviewStatementAudit> statementAudits) {
         int pending = 0;
         int confirmed = 0;
         int falsePositive = 0;
@@ -88,6 +107,61 @@ public class LineageReviewTaskSummaryService {
         task.setTotalReviewIssueCount(total);
         task.setReviewCompletionRate(total == 0 ? terminalProgress(task) : percent(reviewed, total));
         task.setExecutionProgressRate(resolveExecutionProgress(task));
+        attachStatementAuditSummary(task, statementAudits);
+    }
+
+    private void attachStatementAuditSummary(
+            LineageReviewTask task,
+            List<LineageReviewStatementAudit> statementAudits) {
+        int covered = 0;
+        int verified = 0;
+        int noIssue = 0;
+        int skipped = 0;
+        int failed = 0;
+        int highRisk = 0;
+        for (LineageReviewStatementAudit audit : statementAudits) {
+            String status = normalizeReviewStatus(audit.getAuditStatus());
+            if (Boolean.TRUE.equals(audit.getIsHighRisk())) {
+                highRisk++;
+            }
+            switch (status) {
+                case "SCREENED_NO_ISSUE" -> {
+                    covered++;
+                    noIssue++;
+                }
+                case "WAITING_VERIFICATION" -> covered++;
+                case "VERIFIED_ISSUE" -> {
+                    covered++;
+                    verified++;
+                }
+                case "VERIFIED_NO_ISSUE" -> {
+                    covered++;
+                    verified++;
+                    noIssue++;
+                }
+                case "CACHED" -> {
+                    covered++;
+                    verified++;
+                    if (audit.getIssueCount() == null || audit.getIssueCount() == 0) {
+                        noIssue++;
+                    }
+                }
+                case "SKIPPED_BUDGET" -> skipped++;
+                case "FAILED" -> failed++;
+                default -> {
+                }
+            }
+        }
+        task.setScreenedStatementCount(covered);
+        task.setVerifiedStatementCount(verified);
+        task.setNoIssueStatementCount(noIssue);
+        task.setSkippedStatementCount(skipped);
+        task.setFailedStatementAuditCount(failed);
+        task.setHighRiskStatementCount(highRisk);
+        int totalStatements = task.getObjectCount() == null ? 0 : task.getObjectCount();
+        task.setStatementCoverageRate((task.getTokenBudget() == null || task.getTokenBudget() > 0)
+                ? percent(covered, totalStatements)
+                : 0);
     }
 
     private String normalizeEffectiveReviewStatus(LineageReviewIssue issue) {

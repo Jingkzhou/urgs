@@ -64,4 +64,25 @@ public class LineageReviewTask {
 
     @TableField(exist = false)
     private Integer executionProgressRate;
+
+    @TableField(exist = false)
+    private Integer screenedStatementCount;
+
+    @TableField(exist = false)
+    private Integer verifiedStatementCount;
+
+    @TableField(exist = false)
+    private Integer noIssueStatementCount;
+
+    @TableField(exist = false)
+    private Integer skippedStatementCount;
+
+    @TableField(exist = false)
+    private Integer failedStatementAuditCount;
+
+    @TableField(exist = false)
+    private Integer highRiskStatementCount;
+
+    @TableField(exist = false)
+    private Integer statementCoverageRate;
 }

@@ -104,7 +104,7 @@ const ReviewTaskTable: React.FC<ReviewTaskTableProps> = ({
         {
             title: '进度',
             key: 'progress',
-            width: 260,
+            width: 300,
             render: (_, record) => {
                 const executionRate = getTaskExecutionRate(record);
                 const reviewRate = getTaskReviewRate(record);
@@ -114,6 +114,8 @@ const ReviewTaskTable: React.FC<ReviewTaskTableProps> = ({
                 const executionProcessed = executionTotal > 0
                     ? Math.min(record.processedCount || 0, executionTotal)
                     : (record.processedCount || 0);
+                const statementCoverageRate = record.statementCoverageRate || 0;
+                const coveredStatements = record.screenedStatementCount || 0;
                 return (
                     <div className="space-y-2">
                         <div>
@@ -130,6 +132,25 @@ const ReviewTaskTable: React.FC<ReviewTaskTableProps> = ({
                             </div>
                             <Progress percent={reviewRate} size="small" showInfo={false} status={issueTotal > 0 && record.pendingIssueCount ? 'active' : 'normal'} />
                         </div>
+                        {(record.tokenBudget || 0) > 0 && (
+                            <div>
+                                <div className="mb-1 flex items-center justify-between text-xs text-slate-500">
+                                    <span>AI 覆盖 {coveredStatements}/{record.objectCount || '-'}</span>
+                                    <span>{statementCoverageRate}%</span>
+                                </div>
+                                <Progress
+                                    percent={statementCoverageRate}
+                                    size="small"
+                                    showInfo={false}
+                                    status={(record.skippedStatementCount || 0) > 0 || (record.failedStatementAuditCount || 0) > 0 ? 'exception' : 'normal'}
+                                />
+                                <div className="mt-1 text-[11px] text-slate-400">
+                                    精审 {record.verifiedStatementCount || 0} · 高风险 {record.highRiskStatementCount || 0}
+                                    {(record.skippedStatementCount || 0) > 0 && ` · 跳过 ${record.skippedStatementCount}`}
+                                    {(record.failedStatementAuditCount || 0) > 0 && ` · 失败 ${record.failedStatementAuditCount}`}
+                                </div>
+                            </div>
+                        )}
                     </div>
                 );
             }
