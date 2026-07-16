@@ -125,9 +125,6 @@ export const permissionManifest: FunctionPoint[] = [
 
     // ================= Level 1 子菜单 =================
 
-    // 1. 管理 20 套监管系统的基础信息（如系统名称、负责人、Git仓库地址）
-    { id: '4-1', name: '应用系统库', code: 'version:app:list', type: 'menu', path: '/version/app', level: 1, parentId: '4' },
-
     // 1.5 管理 Git 仓库配置（支持 GitLab、Gitee、GitHub）
     { id: '4-1-1', name: 'Git 仓库管理', code: 'version:repo:list', type: 'menu', path: '/version/repos', level: 1, parentId: '4' },
 

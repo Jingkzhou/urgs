@@ -397,9 +397,11 @@ const GitRepoDetail: React.FC<Props> = ({ repo, ssoList, onBack }) => {
                                 )}
 
                                 {/* File List Table */}
-                                <div className={`border ${latestCommit ? 'border-t-0 rounded-b-lg' : 'rounded-lg'} border-slate-200 overflow-hidden`}>
+                                <div
+                                    className={`min-h-[160px] max-h-[calc(100vh-360px)] overflow-x-auto overflow-y-scroll border ${latestCommit ? 'border-t-0 rounded-b-lg' : 'rounded-lg'} border-slate-200`}
+                                >
                                     <table className="w-full text-sm text-left">
-                                        <thead className="bg-slate-50 text-slate-500 font-medium">
+                                        <thead className="sticky top-0 z-10 bg-slate-50 text-slate-500 font-medium">
                                             <tr>
                                                 <th className="px-4 py-2 w-1/4">文件名</th>
                                                 <th className="px-4 py-2 w-1/2">最新提交信息</th>

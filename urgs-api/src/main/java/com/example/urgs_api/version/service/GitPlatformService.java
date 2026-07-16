@@ -1587,14 +1587,19 @@ public class GitPlatformService {
         String apiBase = getGitLabApiBase(repo);
         // GitLab 需要 project ID，这里使用 URL 编码的 fullName
         String projectId = getGitLabProjectId(repo);
-        String url = String.format("%s/projects/%s/repository/tree?ref=%s&path=%s",
-                apiBase,
-                projectId, ref, path.isEmpty() ? "" : path);
-
-        JsonNode response = httpGetWithAuth(url, repo.getAccessToken(), "PRIVATE-TOKEN");
         List<GitFileEntry> entries = new ArrayList<>();
+        int page = 1;
+        int perPage = 100;
 
-        if (response.isArray()) {
+        while (true) {
+            String url = String.format("%s/projects/%s/repository/tree?ref=%s&path=%s&page=%d&per_page=%d",
+                    apiBase, projectId, ref, path.isEmpty() ? "" : path, page, perPage);
+            JsonNode response = httpGetWithAuth(url, repo.getAccessToken(), "PRIVATE-TOKEN");
+
+            if (!response.isArray() || response.isEmpty()) {
+                break;
+            }
+
             for (JsonNode node : response) {
                 entries.add(GitFileEntry.builder()
                         .name(node.path("name").asText())
@@ -1603,6 +1608,11 @@ public class GitPlatformService {
                         .sha(node.path("id").asText())
                         .build());
             }
+
+            if (response.size() < perPage) {
+                break;
+            }
+            page++;
         }
 
         entries.sort((a, b) -> {

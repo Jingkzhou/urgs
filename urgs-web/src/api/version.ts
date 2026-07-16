@@ -588,12 +588,6 @@ export const getDeveloperKpis = (systemId?: number) =>
 export const getOverviewStats = () =>
     get<any>('/api/version/stats/overview');
 
-export const getAppVersionMatrix = (systemId: string) =>
-    get<any[]>(`/api/version/app/${systemId}/matrix`);
-
-export const getAppActiveBranches = (systemId: string) =>
-    get<any[]>(`/api/version/app/${systemId}/branches`);
-
 // ========== 版本包管理 ==========
 
 /**

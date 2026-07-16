@@ -1,372 +1,404 @@
-import React, { useEffect, useState } from 'react';
+import React, { useCallback, useEffect, useMemo, useState } from 'react';
 import {
-    BarChart3, GitBranch, Server, Clock, TrendingUp, AlertCircle,
-    CheckCircle2, Package, Terminal as TerminalIcon, Cpu, Activity,
-    Hash, ArrowUpRight, Zap, Database, Globe
+    Activity,
+    AlertCircle,
+    Archive,
+    ArrowUpRight,
+    CheckCircle2,
+    Clock3,
+    GitBranch,
+    GitCommitHorizontal,
+    GitPullRequest,
+    RefreshCw,
+    Server,
+    ShieldAlert
 } from 'lucide-react';
-import { motion, AnimatePresence } from 'framer-motion';
-import { getOverviewStats } from '../../api/version';
+import {
+    getGitRepositories,
+    getOverviewStats,
+    getRepoLatestCommit,
+    getRepoPrCounts,
+    GitCommit,
+    GitRepository
+} from '@/api/version';
+import { formatCommitTime } from '@/utils/dateUtils';
 
 interface OverviewStats {
-    totalApps: number;
     totalReleases: number;
-    thisMonthReleases: number;
     pendingReleases: number;
     successRate: number;
-    recentReleases: {
-        id: number;
-        appName: string;
-        version: string;
-        releaseDate: string;
-        status: string;
-    }[];
 }
 
-// --- Sub-components ---
+interface RepositoryActivity {
+    repository: GitRepository;
+    commit: GitCommit | null;
+    openPullRequests: number;
+    loadFailed: boolean;
+}
 
-interface StatCardProps {
+interface MetricCardProps {
     label: string;
-    value: number | string;
-    suffix?: string;
+    value: string | number;
+    detail: string;
     icon: React.ElementType;
-    color: string; // e.g., 'blue', 'emerald'
-    bgClass: string;
-    textClass: string;
-    delay?: number;
+    tone: 'blue' | 'violet' | 'emerald' | 'amber';
 }
 
-const StatCard: React.FC<StatCardProps> = ({ label, value, suffix, icon: Icon, color, bgClass, textClass, delay = 0 }) => (
-    <motion.div
-        initial={{ opacity: 0, y: 20 }}
-        animate={{ opacity: 1, y: 0 }}
-        transition={{ delay, duration: 0.4 }}
-        className="bg-white/80 backdrop-blur-md p-5 rounded-2xl border border-white/20 shadow-sm hover:shadow-lg hover:-translate-y-1 transition-all duration-300 relative overflow-hidden group"
-    >
-        <div className={`absolute -right-4 -top-4 opacity-[0.05] group-hover:opacity-10 transition-opacity duration-300 transform rotate-12 scale-150 p-4 rounded-full ${bgClass}`}>
-            <Icon size={80} className={textClass} />
-        </div>
+const toneClasses = {
+    blue: 'bg-blue-50 text-blue-600 border-blue-100',
+    violet: 'bg-violet-50 text-violet-600 border-violet-100',
+    emerald: 'bg-emerald-50 text-emerald-600 border-emerald-100',
+    amber: 'bg-amber-50 text-amber-600 border-amber-100'
+};
 
-        <div className="flex justify-between items-start relative z-10">
+const platformClasses: Record<string, string> = {
+    github: 'bg-slate-900 text-white',
+    gitlab: 'bg-orange-50 text-orange-700 border border-orange-100',
+    gitee: 'bg-red-50 text-red-700 border border-red-100'
+};
+
+const MetricCard: React.FC<MetricCardProps> = ({ label, value, detail, icon: Icon, tone }) => (
+    <div className="rounded-xl border border-slate-200 bg-white p-5 shadow-sm">
+        <div className="flex items-start justify-between gap-4">
             <div>
-                <p className="font-bold text-[11px] text-slate-400 uppercase tracking-wider mb-2 flex items-center gap-1.5">
-                    {label}
-                </p>
-                <div className="text-3xl font-black text-slate-800 tracking-tight flex items-baseline gap-1">
-                    <AnimatedCounter value={typeof value === 'number' ? value : 0} />
-                    {suffix && <span className="text-sm font-bold text-slate-400">{suffix}</span>}
-                </div>
+                <div className="text-sm font-medium text-slate-500">{label}</div>
+                <div className="mt-2 text-3xl font-semibold tracking-tight text-slate-900">{value}</div>
             </div>
-            <div className={`p-3 rounded-xl ${bgClass} ${textClass} shadow-inner`}>
-                <Icon size={20} className="stroke-[2.5px]" />
+            <div className={`rounded-lg border p-2.5 ${toneClasses[tone]}`}>
+                <Icon size={19} />
             </div>
         </div>
-
-        {/* Simple Sparkline simulation */}
-        <div className="mt-4 flex gap-1 items-end h-1.5 opacity-50">
-            {[40, 70, 50, 90, 60, 80].map((h, i) => (
-                <div
-                    key={i}
-                    className={`flex-1 rounded-full ${textClass.replace('text-', 'bg-')}`}
-                    style={{ height: `${h}%`, opacity: 0.3 + (i * 0.1) }}
-                />
-            ))}
-        </div>
-    </motion.div>
-);
-
-const AnimatedCounter = ({ value }: { value: number }) => {
-    return (
-        <motion.span
-            initial={{ opacity: 0, y: 5 }}
-            animate={{ opacity: 1, y: 0 }}
-            transition={{ duration: 0.5 }}
-        >
-            {value}
-        </motion.span>
-    );
-};
-
-const StatusBadge = ({ status }: { status: string }) => {
-    const config = {
-        success: { color: 'emerald', icon: CheckCircle2, text: '发布成功' },
-        pending: { color: 'amber', icon: Clock, text: '处理中' },
-        failed: { color: 'rose', icon: AlertCircle, text: '发布失败' },
-        default: { color: 'slate', icon: Activity, text: status }
-    };
-
-    const type = (status in config ? status : 'default') as keyof typeof config;
-    const { color, icon: Icon, text } = config[type];
-
-    // Tailwind dynamic classes workaround or just map explicitly
-    const colorClasses = {
-        emerald: 'bg-emerald-50 text-emerald-700 border-emerald-100',
-        amber: 'bg-amber-50 text-amber-700 border-amber-100',
-        rose: 'bg-rose-50 text-rose-700 border-rose-100',
-        slate: 'bg-slate-50 text-slate-600 border-slate-100'
-    };
-
-    return (
-        <span className={`inline-flex items-center gap-1.5 px-2.5 py-1 rounded-lg border text-[11px] font-bold ${colorClasses[color as keyof typeof colorClasses]}`}>
-            <Icon size={12} className="stroke-[2.5px]" />
-            {text}
-        </span>
-    );
-};
-
-const ResourceBar = ({ label, value, colorClass }: { label: string, value: number, colorClass: string }) => (
-    <div className="group">
-        <div className="flex justify-between text-xs font-bold text-slate-600 mb-2 group-hover:text-slate-800 transition-colors">
-            <span>{label}</span>
-            <span className="font-mono">{value}%</span>
-        </div>
-        <div className="h-2 bg-slate-100 rounded-full overflow-hidden border border-slate-100/50">
-            <motion.div
-                initial={{ width: 0 }}
-                animate={{ width: `${value}%` }}
-                transition={{ duration: 1, ease: 'easeOut' }}
-                className={`h-full rounded-full ${colorClass} shadow-[0_0_10px_rgba(0,0,0,0.1)]`}
-            />
-        </div>
+        <div className="mt-3 text-xs text-slate-500">{detail}</div>
     </div>
 );
 
-// --- Main Component ---
+const getCommitTime = (commit: GitCommit | null) => {
+    if (!commit?.committedAt) return 0;
+    const timestamp = new Date(commit.committedAt).getTime();
+    return Number.isNaN(timestamp) ? 0 : timestamp;
+};
+
+const isOlderThanDays = (commit: GitCommit | null, days: number) => {
+    const timestamp = getCommitTime(commit);
+    return timestamp > 0 && timestamp < Date.now() - days * 24 * 60 * 60 * 1000;
+};
+
+const getRepositoryWebUrl = (repository: GitRepository) => {
+    const url = repository.cloneUrl || '';
+    return /^https?:\/\//i.test(url) ? url.replace(/\.git$/, '') : '';
+};
 
 const VersionOverview: React.FC = () => {
+    const [repositories, setRepositories] = useState<GitRepository[]>([]);
+    const [activities, setActivities] = useState<RepositoryActivity[]>([]);
     const [stats, setStats] = useState<OverviewStats | null>(null);
     const [loading, setLoading] = useState(true);
+    const [refreshing, setRefreshing] = useState(false);
+    const [error, setError] = useState('');
+    const [updatedAt, setUpdatedAt] = useState<Date | null>(null);
+    const [prCountsAvailable, setPrCountsAvailable] = useState(true);
+    const [releaseStatsAvailable, setReleaseStatsAvailable] = useState(true);
 
-    useEffect(() => {
-        fetchStats();
-    }, []);
+    const loadOverview = useCallback(async (silent = false) => {
+        if (silent) {
+            setRefreshing(true);
+        } else {
+            setLoading(true);
+        }
+        setError('');
+        setPrCountsAvailable(true);
+        setReleaseStatsAvailable(true);
 
-    const fetchStats = async () => {
-        setLoading(true);
         try {
-            await new Promise(resolve => setTimeout(resolve, 800)); // Slightly longer for dramatic effect
-            const data = await getOverviewStats();
-            setStats(data);
-        } catch (error) {
-            console.error('Failed to fetch overview stats:', error);
+            const [repoData, prCountResult, statsResult] = await Promise.all([
+                getGitRepositories(),
+                getRepoPrCounts().catch(error => {
+                    console.error('获取 Pull Request 统计失败', error);
+                    setPrCountsAvailable(false);
+                    return {} as Record<string, number>;
+                }),
+                getOverviewStats().catch(error => {
+                    console.error('获取发布统计失败', error);
+                    setReleaseStatsAvailable(false);
+                    return null;
+                })
+            ]);
+
+            const nextRepositories = repoData || [];
+            const repositoriesWithId = nextRepositories.filter(
+                (repository): repository is GitRepository & { id: number } => typeof repository.id === 'number'
+            );
+            const commitResults = await Promise.allSettled(
+                repositoriesWithId.map(repository => (
+                    getRepoLatestCommit(repository.id, repository.defaultBranch || '')
+                ))
+            );
+
+            const nextActivities = repositoriesWithId.map((repository, index) => {
+                const result = commitResults[index];
+                const commit = result.status === 'fulfilled' ? result.value || null : null;
+                return {
+                    repository,
+                    commit,
+                    openPullRequests: Number(prCountResult[String(repository.id)] || 0),
+                    loadFailed: result.status === 'rejected'
+                };
+            });
+
+            setRepositories(nextRepositories);
+            setActivities(nextActivities);
+            setStats(statsResult);
+            setUpdatedAt(new Date());
+        } catch (loadError) {
+            console.error('加载版本概览失败', loadError);
+            setError('概览数据加载失败，请检查仓库访问权限后重试。');
         } finally {
             setLoading(false);
+            setRefreshing(false);
         }
-    };
+    }, []);
+
+    useEffect(() => {
+        loadOverview();
+    }, [loadOverview]);
+
+    const sortedActivities = useMemo(() => (
+        [...activities].sort((left, right) => getCommitTime(right.commit) - getCommitTime(left.commit))
+    ), [activities]);
+
+    const openPullRequestCount = useMemo(() => (
+        activities.reduce((total, item) => total + item.openPullRequests, 0)
+    ), [activities]);
+
+    const repositoriesWithPullRequests = useMemo(() => (
+        activities.filter(item => item.openPullRequests > 0).length
+    ), [activities]);
+
+    const activeRepositories = useMemo(() => {
+        const threshold = Date.now() - 7 * 24 * 60 * 60 * 1000;
+        return activities.filter(item => item.repository.enabled !== false && getCommitTime(item.commit) >= threshold).length;
+    }, [activities]);
+
+    const enabledRepositories = repositories.filter(repository => repository.enabled !== false).length;
+    const staleRepositories = activities.filter(item => item.repository.enabled !== false && !item.loadFailed && isOlderThanDays(item.commit, 30)).length;
+    const failedRepositories = activities.filter(item => item.repository.enabled !== false && item.loadFailed).length;
+    const disabledRepositories = repositories.length - enabledRepositories;
+
+    const platformCounts = useMemo(() => {
+        const counts: Record<string, number> = {};
+        repositories.forEach(repository => {
+            const platform = (repository.platform || 'unknown').toLowerCase();
+            counts[platform] = (counts[platform] || 0) + 1;
+        });
+        return Object.entries(counts).sort((left, right) => right[1] - left[1]);
+    }, [repositories]);
 
     if (loading) {
         return (
-            <div className="min-h-[60vh] flex flex-col items-center justify-center space-y-6">
-                <div className="relative">
-                    <div className="w-16 h-16 rounded-2xl bg-blue-500/20 animate-ping absolute inset-0" />
-                    <div className="w-16 h-16 rounded-2xl bg-gradient-to-tr from-blue-600 to-indigo-600 flex items-center justify-center shadow-xl shadow-blue-200">
-                        <Activity className="text-white animate-pulse" size={32} />
-                    </div>
+            <div className="space-y-6">
+                <div className="h-20 animate-pulse rounded-xl bg-slate-100" />
+                <div className="grid grid-cols-1 gap-4 md:grid-cols-2 xl:grid-cols-4">
+                    {[0, 1, 2, 3].map(item => <div key={item} className="h-32 animate-pulse rounded-xl bg-slate-100" />)}
                 </div>
-                <div className="flex flex-col items-center gap-2">
-                    <h3 className="text-slate-800 font-bold text-lg">正在连接控制台...</h3>
-                    <p className="font-mono text-xs text-slate-400">ESTABLISHING SECURE CONNECTION</p>
-                </div>
+                <div className="h-80 animate-pulse rounded-xl bg-slate-100" />
             </div>
         );
     }
 
     return (
-        <div className="space-y-8 animate-fade-in max-w-[1600px] mx-auto p-1">
-            {/* Header Section */}
-            <header className="flex flex-col md:flex-row md:items-end justify-between gap-6 pb-2 border-b border-slate-100/60 pb-6">
-                <div className="space-y-2">
-                    <motion.div
-                        initial={{ opacity: 0, x: -20 }}
-                        animate={{ opacity: 1, x: 0 }}
-                        className="flex items-center gap-2"
-                    >
-                        <span className="flex h-2 w-2 rounded-full bg-emerald-500 shadow-[0_0_8px_2px_rgba(16,185,129,0.3)] animate-pulse" />
-                        <span className="text-[10px] font-extrabold uppercase tracking-widest text-slate-400">
-                            System Operational
-                        </span>
-                    </motion.div>
-                    <h1 className="text-4xl font-black text-slate-800 tracking-tight flex items-center gap-3">
-                        系统概览
-                        <span className="text-blue-500 text-5xl leading-none">.</span>
-                    </h1>
-                    <p className="text-slate-500 font-medium max-w-xl text-lg">
-                        实时监控应用状态，追踪版本发布与系统健康度。
-                    </p>
-                </div>
-
-                <div className="hidden sm:block text-right bg-slate-50/50 p-4 rounded-2xl border border-slate-100 backdrop-blur-sm">
-                    <div className="flex items-center justify-end gap-2 mb-1">
-                        <span className="text-emerald-500"><CheckCircle2 size={14} /></span>
-                        <p className="font-mono text-xs font-bold text-slate-600 uppercase tracking-wider">
-                            Uptime 99.98%
-                        </p>
+        <div className="mx-auto max-w-[1500px] space-y-6">
+            <header className="flex flex-col justify-between gap-4 border-b border-slate-200 pb-5 sm:flex-row sm:items-end">
+                <div>
+                    <div className="flex items-center gap-2 text-xs font-medium text-emerald-600">
+                        <span className="h-2 w-2 rounded-full bg-emerald-500" />
+                        数据来自当前用户可访问的代码仓库
                     </div>
-                    <p className="font-mono text-[10px] text-slate-400">
-                        LAST UPDATED: {new Date().toLocaleTimeString()}
-                    </p>
+                    <h1 className="mt-2 text-2xl font-semibold tracking-tight text-slate-900">系统概览</h1>
+                    <p className="mt-1 text-sm text-slate-500">集中查看仓库活跃度、待合并请求和版本发布情况。</p>
+                </div>
+                <div className="flex items-center gap-3">
+                    <span className="text-xs text-slate-400">
+                        {updatedAt ? `更新于 ${updatedAt.toLocaleTimeString('zh-CN', { hour: '2-digit', minute: '2-digit' })}` : '尚未更新'}
+                    </span>
+                    <button
+                        type="button"
+                        onClick={() => loadOverview(true)}
+                        disabled={refreshing}
+                        className="inline-flex items-center gap-2 rounded-md border border-slate-300 bg-white px-3 py-2 text-sm font-medium text-slate-700 transition-colors hover:bg-slate-50 disabled:cursor-wait disabled:opacity-60"
+                    >
+                        <RefreshCw size={15} className={refreshing ? 'animate-spin' : ''} />
+                        刷新
+                    </button>
                 </div>
             </header>
 
-            {/* Stats Grid */}
-            <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-4 gap-6">
-                {stats && [
-                    { label: '活跃系统', value: stats.totalApps, suffix: '个', icon: Server, color: 'blue', bg: 'bg-blue-50', text: 'text-blue-600' },
-                    { label: '累计发布', value: stats.totalReleases, suffix: '次', icon: Package, color: 'indigo', bg: 'bg-indigo-50', text: 'text-indigo-600' },
-                    { label: '本月增速', value: stats.thisMonthReleases, suffix: '次', icon: Zap, color: 'violet', bg: 'bg-violet-50', text: 'text-violet-600' },
-                    { label: '待审批', value: stats.pendingReleases, suffix: '项', icon: Clock, color: 'amber', bg: 'bg-amber-50', text: 'text-amber-600' },
-                ].map((item, idx) => (
-                    <StatCard
-                        key={idx}
-                        label={item.label}
-                        value={item.value}
-                        suffix={item.suffix}
-                        icon={item.icon}
-                        color={item.color}
-                        bgClass={item.bg}
-                        textClass={item.text}
-                        delay={idx * 0.1}
-                    />
-                ))}
-            </div>
+            {error && (
+                <div className="flex items-center gap-2 rounded-lg border border-red-200 bg-red-50 px-4 py-3 text-sm text-red-700">
+                    <AlertCircle size={17} />
+                    {error}
+                </div>
+            )}
 
-            <div className="grid grid-cols-1 lg:grid-cols-3 gap-8">
-                {/* Recent Releases Table (2/3 width) */}
-                <motion.div
-                    initial={{ opacity: 0, y: 30 }}
-                    animate={{ opacity: 1, y: 0 }}
-                    transition={{ delay: 0.4 }}
-                    className="lg:col-span-2 bg-white rounded-[2rem] border border-slate-100 shadow-xl shadow-slate-200/40 overflow-hidden flex flex-col"
-                >
-                    <div className="px-8 py-6 border-b border-slate-100 flex items-center justify-between bg-gradient-to-r from-white to-slate-50/50">
-                        <div className="flex items-center gap-3">
-                            <div className="p-2 bg-slate-100 rounded-lg text-slate-500">
-                                <TerminalIcon size={18} />
-                            </div>
-                            <div>
-                                <h3 className="font-bold text-base text-slate-800">发布日志流</h3>
-                                <p className="text-xs text-slate-400 font-medium">RECENT DEPLOYMENT ACTIVITY</p>
-                            </div>
+            <section className="grid grid-cols-1 gap-4 md:grid-cols-2 xl:grid-cols-4">
+                <MetricCard
+                    label="代码仓库"
+                    value={repositories.length}
+                    detail={`${enabledRepositories} 个已启用，${disabledRepositories} 个未启用`}
+                    icon={Archive}
+                    tone="blue"
+                />
+                <MetricCard
+                    label="待合并请求"
+                    value={prCountsAvailable ? openPullRequestCount : '—'}
+                    detail={prCountsAvailable ? `分布在 ${repositoriesWithPullRequests} 个仓库` : 'Pull Request 统计暂不可用'}
+                    icon={GitPullRequest}
+                    tone="violet"
+                />
+                <MetricCard
+                    label="近 7 日活跃仓库"
+                    value={activeRepositories}
+                    detail={`${enabledRepositories > 0 ? Math.round(activeRepositories / enabledRepositories * 100) : 0}% 的已启用仓库近期有提交`}
+                    icon={Activity}
+                    tone="emerald"
+                />
+                <MetricCard
+                    label="发布成功率"
+                    value={releaseStatsAvailable ? `${Math.round(stats?.successRate || 0)}%` : '—'}
+                    detail={releaseStatsAvailable ? `累计 ${stats?.totalReleases || 0} 次发布，${stats?.pendingReleases || 0} 次待处理` : '发布统计暂不可用'}
+                    icon={CheckCircle2}
+                    tone="amber"
+                />
+            </section>
+
+            <section className="grid grid-cols-1 gap-6 xl:grid-cols-3">
+                <div className="overflow-hidden rounded-xl border border-slate-200 bg-white shadow-sm xl:col-span-2">
+                    <div className="flex items-center justify-between border-b border-slate-200 px-5 py-4">
+                        <div>
+                            <h2 className="flex items-center gap-2 text-base font-semibold text-slate-900">
+                                <GitCommitHorizontal size={18} className="text-slate-500" />
+                                最近仓库动态
+                            </h2>
+                            <p className="mt-1 text-xs text-slate-500">按各仓库最新一次提交时间排序</p>
                         </div>
-                        <div className="flex gap-2">
-                            <div className="h-2 w-2 rounded-full bg-rose-400/80" />
-                            <div className="h-2 w-2 rounded-full bg-amber-400/80" />
-                            <div className="h-2 w-2 rounded-full bg-emerald-400/80" />
-                        </div>
+                        <span className="text-xs text-slate-400">显示前 {Math.min(sortedActivities.length, 8)} 个仓库</span>
                     </div>
 
-                    <div className="flex-1 overflow-x-auto">
-                        <table className="w-full text-left">
-                            <thead className="bg-slate-50/80 text-slate-500 font-bold text-[11px] uppercase tracking-wider border-b border-slate-100 sticky top-0 backdrop-blur-sm z-10">
-                                <tr>
-                                    <th className="px-8 py-4 w-20">ID</th>
-                                    <th className="px-6 py-4">系统 / 制品</th>
-                                    <th className="px-6 py-4">版本号</th>
-                                    <th className="px-6 py-4">发布时间</th>
-                                    <th className="px-8 py-4 text-right">状态</th>
-                                </tr>
-                            </thead>
-                            <tbody className="divide-y divide-slate-50">
-                                {stats?.recentReleases.map((release, i) => (
-                                    <motion.tr
-                                        key={release.id}
-                                        initial={{ opacity: 0, x: -10 }}
-                                        animate={{ opacity: 1, x: 0 }}
-                                        transition={{ delay: 0.5 + (i * 0.05) }}
-                                        className="hover:bg-blue-50/30 transition-colors group"
-                                    >
-                                        <td className="px-8 py-4 text-slate-400 text-xs font-mono">#{release.id}</td>
-                                        <td className="px-6 py-4">
-                                            <div className="flex items-center gap-3">
-                                                <div className="w-8 h-8 rounded-lg bg-slate-100 flex items-center justify-center text-slate-400 group-hover:bg-blue-100 group-hover:text-blue-600 transition-colors">
-                                                    <Package size={16} />
+                    {sortedActivities.length === 0 ? (
+                        <div className="flex min-h-64 flex-col items-center justify-center text-slate-400">
+                            <GitBranch size={32} className="mb-3 opacity-40" />
+                            <span className="text-sm">暂无可访问的仓库动态</span>
+                        </div>
+                    ) : (
+                        <div className="divide-y divide-slate-100">
+                            {sortedActivities.slice(0, 8).map(item => (
+                                <div key={item.repository.id} className="flex flex-col gap-3 px-5 py-4 transition-colors hover:bg-slate-50/80 sm:flex-row sm:items-center">
+                                    <div className="flex min-w-0 flex-1 items-start gap-3">
+                                        <div className="mt-0.5 rounded-md border border-slate-200 bg-slate-50 p-2 text-slate-500">
+                                            <Archive size={16} />
+                                        </div>
+                                        <div className="min-w-0 flex-1">
+                                            <div className="flex flex-wrap items-center gap-2">
+                                                <span className="truncate text-sm font-semibold text-slate-900">{item.repository.name}</span>
+                                                <span className={`rounded px-1.5 py-0.5 text-[10px] font-semibold uppercase ${platformClasses[item.repository.platform] || 'bg-slate-100 text-slate-600'}`}>
+                                                    {item.repository.platform}
+                                                </span>
+                                                {item.repository.enabled === false && (
+                                                    <span className="rounded bg-slate-100 px-1.5 py-0.5 text-[10px] font-medium text-slate-500">未启用</span>
+                                                )}
+                                                {item.openPullRequests > 0 && (
+                                                    <span className="inline-flex items-center gap-1 rounded-full bg-violet-50 px-2 py-0.5 text-[11px] font-medium text-violet-700">
+                                                        <GitPullRequest size={11} />{item.openPullRequests}
+                                                    </span>
+                                                )}
+                                            </div>
+                                            {item.commit ? (
+                                                <>
+                                                    <div className="mt-1 truncate text-sm text-slate-600" title={item.commit.message}>{item.commit.message?.split('\n')[0]}</div>
+                                                    <div className="mt-1.5 flex flex-wrap items-center gap-x-3 gap-y-1 text-xs text-slate-400">
+                                                        <span>{item.commit.authorName || '未知提交人'}</span>
+                                                        <span className="font-mono">{item.repository.defaultBranch || '默认分支'} · {item.commit.sha?.slice(0, 8)}</span>
+                                                        <span>{formatCommitTime(item.commit.committedAt)}</span>
+                                                    </div>
+                                                </>
+                                            ) : (
+                                                <div className="mt-1 text-sm text-slate-400">
+                                                    {item.loadFailed ? '最新提交读取失败' : '暂无提交记录'}
                                                 </div>
-                                                <span className="font-bold text-slate-700 text-sm">{release.appName}</span>
-                                            </div>
-                                        </td>
-                                        <td className="px-6 py-4">
-                                            <span className="bg-slate-100 border border-slate-200 text-slate-600 px-2 py-1 rounded-md text-[11px] font-mono font-bold">
-                                                {release.version}
-                                            </span>
-                                        </td>
-                                        <td className="px-6 py-4 text-slate-500 text-xs font-medium">
-                                            {release.releaseDate}
-                                        </td>
-                                        <td className="px-8 py-4 text-right">
-                                            <div className="flex justify-end">
-                                                <StatusBadge status={release.status} />
-                                            </div>
-                                        </td>
-                                    </motion.tr>
-                                ))}
-                            </tbody>
-                        </table>
-                    </div>
-                </motion.div>
-
-                {/* Side Panel (1/3 width) */}
-                <motion.div
-                    initial={{ opacity: 0, y: 30 }}
-                    animate={{ opacity: 1, y: 0 }}
-                    transition={{ delay: 0.5 }}
-                    className="space-y-6"
-                >
-                    {/* System Resources */}
-                    <div className="bg-white rounded-[2rem] border border-slate-100 shadow-lg p-6 relative overflow-hidden">
-                        <div className="flex items-center justify-between mb-6">
-                            <h4 className="text-sm font-bold text-slate-800 flex items-center gap-2">
-                                <Cpu size={18} className="text-slate-400" />
-                                系统负载
-                            </h4>
-                            <span className="px-2 py-0.5 bg-emerald-50 text-emerald-600 text-[10px] font-extrabold rounded-full border border-emerald-100">
-                                NORMAL
-                            </span>
-                        </div>
-
-                        <div className="space-y-6 relative z-10">
-                            <ResourceBar label="CPU Usage" value={42} colorClass="bg-gradient-to-r from-emerald-400 to-emerald-500" />
-                            <ResourceBar label="Memory" value={68} colorClass="bg-gradient-to-r from-blue-400 to-blue-500" />
-                            <ResourceBar label="Storage I/O" value={12} colorClass="bg-gradient-to-r from-amber-400 to-amber-500" />
-                        </div>
-
-                        <div className="mt-8 pt-6 border-t border-slate-50">
-                            <button className="w-full py-3 bg-slate-900 hover:bg-slate-800 text-white text-xs font-bold uppercase tracking-wider rounded-xl transition-all shadow-lg shadow-slate-900/20 flex items-center justify-center gap-2 group">
-                                <Activity size={14} className="group-hover:animate-pulse" />
-                                完整诊断报告
-                            </button>
-                        </div>
-                    </div>
-
-                    {/* Latest Commit Card */}
-                    <div className="bg-gradient-to-br from-blue-600 to-indigo-700 rounded-[2rem] p-6 text-white shadow-xl shadow-blue-200 relative overflow-hidden">
-                        {/* Decorative Patterns */}
-                        <div className="absolute top-0 right-0 p-4 opacity-10 transform translate-x-1/3 -translate-y-1/3">
-                            <GitBranch size={120} />
-                        </div>
-
-                        <div className="relative z-10">
-                            <div className="flex items-center gap-2 mb-4 opacity-80">
-                                <GitBranch size={16} />
-                                <span className="text-xs font-bold uppercase tracking-wider">Latest Commit</span>
-                            </div>
-
-                            <p className="font-medium text-lg mb-4 leading-relaxed">
-                                <span className="bg-white/20 px-1.5 py-0.5 rounded text-sm font-bold mr-1.5">feat(core)</span>
-                                优化数据库连接池配置参数，提升并发处理能力
-                            </p>
-
-                            <div className="flex items-center justify-between mt-6 pt-4 border-t border-white/10">
-                                <div className="flex items-center gap-2 text-xs font-mono opacity-60">
-                                    <Hash size={12} />
-                                    master • 2d8f9a2
+                                            )}
+                                        </div>
+                                    </div>
+                                    {getRepositoryWebUrl(item.repository) && (
+                                        <a
+                                            href={getRepositoryWebUrl(item.repository)}
+                                            target="_blank"
+                                            rel="noreferrer"
+                                            className="inline-flex shrink-0 items-center gap-1 text-xs font-medium text-blue-600 hover:text-blue-700"
+                                        >
+                                            打开仓库 <ArrowUpRight size={13} />
+                                        </a>
+                                    )}
                                 </div>
-                                <span className="text-xs font-bold bg-white/10 px-2 py-1 rounded-lg backdrop-blur-sm">
-                                    2 mins ago
-                                </span>
-                            </div>
+                            ))}
+                        </div>
+                    )}
+                </div>
+
+                <div className="space-y-6">
+                    <div className="rounded-xl border border-slate-200 bg-white shadow-sm">
+                        <div className="border-b border-slate-200 px-5 py-4">
+                            <h2 className="flex items-center gap-2 text-base font-semibold text-slate-900">
+                                <ShieldAlert size={18} className="text-amber-500" />
+                                需要关注
+                            </h2>
+                            <p className="mt-1 text-xs text-slate-500">优先处理可能影响协作效率的事项</p>
+                        </div>
+                        <div className="divide-y divide-slate-100 px-5">
+                            {[
+                                { label: '开放 Pull Request', value: prCountsAvailable ? openPullRequestCount : '—', icon: GitPullRequest, tone: 'text-violet-600 bg-violet-50' },
+                                { label: '超过 30 天无提交', value: staleRepositories, icon: Clock3, tone: 'text-amber-600 bg-amber-50' },
+                                { label: '未启用仓库', value: disabledRepositories, icon: Server, tone: 'text-slate-600 bg-slate-100' },
+                                { label: '动态读取失败', value: failedRepositories, icon: AlertCircle, tone: 'text-red-600 bg-red-50' }
+                            ].map(item => (
+                                <div key={item.label} className="flex items-center justify-between py-3.5">
+                                    <div className="flex items-center gap-3 text-sm text-slate-600">
+                                        <span className={`rounded-md p-1.5 ${item.tone}`}><item.icon size={15} /></span>
+                                        {item.label}
+                                    </div>
+                                    <span className="text-sm font-semibold text-slate-900">{item.value}</span>
+                                </div>
+                            ))}
                         </div>
                     </div>
-                </motion.div>
-            </div>
+
+                    <div className="rounded-xl border border-slate-200 bg-white p-5 shadow-sm">
+                        <div className="mb-4 flex items-center justify-between">
+                            <div>
+                                <h2 className="text-base font-semibold text-slate-900">托管平台</h2>
+                                <p className="mt-1 text-xs text-slate-500">当前仓库的平台分布</p>
+                            </div>
+                            <span className="text-xs text-slate-400">共 {repositories.length} 个</span>
+                        </div>
+                        <div className="space-y-4">
+                            {platformCounts.length === 0 ? (
+                                <div className="py-6 text-center text-sm text-slate-400">暂无平台数据</div>
+                            ) : platformCounts.map(([platform, count]) => {
+                                const percentage = repositories.length > 0 ? count / repositories.length * 100 : 0;
+                                return (
+                                    <div key={platform}>
+                                        <div className="mb-1.5 flex items-center justify-between text-sm">
+                                            <span className="font-medium capitalize text-slate-700">{platform}</span>
+                                            <span className="text-xs text-slate-500">{count} 个 · {Math.round(percentage)}%</span>
+                                        </div>
+                                        <div className="h-2 overflow-hidden rounded-full bg-slate-100">
+                                            <div className="h-full rounded-full bg-blue-500" style={{ width: `${percentage}%` }} />
+                                        </div>
+                                    </div>
+                                );
+                            })}
+                        </div>
+                    </div>
+                </div>
+            </section>
         </div>
     );
 };

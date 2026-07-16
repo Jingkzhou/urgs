@@ -1,9 +1,8 @@
 import React, { useState, useEffect } from 'react';
-import { GitBranch, ShieldCheck, BarChart3, Folder, Terminal, Gauge, ChevronRight, LayoutGrid, GitPullRequest, Calendar } from 'lucide-react';
+import { GitBranch, ShieldCheck, BarChart3, Folder, Terminal, Gauge, ChevronRight, GitPullRequest, Calendar } from 'lucide-react';
 import { motion, AnimatePresence } from 'framer-motion';
 import { hasPermission } from '../utils/permission';
 import { BreadcrumbProvider, useBreadcrumbs } from '../context/BreadcrumbContext';
-import AppSystemList from './version/AppSystemList';
 import ReleaseStats from './version/ReleaseStats';
 import VersionOverview from './version/VersionOverview';
 import GitRepoManagement from './version/git-repo/GitRepoManagement';
@@ -14,7 +13,6 @@ const VersionManagementContent: React.FC = () => {
     const [openPullRequestCount, setOpenPullRequestCount] = useState(0);
 
     const TABS = [
-        { id: 'app', label: '应用系统', subLabel: 'Applications', icon: LayoutGrid, code: 'version:app:list', component: AppSystemList },
         { id: 'repos', label: '仓库管理', subLabel: 'Repositories', icon: GitBranch, code: 'version:repo:list', component: GitRepoManagement },
         { id: 'stats', label: '绩效统计', subLabel: 'Metrics', icon: BarChart3, code: 'version:stats', component: ReleaseStats },
     ];
