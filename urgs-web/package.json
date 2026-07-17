@@ -31,6 +31,7 @@
     "framer-motion": "^12.23.26",
     "highlight.js": "^11.11.1",
     "katex": "^0.16.27",
+    "lodash": "^4.18.1",
     "lucide-react": "^0.554.0",
     "mammoth": "^1.12.0",
     "monaco-editor": "^0.55.1",
@@ -52,6 +53,7 @@
     "zod": "^4.3.6"
   },
   "devDependencies": {
+    "@types/lodash": "^4.17.24",
     "@types/node": "^22.14.0",
     "@types/react": "^19.2.7",
     "@types/react-dom": "^19.2.3",
