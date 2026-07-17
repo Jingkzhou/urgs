@@ -23,6 +23,7 @@ const TagManagerModal: React.FC<TagManagerModalProps> = ({ open, tags, onClose, 
 
     return (
         <Modal
+            rootClassName="knowledge-mac-modal"
             title="标签管理"
             open={open}
             onCancel={onClose}

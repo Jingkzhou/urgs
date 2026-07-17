@@ -43,7 +43,7 @@ const DocumentList: React.FC<DocumentListProps> = ({
     return (
         <Spin spinning={loading}>
             {hasItems && (
-                <div className="flex items-center px-4 py-2 border-b border-slate-200 bg-slate-50 text-[11px] font-bold text-slate-400 uppercase tracking-wider sticky top-0 z-10">
+                <div className="knowledge-list-header flex items-center px-4 py-2 sticky top-0 z-10">
                     {selectionMode && <div className="w-10"></div>}
                     <div className="w-8"></div>
                     <div className="flex-1">名称</div>

@@ -6,12 +6,12 @@ import { BreadcrumbProvider, useBreadcrumbs } from '../context/BreadcrumbContext
 import ReleaseStats from './version/ReleaseStats';
 import VersionOverview from './version/VersionOverview';
 import GitRepoManagement from './version/git-repo/GitRepoManagement';
-import { getRepoPrCounts } from '@/api/version';
+import { getRepoPrCounts, GitRepository } from '@/api/version';
 
 const VersionManagementContent: React.FC = () => {
     const [activeTab, setActiveTab] = useState<string>('');
     const [openPullRequestCount, setOpenPullRequestCount] = useState(0);
-    const [selectedRepoId, setSelectedRepoId] = useState<number | undefined>(undefined);
+    const [selectedRepository, setSelectedRepository] = useState<GitRepository | undefined>(undefined);
 
     const TABS = [
         { id: 'repos', label: '仓库管理', subLabel: 'Repositories', icon: GitBranch, code: 'version:repo:list', component: GitRepoManagement },
@@ -55,8 +55,8 @@ const VersionManagementContent: React.FC = () => {
     const ActiveComponent = allTabs.find(tab => tab.id === activeTab)?.component;
     const canViewRepositories = visibleTabs.some(tab => tab.id === 'repos');
 
-    const openRepositoryInSystem = (repositoryId: number) => {
-        setSelectedRepoId(repositoryId);
+    const openRepositoryInSystem = (repository: GitRepository) => {
+        setSelectedRepository(repository);
         setActiveTab('repos');
     };
 
@@ -203,8 +203,8 @@ const VersionManagementContent: React.FC = () => {
                                 <VersionOverview onOpenRepository={canViewRepositories ? openRepositoryInSystem : undefined} />
                             ) : activeTab === 'repos' && canViewRepositories ? (
                                 <GitRepoManagement
-                                    selectedRepoId={selectedRepoId}
-                                    onSelectedRepoIdHandled={() => setSelectedRepoId(undefined)}
+                                    initialSelectedRepository={selectedRepository}
+                                    onInitialSelectedRepositoryHandled={() => setSelectedRepository(undefined)}
                                 />
                             ) : ActiveComponent ? <ActiveComponent /> : (
                                 <div className="h-full flex flex-col items-center justify-center text-slate-400">

@@ -49,14 +49,14 @@ const parseFullNameFromCloneUrl = (cloneUrl?: string): string | null => {
 
 interface GitRepoManagementProps {
     manageable?: boolean;
-    selectedRepoId?: number;
-    onSelectedRepoIdHandled?: () => void;
+    initialSelectedRepository?: GitRepository;
+    onInitialSelectedRepositoryHandled?: () => void;
 }
 
 const GitRepoManagement: React.FC<GitRepoManagementProps> = ({
     manageable = false,
-    selectedRepoId,
-    onSelectedRepoIdHandled
+    initialSelectedRepository,
+    onInitialSelectedRepositoryHandled
 }) => {
     const canAdd = manageable && hasPermission('sys:repo:add');
     const canEdit = manageable && hasPermission('sys:repo:edit');
@@ -67,7 +67,7 @@ const GitRepoManagement: React.FC<GitRepoManagementProps> = ({
     const [modalVisible, setModalVisible] = useState(false);
 
     const [editingRepo, setEditingRepo] = useState<GitRepository | null>(null);
-    const [selectedRepo, setSelectedRepo] = useState<GitRepository | null>(null);
+    const [selectedRepo, setSelectedRepo] = useState<GitRepository | null>(initialSelectedRepository || null);
     const [viewMode, setViewMode] = useState<'list' | 'card'>('card');
     const [form] = Form.useForm();
 
@@ -77,12 +77,10 @@ const GitRepoManagement: React.FC<GitRepoManagementProps> = ({
     }, []);
 
     useEffect(() => {
-        if (!selectedRepoId) return;
-        const repository = repos.find(repo => repo.id === selectedRepoId);
-        if (!repository) return;
-        setSelectedRepo(repository);
-        onSelectedRepoIdHandled?.();
-    }, [selectedRepoId, repos]);
+        if (!initialSelectedRepository) return;
+        setSelectedRepo(initialSelectedRepository);
+        onInitialSelectedRepositoryHandled?.();
+    }, [initialSelectedRepository, onInitialSelectedRepositoryHandled]);
 
     const fetchRepos = async () => {
         setLoading(true);

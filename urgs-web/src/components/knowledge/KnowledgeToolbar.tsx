@@ -1,35 +1,20 @@
 import React from 'react';
-import {
-    Input,
-    Button,
-    Space,
-    Upload,
-    Segmented,
-    Breadcrumb,
-    Popover,
-} from 'antd';
+import { Button, Input, Segmented, Space, Upload } from 'antd';
 import type { UploadProps } from 'antd';
 import {
-    Search,
-    Upload as UploadIcon,
-    FolderPlus,
     ArrowLeft,
+    ArrowRight,
+    CheckSquare,
+    ChevronRight,
+    FolderPlus,
     LayoutGrid,
     List as ListIcon,
-    Users,
-    Lock,
-    CheckSquare,
+    Search,
+    Upload as UploadIcon,
     X,
-    Star,
-    Tags,
 } from 'lucide-react';
-import type { KnowledgeTag } from '../../api/knowledge';
 
 interface KnowledgeToolbarProps {
-    scope: 'private' | 'shared';
-    viewMode: 'browse' | 'favorites';
-    onScopeChange: (val: 'private' | 'shared') => void;
-    onViewModeChange: (val: 'browse' | 'favorites') => void;
     selectedFolderId: number | null;
     breadcrumbs: Array<{ id: number | null; name: string }>;
     onBreadcrumbClick: (id: number | null) => void;
@@ -42,178 +27,119 @@ interface KnowledgeToolbarProps {
     canUpload: boolean;
     canCreateFolder: boolean;
     onNewFolder: () => void;
-    tags: KnowledgeTag[];
-    filterTagId: number | null;
-    onFilterTag: (id: number | null) => void;
     selectionMode: boolean;
     onEnterSelectionMode: () => void;
     onExitSelectionMode: () => void;
+    title: string;
+    onMinimize: () => void;
+    onClose: () => void;
+    onToggleMaximize: () => void;
+    isMaximized: boolean;
 }
 
 const KnowledgeToolbar: React.FC<KnowledgeToolbarProps> = ({
-    scope, viewMode, onScopeChange, onViewModeChange,
-    selectedFolderId, breadcrumbs, onBreadcrumbClick, onBack,
-    searchKeyword, onSearch, layoutMode, onLayoutChange,
-    uploadProps, canUpload, canCreateFolder, onNewFolder,
-    tags, filterTagId, onFilterTag,
-    selectionMode, onEnterSelectionMode, onExitSelectionMode,
-}) => {
-    const isFavoritesView = viewMode === 'favorites';
+    selectedFolderId,
+    breadcrumbs,
+    onBreadcrumbClick,
+    onBack,
+    searchKeyword,
+    onSearch,
+    layoutMode,
+    onLayoutChange,
+    uploadProps,
+    canUpload,
+    canCreateFolder,
+    onNewFolder,
+    selectionMode,
+    onEnterSelectionMode,
+    onExitSelectionMode,
+    title,
+    onMinimize,
+    onClose,
+    onToggleMaximize,
+    isMaximized,
+}) => (
+    <header className="knowledge-finder-toolbar" onDoubleClick={onToggleMaximize}>
+        <div className="knowledge-window-controls" onDoubleClick={e => e.stopPropagation()}>
+            <button type="button" className="knowledge-traffic-light knowledge-traffic-light--close" onClick={onClose} aria-label="关闭 Finder">
+                <X size={8} />
+            </button>
+            <button type="button" className="knowledge-traffic-light knowledge-traffic-light--minimize" onClick={onMinimize} aria-label="最小化 Finder">
+                <span />
+            </button>
+            <button
+                type="button"
+                className="knowledge-traffic-light knowledge-traffic-light--maximize"
+                onClick={onToggleMaximize}
+                aria-label={isMaximized ? '退出全屏' : '最大化 Finder'}
+            >
+                <span />
+            </button>
+        </div>
 
-    return (
-        <header className="h-14 bg-white border-b border-slate-200 flex items-center px-4 justify-between flex-shrink-0">
-            <div className="flex items-center gap-4">
+        <div className="knowledge-toolbar-navigation" onDoubleClick={e => e.stopPropagation()}>
+            <Button
+                type="text"
+                size="small"
+                icon={<ArrowLeft size={16} />}
+                disabled={selectedFolderId === null}
+                onClick={onBack}
+                aria-label="返回上一级"
+            />
+            <Button type="text" size="small" icon={<ArrowRight size={16} />} disabled aria-label="前进" />
+        </div>
+
+        <div className="knowledge-toolbar-title" title={title}>
+            <span>{title}</span>
+            <small>{isMaximized ? '全屏浏览' : 'Finder'}</small>
+        </div>
+
+        <nav className="knowledge-breadcrumbs" aria-label="当前位置" onDoubleClick={e => e.stopPropagation()}>
+            {breadcrumbs.map((breadcrumb, index) => (
+                <React.Fragment key={`${breadcrumb.id ?? 'root'}-${index}`}>
+                    {index > 0 && <ChevronRight size={12} />}
+                    <button type="button" onClick={() => onBreadcrumbClick(breadcrumb.id)} title={breadcrumb.name}>
+                        {breadcrumb.name}
+                    </button>
+                </React.Fragment>
+            ))}
+        </nav>
+
+        <div className="knowledge-toolbar-actions" onDoubleClick={e => e.stopPropagation()}>
+            <Input
+                allowClear
+                prefix={<Search size={13} />}
+                placeholder="搜索"
+                className="knowledge-search-input"
+                value={searchKeyword}
+                onChange={e => onSearch(e.target.value)}
+            />
+            <Space size={5}>
+                {canUpload && (
+                    <Upload {...uploadProps}>
+                        <Button type="text" size="small" icon={<UploadIcon size={16} />} title="上传文件" aria-label="上传文件" />
+                    </Upload>
+                )}
+                {canCreateFolder && (
+                    <Button type="text" size="small" icon={<FolderPlus size={16} />} onClick={onNewFolder} title="新建文件夹" aria-label="新建文件夹" />
+                )}
+                {selectionMode ? (
+                    <Button type="text" size="small" icon={<X size={15} />} onClick={onExitSelectionMode} title="取消选择" aria-label="取消选择" />
+                ) : (
+                    <Button type="text" size="small" icon={<CheckSquare size={15} />} onClick={onEnterSelectionMode} title="选择项目" aria-label="选择项目" />
+                )}
                 <Segmented
-                    value={scope}
-                    onChange={val => onScopeChange(val as 'private' | 'shared')}
+                    size="small"
+                    value={layoutMode}
+                    onChange={val => onLayoutChange(val as 'grid' | 'list')}
                     options={[
-                        { value: 'private', icon: <Lock size={12} />, label: '我的空间' },
-                        { value: 'shared', icon: <Users size={12} />, label: '共享空间' },
+                        { value: 'grid', icon: <LayoutGrid size={13} />, title: '图标视图' },
+                        { value: 'list', icon: <ListIcon size={13} />, title: '列表视图' },
                     ]}
                 />
-
-                {/* 收藏夹按钮 */}
-                <button
-                    onClick={() => onViewModeChange(isFavoritesView ? 'browse' : 'favorites')}
-                    className={`flex items-center gap-1.5 px-3 py-1.5 rounded-lg text-sm font-medium transition-all
-                        ${isFavoritesView
-                            ? 'bg-amber-50 text-amber-600 border border-amber-200'
-                            : 'text-slate-500 hover:bg-slate-100 hover:text-amber-500'
-                        }
-                    `}
-                    title="收藏夹"
-                >
-                    <Star size={14} className={isFavoritesView ? 'fill-amber-500' : ''} />
-                    收藏
-                </button>
-
-                {/* 标签筛选 */}
-                {tags.length > 0 && (
-                    <Popover
-                        content={
-                            <div className="w-48 py-1">
-                                <div
-                                    className={`px-3 py-1.5 cursor-pointer rounded text-sm transition-colors
-                                        ${!filterTagId ? 'bg-blue-50 text-blue-600 font-medium' : 'text-slate-600 hover:bg-slate-50'}`}
-                                    onClick={() => onFilterTag(null)}
-                                >
-                                    当前空间全部文件
-                                </div>
-                                <div className="h-px bg-slate-100 my-1" />
-                                {tags.map(t => (
-                                    <div
-                                        key={t.id}
-                                        className={`flex items-center gap-2 px-3 py-1.5 cursor-pointer rounded text-sm transition-colors
-                                            ${filterTagId === t.id ? 'bg-blue-50 text-blue-600 font-medium' : 'text-slate-600 hover:bg-slate-50'}`}
-                                        onClick={() => onFilterTag(filterTagId === t.id ? null : t.id)}
-                                    >
-                                        <div className="w-2.5 h-2.5 rounded-full flex-shrink-0" style={{ backgroundColor: t.color }} />
-                                        <span className="truncate" title={t.name}>{t.name}</span>
-                                    </div>
-                                ))}
-                            </div>
-                        }
-                        trigger="click"
-                        placement="bottomLeft"
-                    >
-                        <button
-                            className={`flex items-center gap-1.5 px-3 py-1.5 rounded-lg text-sm font-medium transition-all
-                                ${filterTagId
-                                    ? 'bg-blue-50 text-blue-600 border border-blue-200'
-                                    : 'text-slate-500 hover:bg-slate-100 hover:text-blue-500'
-                                }
-                            `}
-                            title="按标签筛选"
-                        >
-                            <Tags size={14} />
-                            <span className="max-w-24 truncate">
-                                {filterTagId ? tags.find(t => t.id === filterTagId)?.name || '标签' : '标签'}
-                            </span>
-                        </button>
-                    </Popover>
-                )}
-
-                <div className="w-px h-6 bg-slate-200"></div>
-
-                {/* 收藏夹模式下显示标题，普通模式显示面包屑 */}
-                {isFavoritesView ? (
-                    <span className="text-sm font-medium text-amber-600 flex items-center gap-1.5">
-                        <Star size={14} className="fill-amber-500 text-amber-500" />
-                        我的收藏
-                    </span>
-                ) : (
-                    <>
-                        <Button
-                            icon={<ArrowLeft size={16} />}
-                            disabled={selectedFolderId === null}
-                            onClick={onBack}
-                            type="text"
-                            className="hover:bg-slate-100"
-                        />
-                        <Breadcrumb
-                            className="text-sm font-medium"
-                            items={breadcrumbs.map((b) => ({
-                                title: b.name,
-                                onClick: () => onBreadcrumbClick(b.id),
-                                className: "cursor-pointer hover:text-blue-600 transition-colors"
-                            }))}
-                        />
-                    </>
-                )}
-            </div>
-
-            <div className="flex items-center gap-2">
-                <Input
-                    prefix={<Search size={14} className="text-slate-400" />}
-                    placeholder={isFavoritesView ? "搜索收藏..." : "搜索文件..."}
-                    className="w-48 sm:w-64 rounded-full bg-slate-100 border-none px-4"
-                    value={searchKeyword}
-                    onChange={e => onSearch(e.target.value)}
-                />
-                <Space size={8} className="ml-2">
-                    {!isFavoritesView && canUpload && (
-                        <Upload {...uploadProps}>
-                            <Button type="primary" icon={<UploadIcon size={18} />} className="bg-emerald-600 hover:bg-emerald-700 border-none">
-                                上传文件
-                            </Button>
-                        </Upload>
-                    )}
-                    {!isFavoritesView && canCreateFolder && (
-                        <Button icon={<FolderPlus size={18} />} onClick={onNewFolder}>
-                            新建文件夹
-                        </Button>
-                    )}
-                    <div className="w-px h-6 bg-slate-200 mx-1"></div>
-                    {selectionMode ? (
-                        <Button
-                            icon={<X size={16} />}
-                            onClick={onExitSelectionMode}
-                            className="text-slate-500 hover:text-red-500"
-                        >
-                            取消选择
-                        </Button>
-                    ) : (
-                        <Button
-                            icon={<CheckSquare size={16} />}
-                            onClick={onEnterSelectionMode}
-                            type="text"
-                            className="text-slate-500 hover:text-blue-600"
-                        >
-                            选择
-                        </Button>
-                    )}
-                    <Segmented
-                        value={layoutMode}
-                        onChange={val => onLayoutChange(val as 'grid' | 'list')}
-                        options={[
-                            { value: 'grid', icon: <LayoutGrid size={14} /> },
-                            { value: 'list', icon: <ListIcon size={14} /> },
-                        ]}
-                    />
-                </Space>
-            </div>
-        </header>
-    );
-};
+            </Space>
+        </div>
+    </header>
+);
 
 export default KnowledgeToolbar;

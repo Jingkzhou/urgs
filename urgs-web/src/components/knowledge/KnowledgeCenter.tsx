@@ -13,7 +13,14 @@ import TagManagerModal from './TagManagerModal';
 import FilePreviewModal from './FilePreviewModal';
 import BatchActionBar from './BatchActionBar';
 import { UploadProgressPanel } from './UploadProgressPanel';
+import {
+    DesktopShortcuts,
+    KnowledgeDock,
+    KnowledgeSidebar,
+    MacMenuBar,
+} from './KnowledgeDesktopChrome';
 import * as api from '../../api/knowledge';
+import './knowledgeDesktop.css';
 
 const DOCUMENT_TITLE_MAX_LENGTH = 200;
 const DOCUMENT_FILE_NAME_MAX_LENGTH = 255;
@@ -62,6 +69,8 @@ const KnowledgeCenter: React.FC = () => {
     const [editingFolder, setEditingFolder] = useState<FolderTreeNode | null>(null);
     const [renamingDoc, setRenamingDoc] = useState<KnowledgeDocument | null>(null);
     const [tagModalOpen, setTagModalOpen] = useState(false);
+    const [windowMinimized, setWindowMinimized] = useState(false);
+    const [windowMaximized, setWindowMaximized] = useState(false);
 
     // 预览状态
     const [previewDoc, setPreviewDoc] = useState<KnowledgeDocument | null>(null);
@@ -118,8 +127,6 @@ const KnowledgeCenter: React.FC = () => {
             const originalFileName = renamingDoc.fileName || renamingDoc.title;
             const { baseName } = splitFileNameForRename(originalFileName);
             docRenameForm.setFieldsValue({ baseName });
-        } else {
-            docRenameForm.resetFields();
         }
     }, [renamingDoc, docRenameForm]);
 
@@ -345,6 +352,25 @@ const KnowledgeCenter: React.FC = () => {
 
     // 共享 props
     const isFavoritesView = state.viewMode === 'favorites';
+    const visibleItemCount = state.documents.length + (isFavoritesView ? 0 : currentSubFolders.length);
+    const activeTagName = state.filterTagId
+        ? state.tags.find(tag => tag.id === state.filterTagId)?.name
+        : undefined;
+    const finderTitle = isFavoritesView
+        ? '收藏'
+        : activeTagName || currentBreadcrumbs[currentBreadcrumbs.length - 1]?.name || '知识中心';
+    const openPrivateSpace = () => {
+        actions.setScope('private');
+        actions.setViewMode('browse');
+        actions.setFilterTagId(null);
+        setWindowMinimized(false);
+    };
+    const openSharedSpace = () => {
+        actions.setScope('shared');
+        actions.setViewMode('browse');
+        actions.setFilterTagId(null);
+        setWindowMinimized(false);
+    };
     const viewProps = {
         folders: isFavoritesView ? [] as FolderTreeNode[] : currentSubFolders,
         documents: state.documents,
@@ -376,59 +402,101 @@ const KnowledgeCenter: React.FC = () => {
     };
 
     return (
-        <div className="flex flex-col h-full bg-slate-50 overflow-hidden font-sans">
-            <KnowledgeToolbar
-                scope={state.scope}
-                viewMode={state.viewMode}
-                onScopeChange={actions.setScope}
-                onViewModeChange={actions.setViewMode}
-                selectedFolderId={state.selectedFolderId}
-                breadcrumbs={currentBreadcrumbs}
-                onBreadcrumbClick={actions.setSelectedFolderId}
-                onBack={actions.handleBack}
-                searchKeyword={state.searchKeyword}
-                onSearch={actions.setSearchKeyword}
-                layoutMode={state.layoutMode}
-                onLayoutChange={actions.setLayoutMode}
-                uploadProps={upload.uploadProps}
-                canUpload={!permissions.isShared || permissions.canSharedUpload}
-                canCreateFolder={!permissions.isShared || permissions.canSharedFolderCreate}
-                onNewFolder={handleNewFolder}
-                tags={state.tags}
-                filterTagId={state.filterTagId}
-                onFilterTag={actions.setFilterTagId}
-                selectionMode={state.selectionMode}
-                onEnterSelectionMode={actions.enterSelectionMode}
-                onExitSelectionMode={actions.exitSelectionMode}
-            />
+        <div className="knowledge-desktop">
+            <MacMenuBar itemCount={visibleItemCount} />
+            <DesktopShortcuts onOpenPrivate={openPrivateSpace} onOpenShared={openSharedSpace} />
 
-            <main
-                className="flex-1 bg-white flex flex-col relative overflow-hidden"
-                onDragOver={(e) => { e.preventDefault(); e.stopPropagation(); }}
-                onDrop={upload.handleDrop}
-            >
-                <Dropdown menu={{ items: containerMenuItems }} trigger={['contextMenu']}>
-                    <div className="flex-1 flex flex-col overflow-auto h-full">
-                        <div className="flex-1 p-4 relative h-full min-h-[400px]">
-                            {state.layoutMode === 'grid'
-                                ? <DocumentGrid {...viewProps} />
-                                : <DocumentList {...viewProps} />
-                            }
-                        </div>
-                    </div>
-                </Dropdown>
+            {!windowMinimized && (
+                <section className={`knowledge-finder-window ${windowMaximized ? 'is-maximized' : ''}`} aria-label={`${finderTitle} Finder 窗口`}>
+                    <KnowledgeToolbar
+                        selectedFolderId={state.selectedFolderId}
+                        breadcrumbs={currentBreadcrumbs}
+                        onBreadcrumbClick={actions.setSelectedFolderId}
+                        onBack={actions.handleBack}
+                        searchKeyword={state.searchKeyword}
+                        onSearch={actions.setSearchKeyword}
+                        layoutMode={state.layoutMode}
+                        onLayoutChange={actions.setLayoutMode}
+                        uploadProps={upload.uploadProps}
+                        canUpload={!permissions.isShared || permissions.canSharedUpload}
+                        canCreateFolder={!permissions.isShared || permissions.canSharedFolderCreate}
+                        onNewFolder={handleNewFolder}
+                        selectionMode={state.selectionMode}
+                        onEnterSelectionMode={actions.enterSelectionMode}
+                        onExitSelectionMode={actions.exitSelectionMode}
+                        title={finderTitle}
+                        onClose={() => {
+                            setWindowMinimized(true);
+                            setWindowMaximized(false);
+                        }}
+                        onMinimize={() => {
+                            setWindowMinimized(true);
+                            setWindowMaximized(false);
+                        }}
+                        onToggleMaximize={() => setWindowMaximized(value => !value)}
+                        isMaximized={windowMaximized}
+                    />
 
-                {/* 底部信息栏 */}
-                {!state.selectionMode && (
-                    <div className="fixed bottom-4 left-1/2 -translate-x-1/2 bg-white/80 backdrop-blur shadow-lg border border-slate-200 rounded-full px-4 py-1.5 flex items-center gap-4 text-[10px] text-slate-500 uppercase tracking-widest font-bold z-20">
-                        <span>{isFavoritesView ? `${state.documents.length} 个收藏` : `${state.documents.length + currentSubFolders.length} 个项目`}</span>
-                        <div className="w-1 h-1 bg-slate-300 rounded-full"></div>
-                        <span className="flex items-center gap-1 cursor-pointer hover:text-blue-500" onClick={() => setTagModalOpen(true)}>
-                            <Tags size={10} /> 标签管理
-                        </span>
+                    <div className="knowledge-window-body">
+                        <KnowledgeSidebar
+                            scope={state.scope}
+                            viewMode={state.viewMode}
+                            filterTagId={state.filterTagId}
+                            tags={state.tags}
+                            itemCount={visibleItemCount}
+                            onScopeChange={actions.setScope}
+                            onViewModeChange={actions.setViewMode}
+                            onFilterTag={actions.setFilterTagId}
+                            onOpenTagManager={() => setTagModalOpen(true)}
+                        />
+
+                        <main
+                            className="knowledge-finder-content"
+                            onDragOver={(e) => { e.preventDefault(); e.stopPropagation(); }}
+                            onDrop={upload.handleDrop}
+                        >
+                            <Dropdown menu={{ items: containerMenuItems }} trigger={['contextMenu']}>
+                                <div className="knowledge-file-scroll">
+                                    <div className="knowledge-file-canvas">
+                                        {state.layoutMode === 'grid'
+                                            ? <DocumentGrid {...viewProps} />
+                                            : <DocumentList {...viewProps} />
+                                        }
+                                    </div>
+                                </div>
+                            </Dropdown>
+
+                            {!state.selectionMode && (
+                                <div className="knowledge-status-bar">
+                                    <span>{isFavoritesView ? `${state.documents.length} 个收藏` : `${visibleItemCount} 个项目`}</span>
+                                    <span className="knowledge-status-separator">•</span>
+                                    <button type="button" onClick={() => setTagModalOpen(true)}>
+                                        <Tags size={11} /> 标签管理
+                                    </button>
+                                </div>
+                            )}
+                        </main>
                     </div>
-                )}
-            </main>
+                </section>
+            )}
+
+            {!windowMaximized && (
+                <KnowledgeDock
+                    minimized={windowMinimized}
+                    canUpload={!permissions.isShared || permissions.canSharedUpload}
+                    canCreateFolder={!permissions.isShared || permissions.canSharedFolderCreate}
+                    onFinder={() => setWindowMinimized(value => !value)}
+                    onUpload={() => document.getElementById('hidden-context-upload')?.click()}
+                    onNewFolder={handleNewFolder}
+                    onOpenPrivate={openPrivateSpace}
+                    onOpenShared={openSharedSpace}
+                    onOpenFavorites={() => {
+                        actions.setViewMode('favorites');
+                        setWindowMinimized(false);
+                    }}
+                    onOpenTags={() => setTagModalOpen(true)}
+                />
+            )}
 
             <FolderModal
                 open={folderModalOpen}
@@ -438,6 +506,7 @@ const KnowledgeCenter: React.FC = () => {
             />
 
             <Modal
+                rootClassName="knowledge-mac-modal"
                 open={!!renamingDoc}
                 title="重命名附件"
                 onCancel={() => setRenamingDoc(null)}
@@ -526,6 +595,7 @@ const KnowledgeCenter: React.FC = () => {
 
             {/* 单文档打标签弹窗 */}
             <Modal
+                rootClassName="knowledge-mac-modal"
                 open={!!tagTargetDoc}
                 title={`为「${tagTargetDoc?.title || ''}」设置标签`}
                 onCancel={() => setTagTargetDoc(null)}

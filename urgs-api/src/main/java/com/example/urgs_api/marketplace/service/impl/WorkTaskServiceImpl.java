@@ -466,10 +466,6 @@ public class WorkTaskServiceImpl extends ServiceImpl<WorkTaskMapper, WorkTask> i
         if (!STAGE_LAUNCH.equals(resolveStage(task))) {
             throw new IllegalStateException("请先完成提测、质量验收、资产同步审核并进入上线阶段后再提交验收");
         }
-        if (TASK_ROLE_MAIN.equals(task.getTaskRole()) && !areAllSubTasksClosed(task.getWorkId())) {
-            throw new IllegalStateException("请先完成所有子任务后再提交主任务验收");
-        }
-
         task.setCompletionDescription(dto.getCompletionDescription());
         task.setDeliverables(dto.getDeliverables());
         task.setActualHours(dto.getActualHours());
@@ -523,9 +519,6 @@ public class WorkTaskServiceImpl extends ServiceImpl<WorkTaskMapper, WorkTask> i
                     updateWorkStatusIfNecessary(task.getWorkId());
                 }
                 return success;
-            }
-            if (TASK_ROLE_MAIN.equals(task.getTaskRole()) && !areAllSubTasksClosed(task.getWorkId())) {
-                throw new IllegalStateException("请先完成所有子任务后再通过主任务验收");
             }
             if (dto.getQualityScore() == null || dto.getQualityScore() < 1 || dto.getQualityScore() > 5) {
                 throw new IllegalArgumentException("通过验收时质量评分必须在 1-5 分之间");
@@ -621,12 +614,6 @@ public class WorkTaskServiceImpl extends ServiceImpl<WorkTaskMapper, WorkTask> i
         } catch (IllegalArgumentException | NullPointerException exception) {
             throw new IllegalArgumentException("不支持的任务状态: " + status);
         }
-        // Simplified authorization check
-        if (TASK_ROLE_MAIN.equals(task.getTaskRole())
-                && (TaskStatus.WAITING_REVIEW.equals(targetStatus) || TaskStatus.COMPLETED.equals(targetStatus))
-                && !areAllSubTasksClosed(task.getWorkId())) {
-            throw new IllegalStateException("请先完成所有子任务后再完成主任务");
-        }
         String oldStatus = task.getStatus();
         task.setStatus(targetStatus.name());
         boolean success = this.updateById(task);
@@ -690,9 +677,6 @@ public class WorkTaskServiceImpl extends ServiceImpl<WorkTaskMapper, WorkTask> i
             throw new IllegalStateException("当前状态不可推进阶段");
         }
         if (isIssueTrackingTask(task)) {
-            if (TASK_ROLE_MAIN.equals(task.getTaskRole()) && !areAllSubTasksClosed(task.getWorkId())) {
-                throw new IllegalStateException("请先完成所有子任务后再完成主任务");
-            }
             LocalDateTime now = LocalDateTime.now();
             task.setStatus(TaskStatus.COMPLETED.name());
             task.setStageUpdatedAt(now);
@@ -706,11 +690,6 @@ public class WorkTaskServiceImpl extends ServiceImpl<WorkTaskMapper, WorkTask> i
             }
             return success;
         }
-        if (TASK_ROLE_MAIN.equals(task.getTaskRole()) && STAGE_LAUNCH.equals(resolveStage(task))
-                && !areAllSubTasksClosed(task.getWorkId())) {
-            throw new IllegalStateException("请先完成所有子任务后再提交主任务验收");
-        }
-
         String currentStage = resolveStage(task);
         boolean assetReviewResubmission = STAGE_ASSET_REVIEW.equals(currentStage)
                 && TaskStatus.REWORK.name().equals(task.getStatus());
@@ -870,7 +849,7 @@ public class WorkTaskServiceImpl extends ServiceImpl<WorkTaskMapper, WorkTask> i
                 .toList();
 
         String aggregatedStatus;
-        if (TaskStatus.COMPLETED.name().equals(mainTask.getStatus()) && areAllSubTasksClosed(workId)) {
+        if (unfinishedTasks.isEmpty()) {
             aggregatedStatus = WorkStatus.COMPLETED.name();
         } else if (TaskStatus.WAITING_REVIEW.name().equals(mainTask.getStatus())
                 && STAGE_LAUNCH.equals(resolveStage(mainTask))) {
@@ -899,15 +878,6 @@ public class WorkTaskServiceImpl extends ServiceImpl<WorkTaskMapper, WorkTask> i
         if (work != null && WorkStatus.PAUSED.name().equals(work.getStatus())) {
             throw new IllegalStateException("需求已暂停，不允许操作任务");
         }
-    }
-
-    private boolean areAllSubTasksClosed(String workId) {
-        long unfinishedSubTaskCount = this.lambdaQuery()
-                .eq(WorkTask::getWorkId, workId)
-                .eq(WorkTask::getTaskRole, TASK_ROLE_SUB)
-                .notIn(WorkTask::getStatus, TaskStatus.COMPLETED.name(), TaskStatus.CANCELLED.name())
-                .count();
-        return unfinishedSubTaskCount == 0;
     }
 
     @Override

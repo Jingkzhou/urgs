@@ -114,9 +114,7 @@ const ItemEntry: React.FC<ItemEntryProps> = ({
         return (
             <Dropdown menu={{ items: menuItems }} trigger={['contextMenu']}>
                 <div
-                    className={`flex flex-col items-center p-2 rounded-lg cursor-pointer transition-all hover:bg-slate-200 group relative
-                        ${selected ? 'ring-2 ring-blue-500 bg-blue-50/50' : ''}
-                    `}
+                    className={`knowledge-grid-item group ${selected ? 'is-selected' : ''}`}
                     style={{ width: isDoc ? 160 : 100, minHeight: isDoc ? 150 : 110 }}
                     onClick={handleClick}
                     onDoubleClick={handleDoubleClick}
@@ -142,12 +140,12 @@ const ItemEntry: React.FC<ItemEntryProps> = ({
 
                     <div className="mb-2 relative">
                         {isDoc ? (
-                            <div className="w-14 h-14 bg-white rounded-xl flex items-center justify-center text-slate-500 shadow-sm border border-slate-100 group-hover:shadow-md transition-shadow">
+                            <div className="knowledge-grid-icon knowledge-grid-icon--document">
                                 {getFileIcon(doc?.fileName || title, 32)}
                             </div>
                         ) : (
-                            <div className="w-14 h-14 bg-amber-50 rounded-xl flex items-center justify-center text-amber-500 shadow-sm border border-amber-100 group-hover:shadow-md transition-shadow">
-                                <Folder size={32} className="fill-amber-500/20" />
+                            <div className="knowledge-grid-icon knowledge-grid-icon--folder">
+                                <Folder size={38} className="fill-amber-400/25" strokeWidth={1.65} />
                             </div>
                         )}
                         {/* 收藏按钮：已收藏时常显，未收藏时悬停显示 */}
@@ -175,9 +173,7 @@ const ItemEntry: React.FC<ItemEntryProps> = ({
                         )}
                     </div>
                     <span
-                        className={`text-xs text-center px-1 break-all text-slate-700 font-medium group-hover:text-slate-900 leading-tight
-                            ${isDoc ? 'whitespace-normal' : 'line-clamp-2'}
-                        `}
+                        className={`knowledge-grid-title ${isDoc ? 'whitespace-normal' : 'line-clamp-2'}`}
                         title={title}
                     >
                         {title}
@@ -206,9 +202,7 @@ const ItemEntry: React.FC<ItemEntryProps> = ({
     return (
         <Dropdown menu={{ items: menuItems }} trigger={['contextMenu']}>
             <div
-                className={`flex items-start px-4 py-2.5 hover:bg-blue-50 cursor-pointer border-b border-slate-100 group text-sm
-                    ${selected ? 'bg-blue-50' : ''}
-                `}
+                className={`knowledge-list-row group ${selected ? 'is-selected' : ''}`}
                 onClick={handleClick}
                 onDoubleClick={handleDoubleClick}
                 onContextMenu={(e) => e.stopPropagation()}

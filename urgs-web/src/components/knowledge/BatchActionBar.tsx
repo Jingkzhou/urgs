@@ -154,7 +154,7 @@ const BatchActionBar: React.FC<BatchActionBarProps> = ({
                     animate={{ y: 0, opacity: 1 }}
                     exit={{ y: 80, opacity: 0 }}
                     transition={{ type: 'spring', damping: 25, stiffness: 300 }}
-                    className="fixed bottom-6 left-1/2 -translate-x-1/2 z-30 bg-white/95 backdrop-blur-xl shadow-2xl border border-slate-200 rounded-2xl px-6 py-3 flex items-center gap-4"
+                    className="knowledge-batch-action fixed left-1/2 -translate-x-1/2 z-30 bg-white/95 shadow-2xl border border-slate-200 rounded-2xl px-6 py-3 flex items-center gap-4"
                 >
                     {/* 选中计数 */}
                     <span className="text-sm font-bold text-slate-800 whitespace-nowrap">

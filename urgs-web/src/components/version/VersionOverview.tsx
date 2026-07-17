@@ -38,7 +38,7 @@ interface RepositoryActivity {
 }
 
 interface VersionOverviewProps {
-    onOpenRepository?: (repositoryId: number) => void;
+    onOpenRepository?: (repository: GitRepository) => void;
 }
 
 interface MetricCardProps {
@@ -358,7 +358,7 @@ const VersionOverview: React.FC<VersionOverviewProps> = ({ onOpenRepository }) =
                                         {onOpenRepository && item.repository.id && (
                                             <button
                                                 type="button"
-                                                onClick={() => onOpenRepository(item.repository.id!)}
+                                                onClick={() => onOpenRepository(item.repository)}
                                                 className="inline-flex items-center gap-1 text-slate-600 hover:text-indigo-700"
                                             >
                                                 在系统中打开 <FolderOpen size={13} />

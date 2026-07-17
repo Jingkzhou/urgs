@@ -26,6 +26,7 @@ const FolderModal: React.FC<FolderModalProps> = ({ open, editingFolder, onSave, 
 
     return (
         <Modal
+            rootClassName="knowledge-mac-modal"
             title={editingFolder ? '重命名文件夹' : '新建文件夹'}
             open={open}
             onCancel={onCancel}

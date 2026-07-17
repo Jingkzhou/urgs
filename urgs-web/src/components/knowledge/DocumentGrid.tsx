@@ -40,7 +40,7 @@ const DocumentGrid: React.FC<DocumentGridProps> = ({
 
     return (
         <Spin spinning={loading}>
-            <div className="flex flex-wrap gap-4 content-start">
+            <div className="knowledge-grid flex flex-wrap content-start">
                 {folders.map(f => (
                     <ItemEntry
                         key={`folder-${f.id}`}
