@@ -1,6 +1,7 @@
 package com.example.urgs_api.version.controller;
 
 import com.example.urgs_api.version.dto.GitPullRequest;
+import com.example.urgs_api.version.dto.PullRequestMergeResult;
 import com.example.urgs_api.version.service.GitPlatformService;
 import lombok.Data;
 import lombok.RequiredArgsConstructor;
@@ -90,17 +91,20 @@ public class GitPullRequestController {
      * 合并 PR
      */
     @PutMapping("/{repoId}/pulls/{number}/merge")
-    public ResponseEntity<Void> mergePullRequest(
+    public ResponseEntity<PullRequestMergeResult> mergePullRequest(
             @PathVariable Long repoId,
             @PathVariable Long number,
             @RequestBody(required = false) MergeRequest request,
             @RequestAttribute(value = "userId", required = false) Long userId) {
         String method = request != null && request.getMergeMethod() != null ? request.getMergeMethod() : "merge";
-        log.info("收到合并 PR 请求: userId={}, repoId={}, number={}, mergeMethod={}",
-                userId, repoId, number, method);
-        gitPlatformService.mergePullRequest(repoId, number, method);
+        boolean deleteSourceBranch = request == null || request.getDeleteSourceBranch() == null
+                || request.getDeleteSourceBranch();
+        log.info("收到合并 PR 请求: userId={}, repoId={}, number={}, mergeMethod={}, deleteSourceBranch={}",
+                userId, repoId, number, method, deleteSourceBranch);
+        PullRequestMergeResult result = gitPlatformService
+                .mergePullRequest(repoId, number, method, deleteSourceBranch);
         log.info("合并 PR 请求处理完成: userId={}, repoId={}, number={}", userId, repoId, number);
-        return ResponseEntity.ok().build();
+        return ResponseEntity.ok(result);
     }
 
     /**
@@ -125,5 +129,6 @@ public class GitPullRequestController {
     @Data
     public static class MergeRequest {
         private String mergeMethod;
+        private Boolean deleteSourceBranch;
     }
 }

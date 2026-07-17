@@ -7,6 +7,8 @@ import com.example.urgs_api.version.dto.GitCommitDiff;
 import com.example.urgs_api.version.dto.GitFileContent;
 import com.example.urgs_api.version.dto.GitFileDownload;
 import com.example.urgs_api.version.dto.GitFileEntry;
+import com.example.urgs_api.version.dto.GitPullRequest;
+import com.example.urgs_api.version.dto.PullRequestMergeResult;
 import com.example.urgs_api.version.entity.GitRepository;
 import com.fasterxml.jackson.databind.JsonNode;
 import com.fasterxml.jackson.databind.ObjectMapper;
@@ -636,7 +638,15 @@ public class GitPlatformService {
     /**
      * 合并 PR
      */
-    public void mergePullRequest(Long repoId, Long number, String mergeMethod) {
+    public PullRequestMergeResult mergePullRequest(Long repoId, Long number, String mergeMethod) {
+        return mergePullRequest(repoId, number, mergeMethod, true);
+    }
+
+    public PullRequestMergeResult mergePullRequest(
+            Long repoId,
+            Long number,
+            String mergeMethod,
+            boolean deleteSourceBranch) {
         try {
             GitRepository repo = gitRepositoryService.findById(repoId)
                     .orElseThrow(() -> new RuntimeException("仓库不存在或当前用户无权访问: " + repoId));
@@ -646,22 +656,54 @@ public class GitPlatformService {
             }
 
             String platform = repo.getPlatform().toLowerCase();
-            log.info("开始调用 Git 平台合并 PR: platform={}, repoId={}, number={}, mergeMethod={}",
-                    platform, repoId, number, mergeMethod);
+            GitPullRequest pullRequest = deleteSourceBranch && "github".equals(platform)
+                    ? getPullRequest(repoId, number)
+                    : null;
+            log.info("开始调用 Git 平台合并 PR: platform={}, repoId={}, number={}, mergeMethod={}, deleteSourceBranch={}",
+                    platform, repoId, number, mergeMethod, deleteSourceBranch);
             JsonNode response = switch (platform) {
                 case "gitee" -> mergeGiteePullRequest(repo, number, mergeMethod, token);
-                case "gitlab" -> mergeGitLabPullRequest(repo, number, mergeMethod, token);
+                case "gitlab" -> mergeGitLabPullRequest(repo, number, mergeMethod, token, deleteSourceBranch);
                 case "github" -> mergeGitHubPullRequest(repo, number, mergeMethod, token);
                 default -> throw new RuntimeException("不支持的平台: " + repo.getPlatform());
             };
             validateMergeResponse(platform, response);
             log.info("Git 平台合并 PR 成功: platform={}, repoId={}, number={}", platform, repoId, number);
+            return deleteMergedSourceBranch(repo, platform, token, pullRequest, deleteSourceBranch);
         } catch (Exception e) {
             log.error("合并 PR 失败: repoId={}, number={}", repoId, number, e);
             if (e instanceof RuntimeException && e.getMessage() != null && e.getMessage().startsWith("合并 PR 失败")) {
                 throw (RuntimeException) e;
             }
             throw new RuntimeException("合并 PR 失败: " + resolvePlatformErrorMessage(e), e);
+        }
+    }
+
+    private PullRequestMergeResult deleteMergedSourceBranch(
+            GitRepository repo,
+            String platform,
+            String token,
+            GitPullRequest pullRequest,
+            boolean deleteSourceBranch) {
+        if (!deleteSourceBranch) {
+            return new PullRequestMergeResult(false, false, null);
+        }
+        if ("gitlab".equals(platform)) {
+            return new PullRequestMergeResult(true, true, null);
+        }
+        if ("gitee".equals(platform)) {
+            return new PullRequestMergeResult(true, false, "Gitee 平台 API 暂不支持自动删除源分支，请在网页端手动删除。");
+        }
+        String sourceBranch = pullRequest == null ? null : pullRequest.getHeadRef();
+        if (sourceBranch == null || sourceBranch.isBlank()) {
+            return new PullRequestMergeResult(true, false, "未获取到源分支，无法自动删除。");
+        }
+        try {
+            deleteGitHubBranch(repo, sourceBranch, token);
+            return new PullRequestMergeResult(true, true, null);
+        } catch (Exception e) {
+            log.warn("PR 合并成功但删除 GitHub 源分支失败: repoId={}, branch={}", repo.getId(), sourceBranch, e);
+            return new PullRequestMergeResult(true, false, "合并成功，但删除源分支失败：" + resolvePlatformErrorMessage(e));
         }
     }
 
@@ -1276,24 +1318,20 @@ public class GitPlatformService {
         httpPatch(url, body, null, null);
     }
 
-    private JsonNode mergeGitLabPullRequest(GitRepository repo, Long number, String mergeMethod, String token)
+    private JsonNode mergeGitLabPullRequest(
+            GitRepository repo,
+            Long number,
+            String mergeMethod,
+            String token,
+            boolean deleteSourceBranch)
             throws Exception {
         String apiBase = getGitLabApiBase(repo);
         String projectId = getGitLabProjectId(repo);
         // GitLab: PUT /projects/:id/merge_requests/:merge_request_iid/merge
         String url = String.format("%s/projects/%s/merge_requests/%s/merge", apiBase, projectId, number);
 
-        // Optional: merge_commit_message
-        String body = "";
-        if (mergeMethod != null && !mergeMethod.isEmpty()) {
-            // GitLab supports: should_remove_source_branch, merge_when_pipeline_succeeds,
-            // etc.
-            // Mapping standard mergeMethod to commit message note or similar if needed.
-            // For now, sending empty body or essential params.
-            // GitLab API usually accepts empty body for default merge.
-        }
-
-        return httpPut(url, "{}", token, "PRIVATE-TOKEN");
+        String body = String.format("{\"should_remove_source_branch\":%s}", deleteSourceBranch);
+        return httpPut(url, body, token, "PRIVATE-TOKEN");
     }
 
     private void closeGitLabPullRequest(GitRepository repo, Long number, String token) throws Exception {

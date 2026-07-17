@@ -237,6 +237,16 @@ class IndirectFlowParser(IndirectFlowMutationHelperMixin, IndirectFlowHelperMixi
             exp.If: ("CASE_WHEN", "CASE_WHEN", "CASE_WHEN"),   # 支持 IF() 函数
             exp.Select: ("fdd", "DERIVES_TO", "SELECT"),       # 支持直接流 (SELECT)
         }
+        clause_context_types = {
+            exp.Where,
+            exp.Join,
+            exp.Group,
+            exp.Order,
+            exp.Sort,
+            exp.Distribute,
+            exp.Cluster,
+            exp.Having,
+        }
             
         for col in scope.columns:
             if self._is_inside_lateral(col, scope.expression):
@@ -284,6 +294,17 @@ class IndirectFlowParser(IndirectFlowMutationHelperMixin, IndirectFlowHelperMixi
                             is_condition = True
                         elif isinstance(ancestor, exp.Case) and curr == ancestor.this:
                             is_condition = True
+
+                        if is_condition:
+                            outer = ancestor.parent
+                            while outer and outer is not scope.expression:
+                                if type(outer) in clause_context_types:
+                                    context_found = context_map[type(outer)]
+                                    dep_type, neo4j_type, context_name = context_found
+                                    break
+                                outer = outer.parent
+                            if context_found:
+                                break
                         
                         if not is_condition:
                             # 它在 THEN/ELSE/默认部分（结果）

@@ -1,6 +1,7 @@
 package com.example.urgs_api.version.service;
 
 import com.example.urgs_api.version.dto.GitPullRequest;
+import com.example.urgs_api.version.dto.PullRequestMergeResult;
 import com.example.urgs_api.version.dto.GitFileDownload;
 import com.example.urgs_api.version.dto.GitFileEntry;
 import com.example.urgs_api.version.entity.GitRepository;
@@ -325,6 +326,10 @@ class GitPlatformServiceTest {
         when(httpResponse.statusCode()).thenReturn(200);
         when(httpResponse.body()).thenReturn("{\"state\":\"merged\"}");
 
-        assertDoesNotThrow(() -> gitPlatformService.mergePullRequest(repoId, 3L, "merge"));
+        PullRequestMergeResult result = assertDoesNotThrow(
+                () -> gitPlatformService.mergePullRequest(repoId, 3L, "merge"));
+
+        assertTrue(result.isSourceBranchDeleteRequested());
+        assertTrue(result.isSourceBranchDeleted());
     }
 }

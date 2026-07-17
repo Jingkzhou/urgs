@@ -810,6 +810,9 @@ class LineageParser:
             ]
 
         dependencies = self._remove_set_operation_star_fallbacks(dependencies)
+        dependencies = self._remove_gsp_case_condition_direct_false_positives(
+            dependencies
+        )
 
         # ===== 3. Metadata Validation & Star Expansion =====
         explicit_star_positions = {}
@@ -1109,6 +1112,42 @@ class LineageParser:
                 dep.get("dependency_type") == "fdd"
                 and dep.get("source_column") == "*"
                 and (dep.get("source_table"), dep.get("target_table")) in set_operation_pairs
+            )
+        ]
+
+    @staticmethod
+    def _remove_gsp_case_condition_direct_false_positives(dependencies):
+        """Drop GSP fdd edges that SQLGlot identifies as CASE-only conditions."""
+
+        def identity(dep):
+            return (
+                dep.get("statementUid") or dep.get("statement_uid"),
+                str(dep.get("source_table") or "").upper(),
+                str(dep.get("source_column") or "").upper(),
+                str(dep.get("target_table") or "").upper(),
+                str(dep.get("target_column") or "").upper(),
+            )
+
+        case_condition_keys = {
+            identity(dep)
+            for dep in dependencies
+            if str(dep.get("dependency_type") or "").upper() == "CASE_WHEN"
+        }
+        sqlglot_direct_keys = {
+            identity(dep)
+            for dep in dependencies
+            if str(dep.get("dependency_type") or "").lower() == "fdd"
+            and dep.get("neo4j_type") == "DERIVES_TO"
+        }
+
+        return [
+            dep
+            for dep in dependencies
+            if not (
+                str(dep.get("dependency_type") or "").lower() == "fdd"
+                and not dep.get("neo4j_type")
+                and identity(dep) in case_condition_keys
+                and identity(dep) not in sqlglot_direct_keys
             )
         ]
 

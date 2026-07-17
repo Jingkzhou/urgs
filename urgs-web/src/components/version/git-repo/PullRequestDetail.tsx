@@ -1,5 +1,5 @@
 import React, { useState, useEffect } from 'react';
-import { Button, Tabs, Input, Avatar, Tag, Dropdown, Progress, Badge, Tooltip } from 'antd';
+import { Button, Tabs, Input, Avatar, Tag, Dropdown, Progress, Badge, Tooltip, Checkbox } from 'antd';
 import { ArrowLeft, GitPullRequest, GitMerge, Check, X, Clock, MessageSquare, ChevronDown, MonitorCheck, ExternalLink, ShieldCheck, Bot, Loader2, AlertTriangle, Shield, Layers, Zap, FileCode, Terminal, User, CheckCircle, ArrowUpRight, MessageSquareText } from 'lucide-react';
 import { message, Modal } from 'antd';
 import PRStatusBadge, { PRStatus } from './components/PRStatusBadge';
@@ -243,14 +243,26 @@ const PullRequestDetail: React.FC<PullRequestDetailProps> = ({ repoId, prId, onB
     }, [repoId, prId]);
 
     const handleMerge = async () => {
+        let deleteSourceBranch = true;
         Modal.confirm({
             title: '确认合并',
-            content: '确定要合并此 Pull Request 吗？',
+            content: (
+                <div className="space-y-3">
+                    <div>确定要合并此 Pull Request 吗？</div>
+                    <Checkbox defaultChecked onChange={event => { deleteSourceBranch = event.target.checked; }}>
+                        合并后删除源分支
+                    </Checkbox>
+                </div>
+            ),
             onOk: async () => {
                 setActionLoading(true);
                 try {
-                    await mergePullRequest(repoId, prId);
-                    message.success('合并成功');
+                    const result = await mergePullRequest(repoId, prId, 'merge', deleteSourceBranch);
+                    if (result.sourceBranchDeleteRequested && !result.sourceBranchDeleted) {
+                        message.warning(`合并成功，${result.sourceBranchDeleteMessage || '源分支未删除'}`);
+                    } else {
+                        message.success(deleteSourceBranch ? '合并成功，已删除源分支' : '合并成功');
+                    }
                     fetchData(); // Refresh status
                 } catch (error) {
                     console.error('合并 Pull Request 失败:', error);

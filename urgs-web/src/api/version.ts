@@ -240,8 +240,21 @@ export const getPullRequestCommits = (repoId: number, number: number) =>
 export const getPullRequestFiles = (repoId: number, number: number) =>
     get<GitCommitDiff[]>(`/api/version/repos/${repoId}/pulls/${number}/files`);
 
-export const mergePullRequest = (repoId: number, number: number, mergeMethod: string = 'merge') =>
-    put<void>(`/api/version/repos/${repoId}/pulls/${number}/merge`, { mergeMethod });
+export interface PullRequestMergeResult {
+    sourceBranchDeleteRequested: boolean;
+    sourceBranchDeleted: boolean;
+    sourceBranchDeleteMessage?: string;
+}
+
+export const mergePullRequest = (
+    repoId: number,
+    number: number,
+    mergeMethod: string = 'merge',
+    deleteSourceBranch: boolean = true
+) => put<PullRequestMergeResult>(`/api/version/repos/${repoId}/pulls/${number}/merge`, {
+    mergeMethod,
+    deleteSourceBranch
+});
 
 export const closePullRequest = (repoId: number, number: number) =>
     put<void>(`/api/version/repos/${repoId}/pulls/${number}/close`, {});

@@ -1,4 +1,5 @@
 from parsers.indirect_flow_parser import IndirectFlowParser
+from parsers.sql_parser import LineageParser
 
 
 def test_case_when_value_and_condition_keep_explicit_insert_target_column():
@@ -54,3 +55,166 @@ def test_case_when_value_and_condition_keep_explicit_insert_target_column():
         "INT_REPRICE_DATE",
         "FDD",
     ) not in pairs
+
+
+def test_constant_case_condition_is_not_direct_value_lineage(
+    mock_metadata_resolver,
+    monkeypatch,
+):
+    sql = """
+    INSERT INTO TARGET_TABLE (ITEM_NUM)
+    SELECT CASE CURR_CD
+             WHEN 'USD' THEN 'A'
+             WHEN 'EUR' THEN 'B'
+           END AS ITEM_NUM
+      FROM SOURCE_TABLE
+     GROUP BY CASE CURR_CD
+                WHEN 'USD' THEN 'A'
+                WHEN 'EUR' THEN 'B'
+              END
+    """
+    parser = LineageParser("oracle")
+    monkeypatch.setattr(
+        parser.parser,
+        "parse",
+        lambda *_args, **_kwargs: {
+            "gsp_json": {
+                "dlineage": {
+                    "relationships": [
+                        {
+                            "type": "fdd",
+                            "target": {
+                                "parentName": "TARGET_TABLE",
+                                "column": "ITEM_NUM",
+                            },
+                            "sources": [
+                                {
+                                    "parentName": "SOURCE_TABLE",
+                                    "column": "CURR_CD",
+                                }
+                            ],
+                        }
+                    ]
+                }
+            }
+        },
+    )
+
+    deps = parser.get_column_lineage(sql)
+    facts = {
+        (
+            dep.get("source_column"),
+            dep.get("target_column"),
+            dep.get("dependency_type"),
+            dep.get("neo4j_type"),
+        )
+        for dep in deps
+    }
+
+    assert ("CURR_CD", "ITEM_NUM", "CASE_WHEN", "CASE_WHEN") in facts
+    assert ("CURR_CD", "*", "fdr", "GROUPS") in facts
+    assert ("CURR_CD", "ITEM_NUM", "fdd", None) not in facts
+    assert ("CURR_CD", "*", "CASE_WHEN", "CASE_WHEN") not in facts
+
+
+def test_case_value_column_keeps_direct_value_lineage(
+    mock_metadata_resolver,
+    monkeypatch,
+):
+    sql = """
+    INSERT INTO TARGET_TABLE (ITEM_VAL)
+    SELECT CASE
+             WHEN STATUS = 'A' THEN AMOUNT
+             ELSE FALLBACK_AMOUNT
+           END AS ITEM_VAL
+      FROM SOURCE_TABLE
+    """
+    parser = LineageParser("oracle")
+    monkeypatch.setattr(
+        parser.parser,
+        "parse",
+        lambda *_args, **_kwargs: {
+            "gsp_json": {
+                "dlineage": {
+                    "relationships": [
+                        {
+                            "type": "fdd",
+                            "target": {
+                                "parentName": "TARGET_TABLE",
+                                "column": "ITEM_VAL",
+                            },
+                            "sources": [
+                                {
+                                    "parentName": "SOURCE_TABLE",
+                                    "column": "STATUS",
+                                },
+                                {
+                                    "parentName": "SOURCE_TABLE",
+                                    "column": "AMOUNT",
+                                },
+                                {
+                                    "parentName": "SOURCE_TABLE",
+                                    "column": "FALLBACK_AMOUNT",
+                                },
+                            ],
+                        }
+                    ]
+                }
+            }
+        },
+    )
+
+    direct_sources = {
+        dep.get("source_column")
+        for dep in parser.get_column_lineage(sql)
+        if dep.get("target_column") == "ITEM_VAL"
+        and dep.get("dependency_type") == "fdd"
+    }
+
+    assert direct_sources == {"AMOUNT", "FALLBACK_AMOUNT"}
+
+
+def test_case_condition_column_used_as_value_keeps_direct_lineage(
+    mock_metadata_resolver,
+    monkeypatch,
+):
+    sql = """
+    INSERT INTO TARGET_TABLE (ITEM_VAL)
+    SELECT CASE WHEN AMOUNT > 0 THEN AMOUNT ELSE 0 END AS ITEM_VAL
+      FROM SOURCE_TABLE
+    """
+    parser = LineageParser("oracle")
+    monkeypatch.setattr(
+        parser.parser,
+        "parse",
+        lambda *_args, **_kwargs: {
+            "gsp_json": {
+                "dlineage": {
+                    "relationships": [
+                        {
+                            "type": "fdd",
+                            "target": {
+                                "parentName": "TARGET_TABLE",
+                                "column": "ITEM_VAL",
+                            },
+                            "sources": [
+                                {
+                                    "parentName": "SOURCE_TABLE",
+                                    "column": "AMOUNT",
+                                }
+                            ],
+                        }
+                    ]
+                }
+            }
+        },
+    )
+
+    deps = parser.get_column_lineage(sql)
+
+    assert any(
+        dep.get("source_column") == "AMOUNT"
+        and dep.get("target_column") == "ITEM_VAL"
+        and dep.get("dependency_type") == "fdd"
+        for dep in deps
+    )

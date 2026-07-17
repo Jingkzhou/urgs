@@ -13,6 +13,7 @@ import com.example.urgs_api.user.model.UserGitIdentity;
 import com.example.urgs_api.version.dto.GitCommit;
 import com.example.urgs_api.version.dto.GitCommitDiff;
 import com.example.urgs_api.version.dto.GitPullRequest;
+import com.example.urgs_api.version.dto.PullRequestMergeResult;
 import com.example.urgs_api.version.entity.GitRepository;
 import com.example.urgs_api.version.service.GitPlatformService;
 import com.example.urgs_api.version.service.GitRepositoryService;
@@ -142,7 +143,12 @@ public class TaskVersionMergeService {
             GitPullRequest snapshotPullRequest = pullRequest;
             try {
                 if (isOpenState(pullRequest)) {
-                    gitPlatformService.mergePullRequest(repo.getId(), pullRequest.getNumber(), "merge");
+                    PullRequestMergeResult mergeResult = gitPlatformService
+                            .mergePullRequest(repo.getId(), pullRequest.getNumber(), "merge", true);
+                    if (mergeResult.isSourceBranchDeleteRequested() && !mergeResult.isSourceBranchDeleted()) {
+                        log.warn("资产审核自动合并完成，但源分支未删除: repoId={}, prNumber={}, reason={}",
+                                repo.getId(), pullRequest.getNumber(), mergeResult.getSourceBranchDeleteMessage());
+                    }
                     snapshotPullRequest = refreshPullRequest(repo, pullRequest);
                     summary.addMerged(repoLabel(repo) + " !" + pullRequest.getNumber());
                 } else {
