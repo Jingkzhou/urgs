@@ -23,6 +23,7 @@ import com.example.urgs_api.marketplace.service.WorkTaskService;
 import com.example.urgs_api.marketplace.mapper.TaskLogMapper;
 import com.example.urgs_api.metadata.model.MaintenanceRecord;
 import com.example.urgs_api.metadata.service.MaintenanceRecordService;
+import com.example.urgs_api.system.service.SysSystemService;
 import com.example.urgs_api.user.mapper.UserMapper;
 import com.example.urgs_api.user.model.User;
 import com.fasterxml.jackson.core.JsonProcessingException;
@@ -42,6 +43,7 @@ import java.util.List;
 import java.util.Map;
 import java.util.function.Function;
 import java.util.stream.Collectors;
+import java.util.stream.Stream;
 
 @Service
 public class WorkTaskServiceImpl extends ServiceImpl<WorkTaskMapper, WorkTask> implements WorkTaskService {
@@ -60,6 +62,11 @@ public class WorkTaskServiceImpl extends ServiceImpl<WorkTaskMapper, WorkTask> i
             "REVIEW_REJECT",
             "REVIEW_CANCEL",
             "REVIEW_TRANSFER");
+    private static final List<String> REVIEW_SUBMIT_ACTIONS = List.of(
+            "ASSET_REVIEW_SUBMIT",
+            "ASSET_REVIEW_RESUBMIT",
+            "SUBMIT_REVIEW",
+            "STAGE_TO_REVIEW");
     private static final DateTimeFormatter RISK_NOTE_TIME_FORMATTER = DateTimeFormatter.ofPattern("yyyy-MM-dd HH:mm");
 
     @Autowired
@@ -81,6 +88,9 @@ public class WorkTaskServiceImpl extends ServiceImpl<WorkTaskMapper, WorkTask> i
 
     @Autowired
     private TaskVersionMergeService taskVersionMergeService;
+
+    @Autowired
+    private SysSystemService sysSystemService;
 
     @Autowired
     private ObjectMapper objectMapper;
@@ -311,28 +321,61 @@ public class WorkTaskServiceImpl extends ServiceImpl<WorkTaskMapper, WorkTask> i
                 .in(TaskLog::getAction, REVIEW_ACTIONS)
                 .orderByDesc(TaskLog::getCreateTime));
 
+        Map<String, List<TaskLog>> submitLogsByTaskId = reviewLogPage.getRecords().isEmpty()
+                ? Collections.emptyMap()
+                : taskLogMapper.selectList(new LambdaQueryWrapper<TaskLog>()
+                        .in(TaskLog::getTaskId, reviewLogPage.getRecords().stream()
+                                .map(TaskLog::getTaskId)
+                                .distinct()
+                                .toList())
+                        .in(TaskLog::getAction, REVIEW_SUBMIT_ACTIONS)
+                        .orderByDesc(TaskLog::getCreateTime))
+                        .stream()
+                        .collect(Collectors.groupingBy(TaskLog::getTaskId));
+
         List<String> reviewerIds = reviewLogPage.getRecords().stream()
                 .map(TaskLog::getOperatorId)
                 .filter(StringUtils::hasText)
                 .distinct()
                 .toList();
-        Map<String, User> reviewerMap = reviewerIds.isEmpty()
-                ? Collections.emptyMap()
-                : userMapper.selectBatchIds(reviewerIds).stream()
-                        .collect(Collectors.toMap(user -> user.getId().toString(), Function.identity()));
-        List<String> publisherIds = works.stream()
-                .map(Work::getPublisherId)
+        List<String> initiatorIds = reviewLogPage.getRecords().stream()
+                .map(log -> resolveReviewSubmitLog(log, submitLogsByTaskId))
+                .filter(java.util.Objects::nonNull)
+                .map(TaskLog::getOperatorId)
                 .filter(StringUtils::hasText)
                 .distinct()
                 .toList();
-        Map<String, User> publisherMap = publisherIds.isEmpty()
+        List<String> assigneeIds = reviewLogPage.getRecords().stream()
+                .map(TaskLog::getTaskId)
+                .map(taskMap::get)
+                .filter(java.util.Objects::nonNull)
+                .map(WorkTask::getAssigneeId)
+                .filter(StringUtils::hasText)
+                .distinct()
+                .toList();
+        List<String> userIds = Stream.of(reviewerIds, initiatorIds, assigneeIds)
+                .flatMap(List::stream)
+                .distinct()
+                .toList();
+        Map<String, User> userMap = userIds.isEmpty()
                 ? Collections.emptyMap()
-                : userMapper.selectBatchIds(publisherIds).stream()
+                : userMapper.selectBatchIds(userIds).stream()
                         .collect(Collectors.toMap(user -> user.getId().toString(), Function.identity()));
+        List<Long> taskSystemIds = tasks.stream()
+                .flatMap(task -> task.getInvolvedSystemIds() == null
+                        ? Stream.empty()
+                        : task.getInvolvedSystemIds().stream())
+                .distinct()
+                .toList();
+        Map<Long, String> taskSystemNameMap = taskSystemIds.isEmpty()
+                ? Collections.emptyMap()
+                : sysSystemService.listByIds(taskSystemIds).stream()
+                        .collect(Collectors.toMap(systemConfig -> systemConfig.getId(), systemConfig -> systemConfig.getName()));
 
         BeanUtils.copyProperties(reviewLogPage, resultPage, "records");
         resultPage.setRecords(reviewLogPage.getRecords().stream()
-                .map(log -> buildReviewHistoryDTO(log, taskMap, workMap, reviewerMap, publisherMap))
+                .map(log -> buildReviewHistoryDTO(
+                        log, taskMap, workMap, userMap, submitLogsByTaskId, taskSystemNameMap))
                 .collect(Collectors.toList()));
         return resultPage;
     }
@@ -988,13 +1031,16 @@ public class WorkTaskServiceImpl extends ServiceImpl<WorkTaskMapper, WorkTask> i
             TaskLog log,
             Map<String, WorkTask> taskMap,
             Map<String, Work> workMap,
-            Map<String, User> reviewerMap,
-            Map<String, User> publisherMap) {
+            Map<String, User> userMap,
+            Map<String, List<TaskLog>> submitLogsByTaskId,
+            Map<Long, String> taskSystemNameMap) {
         TaskReviewHistoryDTO dto = new TaskReviewHistoryDTO();
         WorkTask task = taskMap.get(log.getTaskId());
         Work work = task == null ? null : workMap.get(task.getWorkId());
-        User reviewer = reviewerMap.get(log.getOperatorId());
-        User publisher = work == null ? null : publisherMap.get(work.getPublisherId());
+        User reviewer = userMap.get(log.getOperatorId());
+        TaskLog submitLog = resolveReviewSubmitLog(log, submitLogsByTaskId);
+        String initiatorId = submitLog != null ? submitLog.getOperatorId() : task != null ? task.getAssigneeId() : null;
+        User initiator = userMap.get(initiatorId);
 
         dto.setId(log.getId());
         dto.setTaskId(log.getTaskId());
@@ -1005,11 +1051,17 @@ public class WorkTaskServiceImpl extends ServiceImpl<WorkTaskMapper, WorkTask> i
         dto.setRequirementNumber(work != null ? work.getRequirementNumber() : null);
         dto.setOwningSystem(work != null ? work.getOwningSystem() : null);
         dto.setPrimarySystemName(work != null ? work.getPrimarySystemName() : null);
-        dto.setPublisherId(work != null ? work.getPublisherId() : null);
-        dto.setPublisherName(publisher != null && StringUtils.hasText(publisher.getName())
-                ? publisher.getName()
-                : work != null ? work.getPublisherId() : null);
-        dto.setWorkCreateTime(work != null ? work.getCreateTime() : null);
+        dto.setTaskSystemNames(task == null || task.getInvolvedSystemIds() == null
+                ? null
+                : task.getInvolvedSystemIds().stream()
+                        .map(taskSystemNameMap::get)
+                        .filter(StringUtils::hasText)
+                        .collect(Collectors.joining("、")));
+        dto.setInitiatorId(initiatorId);
+        dto.setInitiatorName(initiator != null && StringUtils.hasText(initiator.getName())
+                ? initiator.getName()
+                : initiatorId);
+        dto.setInitiatedAt(submitLog != null ? submitLog.getCreateTime() : task != null ? task.getSubmittedAt() : null);
         dto.setReviewType(log.getAction().startsWith("ASSET_REVIEW_") ? "ASSET_REVIEW" : "ACCEPTANCE");
         dto.setDecision(resolveReviewDecision(log.getAction()));
         dto.setAction(log.getAction());
@@ -1020,6 +1072,16 @@ public class WorkTaskServiceImpl extends ServiceImpl<WorkTaskMapper, WorkTask> i
                 : log.getOperatorId());
         dto.setReviewedAt(log.getCreateTime());
         return dto;
+    }
+
+    private TaskLog resolveReviewSubmitLog(TaskLog reviewLog, Map<String, List<TaskLog>> submitLogsByTaskId) {
+        return submitLogsByTaskId.getOrDefault(reviewLog.getTaskId(), Collections.emptyList()).stream()
+                .filter(submitLog -> !submitLog.getCreateTime().isAfter(reviewLog.getCreateTime()))
+                .filter(submitLog -> reviewLog.getAction().startsWith("ASSET_REVIEW_")
+                        ? submitLog.getAction().startsWith("ASSET_REVIEW_")
+                        : !submitLog.getAction().startsWith("ASSET_REVIEW_"))
+                .max(java.util.Comparator.comparing(TaskLog::getCreateTime))
+                .orElse(null);
     }
 
     private String resolveReviewDecision(String action) {

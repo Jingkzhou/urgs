@@ -84,6 +84,7 @@ const AICodeReport: React.FC = () => {
     const [selectedTaskId, setSelectedTaskId] = useState<number>();
     const [severityFilter, setSeverityFilter] = useState<string>();
     const [reviewStatusFilter, setReviewStatusFilter] = useState<string>('PENDING');
+    const [showAllPendingIssues, setShowAllPendingIssues] = useState(false);
     const [searchTerm, setSearchTerm] = useState('');
     const [recordPage, setRecordPage] = useState(1);
     const [recordPageSize, setRecordPageSize] = useState(6);
@@ -92,6 +93,7 @@ const AICodeReport: React.FC = () => {
     const [selectedIssue, setSelectedIssue] = useState<LineageReviewIssue | null>(null);
     const [issueDetailLoading, setIssueDetailLoading] = useState(false);
     const issueDetailRequestRef = useRef(0);
+    const issueListRef = useRef<HTMLDivElement>(null);
     const [decisionLoading, setDecisionLoading] = useState<string>('');
     const [sqlPreviewOpen, setSqlPreviewOpen] = useState(false);
     const [sqlPreviewLoading, setSqlPreviewLoading] = useState(false);
@@ -412,19 +414,22 @@ const AICodeReport: React.FC = () => {
         }
     };
 
-    const loadIssues = async (taskId?: number) => {
-        if (!taskId) {
+    const loadIssues = async (taskId?: number, allPending = false) => {
+        const taskIds = allPending
+            ? tasks.filter(task => (task.pendingIssueCount || 0) > 0).map(task => task.id)
+            : (taskId ? [taskId] : []);
+        if (taskIds.length === 0) {
             setIssues([]);
             return;
         }
         setIssueLoading(true);
         try {
-            const data = await getLineageReviewIssues({
-                taskId,
+            const result = await Promise.all(taskIds.map(currentTaskId => getLineageReviewIssues({
+                taskId: currentTaskId,
                 severity: severityFilter,
-                reviewStatus: reviewStatusFilter
-            });
-            setIssues(data || []);
+                reviewStatus: allPending ? 'PENDING' : reviewStatusFilter
+            })));
+            setIssues(result.flat());
         } catch (error: any) {
             message.error(error?.message || '加载疑点失败');
         } finally {
@@ -487,13 +492,28 @@ const AICodeReport: React.FC = () => {
 
     useEffect(() => {
         if (selectedRecordId) {
+            setShowAllPendingIssues(false);
             loadTasks(selectedRecordId);
         }
     }, [selectedRecordId]);
 
     useEffect(() => {
-        loadIssues(selectedTaskId);
-    }, [selectedTaskId, severityFilter, reviewStatusFilter]);
+        loadIssues(selectedTaskId, showAllPendingIssues);
+    }, [selectedTaskId, severityFilter, reviewStatusFilter, showAllPendingIssues, tasks]);
+
+    const handleShowPendingIssues = () => {
+        if (!tasks.some(task => (task.pendingIssueCount || 0) > 0)) {
+            message.info('当前批次没有待处理疑点');
+            return;
+        }
+        setSearchTerm('');
+        setSeverityFilter(undefined);
+        setReviewStatusFilter('PENDING');
+        setShowAllPendingIssues(true);
+        window.requestAnimationFrame(() => {
+            issueListRef.current?.scrollIntoView({ behavior: 'smooth', block: 'start' });
+        });
+    };
 
     const handleTrigger = async (forceRerun: boolean) => {
         if (!selectedRecordId) {
@@ -549,7 +569,7 @@ const AICodeReport: React.FC = () => {
                 confirmedProblemDescription: extra?.confirmedProblemDescription
             });
             setSelectedIssue(updated);
-            await loadIssues(selectedTaskId);
+            await loadIssues(selectedTaskId, showAllPendingIssues);
             await loadTaskSummaries();
             if (selectedRecordId) {
                 await loadTasks(selectedRecordId);
@@ -709,6 +729,7 @@ const AICodeReport: React.FC = () => {
                 tasks={tasks}
                 selectedTask={selectedTask}
                 selectedTaskSourceMeta={selectedTaskSourceMeta}
+                onPendingIssuesClick={handleShowPendingIssues}
             />
 
             <div className="grid grid-cols-1 gap-6 xl:grid-cols-[360px_minmax(0,1fr)]">
@@ -724,7 +745,10 @@ const AICodeReport: React.FC = () => {
                     recordPageSize={recordPageSize}
                     onRefresh={loadRecords}
                     onTrigger={() => handleTrigger(false)}
-                    onSelectRecord={setSelectedRecordId}
+                    onSelectRecord={recordId => {
+                        setShowAllPendingIssues(false);
+                        setSelectedRecordId(recordId);
+                    }}
                     onPageChange={(page, size) => {
                         setRecordPage(page);
                         if (size && size !== recordPageSize) {
@@ -751,7 +775,10 @@ const AICodeReport: React.FC = () => {
                         onForceRerun={() => handleTrigger(true)}
                         onDownloadMarkdown={handleDownloadMarkdownReport}
                         onOpenSqlPreview={handleOpenSqlPreview}
-                        onTaskSelect={setSelectedTaskId}
+                        onTaskSelect={taskId => {
+                            setShowAllPendingIssues(false);
+                            setSelectedTaskId(taskId);
+                        }}
                         onPageChange={(page, size) => {
                             setTaskPage(page);
                             if (size && size !== taskPageSize) {
@@ -760,18 +787,24 @@ const AICodeReport: React.FC = () => {
                         }}
                     />
 
-                    <ReviewIssueTable
-                        issues={filteredIssues}
-                        loading={issueLoading}
-                        selectedTaskId={selectedTaskId}
-                        searchTerm={searchTerm}
-                        severityFilter={severityFilter}
-                        reviewStatusFilter={reviewStatusFilter}
-                        onSearchChange={setSearchTerm}
-                        onSeverityChange={setSeverityFilter}
-                        onReviewStatusChange={setReviewStatusFilter}
-                        onSelectIssue={handleSelectIssue}
-                    />
+                    <div ref={issueListRef} className="scroll-mt-6">
+                        <ReviewIssueTable
+                            issues={filteredIssues}
+                            loading={issueLoading}
+                            selectedTaskId={selectedTaskId}
+                            searchTerm={searchTerm}
+                            severityFilter={severityFilter}
+                            reviewStatusFilter={reviewStatusFilter}
+                            showingAllPending={showAllPendingIssues}
+                            onSearchChange={setSearchTerm}
+                            onSeverityChange={setSeverityFilter}
+                            onReviewStatusChange={value => {
+                                setShowAllPendingIssues(false);
+                                setReviewStatusFilter(value);
+                            }}
+                            onSelectIssue={handleSelectIssue}
+                        />
+                    </div>
                 </div>
             </div>
 

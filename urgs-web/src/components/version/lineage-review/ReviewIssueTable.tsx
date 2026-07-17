@@ -21,6 +21,7 @@ interface ReviewIssueTableProps {
     searchTerm: string;
     severityFilter?: string;
     reviewStatusFilter?: string;
+    showingAllPending?: boolean;
     onSearchChange: (value: string) => void;
     onSeverityChange: (value?: string) => void;
     onReviewStatusChange: (value?: string) => void;
@@ -34,6 +35,7 @@ const ReviewIssueTable: React.FC<ReviewIssueTableProps> = ({
     searchTerm,
     severityFilter,
     reviewStatusFilter,
+    showingAllPending = false,
     onSearchChange,
     onSeverityChange,
     onReviewStatusChange,
@@ -115,7 +117,7 @@ const ReviewIssueTable: React.FC<ReviewIssueTableProps> = ({
 
     return (
         <Card
-            title="疑点清单"
+            title={showingAllPending ? '待处理疑点（全部分片）' : '疑点清单'}
             bordered={false}
             className="shadow-sm"
             extra={

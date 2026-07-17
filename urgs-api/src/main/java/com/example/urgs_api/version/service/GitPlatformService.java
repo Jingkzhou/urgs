@@ -220,22 +220,30 @@ public class GitPlatformService {
      * 获取最新提交
      */
     public GitCommit getLatestCommit(Long repoId, String ref) {
+        return getLatestCommit(repoId, ref, null);
+    }
+
+    /**
+     * 获取指定分支或路径的最新提交。
+     */
+    public GitCommit getLatestCommit(Long repoId, String ref, String path) {
         GitRepository repo = gitRepositoryService.findById(repoId)
                 .orElseThrow(() -> new RuntimeException("仓库不存在: " + repoId));
 
         if (ref == null || ref.isEmpty()) {
             ref = repo.getDefaultBranch() != null ? repo.getDefaultBranch() : "master";
         }
+        String effectivePath = path == null || path.isBlank() ? null : path.trim();
 
         try {
             return switch (repo.getPlatform().toLowerCase()) {
-                case "gitee" -> getGiteeLatestCommit(repo, ref);
-                case "github" -> getGitHubLatestCommit(repo, ref);
-                case "gitlab" -> getGitLabLatestCommit(repo, ref);
+                case "gitee" -> getGiteeLatestCommit(repo, ref, effectivePath);
+                case "github" -> getGitHubLatestCommit(repo, ref, effectivePath);
+                case "gitlab" -> getGitLabLatestCommit(repo, ref, effectivePath);
                 default -> throw new RuntimeException("不支持的平台: " + repo.getPlatform());
             };
         } catch (Exception e) {
-            log.error("获取最新提交失败: repoId={}, ref={}", repoId, ref, e);
+            log.error("获取最新提交失败: repoId={}, ref={}, path={}", repoId, ref, effectivePath, e);
             throw new RuntimeException("获取最新提交失败: " + e.getMessage());
         }
     }
@@ -853,9 +861,12 @@ public class GitPlatformService {
         return allBranches;
     }
 
-    private GitCommit getGiteeLatestCommit(GitRepository repo, String ref) throws Exception {
+    private GitCommit getGiteeLatestCommit(GitRepository repo, String ref, String path) throws Exception {
         String url = String.format("https://gitee.com/api/v5/repos/%s/commits?sha=%s&per_page=1", repo.getFullName(),
                 ref);
+        if (path != null) {
+            url += "&path=" + java.net.URLEncoder.encode(path, java.nio.charset.StandardCharsets.UTF_8);
+        }
         if (repo.getAccessToken() != null && !repo.getAccessToken().isEmpty()) {
             url += "&access_token=" + repo.getAccessToken();
         }
@@ -868,7 +879,7 @@ public class GitPlatformService {
             JsonNode author = commitData.path("author");
 
             // 获取提交总数
-            long totalCommits = getGiteeCommitCount(repo, ref);
+            long totalCommits = path == null ? getGiteeCommitCount(repo, ref) : 0;
 
             return GitCommit.builder()
                     .sha(commit.path("sha").asText().substring(0, 7))
@@ -1473,9 +1484,12 @@ public class GitPlatformService {
         return allBranches;
     }
 
-    private GitCommit getGitHubLatestCommit(GitRepository repo, String ref) throws Exception {
+    private GitCommit getGitHubLatestCommit(GitRepository repo, String ref, String path) throws Exception {
         String url = String.format("https://api.github.com/repos/%s/commits?sha=%s&per_page=1", repo.getFullName(),
                 ref);
+        if (path != null) {
+            url += "&path=" + java.net.URLEncoder.encode(path, java.nio.charset.StandardCharsets.UTF_8);
+        }
 
         JsonNode response = httpGetWithAuth(url, repo.getAccessToken(), "Bearer");
 
@@ -1821,7 +1835,7 @@ public class GitPlatformService {
                         .name(node.path("name").asText())
                         .path(node.path("path").asText())
                         .type(isDirectory ? "dir" : "file")
-                        .size(isDirectory ? null : getGitLabBlobSize(repo, node.path("id").asText()))
+                        .size(null)
                         .sha(node.path("id").asText())
                         .build());
             }
@@ -1840,21 +1854,6 @@ public class GitPlatformService {
         });
 
         return entries;
-    }
-
-    private Long getGitLabBlobSize(GitRepository repo, String blobSha) {
-        if (blobSha == null || blobSha.isBlank()) {
-            return null;
-        }
-        try {
-            String url = String.format("%s/projects/%s/repository/blobs/%s",
-                    getGitLabApiBase(repo), getGitLabProjectId(repo), blobSha);
-            JsonNode response = httpGetWithAuth(url, repo.getAccessToken(), "PRIVATE-TOKEN");
-            return response.path("size").isNumber() ? response.path("size").asLong() : null;
-        } catch (Exception e) {
-            log.debug("获取 GitLab 文件大小失败: repo={}, blob={}", repo.getId(), blobSha, e);
-            return null;
-        }
     }
 
     private List<GitBranch> getGitLabBranches(GitRepository repo) throws Exception {
@@ -1937,12 +1936,15 @@ public class GitPlatformService {
         return allProjects;
     }
 
-    private GitCommit getGitLabLatestCommit(GitRepository repo, String ref) throws Exception {
+    private GitCommit getGitLabLatestCommit(GitRepository repo, String ref, String path) throws Exception {
         String apiBase = getGitLabApiBase(repo);
         String projectId = getGitLabProjectId(repo);
         String url = String.format("%s/projects/%s/repository/commits?ref_name=%s&per_page=1",
                 apiBase,
                 projectId, ref);
+        if (path != null) {
+            url += "&path=" + java.net.URLEncoder.encode(path, java.nio.charset.StandardCharsets.UTF_8);
+        }
 
         JsonNode response = httpGetWithAuth(url, repo.getAccessToken(), "PRIVATE-TOKEN");
 

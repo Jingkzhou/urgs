@@ -136,8 +136,11 @@ export const deleteRepoTag = (repoId: number, name: string) =>
 export const downloadRepoArchive = (repoId: number, ref: string) =>
     get<Blob>(`/api/version/repos/${repoId}/archive`, { ref }, { isBlob: true });
 
-export const getRepoLatestCommit = (repoId: number, ref?: string) =>
-    get<GitCommit>(`/api/version/repos/${repoId}/commits/latest`, { ref: ref || '' });
+export const getRepoLatestCommit = (repoId: number, ref?: string, path?: string) =>
+    get<GitCommit>(`/api/version/repos/${repoId}/commits/latest`, {
+        ref: ref || '',
+        path: path || ''
+    });
 
 export interface GitFileContent {
     name: string;

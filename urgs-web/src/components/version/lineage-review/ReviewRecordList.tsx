@@ -58,7 +58,7 @@ const ReviewRecordList: React.FC<ReviewRecordListProps> = ({
                     title={canTrigger ? '' : '缺少 version:ai:trigger 权限'}
                     onClick={onTrigger}
                 >
-                    触发走查
+                    开始校验
                 </Button>
             </Space>
         }
@@ -77,6 +77,8 @@ const ReviewRecordList: React.FC<ReviewRecordListProps> = ({
                     const relatedTasks = taskSummaryMap[record.id] || [];
                     const reviewStatus = resolveReviewStatus(record, relatedTasks);
                     const progress = calculateReviewProgressSummary(relatedTasks);
+                    const isReviewComplete = progress.totalTasks > 0
+                        && progress.terminalTasks === progress.totalTasks;
                     return (
                         <button
                             key={record.id}
@@ -94,11 +96,25 @@ const ReviewRecordList: React.FC<ReviewRecordListProps> = ({
                                 {summary.description}
                             </div>
                             <div className="mt-3">
-                                <div className="mb-1 flex justify-between text-xs text-slate-400">
-                                    <span>走查完成度</span>
-                                    <span>{progress.reviewedIssues}/{progress.totalIssues || 0}</span>
-                                </div>
-                                <Progress percent={progress.reviewRate} size="small" showInfo={false} />
+                                {progress.totalIssues > 0 ? (
+                                    <>
+                                        <div className="mb-1 flex justify-between text-xs text-slate-400">
+                                            <span>疑点处理</span>
+                                            <span>{progress.reviewedIssues}/{progress.totalIssues} 条</span>
+                                        </div>
+                                        <Progress percent={progress.reviewRate} size="small" showInfo={false} />
+                                    </>
+                                ) : isReviewComplete ? (
+                                    <div className="text-xs font-medium text-emerald-600">未发现疑点</div>
+                                ) : (
+                                    <>
+                                        <div className="mb-1 flex justify-between text-xs text-slate-400">
+                                            <span>SQL 检查进度</span>
+                                            <span>{progress.executionRate}%</span>
+                                        </div>
+                                        <Progress percent={progress.executionRate} size="small" showInfo={false} />
+                                    </>
+                                )}
                             </div>
                             <div className="mt-2 flex items-center justify-between text-xs text-slate-400">
                                 <span>{summary.meta}</span>

@@ -3,13 +3,12 @@ import { Alert, Button, Card, Progress, Space, Table, Tag, Tooltip, Typography }
 import type { ColumnsType } from 'antd/es/table';
 import type { LineageAnalysisRecordItem, LineageReviewTask } from '@/api/lineage';
 import { Activity, Download, RefreshCw } from 'lucide-react';
-import { statusColorMap } from './reviewConstants';
+import { statusColorMap, statusLabelMap } from './reviewConstants';
 import {
     buildShardLabel,
     formatDateTime,
     getTaskExecutionRate,
     getTaskIssueTotal,
-    getTaskReviewRate,
     getTaskReviewedTotal,
     TaskSourceMeta
 } from './reviewUtils';
@@ -99,7 +98,11 @@ const ReviewTaskTable: React.FC<ReviewTaskTableProps> = ({
             title: '状态',
             dataIndex: 'status',
             width: 110,
-            render: (value?: string) => <Tag color={statusColorMap[value || ''] || 'default'}>{value || '-'}</Tag>
+            render: (value?: string) => (
+                <Tag color={statusColorMap[value || ''] || 'default'}>
+                    {statusLabelMap[value || ''] || value || '-'}
+                </Tag>
+            )
         },
         {
             title: '进度',
@@ -107,48 +110,50 @@ const ReviewTaskTable: React.FC<ReviewTaskTableProps> = ({
             width: 300,
             render: (_, record) => {
                 const executionRate = getTaskExecutionRate(record);
-                const reviewRate = getTaskReviewRate(record);
-                const reviewed = getTaskReviewedTotal(record);
-                const issueTotal = getTaskIssueTotal(record);
                 const executionTotal = record.objectCount || 0;
                 const executionProcessed = executionTotal > 0
                     ? Math.min(record.processedCount || 0, executionTotal)
                     : (record.processedCount || 0);
-                const statementCoverageRate = record.statementCoverageRate || 0;
                 const coveredStatements = record.screenedStatementCount || 0;
+                const verifiedStatements = record.verifiedStatementCount || 0;
+                const highRiskStatements = record.highRiskStatementCount || 0;
+                const skippedStatements = record.skippedStatementCount || 0;
+                const failedStatements = record.failedStatementAuditCount || 0;
+                const hasAiReview = (record.tokenBudget || 0) > 0;
+                const isCompleted = ['COMPLETED', 'DEGRADED'].includes(record.status || '');
                 return (
-                    <div className="space-y-2">
-                        <div>
-                            <div className="mb-1 flex items-center justify-between text-xs text-slate-500">
-                                <span>执行 {executionProcessed}/{record.objectCount || '-'}</span>
-                                <span>{executionRate}%</span>
-                            </div>
-                            <Progress percent={executionRate} size="small" showInfo={false} />
-                        </div>
-                        <div>
-                            <div className="mb-1 flex items-center justify-between text-xs text-slate-500">
-                                <span>走查 {reviewed}/{issueTotal}</span>
-                                <span>{reviewRate}%</span>
-                            </div>
-                            <Progress percent={reviewRate} size="small" showInfo={false} status={issueTotal > 0 && record.pendingIssueCount ? 'active' : 'normal'} />
-                        </div>
-                        {(record.tokenBudget || 0) > 0 && (
+                    <div className="space-y-2.5">
+                        {executionTotal > 0 ? (
                             <div>
                                 <div className="mb-1 flex items-center justify-between text-xs text-slate-500">
-                                    <span>AI 覆盖 {coveredStatements}/{record.objectCount || '-'}</span>
-                                    <span>{statementCoverageRate}%</span>
+                                    <span>已处理 {executionProcessed}/{executionTotal} 个 SQL</span>
+                                    <span>{executionRate}%</span>
                                 </div>
-                                <Progress
-                                    percent={statementCoverageRate}
-                                    size="small"
-                                    showInfo={false}
-                                    status={(record.skippedStatementCount || 0) > 0 || (record.failedStatementAuditCount || 0) > 0 ? 'exception' : 'normal'}
-                                />
-                                <div className="mt-1 text-[11px] text-slate-400">
-                                    精审 {record.verifiedStatementCount || 0} · 高风险 {record.highRiskStatementCount || 0}
-                                    {(record.skippedStatementCount || 0) > 0 && ` · 跳过 ${record.skippedStatementCount}`}
-                                    {(record.failedStatementAuditCount || 0) > 0 && ` · 失败 ${record.failedStatementAuditCount}`}
+                                <Progress percent={executionRate} size="small" showInfo={false} />
+                            </div>
+                        ) : (
+                            <div className="mb-1 flex items-center justify-between text-xs text-slate-500">
+                                <span>
+                                    {record.status === 'FAILED'
+                                        ? '未获取到可处理的 SQL'
+                                        : (isCompleted ? '没有需要处理的 SQL' : '正在准备 SQL')}
+                                </span>
+                            </div>
+                        )}
+                        {hasAiReview && (
+                            <div className="text-xs leading-5 text-slate-500">
+                                <div>
+                                    AI 已检查 <span className="font-medium text-slate-700">{coveredStatements}</span> 个 SQL
+                                    {verifiedStatements > 0 && ` · 精审 ${verifiedStatements} 个`}
+                                    {highRiskStatements > 0 && ` · 高风险 ${highRiskStatements} 个`}
                                 </div>
+                                {(skippedStatements > 0 || failedStatements > 0) && (
+                                    <div className="text-amber-600">
+                                        {skippedStatements > 0 && `跳过 ${skippedStatements} 个`}
+                                        {skippedStatements > 0 && failedStatements > 0 && ' · '}
+                                        {failedStatements > 0 && `失败 ${failedStatements} 个`}
+                                    </div>
+                                )}
                             </div>
                         )}
                     </div>
@@ -159,14 +164,25 @@ const ReviewTaskTable: React.FC<ReviewTaskTableProps> = ({
             title: '疑点状态',
             key: 'issueSummary',
             width: 230,
-            render: (_, record) => (
-                <div className="flex flex-wrap gap-1 text-xs">
-                    <Tag>未确认 {record.pendingIssueCount || 0}</Tag>
-                    <Tag color="green">确认 {record.confirmedIssueCount || 0}</Tag>
-                    <Tag color="red">误报 {record.falsePositiveIssueCount || 0}</Tag>
-                    <Tag color="blue">已处理 {record.resolvedIssueCount || 0}</Tag>
-                </div>
-            )
+            render: (_, record) => {
+                const issueTotal = getTaskIssueTotal(record);
+                const reviewed = getTaskReviewedTotal(record);
+                if (issueTotal <= 0) {
+                    const isCompleted = ['COMPLETED', 'DEGRADED'].includes(record.status || '');
+                    return <Tag color={isCompleted ? 'green' : 'default'}>{isCompleted ? '未发现疑点' : '暂未发现疑点'}</Tag>;
+                }
+                return (
+                    <div className="space-y-1.5 text-xs">
+                        <div className="text-slate-500">共 {issueTotal} 条 · 已处理 {reviewed} 条</div>
+                        <div className="flex flex-wrap gap-1">
+                            {(record.pendingIssueCount || 0) > 0 && <Tag>待处理 {record.pendingIssueCount}</Tag>}
+                            {(record.confirmedIssueCount || 0) > 0 && <Tag color="green">确认问题 {record.confirmedIssueCount}</Tag>}
+                            {(record.falsePositiveIssueCount || 0) > 0 && <Tag color="red">误报 {record.falsePositiveIssueCount}</Tag>}
+                            {(record.resolvedIssueCount || 0) > 0 && <Tag color="blue">已解决 {record.resolvedIssueCount}</Tag>}
+                        </div>
+                    </div>
+                );
+            }
         },
         {
             title: '完成时间',
@@ -202,7 +218,7 @@ const ReviewTaskTable: React.FC<ReviewTaskTableProps> = ({
                         title={canTrigger ? '' : '缺少 version:ai:trigger 权限'}
                         onClick={onForceRerun}
                     >
-                        强制重跑
+                        重新校验
                     </Button>
                     <Button
                         size="small"

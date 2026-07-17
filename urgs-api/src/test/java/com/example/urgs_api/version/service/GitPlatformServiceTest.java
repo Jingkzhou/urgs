@@ -1,6 +1,7 @@
 package com.example.urgs_api.version.service;
 
 import com.example.urgs_api.version.dto.GitPullRequest;
+import com.example.urgs_api.version.dto.GitCommit;
 import com.example.urgs_api.version.dto.PullRequestMergeResult;
 import com.example.urgs_api.version.dto.GitFileDownload;
 import com.example.urgs_api.version.dto.GitFileEntry;
@@ -115,7 +116,7 @@ class GitPlatformServiceTest {
     }
 
     @Test
-    void getFileTree_GitLabIncludesBlobSize() throws Exception {
+    void getFileTree_GitLabDoesNotFetchEachBlobSize() throws Exception {
         Long repoId = 12L;
         GitRepository repo = new GitRepository();
         repo.setId(repoId);
@@ -127,13 +128,35 @@ class GitPlatformServiceTest {
         when(httpClient.send(any(HttpRequest.class), any(HttpResponse.BodyHandler.class))).thenReturn(httpResponse);
         when(httpResponse.statusCode()).thenReturn(200);
         when(httpResponse.body())
-                .thenReturn("[{\"name\":\"README.md\",\"path\":\"README.md\",\"type\":\"blob\",\"id\":\"blob-sha\"}]",
-                        "{\"size\":1536}");
+                .thenReturn("[{\"name\":\"README.md\",\"path\":\"README.md\",\"type\":\"blob\",\"id\":\"blob-sha\"}]");
 
         List<GitFileEntry> files = gitPlatformService.getFileTree(repoId, "main", "");
 
         assertEquals(1, files.size());
-        assertEquals(1536L, files.get(0).getSize());
+        assertNull(files.get(0).getSize());
+        verify(httpClient, times(1)).send(any(HttpRequest.class), any(HttpResponse.BodyHandler.class));
+    }
+
+    @Test
+    void getLatestCommit_GitLabFiltersByFilePath() throws Exception {
+        Long repoId = 13L;
+        GitRepository repo = new GitRepository();
+        repo.setId(repoId);
+        repo.setPlatform("gitlab");
+        repo.setFullName("owner/repo");
+        repo.setAccessToken("token");
+
+        when(gitRepositoryService.findById(repoId)).thenReturn(Optional.of(repo));
+        when(httpClient.send(any(HttpRequest.class), any(HttpResponse.BodyHandler.class))).thenReturn(httpResponse);
+        when(httpResponse.statusCode()).thenReturn(200);
+        when(httpResponse.body()).thenReturn("[{\"short_id\":\"abc1234\",\"id\":\"abc123456789\",\"message\":\"更新 App\",\"author_name\":\"开发者\",\"committed_date\":\"2026-07-17T00:00:00Z\"}]");
+
+        GitCommit commit = gitPlatformService.getLatestCommit(repoId, "main", "src/App.java");
+
+        ArgumentCaptor<HttpRequest> requestCaptor = ArgumentCaptor.forClass(HttpRequest.class);
+        verify(httpClient).send(requestCaptor.capture(), any(HttpResponse.BodyHandler.class));
+        assertTrue(requestCaptor.getValue().uri().toString().contains("path=src%2FApp.java"));
+        assertEquals("更新 App", commit.getMessage());
     }
 
     @Test

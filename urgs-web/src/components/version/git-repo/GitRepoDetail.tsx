@@ -28,6 +28,11 @@ type FileEditorState = {
     size?: number;
 };
 
+type FileCommitPreview = {
+    loading: boolean;
+    message?: string;
+};
+
 const bytesToBase64 = (bytes: Uint8Array) => {
     const chunkSize = 0x8000;
     let binary = '';
@@ -65,8 +70,11 @@ const GitRepoDetail: React.FC<Props> = ({ repo, ssoList, onBack }) => {
     const [branches, setBranches] = useState<GitBranchType[]>([]);
     const [files, setFiles] = useState<GitFileEntry[]>([]);
     const [latestCommit, setLatestCommit] = useState<GitCommit | null>(null);
+    const [fileCommitPreviews, setFileCommitPreviews] = useState<Record<string, FileCommitPreview>>({});
     const [loading, setLoading] = useState(false);
     const [treeVersion, setTreeVersion] = useState(0);
+    const fileRowsRef = useRef(new Map<string, HTMLTableRowElement>());
+    const fileCommitRequestVersionRef = useRef(0);
 
     // 文件内容查看状态
     const [viewingFile, setViewingFile] = useState<GitFileContent | null>(null);
@@ -134,11 +142,7 @@ const GitRepoDetail: React.FC<Props> = ({ repo, ssoList, onBack }) => {
                 getRepoLatestCommit(repo.id, currentRef)
             ])
                 .then(([filesData, commitData]) => {
-                    setFiles((filesData || []).map(file => ({
-                        ...file,
-                        lastCommitMessage: file.lastCommitMessage || commitData?.message?.split('\n')[0],
-                        lastCommitDate: file.lastCommitDate || commitData?.committedAt
-                    })));
+                    setFiles(filesData || []);
                     setLatestCommit(commitData);
                 })
                 .catch(err => {
@@ -148,6 +152,39 @@ const GitRepoDetail: React.FC<Props> = ({ repo, ssoList, onBack }) => {
                 .finally(() => setLoading(false));
         }
     }, [repo.id, currentRef, currentPath, viewingFile, treeVersion]);
+
+    useEffect(() => {
+        const requestVersion = ++fileCommitRequestVersionRef.current;
+        const requestedPaths = new Set<string>();
+        setFileCommitPreviews({});
+
+        const observer = new IntersectionObserver(entries => {
+            entries.forEach(entry => {
+                if (!entry.isIntersecting) return;
+                const path = entry.target.getAttribute('data-file-path');
+                if (!path || requestedPaths.has(path)) return;
+
+                requestedPaths.add(path);
+                observer.unobserve(entry.target);
+                setFileCommitPreviews(current => ({ ...current, [path]: { loading: true } }));
+                getRepoLatestCommit(repo.id!, currentRef, path)
+                    .then(commit => {
+                        if (fileCommitRequestVersionRef.current !== requestVersion) return;
+                        setFileCommitPreviews(current => ({
+                            ...current,
+                            [path]: { loading: false, message: commit?.message?.split('\n')[0] || '无提交记录' }
+                        }));
+                    })
+                    .catch(() => {
+                        if (fileCommitRequestVersionRef.current !== requestVersion) return;
+                        setFileCommitPreviews(current => ({ ...current, [path]: { loading: false } }));
+                    });
+            });
+        }, { rootMargin: '160px 0px' });
+
+        fileRowsRef.current.forEach(row => observer.observe(row));
+        return () => observer.disconnect();
+    }, [repo.id, currentRef, files]);
 
     // Load Commits
     // Load Commits logic moved to CommitList component
@@ -626,8 +663,19 @@ const GitRepoDetail: React.FC<Props> = ({ repo, ssoList, onBack }) => {
                                                     </td>
                                                 </tr>
                                             )}
-                                            {files.map((file, idx) => (
-                                                <tr key={idx} className="hover:bg-slate-50 group cursor-pointer" onClick={() => handleFileClick(file)}>
+                                            {files.map(file => {
+                                                const preview = fileCommitPreviews[file.path];
+                                                return (
+                                                <tr
+                                                    key={file.path}
+                                                    ref={node => {
+                                                        if (node) fileRowsRef.current.set(file.path, node);
+                                                        else fileRowsRef.current.delete(file.path);
+                                                    }}
+                                                    data-file-path={file.path}
+                                                    className="hover:bg-slate-50 group cursor-pointer"
+                                                    onClick={() => handleFileClick(file)}
+                                                >
                                                     <td className="px-4 py-2.5 flex items-center gap-2">
                                                         {file.type === 'dir' ? (
                                                             <div className="text-blue-400"><Folder size={16} fill="currentColor" /></div>
@@ -639,13 +687,14 @@ const GitRepoDetail: React.FC<Props> = ({ repo, ssoList, onBack }) => {
                                                         </span>
                                                     </td>
                                                     <td className="px-4 py-2.5 text-slate-500 truncate max-w-xs">
-                                                        {file.lastCommitMessage || '-'}
+                                                        {preview?.loading ? '正在加载...' : preview?.message || file.lastCommitMessage || '-'}
                                                     </td>
                                                     <td className="px-4 py-2.5 text-right text-slate-400">
                                                         {file.type === 'file' ? formatFileSize(file.size) : '-'}
                                                     </td>
                                                 </tr>
-                                            ))}
+                                                );
+                                            })}
                                         </tbody>
                                     </table>
                                 </div>

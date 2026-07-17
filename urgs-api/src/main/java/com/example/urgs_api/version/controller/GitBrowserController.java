@@ -65,8 +65,9 @@ public class GitBrowserController {
     @GetMapping("/{repoId}/commits/latest")
     public ResponseEntity<GitCommit> getLatestCommit(
             @PathVariable Long repoId,
-            @RequestParam(required = false, defaultValue = "") String ref) {
-        GitCommit commit = gitPlatformService.getLatestCommit(repoId, ref);
+            @RequestParam(required = false, defaultValue = "") String ref,
+            @RequestParam(required = false, defaultValue = "") String path) {
+        GitCommit commit = gitPlatformService.getLatestCommit(repoId, ref, path);
         return ResponseEntity.ok(commit);
     }
 

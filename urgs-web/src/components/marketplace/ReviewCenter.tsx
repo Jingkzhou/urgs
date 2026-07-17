@@ -422,15 +422,15 @@ const ReviewCenter: React.FC<ReviewCenterProps> = ({ todoFocus }) => {
                             <div className="grid grid-cols-1 gap-2 text-xs sm:grid-cols-3">
                                 <div className="rounded-lg bg-slate-50 p-2">
                                     <div className="mb-1 text-slate-400">系统</div>
-                                    <div className="font-bold text-slate-700">{record.owningSystem || record.primarySystemName || '-'}</div>
+                                    <div className="font-bold text-slate-700">{record.taskSystemNames || record.owningSystem || record.primarySystemName || '-'}</div>
                                 </div>
                                 <div className="rounded-lg bg-slate-50 p-2">
                                     <div className="mb-1 text-slate-400">发起人</div>
-                                    <div className="font-bold text-slate-700">{record.publisherName || record.publisherId || '-'}</div>
+                                    <div className="font-bold text-slate-700">{record.initiatorName || record.initiatorId || '-'}</div>
                                 </div>
                                 <div className="rounded-lg bg-slate-50 p-2">
                                     <div className="mb-1 text-slate-400">发起时间</div>
-                                    <div className="font-bold text-slate-700">{formatRecordTime(record.workCreateTime)}</div>
+                                    <div className="font-bold text-slate-700">{formatRecordTime(record.initiatedAt)}</div>
                                 </div>
                                 <div className="rounded-lg bg-slate-50 p-2">
                                     <div className="mb-1 text-slate-400">审核人</div>

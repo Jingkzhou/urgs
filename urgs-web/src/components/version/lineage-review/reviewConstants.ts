@@ -6,6 +6,14 @@ export const statusColorMap: Record<string, string> = {
     FAILED: 'error'
 };
 
+export const statusLabelMap: Record<string, string> = {
+    PENDING: '待执行',
+    RUNNING: '执行中',
+    COMPLETED: '已完成',
+    DEGRADED: '降级完成',
+    FAILED: '执行失败'
+};
+
 export const severityColorMap: Record<string, string> = {
     HIGH: 'red',
     MEDIUM: 'orange',

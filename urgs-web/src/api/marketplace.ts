@@ -241,9 +241,10 @@ export interface TaskReviewHistoryDTO {
     requirementNumber?: string;
     owningSystem?: string;
     primarySystemName?: string;
-    publisherId?: string;
-    publisherName?: string;
-    workCreateTime?: string;
+    taskSystemNames?: string;
+    initiatorId?: string;
+    initiatorName?: string;
+    initiatedAt?: string;
     reviewType: 'ASSET_REVIEW' | 'ACCEPTANCE';
     decision: 'APPROVE' | 'REJECT' | 'CANCEL' | 'TRANSFER' | string;
     action: string;

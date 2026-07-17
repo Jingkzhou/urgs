@@ -201,7 +201,7 @@ export const calculateReviewProgressSummary = (tasks: LineageReviewTask[]): Revi
 export const resolveReviewStatus = (record: LineageAnalysisRecordItem, relatedTasks: LineageReviewTask[]) => {
     if (!relatedTasks.length) {
         return {
-            text: record.status === 'SUCCESS' ? '未走查' : '待分析完成',
+            text: record.status === 'SUCCESS' ? '未校验' : '待分析完成',
             color: record.status === 'SUCCESS' ? 'default' : 'warning'
         };
     }
@@ -218,10 +218,10 @@ export const resolveReviewStatus = (record: LineageAnalysisRecordItem, relatedTa
         return { text: '待确认', color: 'warning' };
     }
     if (statuses.some(status => status === 'DEGRADED')) {
-        return { text: '已走查/降级', color: 'warning' };
+        return { text: '已校验/降级', color: 'warning' };
     }
     if (summary.totalIssues > 0 && summary.pendingIssues === 0) {
-        return { text: '已走查', color: 'success' };
+        return { text: '已校验', color: 'success' };
     }
     if (statuses.every(status => status === 'COMPLETED')) {
         return { text: '已完成', color: 'success' };
