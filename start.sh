@@ -280,9 +280,13 @@ start_desktop() {
     echo "Rust/Cargo not found. Install the Rust toolchain before starting urgs-desktop."
     exit 1
   fi
+  if [ ! -x "$WEB_DIR/node_modules/.bin/vite" ]; then
+    echo "Installing frontend dependencies in $WEB_DIR..."
+    CI=true "${pnpm_cmd[@]}" --dir "$WEB_DIR" install --frozen-lockfile
+  fi
   if [ ! -x "node_modules/.bin/tauri" ]; then
     echo "Installing desktop dependencies in $DESKTOP_DIR..."
-    "${pnpm_cmd[@]}" install
+    CI=true "${pnpm_cmd[@]}" install --frozen-lockfile
   fi
 
   "${pnpm_cmd[@]}" dev &

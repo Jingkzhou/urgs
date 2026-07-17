@@ -6,6 +6,7 @@
 
 ```bash
 cd urgs-desktop
+pnpm --dir ../urgs-web install --frozen-lockfile
 pnpm install
 pnpm dev
 ```
