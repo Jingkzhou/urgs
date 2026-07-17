@@ -11,9 +11,10 @@ interface Props {
     platform?: string; // 'gitee' | 'github' | 'gitlab'
     onRefChange?: (ref: string) => void;
     onBack?: () => void;
+    openCreateOnMount?: boolean;
 }
 
-const BranchList: React.FC<Props> = ({ repoId, currentRef, platform, onRefChange, onBack }) => {
+const BranchList: React.FC<Props> = ({ repoId, currentRef, platform, onRefChange, onBack, openCreateOnMount = false }) => {
     const [branches, setBranches] = useState<GitBranchType[]>([]);
     const [loading, setLoading] = useState(false);
     const [searchText, setSearchText] = useState('');
@@ -28,6 +29,10 @@ const BranchList: React.FC<Props> = ({ repoId, currentRef, platform, onRefChange
     useEffect(() => {
         fetchBranches();
     }, [repoId]);
+
+    useEffect(() => {
+        if (openCreateOnMount) setIsCreateModalOpen(true);
+    }, [openCreateOnMount]);
 
     const fetchBranches = async () => {
         setLoading(true);

@@ -8,9 +8,11 @@ import { zhCN } from 'date-fns/locale';
 interface Props {
     repoId: number;
     onBack?: () => void;
+    openCreateOnMount?: boolean;
+    initialRef?: string;
 }
 
-const TagList: React.FC<Props> = ({ repoId, onBack }) => {
+const TagList: React.FC<Props> = ({ repoId, onBack, openCreateOnMount = false, initialRef }) => {
     const [tags, setTags] = useState<GitTag[]>([]);
     const [branches, setBranches] = useState<any[]>([]);
     const [loading, setLoading] = useState(false);
@@ -98,6 +100,12 @@ const TagList: React.FC<Props> = ({ repoId, onBack }) => {
         fetchTags();
         fetchBranches();
     }, [repoId]);
+
+    useEffect(() => {
+        if (!openCreateOnMount) return;
+        setTargetRef(current => current || initialRef || '');
+        setIsCreateModalOpen(true);
+    }, [openCreateOnMount, initialRef]);
 
     const fetchTags = async () => {
         setLoading(true);

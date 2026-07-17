@@ -283,25 +283,24 @@ const WorkStatistics: React.FC<WorkStatisticsProps> = ({ focusAttentionKey }) =>
         const taskStatuses = data.taskStatusDistribution
             .map(item => `${getTaskStatusLabel(item.name)} ${item.value} 个`)
             .join('、') || '暂无';
-        const workloads = data.assigneeWorkloads
-            .slice(0, 5)
-            .map(item => `${renderAssignee(item.assigneeId)}：总任务 ${item.totalCount}，已完成 ${item.completedCount}，待推进 ${Math.max(item.activeCount - item.pausedCount - item.overdueCount, 0)}，暂停 ${item.pausedCount}，逾期 ${item.overdueCount}`)
+        const systemSummary = data.systemTaskStats
+            .map(item => `${item.systemName}：${item.requirementCount} 个需求，${item.totalTaskCount} 个任务，已完成 ${item.completedTaskCount} 个，逾期 ${item.overdueTaskCount} 个，完成率 ${item.completionRate}%`)
             .join('\n') || '暂无';
         const attentionItems = data.attentionItems
             .slice(0, 8)
-            .map(item => `- ${item.workTitle} / ${item.taskTitle}：状态 ${getTaskStatusLabel(item.status)}，${item.overdue ? '已逾期' : item.attentionMessage || '阶段时限预警'}`)
+            .map(item => `- ${item.workTitle}（${item.requirementNumber || '未填写需求编号'}）/ ${item.taskTitle}：状态 ${getTaskStatusLabel(item.status)}，${item.overdue ? '已逾期' : item.attentionMessage || '阶段时限预警'}`)
             .join('\n') || '暂无';
 
         return `你是项目管理助手。请基于以下真实统计数据，生成简洁、专业的中文需求进展概要。
 统计时间：${data.startDate} 至 ${data.endDate}，口径为按需求创建时间筛选，状态为查询时现状。
 需求：共 ${data.totalWorks} 个，已完成 ${data.completedWorks} 个；状态分布：${workStatuses}。
 任务现状：已完成 ${data.completedTasks} 个，进行中 ${data.activeTasks} 个，完成率 ${data.completionRate}%，逾期 ${data.overdueTasks} 个，风险报备 ${data.riskTasks} 个；状态分布：${taskStatuses}。
-人员负载：
-${workloads}
+系统维度：
+${systemSummary}
 重点关注：
 ${attentionItems}
 
-请严格只使用以上数据，不推测未提供的原因、时间或责任人。按以下四个小节输出 Markdown，每节 1-3 条短句：
+请严格只使用以上数据，只从需求、系统、任务进度和风险维度分析；不要输出负责人、人员负载、分工或其他人员相关信息，不推测未提供的原因或进展。按以下四个小节输出 Markdown，每节 1-3 条短句：
 ### 整体进展
 ### 本期亮点
 ### 风险提醒

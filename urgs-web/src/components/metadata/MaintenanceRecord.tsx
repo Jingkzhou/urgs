@@ -6,6 +6,7 @@ import MaintenanceDetailPanel, { MaintenanceRecordItem } from './MaintenanceDeta
 import MaintenanceStats from './MaintenanceStats';
 import Auth from '../Auth';
 import dayjs from 'dayjs';
+import { systemService, SsoConfig } from '../../services/systemService';
 
 // 模拟统计数据（后续对接API）
 const MOCK_STATS = {
@@ -19,6 +20,7 @@ const MOCK_STATS = {
 
 interface MaintenanceFilters {
     globalSearch: string;
+    systemCode: string;
     tableName: string;
     fieldName: string;
     modTypes: string[];
@@ -29,6 +31,7 @@ interface MaintenanceFilters {
 
 const defaultFilters: MaintenanceFilters = {
     globalSearch: '',
+    systemCode: '',
     tableName: '',
     fieldName: '',
     modTypes: [],
@@ -52,6 +55,7 @@ const MaintenanceRecord: React.FC = () => {
     const [viewMode, setViewMode] = useState<'TABLE' | 'TIMELINE'>('TABLE');
     const [showAdvancedFilter, setShowAdvancedFilter] = useState(false);
     const [filters, setFilters] = useState<MaintenanceFilters>(defaultFilters);
+    const [systems, setSystems] = useState<SsoConfig[]>([]);
     const [records, setRecords] = useState<MaintenanceRecordItem[]>([]);
     const [page, setPage] = useState(1);
     const [pageSize, setPageSize] = useState(10);
@@ -62,6 +66,17 @@ const MaintenanceRecord: React.FC = () => {
     const [selectedRecord, setSelectedRecord] = useState<MaintenanceRecordItem | null>(null);
     const [showAddModal, setShowAddModal] = useState(false);
     const [editingRecord, setEditingRecord] = useState<MaintenanceRecordItem | null>(null);
+
+    useEffect(() => {
+        const fetchSystems = async () => {
+            try {
+                setSystems(await systemService.list());
+            } catch (error) {
+                console.error('Failed to fetch systems:', error);
+            }
+        };
+        fetchSystems();
+    }, []);
 
     // Fetch Stats
     const fetchStats = async () => {
@@ -91,6 +106,7 @@ const MaintenanceRecord: React.FC = () => {
             if (filters.globalSearch) params.append('keyword', filters.globalSearch);
 
             // 高级筛选
+            if (filters.systemCode) params.append('systemCode', filters.systemCode);
             if (filters.tableName) params.append('tableName', filters.tableName);
             if (filters.fieldName) params.append('fieldName', filters.fieldName);
             if (filters.modTypes.length > 0) params.append('modTypes', filters.modTypes.join(','));
@@ -337,6 +353,21 @@ const MaintenanceRecord: React.FC = () => {
                     {showAdvancedFilter && (
                         <div className="pt-3 border-t border-slate-100 animate-in slide-in-from-top-2 duration-200">
                             <div className="grid grid-cols-4 gap-4 mb-3">
+                                <div>
+                                    <label className="text-xs font-semibold text-slate-500 mb-1.5 block">所属系统</label>
+                                    <select
+                                        className="w-full px-3 py-2 text-sm bg-slate-50 border border-slate-200 rounded-lg focus:outline-none focus:ring-2 focus:ring-indigo-100"
+                                        value={filters.systemCode}
+                                        onChange={e => setFilters(prev => ({ ...prev, systemCode: e.target.value }))}
+                                    >
+                                        <option value="">全部系统</option>
+                                        {systems.map(system => (
+                                            <option key={system.id} value={system.clientId}>
+                                                {system.name}
+                                            </option>
+                                        ))}
+                                    </select>
+                                </div>
                                 <div>
                                     <label className="text-xs font-semibold text-slate-500 mb-1.5 block">表名/中文名</label>
                                     <input

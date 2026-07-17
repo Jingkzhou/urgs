@@ -1,6 +1,6 @@
 import React, { useState, useEffect, useRef } from 'react';
 import { Tabs, Button, Tag, Space, Avatar, Select, Input, Spin, message, Dropdown, Modal } from 'antd';
-import { ArrowLeft, GitBranch, Copy, ShieldCheck, Play, Rocket, ClipboardList, Code, Folder, FileText, Clock, ChevronRight, X, GitPullRequest, Upload, Pencil, Download } from 'lucide-react';
+import { ArrowLeft, GitBranch, Copy, ShieldCheck, Play, Rocket, ClipboardList, Code, Folder, FileText, Clock, ChevronRight, ChevronDown, X, GitPullRequest, Upload, Pencil, Download, Plus, FilePlus2, FolderPlus, Tag as TagIcon } from 'lucide-react';
 
 const { Option } = Select;
 import { GitRepository, SsoConfig, GitFileEntry, GitBranch as GitBranchType, GitCommit, GitFileContent, getRepoFileTree, getRepoBranches, getRepoLatestCommit, getRepoFileContent, getRepoCommitDetail, saveRepoFile, downloadRepoFile } from '@/api/version';
@@ -19,13 +19,18 @@ import AICodeAudit from '../AICodeAudit';
 const MAX_UPLOAD_SIZE = 5 * 1024 * 1024;
 
 type FileEditorState = {
-    mode: 'edit' | 'upload';
+    mode: 'edit' | 'upload' | 'create';
     path: string;
     content?: string;
     contentBase64?: string;
     fileSha?: string;
     fileName?: string;
     size?: number;
+};
+
+type DirectoryCreatorState = {
+    name: string;
+    commitMessage: string;
 };
 
 type FileCommitPreview = {
@@ -82,6 +87,8 @@ const GitRepoDetail: React.FC<Props> = ({ repo, ssoList, onBack }) => {
     const [fileEditor, setFileEditor] = useState<FileEditorState | null>(null);
     const [commitMessage, setCommitMessage] = useState('');
     const [fileSaving, setFileSaving] = useState(false);
+    const [directoryCreator, setDirectoryCreator] = useState<DirectoryCreatorState | null>(null);
+    const [directorySaving, setDirectorySaving] = useState(false);
     const uploadInputRef = useRef<HTMLInputElement>(null);
 
 
@@ -94,6 +101,8 @@ const GitRepoDetail: React.FC<Props> = ({ repo, ssoList, onBack }) => {
     const [viewingTagList, setViewingTagList] = useState(false);
     const [viewingPullRequests, setViewingPullRequests] = useState(false);
     const [commitsLoading, setCommitsLoading] = useState(false); // Used for detail loading now
+    const [openBranchCreate, setOpenBranchCreate] = useState(false);
+    const [openTagCreate, setOpenTagCreate] = useState(false);
 
     const ssoName = ssoList.find(s => s.id === repo.ssoId)?.name || '未知系统';
 
@@ -237,6 +246,15 @@ const GitRepoDetail: React.FC<Props> = ({ repo, ssoList, onBack }) => {
         setCommitMessage(`更新 ${viewingFile.path}`);
     };
 
+    const handleCreateFile = () => {
+        setFileEditor({
+            mode: 'create',
+            path: currentPath ? `${currentPath}/` : '',
+            content: ''
+        });
+        setCommitMessage('新建文件');
+    };
+
     const handleDownloadFile = async () => {
         if (!repo.id || !viewingFile) {
             return;
@@ -300,6 +318,10 @@ const GitRepoDetail: React.FC<Props> = ({ repo, ssoList, onBack }) => {
             return;
         }
         const existingFile = files.find(file => file.type === 'file' && file.path === path);
+        if (fileEditor.mode === 'create' && existingFile) {
+            message.error('当前目录已存在同名文件');
+            return;
+        }
         const overwrite = fileEditor.mode === 'edit' || Boolean(existingFile);
         if (fileEditor.mode === 'upload' && existingFile) {
             const confirmed = await new Promise<boolean>(resolve => {
@@ -322,14 +344,16 @@ const GitRepoDetail: React.FC<Props> = ({ repo, ssoList, onBack }) => {
             await saveRepoFile(repo.id, {
                 path,
                 branch: currentRef,
-                contentBase64: fileEditor.mode === 'edit'
+                contentBase64: fileEditor.mode === 'edit' || fileEditor.mode === 'create'
                     ? textToBase64(fileEditor.content || '')
                     : fileEditor.contentBase64 || '',
                 commitMessage: commitMessage.trim(),
                 fileSha: fileEditor.fileSha || existingFile?.sha,
                 overwrite
             });
-            message.success(overwrite ? '文件已覆盖并提交' : '文件已上传并提交');
+            message.success(fileEditor.mode === 'create'
+                ? '文件已创建并提交'
+                : overwrite ? '文件已覆盖并提交' : '文件已上传并提交');
             setFileEditor(null);
             setViewingFile(null);
             setTreeVersion(version => version + 1);
@@ -338,6 +362,48 @@ const GitRepoDetail: React.FC<Props> = ({ repo, ssoList, onBack }) => {
             message.error(error?.message || '保存失败，请检查仓库写入权限');
         } finally {
             setFileSaving(false);
+        }
+    };
+
+    const handleCreateDirectory = async () => {
+        if (!repo.id || !directoryCreator) return;
+        const directoryName = directoryCreator.name.trim().replace(/^\/+|\/+$/g, '');
+        if (!directoryName) {
+            message.error('请输入目录名称');
+            return;
+        }
+        if (directoryName.split('/').some(part => !part || part === '.' || part === '..')) {
+            message.error('目录名称不合法');
+            return;
+        }
+        if (!directoryCreator.commitMessage.trim()) {
+            message.error('请输入提交说明');
+            return;
+        }
+        const firstDirectoryName = directoryName.split('/')[0];
+        if (files.some(file => file.type === 'dir' && file.name === firstDirectoryName)) {
+            message.error('当前目录已存在同名目录');
+            return;
+        }
+
+        const directoryPath = [currentPath, directoryName].filter(Boolean).join('/');
+        setDirectorySaving(true);
+        try {
+            await saveRepoFile(repo.id, {
+                path: `${directoryPath}/.gitkeep`,
+                branch: currentRef,
+                contentBase64: textToBase64(''),
+                commitMessage: directoryCreator.commitMessage.trim(),
+                overwrite: false
+            });
+            message.success('目录已创建并提交');
+            setDirectoryCreator(null);
+            setTreeVersion(version => version + 1);
+        } catch (error: any) {
+            console.error('创建目录失败', error);
+            message.error(error?.message || '创建目录失败，请检查仓库写入权限');
+        } finally {
+            setDirectorySaving(false);
         }
     };
 
@@ -354,7 +420,25 @@ const GitRepoDetail: React.FC<Props> = ({ repo, ssoList, onBack }) => {
         setViewingBranchList(false);
         setViewingTagList(false);
         setViewingCommitList(false);
+        setOpenBranchCreate(false);
+        setOpenTagCreate(false);
         // Explicitly set breadcrumbs for code view will happen via effect
+    };
+
+    const handleCreateMenuClick = (key: string) => {
+        if (key === 'create-file') {
+            handleCreateFile();
+        } else if (key === 'upload-file') {
+            uploadInputRef.current?.click();
+        } else if (key === 'create-directory') {
+            setDirectoryCreator({ name: '', commitMessage: `新建 ${currentPath || '根目录'} 下的目录` });
+        } else if (key === 'create-branch') {
+            setOpenBranchCreate(true);
+            setViewingBranchList(true);
+        } else if (key === 'create-tag') {
+            setOpenTagCreate(true);
+            setViewingTagList(true);
+        }
     };
 
 
@@ -486,7 +570,9 @@ const GitRepoDetail: React.FC<Props> = ({ repo, ssoList, onBack }) => {
     const renderFileEditorModal = () => (
         <Modal
             open={Boolean(fileEditor)}
-            title={fileEditor?.mode === 'edit' ? `编辑 ${fileEditor.path}` : '上传文件并提交'}
+            title={fileEditor?.mode === 'edit'
+                ? `编辑 ${fileEditor.path}`
+                : fileEditor?.mode === 'create' ? '新建文件并提交' : '上传文件并提交'}
             width={960}
             destroyOnClose
             onCancel={() => !fileSaving && setFileEditor(null)}
@@ -510,9 +596,12 @@ const GitRepoDetail: React.FC<Props> = ({ repo, ssoList, onBack }) => {
                         {fileEditor.mode === 'upload' && (
                             <div className="mt-1.5 text-xs text-slate-400">文件将上传到当前目录，可在此修改目标路径。</div>
                         )}
+                        {fileEditor.mode === 'create' && (
+                            <div className="mt-1.5 text-xs text-slate-400">文件将在当前目录创建，可输入完整的仓库内路径。</div>
+                        )}
                     </div>
 
-                    {fileEditor.mode === 'edit' ? (
+                    {fileEditor.mode === 'edit' || fileEditor.mode === 'create' ? (
                         <div>
                             <label className="mb-1.5 block text-sm font-medium text-slate-700">文件内容</label>
                             <Input.TextArea
@@ -543,6 +632,43 @@ const GitRepoDetail: React.FC<Props> = ({ repo, ssoList, onBack }) => {
                             value={commitMessage}
                             onChange={event => setCommitMessage(event.target.value)}
                             placeholder="说明本次修改内容"
+                        />
+                    </div>
+                </div>
+            )}
+        </Modal>
+    );
+
+    const renderDirectoryCreatorModal = () => (
+        <Modal
+            open={Boolean(directoryCreator)}
+            title="新建目录"
+            okText="创建并提交"
+            cancelText="取消"
+            confirmLoading={directorySaving}
+            onOk={handleCreateDirectory}
+            onCancel={() => !directorySaving && setDirectoryCreator(null)}
+            destroyOnClose
+        >
+            {directoryCreator && (
+                <div className="space-y-4 py-2">
+                    <div>
+                        <label className="mb-1.5 block text-sm font-medium text-slate-700">目录名称</label>
+                        <Input
+                            autoFocus
+                            value={directoryCreator.name}
+                            onChange={event => setDirectoryCreator(current => current ? { ...current, name: event.target.value } : current)}
+                            placeholder="例如 docs 或 docs/specs"
+                            prefix={currentPath ? <span className="text-slate-400">{currentPath}/</span> : undefined}
+                        />
+                        <div className="mt-1.5 text-xs text-slate-400">Git 不保存空目录，系统会在新目录中创建 `.gitkeep`。</div>
+                    </div>
+                    <div>
+                        <label className="mb-1.5 block text-sm font-medium text-slate-700">提交说明</label>
+                        <Input
+                            value={directoryCreator.commitMessage}
+                            onChange={event => setDirectoryCreator(current => current ? { ...current, commitMessage: event.target.value } : current)}
+                            placeholder="说明本次新增目录的用途"
                         />
                     </div>
                 </div>
@@ -584,6 +710,26 @@ const GitRepoDetail: React.FC<Props> = ({ repo, ssoList, onBack }) => {
                                 </Select>
                                 <div className="h-4 w-px bg-slate-300 mx-2"></div>
                                 {renderBreadcrumbs()}
+                                <Dropdown
+                                    trigger={['click']}
+                                    menu={{
+                                        onClick: ({ key }) => handleCreateMenuClick(key),
+                                        items: [
+                                            { key: 'directory-label', label: '当前目录', disabled: true },
+                                            { key: 'create-file', label: '新建文件', icon: <FilePlus2 size={14} /> },
+                                            { key: 'upload-file', label: '上传文件', icon: <Upload size={14} /> },
+                                            { key: 'create-directory', label: '新建目录', icon: <FolderPlus size={14} /> },
+                                            { type: 'divider' },
+                                            { key: 'repository-label', label: '当前仓库', disabled: true },
+                                            { key: 'create-branch', label: '新建分支', icon: <GitBranch size={14} /> },
+                                            { key: 'create-tag', label: '新建标签', icon: <TagIcon size={14} /> }
+                                        ]
+                                    }}
+                                >
+                                    <Button size="small" icon={<Plus size={15} />}>
+                                        <ChevronDown size={13} />
+                                    </Button>
+                                </Dropdown>
                             </div>
                             <Space>
                                 <div className="flex bg-slate-100 rounded p-1 text-slate-600 text-xs">
@@ -808,6 +954,7 @@ const GitRepoDetail: React.FC<Props> = ({ repo, ssoList, onBack }) => {
                     setViewingBranchList(false);
                 }}
                 onBack={backToCodeView}
+                openCreateOnMount={openBranchCreate}
             />
         );
     }
@@ -818,6 +965,8 @@ const GitRepoDetail: React.FC<Props> = ({ repo, ssoList, onBack }) => {
             <TagList
                 repoId={repo.id!}
                 onBack={backToCodeView}
+                openCreateOnMount={openTagCreate}
+                initialRef={currentRef}
             />
         );
     }
@@ -955,6 +1104,7 @@ const GitRepoDetail: React.FC<Props> = ({ repo, ssoList, onBack }) => {
                 <Tabs activeKey={activeTab} onChange={setActiveTab} items={items} />
             </div>
             {renderFileEditorModal()}
+            {renderDirectoryCreatorModal()}
         </div>
     );
 };

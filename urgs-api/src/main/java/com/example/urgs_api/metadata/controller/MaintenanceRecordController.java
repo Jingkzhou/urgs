@@ -35,6 +35,7 @@ public class MaintenanceRecordController {
      * @param fieldCnName 字段中文名
      * @param plannedDate 计划日期
      * @param reqId       需求ID
+     * @param systemCode  所属系统编码
      * @param page        页码
      * @param size        每页大小
      * @return 维护记录分页结果
@@ -50,6 +51,7 @@ public class MaintenanceRecordController {
             @RequestParam(required = false) String plannedDate,
             @RequestParam(required = false) String modTypes,
             @RequestParam(required = false) String reqId,
+            @RequestParam(required = false) String systemCode,
             @RequestParam(required = false) String operator,
             @RequestParam(required = false) String startDate,
             @RequestParam(required = false) String endDate,
@@ -96,6 +98,9 @@ public class MaintenanceRecordController {
         }
         if (StringUtils.hasText(reqId)) {
             query.like(MaintenanceRecord::getReqId, reqId);
+        }
+        if (StringUtils.hasText(systemCode)) {
+            query.eq(MaintenanceRecord::getSystemCode, systemCode);
         }
         if (StringUtils.hasText(operator)) {
             query.like(MaintenanceRecord::getOperator, operator);
