@@ -62,11 +62,6 @@ public class WorkTaskServiceImpl extends ServiceImpl<WorkTaskMapper, WorkTask> i
             "REVIEW_REJECT",
             "REVIEW_CANCEL",
             "REVIEW_TRANSFER");
-    private static final List<String> REVIEW_SUBMIT_ACTIONS = List.of(
-            "ASSET_REVIEW_SUBMIT",
-            "ASSET_REVIEW_RESUBMIT",
-            "SUBMIT_REVIEW",
-            "STAGE_TO_REVIEW");
     private static final DateTimeFormatter RISK_NOTE_TIME_FORMATTER = DateTimeFormatter.ofPattern("yyyy-MM-dd HH:mm");
 
     @Autowired
@@ -321,26 +316,7 @@ public class WorkTaskServiceImpl extends ServiceImpl<WorkTaskMapper, WorkTask> i
                 .in(TaskLog::getAction, REVIEW_ACTIONS)
                 .orderByDesc(TaskLog::getCreateTime));
 
-        Map<String, List<TaskLog>> submitLogsByTaskId = reviewLogPage.getRecords().isEmpty()
-                ? Collections.emptyMap()
-                : taskLogMapper.selectList(new LambdaQueryWrapper<TaskLog>()
-                        .in(TaskLog::getTaskId, reviewLogPage.getRecords().stream()
-                                .map(TaskLog::getTaskId)
-                                .distinct()
-                                .toList())
-                        .in(TaskLog::getAction, REVIEW_SUBMIT_ACTIONS)
-                        .orderByDesc(TaskLog::getCreateTime))
-                        .stream()
-                        .collect(Collectors.groupingBy(TaskLog::getTaskId));
-
         List<String> reviewerIds = reviewLogPage.getRecords().stream()
-                .map(TaskLog::getOperatorId)
-                .filter(StringUtils::hasText)
-                .distinct()
-                .toList();
-        List<String> initiatorIds = reviewLogPage.getRecords().stream()
-                .map(log -> resolveReviewSubmitLog(log, submitLogsByTaskId))
-                .filter(java.util.Objects::nonNull)
                 .map(TaskLog::getOperatorId)
                 .filter(StringUtils::hasText)
                 .distinct()
@@ -353,7 +329,7 @@ public class WorkTaskServiceImpl extends ServiceImpl<WorkTaskMapper, WorkTask> i
                 .filter(StringUtils::hasText)
                 .distinct()
                 .toList();
-        List<String> userIds = Stream.of(reviewerIds, initiatorIds, assigneeIds)
+        List<String> userIds = Stream.of(reviewerIds, assigneeIds)
                 .flatMap(List::stream)
                 .distinct()
                 .toList();
@@ -375,7 +351,7 @@ public class WorkTaskServiceImpl extends ServiceImpl<WorkTaskMapper, WorkTask> i
         BeanUtils.copyProperties(reviewLogPage, resultPage, "records");
         resultPage.setRecords(reviewLogPage.getRecords().stream()
                 .map(log -> buildReviewHistoryDTO(
-                        log, taskMap, workMap, userMap, submitLogsByTaskId, taskSystemNameMap))
+                        log, taskMap, workMap, userMap, taskSystemNameMap))
                 .collect(Collectors.toList()));
         return resultPage;
     }
@@ -1032,15 +1008,16 @@ public class WorkTaskServiceImpl extends ServiceImpl<WorkTaskMapper, WorkTask> i
             Map<String, WorkTask> taskMap,
             Map<String, Work> workMap,
             Map<String, User> userMap,
-            Map<String, List<TaskLog>> submitLogsByTaskId,
             Map<Long, String> taskSystemNameMap) {
         TaskReviewHistoryDTO dto = new TaskReviewHistoryDTO();
         WorkTask task = taskMap.get(log.getTaskId());
         Work work = task == null ? null : workMap.get(task.getWorkId());
         User reviewer = userMap.get(log.getOperatorId());
-        TaskLog submitLog = resolveReviewSubmitLog(log, submitLogsByTaskId);
-        String initiatorId = submitLog != null ? submitLog.getOperatorId() : task != null ? task.getAssigneeId() : null;
+        String initiatorId = task != null ? task.getAssigneeId() : null;
         User initiator = userMap.get(initiatorId);
+        List<Long> involvedSystemIds = task == null || task.getInvolvedSystemIds() == null
+                ? Collections.emptyList()
+                : task.getInvolvedSystemIds();
 
         dto.setId(log.getId());
         dto.setTaskId(log.getTaskId());
@@ -1051,17 +1028,15 @@ public class WorkTaskServiceImpl extends ServiceImpl<WorkTaskMapper, WorkTask> i
         dto.setRequirementNumber(work != null ? work.getRequirementNumber() : null);
         dto.setOwningSystem(work != null ? work.getOwningSystem() : null);
         dto.setPrimarySystemName(work != null ? work.getPrimarySystemName() : null);
-        dto.setTaskSystemNames(task == null || task.getInvolvedSystemIds() == null
-                ? null
-                : task.getInvolvedSystemIds().stream()
-                        .map(taskSystemNameMap::get)
-                        .filter(StringUtils::hasText)
-                        .collect(Collectors.joining("、")));
+        dto.setTaskSystemNames(involvedSystemIds.stream()
+                .map(taskSystemNameMap::get)
+                .filter(StringUtils::hasText)
+                .collect(Collectors.joining("、")));
         dto.setInitiatorId(initiatorId);
         dto.setInitiatorName(initiator != null && StringUtils.hasText(initiator.getName())
                 ? initiator.getName()
                 : initiatorId);
-        dto.setInitiatedAt(submitLog != null ? submitLog.getCreateTime() : task != null ? task.getSubmittedAt() : null);
+        dto.setInitiatedAt(task != null ? task.getSubmittedAt() : null);
         dto.setReviewType(log.getAction().startsWith("ASSET_REVIEW_") ? "ASSET_REVIEW" : "ACCEPTANCE");
         dto.setDecision(resolveReviewDecision(log.getAction()));
         dto.setAction(log.getAction());
@@ -1072,16 +1047,6 @@ public class WorkTaskServiceImpl extends ServiceImpl<WorkTaskMapper, WorkTask> i
                 : log.getOperatorId());
         dto.setReviewedAt(log.getCreateTime());
         return dto;
-    }
-
-    private TaskLog resolveReviewSubmitLog(TaskLog reviewLog, Map<String, List<TaskLog>> submitLogsByTaskId) {
-        return submitLogsByTaskId.getOrDefault(reviewLog.getTaskId(), Collections.emptyList()).stream()
-                .filter(submitLog -> !submitLog.getCreateTime().isAfter(reviewLog.getCreateTime()))
-                .filter(submitLog -> reviewLog.getAction().startsWith("ASSET_REVIEW_")
-                        ? submitLog.getAction().startsWith("ASSET_REVIEW_")
-                        : !submitLog.getAction().startsWith("ASSET_REVIEW_"))
-                .max(java.util.Comparator.comparing(TaskLog::getCreateTime))
-                .orElse(null);
     }
 
     private String resolveReviewDecision(String action) {

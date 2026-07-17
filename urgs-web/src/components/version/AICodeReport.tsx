@@ -10,6 +10,7 @@ import {
     getLineageReviewRecords,
     getLineageReviewTaskSqlPreview,
     getLineageReviewTasks,
+    retryLineageReviewTask,
     triggerLineageReview,
     updateLineageReviewMemory,
     LineageAnalysisRecordItem,
@@ -80,6 +81,7 @@ const AICodeReport: React.FC = () => {
     const [taskLoading, setTaskLoading] = useState(false);
     const [issueLoading, setIssueLoading] = useState(false);
     const [triggerLoading, setTriggerLoading] = useState(false);
+    const [retryTaskLoadingId, setRetryTaskLoadingId] = useState<number>();
     const [selectedRecordId, setSelectedRecordId] = useState<string>();
     const [selectedTaskId, setSelectedTaskId] = useState<number>();
     const [severityFilter, setSeverityFilter] = useState<string>();
@@ -533,6 +535,24 @@ const AICodeReport: React.FC = () => {
         }
     };
 
+    const handleRetryTask = async (task: LineageReviewTask) => {
+        setRetryTaskLoadingId(task.id);
+        try {
+            const result = await retryLineageReviewTask(task.id);
+            if (!result.success) {
+                message.warning(result.message || '当前任务无法重新校验');
+                return;
+            }
+            message.success(result.message || '失败任务已重新提交');
+            await loadTaskSummaries();
+            await loadTasks(selectedRecordId);
+        } catch (error: any) {
+            message.error(error?.message || '重新提交失败任务失败');
+        } finally {
+            setRetryTaskLoadingId(undefined);
+        }
+    };
+
     const handleClearHistory = async () => {
         setClearHistoryLoading(true);
         try {
@@ -765,6 +785,7 @@ const AICodeReport: React.FC = () => {
                         tasks={tasks}
                         loading={taskLoading}
                         triggerLoading={triggerLoading}
+                        retryTaskLoadingId={retryTaskLoadingId}
                         reportDownloading={reportDownloading}
                         canTrigger={canTrigger}
                         canExport={canExport}
@@ -773,6 +794,7 @@ const AICodeReport: React.FC = () => {
                         getTaskSourceMeta={task => buildTaskSourceMeta(task, records)}
                         onRefresh={() => loadTasks(selectedRecordId)}
                         onForceRerun={() => handleTrigger(true)}
+                        onRetryTask={handleRetryTask}
                         onDownloadMarkdown={handleDownloadMarkdownReport}
                         onOpenSqlPreview={handleOpenSqlPreview}
                         onTaskSelect={taskId => {

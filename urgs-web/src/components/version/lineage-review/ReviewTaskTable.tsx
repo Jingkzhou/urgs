@@ -22,6 +22,7 @@ interface ReviewTaskTableProps {
     tasks: LineageReviewTask[];
     loading: boolean;
     triggerLoading: boolean;
+    retryTaskLoadingId?: number;
     reportDownloading: boolean;
     canTrigger: boolean;
     canExport: boolean;
@@ -30,6 +31,7 @@ interface ReviewTaskTableProps {
     getTaskSourceMeta: (task: LineageReviewTask) => TaskSourceMeta;
     onRefresh: () => void;
     onForceRerun: () => void;
+    onRetryTask: (task: LineageReviewTask) => void;
     onDownloadMarkdown: () => void;
     onOpenSqlPreview: (task: LineageReviewTask) => void;
     onTaskSelect: (taskId: number) => void;
@@ -43,6 +45,7 @@ const ReviewTaskTable: React.FC<ReviewTaskTableProps> = ({
     tasks,
     loading,
     triggerLoading,
+    retryTaskLoadingId,
     reportDownloading,
     canTrigger,
     canExport,
@@ -51,6 +54,7 @@ const ReviewTaskTable: React.FC<ReviewTaskTableProps> = ({
     getTaskSourceMeta,
     onRefresh,
     onForceRerun,
+    onRetryTask,
     onDownloadMarkdown,
     onOpenSqlPreview,
     onTaskSelect,
@@ -189,6 +193,37 @@ const ReviewTaskTable: React.FC<ReviewTaskTableProps> = ({
             dataIndex: 'finishedAt',
             width: 180,
             render: (value?: string) => <span className="text-xs text-slate-500">{formatDateTime(value)}</span>
+        },
+        {
+            title: '操作',
+            key: 'action',
+            width: 110,
+            render: (_, record) => {
+                const canRetry = record.status === 'FAILED'
+                    || (record.failedCount || 0) > 0
+                    || (record.failedStatementAuditCount || 0) > 0;
+                if (!canRetry) {
+                    return <span className="text-xs text-slate-300">-</span>;
+                }
+                return (
+                    <Button
+                        size="small"
+                        type="link"
+                        className="!px-0"
+                        icon={<RefreshCw size={13} />}
+                        loading={retryTaskLoadingId === record.id}
+                        disabled={!canTrigger || triggerLoading
+                            || (retryTaskLoadingId !== undefined && retryTaskLoadingId !== record.id)}
+                        title={canTrigger ? '重新执行当前分片并刷新其校验结果' : '缺少 version:ai:trigger 权限'}
+                        onClick={event => {
+                            event.stopPropagation();
+                            onRetryTask(record);
+                        }}
+                    >
+                        重新校验
+                    </Button>
+                );
+            }
         }
     ];
 
@@ -214,11 +249,11 @@ const ReviewTaskTable: React.FC<ReviewTaskTableProps> = ({
                     <Button
                         size="small"
                         loading={triggerLoading}
-                        disabled={!selectedRecord || !canTrigger}
+                        disabled={!selectedRecord || !canTrigger || retryTaskLoadingId !== undefined}
                         title={canTrigger ? '' : '缺少 version:ai:trigger 权限'}
                         onClick={onForceRerun}
                     >
-                        重新校验
+                        全部重新校验
                     </Button>
                     <Button
                         size="small"

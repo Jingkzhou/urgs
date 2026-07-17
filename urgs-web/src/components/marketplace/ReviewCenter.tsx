@@ -10,7 +10,7 @@ import {
     TaskReviewDTO,
     TaskReviewHistoryDTO,
 } from '../../api/marketplace';
-import TaskDetailDrawer from './TaskDetailDrawer';
+import ReviewTaskDetailDrawer from './ReviewTaskDetailDrawer';
 import { getTaskStageLabel, getTaskStatusLabel } from './marketplaceLabels';
 import { MarketplaceTodoFocus } from './marketplaceTodoFocus';
 import AssetObjectDetailLink from './AssetObjectDetailLink';
@@ -812,11 +812,10 @@ const ReviewCenter: React.FC<ReviewCenterProps> = ({ todoFocus }) => {
                 </div>
             )}
 
-            <TaskDetailDrawer
+            <ReviewTaskDetailDrawer
                 taskId={detailTaskId}
                 isOpen={isDetailOpen}
                 onClose={() => setIsDetailOpen(false)}
-                onClaimSuccess={fetchTasks}
             />
         </div>
     );

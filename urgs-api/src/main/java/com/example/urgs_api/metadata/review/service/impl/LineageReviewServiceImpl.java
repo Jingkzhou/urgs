@@ -117,6 +117,42 @@ public class LineageReviewServiceImpl implements LineageReviewService {
     }
 
     @Override
+    public Map<String, Object> retryTask(Long taskId) {
+        LineageReviewTask task = taskMapper.selectById(taskId);
+        if (task == null) {
+            return Map.of("success", false, "message", "校验任务不存在");
+        }
+        if (isActiveReviewTask(task)) {
+            return Map.of("success", false, "message", "任务正在执行，请勿重复提交");
+        }
+        String status = task.getStatus() == null ? "" : task.getStatus().toUpperCase(Locale.ROOT);
+        if (!"FAILED".equals(status) && !"DEGRADED".equals(status)) {
+            return Map.of("success", false, "message", "只有失败或降级任务可以重新校验");
+        }
+        if (!StringUtils.hasText(task.getPathPrefix())) {
+            return Map.of("success", false, "message", "任务缺少分片路径，暂时无法重试");
+        }
+
+        LineageAnalysisRecord record = analysisRecordMapper.selectById(task.getAnalysisRecordId());
+        if (record == null) {
+            return Map.of("success", false, "message", "关联的血缘分析记录不存在");
+        }
+        if (!"SUCCESS".equalsIgnoreCase(record.getStatus())) {
+            return Map.of("success", false, "message", "关联的血缘分析尚未成功完成，暂时无法重试");
+        }
+        if (!StringUtils.hasText(resolveReviewVersionId(record))) {
+            return Map.of("success", false, "message", "关联的血缘版本缺失，暂时无法重试");
+        }
+
+        LineageReviewTask retryTask = upsertTask(record, task.getPathPrefix(), true);
+        taskExecutor.execute(() -> runTask(retryTask.getId(), true));
+        return Map.of(
+                "success", true,
+                "message", "当前失败任务已重新提交",
+                "taskId", retryTask.getId());
+    }
+
+    @Override
     public void scheduleTasksForAnalysis(LineageAnalysisRecord record, boolean forceRerun) {
         if (record == null || !StringUtils.hasText(record.getId())) {
             return;

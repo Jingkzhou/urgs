@@ -364,6 +364,12 @@ export const getLineageReviewTasks = (params?: { analysisRecordId?: string; stat
 export const triggerLineageReview = (data: { analysisRecordId: string; forceRerun?: boolean }) =>
     post<{ success: boolean; message: string }>('/api/metadata/lineage/review/tasks/trigger', data);
 
+export const retryLineageReviewTask = (taskId: number) =>
+    post<{ success: boolean; message: string; taskId?: number }>(
+        `/api/metadata/lineage/review/tasks/${taskId}/retry`,
+        {}
+    );
+
 export const clearLineageReviewHistory = () =>
     del<{ success: boolean; message: string; taskCount: number; issueCount: number; statementAuditCount: number; cacheCount: number }>(
         '/api/metadata/lineage/review/history'

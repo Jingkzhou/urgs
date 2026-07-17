@@ -60,6 +60,12 @@ public class LineageReviewController {
                 Boolean.TRUE.equals(request.getForceRerun())));
     }
 
+    @PostMapping("/tasks/{taskId}/retry")
+    @RequirePermission("version:ai:trigger")
+    public ResponseEntity<Map<String, Object>> retryTask(@PathVariable Long taskId) {
+        return ResponseEntity.ok(lineageReviewService.retryTask(taskId));
+    }
+
     @DeleteMapping("/history")
     @RequirePermission("version:ai:trigger")
     public ResponseEntity<Map<String, Object>> clearHistory() {

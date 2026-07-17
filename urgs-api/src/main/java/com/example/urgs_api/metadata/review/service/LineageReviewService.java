@@ -16,6 +16,8 @@ public interface LineageReviewService {
 
     Map<String, Object> triggerByAnalysisRecord(String analysisRecordId, boolean forceRerun);
 
+    Map<String, Object> retryTask(Long taskId);
+
     void scheduleTasksForAnalysis(LineageAnalysisRecord record, boolean forceRerun);
 
     LineageReviewTask getTask(Long taskId);

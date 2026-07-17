@@ -473,7 +473,7 @@ export const getWorkStatistics = (params: { startDate: string; endDate: string }
 export const getIncompleteWorkCalendarTasks = (params: { startDate: string; endDate: string }) =>
     get<WorkCalendarTask[]>('/api/marketplace/works/calendar-tasks', params);
 export const getWorkDetail = (id: string) => get<Work>(`/api/marketplace/works/${id}`);
-export const getWorkTasks = (workId: string) => get(`/api/marketplace/tasks/work/${workId}`);
+export const getWorkTasks = (workId: string) => get<WorkTask[]>(`/api/marketplace/tasks/work/${workId}`);
 export const addTaskToWork = (workId: string, data: WorkTaskCreateDTO) => post(`/api/marketplace/tasks/work/${workId}`, data);
 export const publishWork = (id: string) => put(`/api/marketplace/works/${id}/publish`);
 export const cancelWork = (id: string) => put(`/api/marketplace/works/${id}/cancel`);
