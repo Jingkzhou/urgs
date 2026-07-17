@@ -12,7 +12,8 @@ definition:
     max_tokens: 4096
   tools:
     - urgs_api
-  required_permissions: []
+  required_permissions:
+    - urgs:api:call
   limits:
     timeout_seconds: 600
     max_steps: 30
