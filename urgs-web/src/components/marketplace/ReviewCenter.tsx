@@ -82,30 +82,31 @@ const ReviewCenter: React.FC<ReviewCenterProps> = ({ todoFocus }) => {
         setReviewExecutionLogs(logs => [...logs, `${time}  ${message}`]);
     };
 
-    const fetchTasks = async (queryFilters = appliedFilters) => {
+    const fetchTasks = async (tab = activeTab, queryFilters = appliedFilters) => {
         setLoading(true);
         try {
-            const [pendingRes, historyRes] = await Promise.all([
-                getPendingReviewTasks({
+            if (tab === 'pending') {
+                const pendingRes = await getPendingReviewTasks({
                     current: 1,
                     size: 50,
                     system: queryFilters.system || undefined,
                     requirementNumber: queryFilters.requirementNumber || undefined,
                     deadlineStart: queryFilters.deadlineStart ? `${queryFilters.deadlineStart}T00:00:00` : undefined,
                     deadlineEnd: queryFilters.deadlineEnd ? `${queryFilters.deadlineEnd}T23:59:59` : undefined,
-                }),
-                getReviewHistoryTasks({
+                });
+                setTasks(pendingRes?.records || []);
+            } else {
+                const historyRes = await getReviewHistoryTasks({
                     current: historyPage,
                     size: 20,
                     system: queryFilters.system || undefined,
                     requirementNumber: queryFilters.requirementNumber || undefined,
                     deadlineStart: queryFilters.deadlineStart ? `${queryFilters.deadlineStart}T00:00:00` : undefined,
                     deadlineEnd: queryFilters.deadlineEnd ? `${queryFilters.deadlineEnd}T23:59:59` : undefined,
-                }),
-            ]);
-            setTasks(pendingRes?.records || []);
-            setHistoryTasks(historyRes?.records || []);
-            setHistoryTotal(historyRes?.total || 0);
+                });
+                setHistoryTasks(historyRes?.records || []);
+                setHistoryTotal(historyRes?.total || 0);
+            }
         } catch (error) {
             console.error('Failed to fetch review tasks', error);
         } finally {
@@ -115,7 +116,7 @@ const ReviewCenter: React.FC<ReviewCenterProps> = ({ todoFocus }) => {
 
     useEffect(() => {
         fetchTasks();
-    }, [historyPage, appliedFilters]);
+    }, [activeTab, historyPage, appliedFilters]);
 
     const applyFilters = () => {
         const nextFilters = {

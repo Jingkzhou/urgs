@@ -89,7 +89,7 @@ class LineageServiceTest {
     }
 
     @Test
-    void evidenceStatementUidsAreDeduplicatedAndBounded() {
+    void evidenceStatementUidsAreDeduplicatedWithoutSilentTruncation() {
         List<String> values = new java.util.ArrayList<>();
         values.add("stmt-1");
         values.add("stmt-1");
@@ -103,8 +103,8 @@ class LineageServiceTest {
                 "normalizeEvidenceStatementUids",
                 values);
 
-        assertEquals(500, normalized.size());
+        assertEquals(520, normalized.size());
         assertEquals("stmt-1", normalized.get(0));
-        assertEquals(500, normalized.stream().distinct().count());
+        assertEquals(520, normalized.stream().distinct().count());
     }
 }

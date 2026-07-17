@@ -150,6 +150,34 @@ public class LineageReviewServiceImpl implements LineageReviewService {
     @Override
     public List<LineageReviewIssue> listIssues(Long taskId, String severity, String issueType, String reviewStatus) {
         LambdaQueryWrapper<LineageReviewIssue> query = new LambdaQueryWrapper<>();
+        // 列表页只展示疑点摘要，完整证据包在打开详情时按 ID 单独加载，避免重复传输大 JSON。
+        query.select(
+                LineageReviewIssue::getId,
+                LineageReviewIssue::getTaskId,
+                LineageReviewIssue::getAnalysisRecordId,
+                LineageReviewIssue::getRepoId,
+                LineageReviewIssue::getVersionId,
+                LineageReviewIssue::getSystemKey,
+                LineageReviewIssue::getPathPrefix,
+                LineageReviewIssue::getTableName,
+                LineageReviewIssue::getColumnName,
+                LineageReviewIssue::getObjectType,
+                LineageReviewIssue::getIssueType,
+                LineageReviewIssue::getSeverity,
+                LineageReviewIssue::getConfidence,
+                LineageReviewIssue::getVerdict,
+                LineageReviewIssue::getReason,
+                LineageReviewIssue::getRuleHits,
+                LineageReviewIssue::getSuggestedSources,
+                LineageReviewIssue::getEvidenceRefs,
+                LineageReviewIssue::getReviewStatus,
+                LineageReviewIssue::getReviewerId,
+                LineageReviewIssue::getReviewerNote,
+                LineageReviewIssue::getConfirmedProblemType,
+                LineageReviewIssue::getConfirmedProblemDescription,
+                LineageReviewIssue::getReviewTime,
+                LineageReviewIssue::getCreateTime,
+                LineageReviewIssue::getUpdateTime);
         query.eq(taskId != null, LineageReviewIssue::getTaskId, taskId);
         query.eq(StringUtils.hasText(severity), LineageReviewIssue::getSeverity, severity);
         query.eq(StringUtils.hasText(issueType), LineageReviewIssue::getIssueType, issueType);

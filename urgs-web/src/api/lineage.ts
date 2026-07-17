@@ -395,6 +395,9 @@ export const getLineageReviewIssues = (params?: {
 }) =>
     get<LineageReviewIssue[]>('/api/metadata/lineage/review/issues', params || {});
 
+export const getLineageReviewIssue = (issueId: number) =>
+    get<LineageReviewIssue>(`/api/metadata/lineage/review/issues/${issueId}`);
+
 export const decideLineageReviewIssue = (
     issueId: number,
     data: {

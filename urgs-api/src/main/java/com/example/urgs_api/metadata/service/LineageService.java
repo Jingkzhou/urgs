@@ -358,7 +358,6 @@ public class LineageService {
                 .filter(this::hasText)
                 .map(String::trim)
                 .distinct()
-                .limit(500)
                 .toList();
     }
 

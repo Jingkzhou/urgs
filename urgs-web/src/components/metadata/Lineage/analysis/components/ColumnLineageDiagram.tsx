@@ -936,7 +936,7 @@ const ColumnLineageDiagram: React.FC<ColumnLineageDiagramProps> = ({
                         const evidenceCount = getLinkEvidenceCount(link);
                         return (
                             <g key={link.id}>
-                                <title>{`${getRelationLabel(relationType)}：${sourceKey} → ${targetKey}，SQL 证据 ${evidenceCount} 段`}</title>
+                                <title>{`${getRelationLabel(relationType)}：${sourceKey} → ${targetKey}${evidenceCount > 0 ? `，SQL 证据 ${evidenceCount} 段` : ''}`}</title>
                                 <path
                                     d={geometry.path}
                                     fill="none"
@@ -1215,19 +1215,23 @@ const ColumnLineageDiagram: React.FC<ColumnLineageDiagramProps> = ({
                             {formatDetailList(normalizeArray(selectedRelation.link.properties?.lineageOrigins))}
                         </Descriptions.Item>
                         <Descriptions.Item label="说明">
-                            {selectedRelation.link.sourceColumnId || selectedRelation.link.targetColumnId
+                            {selectedRelation.link.properties?.relationLevel === 'end_to_end'
+                                ? '当前是端到端汇总线路，请切换到完整链路，逐步查看每条实际关系对应的 SQL 证据。'
+                                : selectedRelation.link.sourceColumnId || selectedRelation.link.targetColumnId
                                 ? '每段 SQL 都是当前字段关系的独立证据，不会与其他处理步骤拼接。'
                                 : '当前是表级归并关系，SQL 作为多份独立证据展示；进入字段级分析可查看实际字段边。'}
                         </Descriptions.Item>
                     </Descriptions>
-                    <RelationEvidencePanel
-                        active={relationModalVisible}
-                        link={selectedRelation.link}
-                        sourceTable={selectedRelation.sourceTable}
-                        targetTable={selectedRelation.targetTable}
-                        sourceColumn={selectedRelation.sourceColumns[0]}
-                        targetColumn={selectedRelation.targetColumns[0]}
-                    />
+                    {selectedRelation.link.properties?.relationLevel !== 'end_to_end' && (
+                        <RelationEvidencePanel
+                            active={relationModalVisible}
+                            link={selectedRelation.link}
+                            sourceTable={selectedRelation.sourceTable}
+                            targetTable={selectedRelation.targetTable}
+                            sourceColumn={selectedRelation.sourceColumns[0]}
+                            targetColumn={selectedRelation.targetColumns[0]}
+                        />
+                    )}
                 </Modal>
             ) : null}
         </div>

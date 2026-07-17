@@ -43,12 +43,21 @@ public class LineageReviewTaskSummaryService {
         }
 
         LambdaQueryWrapper<LineageReviewIssue> query = new LambdaQueryWrapper<>();
+        query.select(
+                LineageReviewIssue::getTaskId,
+                LineageReviewIssue::getVerdict,
+                LineageReviewIssue::getReviewStatus);
         query.in(LineageReviewIssue::getTaskId, taskIds);
         List<LineageReviewIssue> issues = issueMapper.selectList(query);
         Map<Long, List<LineageReviewIssue>> issueMap = issues.stream()
                 .filter(issue -> issue.getTaskId() != null)
                 .collect(Collectors.groupingBy(LineageReviewIssue::getTaskId));
         LambdaQueryWrapper<LineageReviewStatementAudit> statementQuery = new LambdaQueryWrapper<>();
+        statementQuery.select(
+                LineageReviewStatementAudit::getTaskId,
+                LineageReviewStatementAudit::getAuditStatus,
+                LineageReviewStatementAudit::getIsHighRisk,
+                LineageReviewStatementAudit::getIssueCount);
         statementQuery.in(LineageReviewStatementAudit::getTaskId, taskIds);
         Map<Long, List<LineageReviewStatementAudit>> statementMap = statementAuditMapper.selectList(statementQuery).stream()
                 .filter(audit -> audit.getTaskId() != null)
@@ -69,8 +78,17 @@ public class LineageReviewTaskSummaryService {
             return;
         }
         LambdaQueryWrapper<LineageReviewIssue> issueQuery = new LambdaQueryWrapper<>();
+        issueQuery.select(
+                LineageReviewIssue::getTaskId,
+                LineageReviewIssue::getVerdict,
+                LineageReviewIssue::getReviewStatus);
         issueQuery.eq(LineageReviewIssue::getTaskId, task.getId());
         LambdaQueryWrapper<LineageReviewStatementAudit> statementQuery = new LambdaQueryWrapper<>();
+        statementQuery.select(
+                LineageReviewStatementAudit::getTaskId,
+                LineageReviewStatementAudit::getAuditStatus,
+                LineageReviewStatementAudit::getIsHighRisk,
+                LineageReviewStatementAudit::getIssueCount);
         statementQuery.eq(LineageReviewStatementAudit::getTaskId, task.getId());
         attachSummaryFields(task, issueMapper.selectList(issueQuery), statementAuditMapper.selectList(statementQuery));
     }

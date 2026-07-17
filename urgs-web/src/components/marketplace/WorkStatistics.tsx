@@ -1,8 +1,6 @@
 import React, { useEffect, useMemo, useRef, useState } from 'react';
 import {
     Area,
-    Bar,
-    BarChart,
     CartesianGrid,
     Cell,
     ComposedChart,
@@ -30,7 +28,6 @@ import {
     RefreshCw,
     Sparkles,
     TrendingUp,
-    Users,
 } from 'lucide-react';
 import dayjs from 'dayjs';
 import {
@@ -39,7 +36,6 @@ import {
     getWorkStatistics,
     WorkCalendarTask,
     WorkStatistics as WorkStatisticsData,
-    WorkStatisticsAssigneeWorkload,
     WorkStatisticsSystemTask,
     WorkTask,
 } from '../../api/marketplace';
@@ -59,6 +55,7 @@ const WORK_STATUS_COLORS: Record<string, string> = {
 };
 
 const formatDateTime = (value?: string) => value ? dayjs(value).format('YYYY-MM-DD HH:mm') : '-';
+const isPausedTask = (status?: string) => status?.toUpperCase() === 'PAUSED';
 
 const WorkStatistics: React.FC = () => {
     const [startDate, setStartDate] = useState(() => dayjs().startOf('year').format('YYYY-MM-DD'));
@@ -134,7 +131,7 @@ const WorkStatistics: React.FC = () => {
                 startDate: calendarDate.startOf('month').format('YYYY-MM-DD'),
                 endDate: calendarDate.endOf('month').format('YYYY-MM-DD'),
             });
-            setCalendarTasks(tasks || []);
+            setCalendarTasks((tasks || []).filter(task => !isPausedTask(task.status)));
         } catch (error) {
             console.error('Failed to fetch incomplete calendar tasks', error);
             setCalendarTasks([]);
@@ -184,11 +181,6 @@ const WorkStatistics: React.FC = () => {
         label: getWorkStatusLabel(item.name),
     })), [statistics]);
 
-    const workloadData = useMemo(() => (statistics?.assigneeWorkloads || []).map(item => ({
-        ...item,
-        name: renderAssignee(item.assigneeId),
-        pendingCount: Math.max(item.activeCount - item.pausedCount - item.overdueCount, 0),
-    })), [statistics, assigneeLabels]);
     const systemTaskData = useMemo(
         () => statistics?.systemTaskStats || [],
         [statistics]
@@ -205,7 +197,10 @@ const WorkStatistics: React.FC = () => {
         ])
     ) as Record<string, string[]>, [calendarTasksByDate]);
     const selectedCalendarDate = calendarDate.format('YYYY-MM-DD');
-    const selectedCalendarTasks = calendarTasksByDate[selectedCalendarDate] || [];
+    const selectedCalendarTasks = useMemo(
+        () => calendarTasksByDate[selectedCalendarDate] || [],
+        [calendarTasksByDate, selectedCalendarDate]
+    );
     const selectedCalendarWorks = useMemo(() => Array.from(new Map(
         selectedCalendarTasks.map(task => [task.workId, { id: task.workId, title: task.workTitle }])
     ).values()), [selectedCalendarTasks]);
@@ -229,7 +224,10 @@ const WorkStatistics: React.FC = () => {
                 ] as const));
                 if (cancelled) return;
 
-                const taskMap = Object.fromEntries(detailEntries) as Record<string, WorkTask[]>;
+                const taskMap = Object.fromEntries(detailEntries.map(([workId, tasks]) => [
+                    workId,
+                    (tasks || []).filter(task => !isPausedTask(task.status)),
+                ])) as Record<string, WorkTask[]>;
                 setCalendarWorkTasks(taskMap);
                 const assigneeIds = Array.from(new Set(Object.values(taskMap)
                     .flat()
@@ -466,7 +464,8 @@ ${attentionItems}
                 />
             </div>
 
-            <div className="grid grid-cols-1 gap-4 xl:grid-cols-2">
+            <div className="flex flex-col gap-4">
+                <div className="order-2 grid grid-cols-1 gap-4 xl:grid-cols-3">
                 <ChartCard icon={<TrendingUp size={16} className="text-blue-600" />} title="需求趋势" subtitle="按统计时间展示新建与完成需求">
                     {trendData.some(item => item.createdWorkCount > 0 || item.completedWorkCount > 0) ? (
                         <ResponsiveContainer width="100%" height={250} minWidth={0}>
@@ -539,32 +538,9 @@ ${attentionItems}
                     ) : <EmptyChart text="暂无涉及系统的任务数据" />}
                 </ChartCard>
 
-                <ChartCard icon={<Users size={16} className="text-cyan-600" />} title="人员任务负载" subtitle="最多展示任务量前 8 人">
-                    {workloadData.length > 0 ? (
-                        <ResponsiveContainer width="100%" height={250} minWidth={0}>
-                            <BarChart data={workloadData} layout="vertical" margin={{ top: 8, right: 18, left: 8, bottom: 0 }}>
-                                <CartesianGrid strokeDasharray="3 3" stroke="#e2e8f0" horizontal={false} />
-                                <XAxis type="number" allowDecimals={false} tick={{ fontSize: 11, fill: '#64748b' }} />
-                                <YAxis
-                                    type="category"
-                                    dataKey="name"
-                                    width={72}
-                                    tick={{ fontSize: 11, fill: '#475569' }}
-                                    tickFormatter={value => value.length > 6 ? `${value.slice(0, 6)}…` : value}
-                                />
-                                <Tooltip content={<WorkloadTooltip />} />
-                                <Legend iconType="circle" wrapperStyle={{ fontSize: 12 }} />
-                                <Bar dataKey="completedCount" name="已完成" stackId="workload" fill="#22c55e" />
-                                <Bar dataKey="pendingCount" name="待推进" stackId="workload" fill="#60a5fa" />
-                                <Bar dataKey="pausedCount" name="已暂停" stackId="workload" fill="#f59e0b" />
-                                <Bar dataKey="overdueCount" name="逾期" stackId="workload" fill="#f43f5e" radius={[0, 5, 5, 0]} />
-                            </BarChart>
-                        </ResponsiveContainer>
-                    ) : <EmptyChart text="暂无人员任务负载数据" />}
-                </ChartCard>
-            </div>
+                </div>
 
-            <div className="grid items-stretch grid-cols-1 gap-4 xl:h-[800px] xl:grid-cols-[minmax(0,1.1fr)_minmax(420px,.9fr)]">
+                <div className="order-1 grid items-stretch grid-cols-1 gap-4 xl:h-[800px] xl:grid-cols-[minmax(0,1.1fr)_minmax(420px,.9fr)]">
                 <section className="h-full overflow-hidden rounded-xl border border-blue-100 bg-white shadow-sm">
                     <div className="border-b border-blue-100 bg-blue-50/60 px-4 py-3">
                         <div>
@@ -712,6 +688,7 @@ ${attentionItems}
                         </div>
                     )}
                 </section>
+                </div>
             </div>
             <Modal
                 open={isAiSummaryOpen}
@@ -862,25 +839,5 @@ const SystemTaskList: React.FC<{ data: WorkStatisticsSystemTask[] }> = ({ data }
         </div>
     </div>
 );
-
-const WorkloadTooltip: React.FC<{
-    active?: boolean;
-    payload?: Array<{ payload: WorkStatisticsAssigneeWorkload & { name: string; pendingCount: number } }>;
-}> = ({ active, payload }) => {
-    if (!active || !payload?.length) return null;
-    const data = payload[0].payload;
-    return (
-        <div className="rounded-lg border border-slate-200 bg-white px-3 py-2 text-xs shadow-lg">
-            <div className="mb-1.5 font-bold text-slate-800">{data.name}</div>
-            <div className="space-y-1 text-slate-600">
-                <div>总任务：{data.totalCount}</div>
-                <div>已完成：{data.completedCount}</div>
-                <div>待推进：{data.pendingCount}</div>
-                <div className={data.pausedCount > 0 ? 'font-bold text-amber-600' : ''}>已暂停：{data.pausedCount}</div>
-                <div className={data.overdueCount > 0 ? 'font-bold text-rose-600' : ''}>逾期：{data.overdueCount}</div>
-            </div>
-        </div>
-    );
-};
 
 export default WorkStatistics;

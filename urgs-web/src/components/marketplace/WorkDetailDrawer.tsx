@@ -42,12 +42,6 @@ const applicationStatusColor: Record<string, string> = {
     WITHDRAWN: 'default',
 };
 
-const defaultDeadlineTime = (value: string) => {
-    if (!value) return '';
-    const [date, time] = value.split('T');
-    return `${date}T${!time || time === '00:00' ? '23:59' : time}`;
-};
-
 interface WorkDetailDrawerProps {
     workId: string | null;
     isOpen: boolean;
@@ -1029,10 +1023,7 @@ const WorkDetailDrawer: React.FC<WorkDetailDrawerProps> = ({ workId, isOpen, onC
                                                 <input
                                                     type="datetime-local"
                                                     value={newTask.deadline}
-                                                    onChange={e => setNewTask(prev => ({
-                                                        ...prev,
-                                                        deadline: defaultDeadlineTime(e.target.value),
-                                                    }))}
+                                                    onChange={e => setNewTask(prev => ({ ...prev, deadline: e.target.value }))}
                                                     className="w-full px-3 py-1.5 border border-slate-200 rounded-lg text-sm focus:ring-1 focus:ring-red-500 outline-none"
                                                 />
                                             </label>

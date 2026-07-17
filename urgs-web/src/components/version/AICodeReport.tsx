@@ -1,9 +1,10 @@
-import React, { useEffect, useMemo, useState } from 'react';
+import React, { useEffect, useMemo, useRef, useState } from 'react';
 import { Alert, Button, Card, Descriptions, Drawer, Empty, Input, message, Modal, Popconfirm, Space, Spin, Tag } from 'antd';
 import {
     clearLineageReviewHistory,
     decideLineageReviewIssue,
     downloadLineageReviewReportMarkdown,
+    getLineageReviewIssue,
     getLineageReviewMemories,
     getLineageReviewIssues,
     getLineageReviewRecords,
@@ -89,6 +90,8 @@ const AICodeReport: React.FC = () => {
     const [taskPage, setTaskPage] = useState(1);
     const [taskPageSize, setTaskPageSize] = useState(10);
     const [selectedIssue, setSelectedIssue] = useState<LineageReviewIssue | null>(null);
+    const [issueDetailLoading, setIssueDetailLoading] = useState(false);
+    const issueDetailRequestRef = useRef(0);
     const [decisionLoading, setDecisionLoading] = useState<string>('');
     const [sqlPreviewOpen, setSqlPreviewOpen] = useState(false);
     const [sqlPreviewLoading, setSqlPreviewLoading] = useState(false);
@@ -314,6 +317,26 @@ const AICodeReport: React.FC = () => {
             message.error(error?.message || '加载疑点失败');
         } finally {
             setIssueLoading(false);
+        }
+    };
+
+    const handleSelectIssue = async (issue: LineageReviewIssue) => {
+        const requestId = ++issueDetailRequestRef.current;
+        setSelectedIssue(issue);
+        setIssueDetailLoading(true);
+        try {
+            const detail = await getLineageReviewIssue(issue.id);
+            if (issueDetailRequestRef.current === requestId) {
+                setSelectedIssue(detail);
+            }
+        } catch (error: any) {
+            if (issueDetailRequestRef.current === requestId) {
+                message.error(error?.message || '加载疑点详情失败');
+            }
+        } finally {
+            if (issueDetailRequestRef.current === requestId) {
+                setIssueDetailLoading(false);
+            }
         }
     };
 
@@ -635,14 +658,18 @@ const AICodeReport: React.FC = () => {
                         onSearchChange={setSearchTerm}
                         onSeverityChange={setSeverityFilter}
                         onReviewStatusChange={setReviewStatusFilter}
-                        onSelectIssue={setSelectedIssue}
+                        onSelectIssue={handleSelectIssue}
                     />
                 </div>
             </div>
 
             <Drawer
                 open={!!selectedIssue}
-                onClose={() => setSelectedIssue(null)}
+                onClose={() => {
+                    issueDetailRequestRef.current += 1;
+                    setIssueDetailLoading(false);
+                    setSelectedIssue(null);
+                }}
                 size="large"
                 title="疑点详情"
                 extra={
@@ -676,7 +703,9 @@ const AICodeReport: React.FC = () => {
                     )
                 }
             >
-                {selectedIssue ? <ReviewIssueDetail issue={selectedIssue} /> : null}
+                {selectedIssue ? (
+                    issueDetailLoading ? <Spin className="flex justify-center py-12" /> : <ReviewIssueDetail issue={selectedIssue} />
+                ) : null}
             </Drawer>
 
             <Drawer
