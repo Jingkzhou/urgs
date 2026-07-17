@@ -40,6 +40,7 @@ SCRIPT_DIR="$(cd -- "$(dirname -- "${BASH_SOURCE[0]}")" && pwd)"
 API_DIR="$SCRIPT_DIR/urgs-api"
 EXECUTOR_DIR="$SCRIPT_DIR/urgs-executor"
 WEB_DIR="$SCRIPT_DIR/urgs-web"
+DESKTOP_DIR="$SCRIPT_DIR/urgs-desktop"
 PRESENTATION_DIR="$SCRIPT_DIR/urgs+-presentation-platform"
 LOCAL_ENV_FILE="${START_ENV_FILE:-$SCRIPT_DIR/deploy/templates/deploy.${ENVIRONMENT}.env}"
 if [ "$ENVIRONMENT" = "local" ]; then
@@ -55,6 +56,7 @@ ONLYOFFICE_LOCAL_CONTAINER_STARTED=false
 ENABLE_BACKEND=false
 ENABLE_EXECUTOR=false
 ENABLE_FRONTEND=false
+ENABLE_DESKTOP=false
 ENABLE_PRESENTATION=false
 ENABLE_ONLYOFFICE=false
 
@@ -103,7 +105,8 @@ kill_port_if_exists() {
     local existing
     existing=$(lsof -ti :"$port" 2>/dev/null || true)
     if [ -n "$existing" ]; then
-      echo "Found process on port $port (PID: $existing), killing..."
+      local pid_list="${existing//$'\n'/ }"
+      echo "Found process on port $port (PID: $pid_list), killing..."
       kill -9 $existing 2>/dev/null || true
     fi
   else
@@ -258,6 +261,34 @@ start_frontend() {
   pids+=($!)
 }
 
+start_desktop() {
+  echo "Starting desktop client ($ENVIRONMENT)..."
+  cd "$DESKTOP_DIR"
+  kill_port_if_exists 3000
+  kill_port_if_exists 3001
+
+  local pnpm_bin
+  local -a pnpm_cmd
+  pnpm_bin="$(command -v pnpm || true)"
+  if [ -n "$pnpm_bin" ]; then
+    pnpm_cmd=("$pnpm_bin")
+  else
+    echo "pnpm not found; using pnpm 10 through npm."
+    pnpm_cmd=("$NPM_BIN" exec --yes --package=pnpm@10 -- pnpm)
+  fi
+  if ! command -v cargo >/dev/null 2>&1; then
+    echo "Rust/Cargo not found. Install the Rust toolchain before starting urgs-desktop."
+    exit 1
+  fi
+  if [ ! -x "node_modules/.bin/tauri" ]; then
+    echo "Installing desktop dependencies in $DESKTOP_DIR..."
+    "${pnpm_cmd[@]}" install
+  fi
+
+  "${pnpm_cmd[@]}" dev &
+  pids+=($!)
+}
+
 start_executor() {
   cd "$EXECUTOR_DIR"
   kill_port_if_exists 8082
@@ -388,8 +419,9 @@ echo "  [4] Frontend (urgs-web)"
 echo "  [5] Presentation (urgs-presentation)"
 echo "  [6] Agent (urgs-agent)"
 echo "  [7] ONLYOFFICE Docs"
+echo "  [8] Desktop Client (urgs-desktop, includes frontend)"
 echo ""
-echo "Enter your choice (e.g., '1' for all, or '2 7' for Backend+Agent):"
+echo "Enter your choice (e.g., '1' for all, or '2 3 8' for Backend+Executor+Desktop):"
 read -r -a choices
 
 if [ ${#choices[@]} -eq 0 ]; then
@@ -413,20 +445,27 @@ for choice in "${choices[@]}"; do
     5) ENABLE_PRESENTATION=true ;;
     6) ENABLE_AGENT=true ;;
     7) ENABLE_ONLYOFFICE=true ;;
+    8) ENABLE_DESKTOP=true ;;
     *) echo "Unknown option: $choice (ignored)" ;;
   esac
 done
 
-if [ "$ENABLE_BACKEND" = true ] && [ "$ENABLE_FRONTEND" = true ] && [ "$ENABLE_EXECUTOR" != true ]; then
-  echo "Backend + frontend selected; enabling executor because task trigger APIs call urgs-executor on port 8082."
+if [ "$ENABLE_DESKTOP" = true ] && [ "$ENABLE_FRONTEND" = true ]; then
+  echo "Desktop starts urgs-web automatically; disabling the standalone frontend to avoid a port conflict."
+  ENABLE_FRONTEND=false
+fi
+
+if [ "$ENABLE_BACKEND" = true ] && { [ "$ENABLE_FRONTEND" = true ] || [ "$ENABLE_DESKTOP" = true ]; } && [ "$ENABLE_EXECUTOR" != true ]; then
+  echo "Backend + UI selected; enabling executor because task trigger APIs call urgs-executor on port 8082."
   ENABLE_EXECUTOR=true
 fi
 
 if [ "$ENABLE_ONLYOFFICE" = true ]; then start_onlyoffice; fi
 if [ "$ENABLE_BACKEND" = true ]; then start_backend; fi
 if [ "$ENABLE_EXECUTOR" = true ]; then start_executor; fi
-if [ "$ENABLE_FRONTEND" = true ] || [ "$ENABLE_PRESENTATION" = true ]; then resolve_node_runtime; fi
+if [ "$ENABLE_FRONTEND" = true ] || [ "$ENABLE_DESKTOP" = true ] || [ "$ENABLE_PRESENTATION" = true ]; then resolve_node_runtime; fi
 if [ "$ENABLE_FRONTEND" = true ]; then start_frontend; fi
+if [ "$ENABLE_DESKTOP" = true ]; then start_desktop; fi
 if [ "$ENABLE_PRESENTATION" = true ]; then start_presentation; fi
 if [ "$ENABLE_AGENT" = true ]; then start_agent; fi
 
