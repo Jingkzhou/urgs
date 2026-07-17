@@ -1,66 +1,16 @@
-import React, { useEffect, useMemo, useState } from 'react';
+import React from 'react';
 import {
-    BatteryMedium,
     Cloud,
-    Command,
     Files,
     Folder,
     FolderPlus,
     HardDrive,
-    Search,
     Star,
     Tags,
     Upload,
     Users,
-    Wifi,
 } from 'lucide-react';
 import type { KnowledgeTag } from '../../api/knowledge';
-
-interface MacMenuBarProps {
-    itemCount: number;
-}
-
-export const MacMenuBar: React.FC<MacMenuBarProps> = ({ itemCount }) => {
-    const [now, setNow] = useState(() => new Date());
-
-    useEffect(() => {
-        const timer = window.setInterval(() => setNow(new Date()), 30_000);
-        return () => window.clearInterval(timer);
-    }, []);
-
-    const dateLabel = useMemo(() => {
-        const weekday = new Intl.DateTimeFormat('zh-CN', { weekday: 'short' }).format(now);
-        const date = `${now.getMonth() + 1}月${now.getDate()}日 ${weekday}`;
-        const time = new Intl.DateTimeFormat('zh-CN', {
-            hour: '2-digit',
-            minute: '2-digit',
-            hour12: false,
-        }).format(now);
-        return `${date} ${time}`;
-    }, [now]);
-
-    return (
-        <div className="knowledge-menu-bar" aria-label="知识中心菜单栏">
-            <div className="knowledge-menu-left">
-                <Command size={15} strokeWidth={2.4} />
-                <strong>知识中心</strong>
-                <span>文件</span>
-                <span>编辑</span>
-                <span>显示</span>
-                <span>前往</span>
-                <span>窗口</span>
-                <span>帮助</span>
-            </div>
-            <div className="knowledge-menu-right">
-                <span className="knowledge-menu-count">{itemCount} 个项目</span>
-                <BatteryMedium size={17} />
-                <Wifi size={15} />
-                <Search size={14} />
-                <time dateTime={now.toISOString()}>{dateLabel}</time>
-            </div>
-        </div>
-    );
-};
 
 interface DesktopShortcutsProps {
     onOpenPrivate: () => void;

@@ -17,7 +17,6 @@ import {
     DesktopShortcuts,
     KnowledgeDock,
     KnowledgeSidebar,
-    MacMenuBar,
 } from './KnowledgeDesktopChrome';
 import * as api from '../../api/knowledge';
 import './knowledgeDesktop.css';
@@ -403,7 +402,6 @@ const KnowledgeCenter: React.FC = () => {
 
     return (
         <div className="knowledge-desktop">
-            <MacMenuBar itemCount={visibleItemCount} />
             <DesktopShortcuts onOpenPrivate={openPrivateSpace} onOpenShared={openSharedSpace} />
 
             {!windowMinimized && (
