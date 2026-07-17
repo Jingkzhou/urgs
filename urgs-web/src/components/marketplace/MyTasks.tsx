@@ -123,6 +123,11 @@ const MyTasks: React.FC<MyTasksProps> = ({ todoFocus }) => {
             setOverdueOnly(false);
             setStatusFilter(['READY', 'REWORK', 'WAITING_REVIEW'].includes(todoFocus.type) ? todoFocus.type : '');
         }
+
+        if (todoFocus.targetTaskId
+            && ['TEST_SUBMISSION', 'QUALITY_ACCEPTANCE', 'OVERDUE', 'READY', 'REWORK'].includes(todoFocus.type)) {
+            setSelectedTaskId(todoFocus.targetTaskId);
+        }
     }, [todoFocus?.sequence]);
 
     useEffect(() => {

@@ -1,9 +1,14 @@
 import React, { useEffect, useMemo, useState } from 'react';
 import { Alert, Empty, Modal, Spin, Tag, Typography } from 'antd';
+import hljs from 'highlight.js/lib/core';
+import sql from 'highlight.js/lib/languages/sql';
+import 'highlight.js/styles/atom-one-dark.css';
 import { getLineageRelationEvidence, LineageRelationEvidence } from '@/api/lineage';
 import { LinkData } from '../types';
 
 const { Text } = Typography;
+
+hljs.registerLanguage('sql', sql);
 
 interface RelationEvidencePanelProps {
     active: boolean;
@@ -76,7 +81,7 @@ const getTableTerms = (table: string) => {
     return Array.from(new Set([normalized, shortName].filter((item): item is string => Boolean(item))));
 };
 
-const renderHighlightedSql = (
+const buildHighlightedSqlHtml = (
     snippet: string,
     sourceTable: string,
     targetTable: string,
@@ -98,29 +103,35 @@ const renderHighlightedSql = (
     addTerms(sourceFields, 'source-field');
     addTerms(targetFields, 'target-field');
 
+    const syntaxHighlightedHtml = hljs.highlight(snippet, { language: 'sql' }).value;
     const terms = Array.from(termRoles.keys()).sort((left, right) => right.length - left.length);
     if (terms.length === 0) {
-        return snippet;
+        return syntaxHighlightedHtml;
     }
 
     const matcher = new RegExp(`(${terms.map(buildTermPattern).join('|')})`, 'gi');
-    return snippet.split(matcher).map((part, index) => {
-        const roles = termRoles.get(part.toLowerCase());
-        if (!roles) {
+    return syntaxHighlightedHtml.split(/(<[^>]+>)/g).map(part => {
+        if (part.startsWith('<')) {
             return part;
         }
-        const role = roles.size > 1 ? 'overlap' : Array.from(roles)[0];
-        const className = role === 'source-table'
-            ? 'bg-sky-400/35 text-sky-100'
-            : role === 'target-table'
-                ? 'bg-emerald-400/35 text-emerald-100'
-                : role === 'source-field'
-                    ? 'bg-amber-400/35 text-amber-100'
-                    : role === 'target-field'
-                        ? 'bg-rose-400/35 text-rose-100'
-                        : 'bg-violet-400/35 text-violet-100';
-        return <mark key={index} className={`rounded px-0.5 font-semibold ${className}`}>{part}</mark>;
-    });
+        return part.replace(matcher, matchedTerm => {
+            const roles = termRoles.get(matchedTerm.toLowerCase());
+            if (!roles) {
+                return matchedTerm;
+            }
+            const role = roles.size > 1 ? 'overlap' : Array.from(roles)[0];
+            const style = role === 'source-table'
+                ? 'background: rgba(56, 189, 248, 0.35); color: #e0f2fe;'
+                : role === 'target-table'
+                    ? 'background: rgba(52, 211, 153, 0.35); color: #d1fae5;'
+                    : role === 'source-field'
+                        ? 'background: rgba(251, 191, 36, 0.35); color: #fef3c7;'
+                        : role === 'target-field'
+                            ? 'background: rgba(251, 113, 133, 0.35); color: #ffe4e6;'
+                            : 'background: rgba(167, 139, 250, 0.35); color: #ede9fe;';
+            return `<mark style="${style} padding: 0 2px; border-radius: 2px; font-weight: 600;">${matchedTerm}</mark>`;
+        });
+    }).join('');
 };
 
 const RelationEvidencePanel: React.FC<RelationEvidencePanelProps> = ({
@@ -253,13 +264,19 @@ const RelationEvidencePanel: React.FC<RelationEvidencePanelProps> = ({
                             <span><i className="mr-1 inline-block h-2 w-2 rounded-sm bg-violet-400" />重合关键字</span>
                         </div>
                         <pre className="min-h-[calc(100vh-180px)] overflow-auto whitespace-pre-wrap rounded-lg bg-slate-900 p-5 text-sm leading-7 text-slate-100">
-                            {renderHighlightedSql(
-                                selectedEvidence.snippet || '未记录 SQL 内容',
-                                sourceTable,
-                                targetTable,
-                                selectedSourceFields,
-                                selectedTargetFields
-                            )}
+                            <code
+                                className="hljs sql"
+                                style={{ background: 'transparent', padding: 0, fontSize: 'inherit', lineHeight: 'inherit' }}
+                                dangerouslySetInnerHTML={{
+                                    __html: buildHighlightedSqlHtml(
+                                        selectedEvidence.snippet || '未记录 SQL 内容',
+                                        sourceTable,
+                                        targetTable,
+                                        selectedSourceFields,
+                                        selectedTargetFields
+                                    ),
+                                }}
+                            />
                         </pre>
                     </div>
                 ) : null}

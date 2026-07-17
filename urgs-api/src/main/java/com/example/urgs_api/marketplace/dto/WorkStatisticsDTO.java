@@ -65,6 +65,7 @@ public class WorkStatisticsDTO {
     public static class AttentionItem {
         private String workId;
         private String workTitle;
+        private String requirementNumber;
         private String taskId;
         private String taskTitle;
         private String taskRole;

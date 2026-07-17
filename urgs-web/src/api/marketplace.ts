@@ -353,6 +353,7 @@ export interface WorkStatisticsSystemTask {
 export interface WorkStatisticsAttentionItem {
     workId: string;
     workTitle: string;
+    requirementNumber?: string;
     taskId: string;
     taskTitle: string;
     taskRole?: 'MAIN' | 'SUB';

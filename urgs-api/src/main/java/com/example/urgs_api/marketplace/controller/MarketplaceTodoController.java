@@ -10,6 +10,11 @@ import com.example.urgs_api.marketplace.service.TaskAppealService;
 import com.example.urgs_api.marketplace.service.TaskApplicationService;
 import com.example.urgs_api.marketplace.service.WorkService;
 import com.example.urgs_api.marketplace.service.WorkTaskService;
+import com.example.urgs_api.marketplace.support.TaskAttentionSupport;
+import com.example.urgs_api.role.model.Role;
+import com.example.urgs_api.role.service.RoleService;
+import com.example.urgs_api.user.model.User;
+import com.example.urgs_api.user.service.UserService;
 import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.web.bind.annotation.GetMapping;
 import org.springframework.web.bind.annotation.RequestAttribute;
@@ -19,7 +24,11 @@ import org.springframework.web.bind.annotation.RestController;
 
 import java.time.LocalDateTime;
 import java.util.ArrayList;
+import java.util.Comparator;
+import java.util.LinkedHashMap;
 import java.util.List;
+import java.util.Map;
+import java.util.stream.Collectors;
 
 @RestController
 @RequestMapping("/api/marketplace/todos")
@@ -36,6 +45,12 @@ public class MarketplaceTodoController {
 
     @Autowired
     private TaskAppealService taskAppealService;
+
+    @Autowired
+    private UserService userService;
+
+    @Autowired
+    private RoleService roleService;
 
     @GetMapping
     public List<MarketplaceTodoDTO> listTodos(
@@ -144,12 +159,101 @@ public class MarketplaceTodoController {
             }
         }
 
+        addAttentionTodos(todos, userId, myWorkIds, now);
+
         return todos;
     }
 
-    private void addTodo(List<MarketplaceTodoDTO> todos, String type, String title, String description,
-                         long count, String targetTab, String severity) {
-        addTodo(todos, type, title, description, count, targetTab, severity, null);
+    /**
+     * 与需求统计「重点关注」一致：逾期、提测预警、质量验收预警。
+     * 范围：本人承接任务 + 本人发布需求下的任务（监管科技管理员看全部）。
+     * 阶段预警单独入待办；发布侧团队逾期单独入待办，避免与「我的逾期任务」重复计数。
+     */
+    private void addAttentionTodos(
+            List<MarketplaceTodoDTO> todos,
+            String userId,
+            List<String> myWorkIds,
+            LocalDateTime now) {
+        Map<String, WorkTask> candidateById = new LinkedHashMap<>();
+
+        workTaskService.lambdaQuery()
+                .eq(WorkTask::getAssigneeId, userId)
+                .list()
+                .forEach(task -> candidateById.put(task.getId(), task));
+
+        if (!myWorkIds.isEmpty()) {
+            workTaskService.lambdaQuery()
+                    .in(WorkTask::getWorkId, myWorkIds)
+                    .list()
+                    .forEach(task -> candidateById.putIfAbsent(task.getId(), task));
+        }
+
+        if (isRegTechAdmin(userId)) {
+            workTaskService.lambdaQuery()
+                    .notIn(WorkTask::getStatus, TaskStatus.COMPLETED.name(), TaskStatus.CANCELLED.name())
+                    .list()
+                    .forEach(task -> candidateById.putIfAbsent(task.getId(), task));
+        }
+
+        List<WorkTask> attentionTasks = candidateById.values().stream()
+                .filter(task -> TaskAttentionSupport.needsAttention(task, now))
+                .sorted(Comparator
+                        .comparing((WorkTask task) -> !TaskAttentionSupport.isOverdueTask(task, now))
+                        .thenComparing(task -> TaskAttentionSupport.getStageDeadlineAlert(task, now) == null)
+                        .thenComparing(WorkTask::getDeadline, Comparator.nullsLast(Comparator.naturalOrder())))
+                .collect(Collectors.toList());
+
+        if (attentionTasks.isEmpty()) {
+            return;
+        }
+
+        List<WorkTask> myStageAlerts = attentionTasks.stream()
+                .filter(task -> userId.equals(task.getAssigneeId()))
+                .filter(task -> !TaskAttentionSupport.isOverdueTask(task, now))
+                .filter(task -> TaskAttentionSupport.getStageDeadlineAlert(task, now) != null)
+                .toList();
+
+        List<WorkTask> testSubmissionMine = myStageAlerts.stream()
+                .filter(task -> TaskAttentionSupport.ATTENTION_TEST_SUBMISSION
+                        .equals(TaskAttentionSupport.resolveAttentionType(task, now)))
+                .toList();
+        List<WorkTask> qualityMine = myStageAlerts.stream()
+                .filter(task -> TaskAttentionSupport.ATTENTION_QUALITY_ACCEPTANCE
+                        .equals(TaskAttentionSupport.resolveAttentionType(task, now)))
+                .toList();
+
+        addTodo(todos, "TEST_SUBMISSION", "提测时限预警", "距截止日期不足，需尽快完成提测",
+                testSubmissionMine.size(), "mine", "warning", firstOrNull(testSubmissionMine));
+        addTodo(todos, "QUALITY_ACCEPTANCE", "质量验收时限预警", "距截止日期不足，需尽快完成质量验收",
+                qualityMine.size(), "mine", "warning", firstOrNull(qualityMine));
+
+        List<WorkTask> publishScope = attentionTasks.stream()
+                .filter(task -> !userId.equals(task.getAssigneeId()))
+                .toList();
+
+        List<WorkTask> publishOverdue = publishScope.stream()
+                .filter(task -> TaskAttentionSupport.isOverdueTask(task, now))
+                .toList();
+        List<WorkTask> publishTest = publishScope.stream()
+                .filter(task -> TaskAttentionSupport.ATTENTION_TEST_SUBMISSION
+                        .equals(TaskAttentionSupport.resolveAttentionType(task, now)))
+                .toList();
+        List<WorkTask> publishQuality = publishScope.stream()
+                .filter(task -> TaskAttentionSupport.ATTENTION_QUALITY_ACCEPTANCE
+                        .equals(TaskAttentionSupport.resolveAttentionType(task, now)))
+                .toList();
+
+        String publishTab = "publish";
+        addTodo(todos, "PUBLISH_OVERDUE", "重点关注·逾期", "需求统计中的逾期任务，需督促跟进",
+                publishOverdue.size(), publishTab, "danger", firstOrNull(publishOverdue));
+        addTodo(todos, "PUBLISH_TEST_SUBMISSION", "重点关注·提测预警", "需求统计中的提测时限预警",
+                publishTest.size(), publishTab, "warning", firstOrNull(publishTest));
+        addTodo(todos, "PUBLISH_QUALITY_ACCEPTANCE", "重点关注·质量验收预警", "需求统计中的质量验收时限预警",
+                publishQuality.size(), publishTab, "warning", firstOrNull(publishQuality));
+    }
+
+    private WorkTask firstOrNull(List<WorkTask> tasks) {
+        return tasks == null || tasks.isEmpty() ? null : tasks.get(0);
     }
 
     private void addTodo(List<MarketplaceTodoDTO> todos, String type, String title, String description,
@@ -169,6 +273,25 @@ public class MarketplaceTodoController {
             dto.setTargetWorkId(targetTask.getWorkId());
         }
         todos.add(dto);
+    }
+
+    private boolean isRegTechAdmin(String userId) {
+        try {
+            User user = userService.getById(Long.valueOf(userId));
+            if (user == null) {
+                return false;
+            }
+            if ("监管科技管理员".equals(user.getRoleName())) {
+                return true;
+            }
+            if (user.getRoleId() == null) {
+                return false;
+            }
+            Role role = roleService.getById(user.getRoleId());
+            return role != null && "监管科技管理员".equals(role.getName());
+        } catch (NumberFormatException | NullPointerException ignored) {
+            return false;
+        }
     }
 
     private String getEffectiveUserId(String headerUserId, Long attrUserId) {

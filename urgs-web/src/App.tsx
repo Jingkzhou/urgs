@@ -18,6 +18,7 @@ import KnowledgeCenter from './components/knowledge/KnowledgeCenter';
 import MarketplacePage from './components/marketplace/MarketplacePage';
 import ToolsPage from './components/tools/ToolsPage';
 import { DashboardViewDefinition, DashboardViewKey, dashboardViewDefinitions } from './components/home/dashboardViews';
+import { getMarketplaceTodos } from './api/marketplace';
 import { LOGO_URL } from './constants';
 
 const NAV_ITEMS = [
@@ -79,9 +80,38 @@ const App: React.FC = () => {
     const [showUserMenu, setShowUserMenu] = useState(false);
     const [showMoreNavMenu, setShowMoreNavMenu] = useState(false);
     const [changePasswordVisible, setChangePasswordVisible] = useState(false);
+    const [marketplaceTodoCount, setMarketplaceTodoCount] = useState(0);
 
     const userMenuRef = React.useRef<HTMLDivElement>(null);
     const moreMenuRef = React.useRef<HTMLDivElement>(null);
+
+    useEffect(() => {
+        if (!isAuthenticated) {
+            setMarketplaceTodoCount(0);
+            return;
+        }
+
+        let cancelled = false;
+        const loadTodoCount = async () => {
+            try {
+                const todos = await getMarketplaceTodos();
+                if (cancelled) return;
+                const total = (todos || []).reduce((sum, todo) => sum + (todo.count || 0), 0);
+                setMarketplaceTodoCount(total);
+            } catch (error) {
+                if (!cancelled) {
+                    setMarketplaceTodoCount(0);
+                }
+            }
+        };
+
+        loadTodoCount();
+        const timer = window.setInterval(loadTodoCount, 60_000);
+        return () => {
+            cancelled = true;
+            window.clearInterval(timer);
+        };
+    }, [isAuthenticated, activeTab]);
 
     useEffect(() => {
         const handleClickOutside = (event: MouseEvent) => {
@@ -323,6 +353,7 @@ const App: React.FC = () => {
                                     icon={<item.icon size={16} />}
                                     label={item.label}
                                     active={activeTab === item.id}
+                                    badgeCount={item.id === 'marketplace' ? marketplaceTodoCount : 0}
                                     onClick={() => { setActiveTab(item.id); window.location.hash = '#/' + item.id; }}
                                 />
                             );
@@ -408,6 +439,7 @@ const App: React.FC = () => {
                                             <>
                                                 {visibleItems.map((item) => {
                                                     const isActive = activeTab === item.id;
+                                                    const badgeCount = item.id === 'marketplace' ? marketplaceTodoCount : 0;
                                                     const navItem = (
                                                         <button
                                                             onClick={() => { setActiveTab(item.id); window.location.hash = '#/' + item.id; }}
@@ -422,7 +454,14 @@ const App: React.FC = () => {
                                                                         transition={{ type: "spring", bounce: 0.2, duration: 0.6 }}
                                                                     />
                                                                 )}
-                                                                <item.icon size={16} strokeWidth={isActive ? 3 : 2} />
+                                                                <span className="relative inline-flex">
+                                                                    <item.icon size={16} strokeWidth={isActive ? 3 : 2} />
+                                                                    {badgeCount > 0 && (
+                                                                        <span className="absolute -right-2.5 -top-2 min-w-[16px] rounded-full bg-red-500 px-1 text-center text-[9px] font-black leading-[16px] text-white shadow-sm">
+                                                                            {badgeCount > 99 ? '99+' : badgeCount}
+                                                                        </span>
+                                                                    )}
+                                                                </span>
                                                                 <span className="whitespace-nowrap">{item.label}</span>
                                                         </button>
                                                     );
@@ -460,7 +499,9 @@ const App: React.FC = () => {
                                                                             transition={{ type: "spring", bounce: 0.3, duration: 0.5 }}
                                                                             className="absolute right-0 top-full mt-3 w-56 bg-white/95 backdrop-blur-2xl rounded-2xl shadow-[0_24px_50px_-18px_rgba(15,23,42,0.28)] border border-slate-200/80 p-2 z-50 grid grid-cols-1 gap-1"
                                                                         >
-                                                                            {hiddenItems.map((item) => (
+                                                                            {hiddenItems.map((item) => {
+                                                                                const badgeCount = item.id === 'marketplace' ? marketplaceTodoCount : 0;
+                                                                                return (
                                                                                 <button
                                                                                     key={item.id}
                                                                                     onClick={() => {
@@ -470,12 +511,18 @@ const App: React.FC = () => {
                                                                                     }}
                                                                                     className="flex items-center gap-3 w-full px-4 py-3 rounded-xl text-left transition-all hover:bg-slate-50 hover:text-red-600 group"
                                                                                 >
-                                                                                    <div className="p-1.5 rounded-lg bg-slate-100/80 text-slate-500 group-hover:bg-red-50 group-hover:text-red-600 transition-colors">
+                                                                                    <div className="relative p-1.5 rounded-lg bg-slate-100/80 text-slate-500 group-hover:bg-red-50 group-hover:text-red-600 transition-colors">
                                                                                         <item.icon size={16} strokeWidth={2.5} />
+                                                                                        {badgeCount > 0 && (
+                                                                                            <span className="absolute -right-1 -top-1 min-w-[16px] rounded-full bg-red-500 px-1 text-center text-[9px] font-black leading-[16px] text-white">
+                                                                                                {badgeCount > 99 ? '99+' : badgeCount}
+                                                                                            </span>
+                                                                                        )}
                                                                                     </div>
                                                                                     <span className="text-[13px] font-bold text-slate-700 group-hover:text-red-600">{item.label}</span>
                                                                                 </button>
-                                                                            ))}
+                                                                                );
+                                                                            })}
                                                                         </motion.div>
                                                                     )}
                                                                 </AnimatePresence>
@@ -570,6 +617,7 @@ interface NavItemProps {
     icon: React.ReactNode;
     label: string;
     active?: boolean;
+    badgeCount?: number;
     onClick: () => void;
 }
 
@@ -657,13 +705,13 @@ const DashboardViewMenu: React.FC<DashboardViewMenuProps> = ({ views, onSelect, 
     );
 };
 
-const NavItem: React.FC<NavItemProps> = ({ icon, label, active, onClick }) => (
+const NavItem: React.FC<NavItemProps> = ({ icon, label, active, badgeCount = 0, onClick }) => (
     <button
         onClick={onClick}
         className={`group relative flex h-[62px] w-full flex-col items-center justify-center gap-1 rounded-xl px-1 text-center transition-all duration-300
         ${active ? 'text-red-600' : 'text-slate-500 hover:text-slate-900 hover:bg-slate-100/70'}
     `}
-        title={label}
+        title={badgeCount > 0 ? `${label}（${badgeCount} 项待办）` : label}
     >
         {active && (
             <motion.div
@@ -673,8 +721,13 @@ const NavItem: React.FC<NavItemProps> = ({ icon, label, active, onClick }) => (
             />
         )}
 
-        <div className={`flex h-6 items-center justify-center transition-transform duration-300 ${active ? 'scale-105' : 'group-hover:scale-105'}`}>
+        <div className={`relative flex h-6 items-center justify-center transition-transform duration-300 ${active ? 'scale-105' : 'group-hover:scale-105'}`}>
             {icon}
+            {badgeCount > 0 && (
+                <span className="absolute -right-3 -top-1.5 min-w-[16px] rounded-full bg-red-500 px-1 text-center text-[9px] font-black leading-[16px] text-white shadow-sm">
+                    {badgeCount > 99 ? '99+' : badgeCount}
+                </span>
+            )}
         </div>
 
         <span className={`line-clamp-2 max-w-full text-[9px] font-bold leading-tight tracking-tight transition-all duration-300 ${active ? 'opacity-100' : 'opacity-75 group-hover:opacity-100'}`}>

@@ -91,6 +91,7 @@ const WorkList: React.FC<WorkListProps> = ({ todoFocus }) => {
     const [statusFilter, setStatusFilter] = useState('');
     const [deadlineRange, setDeadlineRange] = useState({ startDate: '', endDate: '' });
     const [activeView, setActiveView] = useState<'list' | 'statistics'>('list');
+    const [attentionFocusKey, setAttentionFocusKey] = useState<number | null>(null);
 
     const fetchWorks = async (page = currentPage, size = pageSize) => {
         setLoading(true);
@@ -187,11 +188,27 @@ const WorkList: React.FC<WorkListProps> = ({ todoFocus }) => {
     useEffect(() => {
         if (!todoFocus || todoFocus.targetTab !== 'publish') return;
 
-        setActiveView('list');
         setStatusFilter('');
         setDeadlineRange({ startDate: '', endDate: '' });
         setCurrentPage(1);
 
+        const isAttentionFocus = [
+            'PUBLISH_OVERDUE',
+            'PUBLISH_TEST_SUBMISSION',
+            'PUBLISH_QUALITY_ACCEPTANCE',
+            'ATTENTION',
+        ].includes(todoFocus.type);
+
+        if (isAttentionFocus) {
+            setActiveView('statistics');
+            setAttentionFocusKey(todoFocus.sequence);
+            setIsDetailOpen(false);
+            setSelectedWorkId(null);
+            return;
+        }
+
+        setActiveView('list');
+        setAttentionFocusKey(null);
         if (todoFocus.targetWorkId) {
             setWorkDetailFocus({
                 taskId: todoFocus.targetTaskId,
@@ -551,7 +568,10 @@ const WorkList: React.FC<WorkListProps> = ({ todoFocus }) => {
             <div className="mb-4 flex items-center gap-1 border-b border-slate-200">
                 <button
                     type="button"
-                    onClick={() => setActiveView('list')}
+                    onClick={() => {
+                        setActiveView('list');
+                        setAttentionFocusKey(null);
+                    }}
                     className={`relative inline-flex items-center gap-2 px-4 py-2.5 text-sm font-bold transition-colors ${
                         activeView === 'list' ? 'text-blue-600' : 'text-slate-500 hover:text-slate-800'
                     }`}
@@ -562,7 +582,10 @@ const WorkList: React.FC<WorkListProps> = ({ todoFocus }) => {
                 </button>
                 <button
                     type="button"
-                    onClick={() => setActiveView('statistics')}
+                    onClick={() => {
+                        setActiveView('statistics');
+                        setAttentionFocusKey(null);
+                    }}
                     className={`relative inline-flex items-center gap-2 px-4 py-2.5 text-sm font-bold transition-colors ${
                         activeView === 'statistics' ? 'text-blue-600' : 'text-slate-500 hover:text-slate-800'
                     }`}
@@ -574,7 +597,7 @@ const WorkList: React.FC<WorkListProps> = ({ todoFocus }) => {
             </div>
 
             {activeView === 'statistics' ? (
-                <WorkStatistics />
+                <WorkStatistics focusAttentionKey={attentionFocusKey} />
             ) : (
                 <>
                     <div className="mb-4 flex flex-wrap items-center gap-3 rounded-xl border border-slate-100 bg-slate-50 px-4 py-3">

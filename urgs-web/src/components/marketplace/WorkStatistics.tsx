@@ -57,7 +57,11 @@ const WORK_STATUS_COLORS: Record<string, string> = {
 const formatDateTime = (value?: string) => value ? dayjs(value).format('YYYY-MM-DD HH:mm') : '-';
 const isPausedTask = (status?: string) => status?.toUpperCase() === 'PAUSED';
 
-const WorkStatistics: React.FC = () => {
+interface WorkStatisticsProps {
+    focusAttentionKey?: number | null;
+}
+
+const WorkStatistics: React.FC<WorkStatisticsProps> = ({ focusAttentionKey }) => {
     const [startDate, setStartDate] = useState(() => dayjs().startOf('year').format('YYYY-MM-DD'));
     const [endDate, setEndDate] = useState(() => dayjs().format('YYYY-MM-DD'));
     const [statistics, setStatistics] = useState<WorkStatisticsData | null>(null);
@@ -78,6 +82,7 @@ const WorkStatistics: React.FC = () => {
     const [calendarDetailLoading, setCalendarDetailLoading] = useState(false);
     const [calendarDetailError, setCalendarDetailError] = useState('');
     const aiAbortControllerRef = useRef<AbortController | null>(null);
+    const attentionSectionRef = useRef<HTMLElement>(null);
     const minStartDate = useMemo(() => dayjs(endDate).subtract(366, 'day').format('YYYY-MM-DD'), [endDate]);
     const maxEndDate = useMemo(() => {
         const today = dayjs();
@@ -144,6 +149,15 @@ const WorkStatistics: React.FC = () => {
     useEffect(() => {
         fetchStatistics();
     }, [startDate, endDate]);
+
+    useEffect(() => {
+        if (!focusAttentionKey || !statistics) return;
+
+        const timer = window.setTimeout(() => {
+            attentionSectionRef.current?.scrollIntoView({ behavior: 'smooth', block: 'start' });
+        }, 0);
+        return () => window.clearTimeout(timer);
+    }, [focusAttentionKey, statistics]);
 
     useEffect(() => {
         getSystemList({ showAll: true })
@@ -629,7 +643,7 @@ ${attentionItems}
                     </div>
                 </section>
 
-                <section className="flex h-full min-h-0 flex-col overflow-hidden rounded-xl border border-slate-200 bg-white shadow-sm">
+                <section ref={attentionSectionRef} className="flex h-full min-h-0 scroll-mt-6 flex-col overflow-hidden rounded-xl border border-slate-200 bg-white shadow-sm">
                     <div className="flex shrink-0 items-center justify-between border-b border-slate-100 px-4 py-3">
                         <div>
                             <div className="flex items-center gap-2 text-sm font-bold text-slate-800">
@@ -659,7 +673,6 @@ ${attentionItems}
                                                 </span>
                                                 <span className="min-w-0 truncate text-sm font-bold text-slate-800">{item.taskTitle}</span>
                                             </div>
-                                            <div className="mt-1 truncate text-xs text-slate-400">{item.workTitle}</div>
                                         </div>
                                         <div className="flex shrink-0 items-center gap-1">
                                             {item.overdue && (
@@ -677,6 +690,9 @@ ${attentionItems}
                                         <span>{renderAssignee(item.assigneeId)}</span>
                                         <span>{getTaskStatusLabel(item.status)}</span>
                                         <span>任务截止日期 {formatDateTime(item.deadline)}</span>
+                                    </div>
+                                    <div className="mt-2 truncate text-[11px] text-slate-400">
+                                        需求：{item.workTitle || '-'} · {item.requirementNumber || '-'}
                                     </div>
                                     {item.attentionMessage && (
                                         <div className={`mt-2 rounded-md px-2.5 py-2 text-xs leading-5 ${item.overdue ? 'bg-rose-50/70 text-rose-800' : 'bg-blue-50/70 text-blue-800'}`}>
