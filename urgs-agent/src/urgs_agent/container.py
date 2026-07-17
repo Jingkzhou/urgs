@@ -5,11 +5,9 @@ from sqlalchemy.ext.asyncio import AsyncEngine, AsyncSession, async_sessionmaker
 
 from urgs_agent.config import Settings
 from urgs_agent.plugins.models import MockModelProvider, ModelRegistry, OpenAICompatibleProvider
-from urgs_agent.plugins.retrievers import UrgsRagRetriever
 from urgs_agent.plugins.tools import (
     LineageAnalysisTool,
     McpTool,
-    RagSearchTool,
     ToolRegistry,
     UrgsApiTool,
 )
@@ -50,8 +48,6 @@ class Container:
         models.register(OpenAICompatibleProvider(settings))
         models.register(MockModelProvider())
         tools = ToolRegistry()
-        retriever = UrgsRagRetriever(settings.rag_url, settings.http_timeout_seconds)
-        tools.register(RagSearchTool(retriever))
         wiki_store = KnowledgeWikiStore(
             settings.knowledge_wiki_root,
             settings.knowledge_wiki_wiki_dir,

@@ -2,7 +2,6 @@ import React, { useMemo, useState } from 'react';
 import {
     deriveWebSocketUrl,
     getApiBaseUrl,
-    getRagBaseUrl,
     WS_URL,
     type RuntimeConfig,
 } from '@/config';
@@ -23,7 +22,6 @@ const validateUrl = (value: string, protocols: string[], fieldName: string) => {
 
 const DesktopConnectionSetup: React.FC = () => {
     const [apiUrl, setApiUrl] = useState(() => getApiBaseUrl() || 'http://localhost:8080');
-    const [ragUrl, setRagUrl] = useState(() => getRagBaseUrl() || 'http://localhost:8080');
     const [wsUrl, setWsUrl] = useState(() => WS_URL || 'ws://localhost:8080/ws/im');
     const [saving, setSaving] = useState(false);
     const [error, setError] = useState('');
@@ -40,9 +38,6 @@ const DesktopConnectionSetup: React.FC = () => {
         if (!wsUrl.trim() || wsUrl === 'ws://localhost:8080/ws/im') {
             setWsUrl(suggestedWsUrl);
         }
-        if (!ragUrl.trim()) {
-            setRagUrl(apiUrl.trim());
-        }
     };
 
     const handleSubmit = async (event: React.FormEvent) => {
@@ -51,13 +46,11 @@ const DesktopConnectionSetup: React.FC = () => {
 
         const config: Required<RuntimeConfig> = {
             VITE_API_URL: apiUrl.trim().replace(/\/+$/, ''),
-            VITE_RAG_URL: (ragUrl.trim() || apiUrl.trim()).replace(/\/+$/, ''),
             VITE_WS_URL: wsUrl.trim().replace(/\/+$/, ''),
         };
 
         try {
             validateUrl(config.VITE_API_URL, ['http:', 'https:'], 'API 服务地址');
-            validateUrl(config.VITE_RAG_URL, ['http:', 'https:'], 'RAG 服务地址');
             validateUrl(config.VITE_WS_URL, ['ws:', 'wss:'], 'WebSocket 地址');
             setSaving(true);
             await saveDesktopRuntimeConfig(config);
@@ -89,17 +82,6 @@ const DesktopConnectionSetup: React.FC = () => {
                             onChange={event => setApiUrl(event.target.value)}
                             onBlur={handleApiUrlBlur}
                             placeholder="https://urgs.example.com"
-                            className="w-full rounded-xl border border-slate-200 px-4 py-3 text-sm outline-none transition focus:border-blue-500 focus:ring-4 focus:ring-blue-100"
-                            required
-                        />
-                    </label>
-
-                    <label className="block">
-                        <span className="mb-2 block text-sm font-bold text-slate-700">RAG 服务根地址</span>
-                        <input
-                            value={ragUrl}
-                            onChange={event => setRagUrl(event.target.value)}
-                            placeholder="通常与 API 服务地址一致"
                             className="w-full rounded-xl border border-slate-200 px-4 py-3 text-sm outline-none transition focus:border-blue-500 focus:ring-4 focus:ring-blue-100"
                             required
                         />

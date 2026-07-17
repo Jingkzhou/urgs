@@ -10,7 +10,7 @@ pnpm install
 pnpm dev
 ```
 
-首次启动会要求填写 API、RAG 和 WebSocket 服务地址，配置保存在当前用户的应用配置目录。
+首次启动会要求填写 API 和 WebSocket 服务地址，配置保存在当前用户的应用配置目录。
 
 客户端启动后会自动检查 GitHub Releases 中的 `latest.json`。发现新版本后会在后台下载，下载完成后提示用户重启；用户无需再次手工下载安装包。
 

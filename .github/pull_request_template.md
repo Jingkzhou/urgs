@@ -6,7 +6,7 @@
 ## 2. 修改范围 (Scope)
 - [ ] 后端组件 (urgs-api / urgs-executor)
 - [ ] 前端组件 (urgs-web)
-- [ ] AIGC / RAG 组件 (urgs-rag)
+- [ ] AI Agent 组件 (urgs-agent)
 - [ ] 基础设施 (Dockerfile / docker-compose)
 - [ ] 数据库脚本 (SQL)
 

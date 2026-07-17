@@ -57,7 +57,7 @@ class MockChatModel(BaseChatModel):
                 tool_calls=[
                     {
                         "name": tool_name,
-                        "args": {"query": "mock query", "knowledge_bases": []},
+                        "args": {},
                         "id": "mock-tool-call",
                     }
                 ],

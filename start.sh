@@ -40,7 +40,6 @@ SCRIPT_DIR="$(cd -- "$(dirname -- "${BASH_SOURCE[0]}")" && pwd)"
 API_DIR="$SCRIPT_DIR/urgs-api"
 EXECUTOR_DIR="$SCRIPT_DIR/urgs-executor"
 WEB_DIR="$SCRIPT_DIR/urgs-web"
-RAG_DIR="$SCRIPT_DIR/urgs-rag"
 PRESENTATION_DIR="$SCRIPT_DIR/urgs+-presentation-platform"
 LOCAL_ENV_FILE="${START_ENV_FILE:-$SCRIPT_DIR/deploy/templates/deploy.${ENVIRONMENT}.env}"
 if [ "$ENVIRONMENT" = "local" ]; then
@@ -56,7 +55,6 @@ ONLYOFFICE_LOCAL_CONTAINER_STARTED=false
 ENABLE_BACKEND=false
 ENABLE_EXECUTOR=false
 ENABLE_FRONTEND=false
-ENABLE_RAG=false
 ENABLE_PRESENTATION=false
 ENABLE_ONLYOFFICE=false
 
@@ -135,17 +133,11 @@ configure_storage_env() {
   export DATA_ROOT="$effective_data_root"
   export URGS_PROFILE="${URGS_PROFILE:-${DATA_ROOT}/api/uploads}"
   export IM_UPLOAD_PATH="${IM_UPLOAD_PATH:-${DATA_ROOT}/api/im-uploads}"
-  export RAG_DOC_STORE_PATH="${RAG_DOC_STORE_PATH:-${DATA_ROOT}/rag/doc_store}"
-  export CHROMA_PERSIST_DIRECTORY="${CHROMA_PERSIST_DIRECTORY:-${DATA_ROOT}/rag/chroma_db}"
-  export DOC_STORAGE_PATH="${DOC_STORAGE_PATH:-${DATA_ROOT}/rag/doc_store}"
-  export PARENT_DOC_STORE_PATH="${PARENT_DOC_STORE_PATH:-${DATA_ROOT}/rag/parent_store}"
-  export CLEAN_SAMPLE_DIR="${CLEAN_SAMPLE_DIR:-${DATA_ROOT}/rag/clean_samples}"
   export DEPLOY_TOOL_WORKDIR="${DEPLOY_TOOL_WORKDIR:-${DATA_ROOT}/db_deploy}"
   export LINEAGE_ENGINE_SHARED_DIR="${LINEAGE_ENGINE_SHARED_DIR:-${DATA_ROOT}/lineage/share}"
   export ISSUE_ATTACHMENT_PATH="${ISSUE_ATTACHMENT_PATH:-${DATA_ROOT}/attachments}"
 
-  for path_var in URGS_PROFILE IM_UPLOAD_PATH RAG_DOC_STORE_PATH CHROMA_PERSIST_DIRECTORY \
-    DOC_STORAGE_PATH PARENT_DOC_STORE_PATH CLEAN_SAMPLE_DIR DEPLOY_TOOL_WORKDIR \
+  for path_var in URGS_PROFILE IM_UPLOAD_PATH DEPLOY_TOOL_WORKDIR \
     LINEAGE_ENGINE_SHARED_DIR ISSUE_ATTACHMENT_PATH; do
     local path_value="${!path_var}"
     if [[ "$path_value" != /* ]]; then
@@ -154,9 +146,8 @@ configure_storage_env() {
     fi
   done
 
-  mkdir -p "$URGS_PROFILE" "$IM_UPLOAD_PATH" "$RAG_DOC_STORE_PATH" \
-    "$CHROMA_PERSIST_DIRECTORY" "$PARENT_DOC_STORE_PATH" "$CLEAN_SAMPLE_DIR" \
-    "$DEPLOY_TOOL_WORKDIR" "$LINEAGE_ENGINE_SHARED_DIR" "$ISSUE_ATTACHMENT_PATH"
+  mkdir -p "$URGS_PROFILE" "$IM_UPLOAD_PATH" "$DEPLOY_TOOL_WORKDIR" \
+    "$LINEAGE_ENGINE_SHARED_DIR" "$ISSUE_ATTACHMENT_PATH"
 }
 
 generate_internal_api_token() {
@@ -235,11 +226,6 @@ start_backend() {
   echo "Starting backend (env: $ENVIRONMENT, profile: $spring_profile, config: $LOCAL_ENV_FILE)..."
   echo "Backend JVM opts: $API_JAVA_OPTS"
 
-  # Explicitly export RAG properties to avoid placeholder resolution issues
-  export RAG_BASE_URL="${RAG_SERVICE_URL:-http://localhost:8001}/api/rag"
-  export AI_RAG_BASE_URL="$RAG_BASE_URL"
-  export AI_RAG_DOC_STORE_PATH="$RAG_DOC_STORE_PATH"
-
   # Construct Neo4j Properties if var exists
   if [ -n "${NEO4J_HOST:-}" ]; then
     # 如果在宿主机运行，neo4j 习惯上访问 localhost
@@ -268,28 +254,6 @@ start_frontend() {
     "$NPM_BIN" run dev -- --host &
   else
     "$NPM_BIN" run build
-  fi
-  pids+=($!)
-}
-
-start_rag() {
-  echo "Starting rag..."
-  cd "$RAG_DIR"
-  load_env_file
-  configure_storage_env
-  
-  if [ ! -d ".venv" ]; then
-    echo "Creating virtual environment for RAG..."
-    chmod +x install_env.sh
-    ./install_env.sh
-  fi
-
-  kill_port_if_exists 8001
-  
-  if [ "$ENVIRONMENT" = "local" ] || [ "$ENVIRONMENT" = "dev" ]; then
-    .venv_312/bin/uvicorn app.main:app --host 0.0.0.0 --port 8001 --reload --loop asyncio &
-  else
-    .venv_312/bin/uvicorn app.main:app --host 0.0.0.0 --port 8001 --loop asyncio &
   fi
   pids+=($!)
 }
@@ -417,14 +381,13 @@ start_agent() {
 
 # --- Interactive Menu ---
 echo "Multiple services detected. Please select which ones to start:"
-echo "  [1] All Services (Backend, Executor, Frontend, RAG, Agent)"
+echo "  [1] All Services (Backend, Executor, Frontend, Agent)"
 echo "  [2] Backend (urgs-api)"
 echo "  [3] Executor (urgs-executor)"
 echo "  [4] Frontend (urgs-web)"
-echo "  [5] RAG (urgs-rag)"
-echo "  [6] Presentation (urgs-presentation)"
-echo "  [7] Agent (urgs-agent)"
-echo "  [8] ONLYOFFICE Docs"
+echo "  [5] Presentation (urgs-presentation)"
+echo "  [6] Agent (urgs-agent)"
+echo "  [7] ONLYOFFICE Docs"
 echo ""
 echo "Enter your choice (e.g., '1' for all, or '2 7' for Backend+Agent):"
 read -r -a choices
@@ -440,7 +403,6 @@ for choice in "${choices[@]}"; do
       ENABLE_BACKEND=true
       ENABLE_EXECUTOR=true
       ENABLE_FRONTEND=true
-      ENABLE_RAG=true
       ENABLE_PRESENTATION=true
       ENABLE_AGENT=true
       ENABLE_ONLYOFFICE=true
@@ -448,10 +410,9 @@ for choice in "${choices[@]}"; do
     2) ENABLE_BACKEND=true ;;
     3) ENABLE_EXECUTOR=true ;;
     4) ENABLE_FRONTEND=true ;;
-    5) ENABLE_RAG=true ;;
-    6) ENABLE_PRESENTATION=true ;;
-    7) ENABLE_AGENT=true ;;
-    8) ENABLE_ONLYOFFICE=true ;;
+    5) ENABLE_PRESENTATION=true ;;
+    6) ENABLE_AGENT=true ;;
+    7) ENABLE_ONLYOFFICE=true ;;
     *) echo "Unknown option: $choice (ignored)" ;;
   esac
 done
@@ -466,7 +427,6 @@ if [ "$ENABLE_BACKEND" = true ]; then start_backend; fi
 if [ "$ENABLE_EXECUTOR" = true ]; then start_executor; fi
 if [ "$ENABLE_FRONTEND" = true ] || [ "$ENABLE_PRESENTATION" = true ]; then resolve_node_runtime; fi
 if [ "$ENABLE_FRONTEND" = true ]; then start_frontend; fi
-if [ "$ENABLE_RAG" = true ]; then start_rag; fi
 if [ "$ENABLE_PRESENTATION" = true ]; then start_presentation; fi
 if [ "$ENABLE_AGENT" = true ]; then start_agent; fi
 

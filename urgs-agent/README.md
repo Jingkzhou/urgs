@@ -166,7 +166,7 @@ curl -X POST http://127.0.0.1:8002/v1/runs/<run_id>/resume \
 ```text
 src/urgs_agent/api       HTTP 与 SSE
 src/urgs_agent/domain    状态和 API 契约
-src/urgs_agent/plugins   模型、工具、RAG、MCP 插件
+src/urgs_agent/plugins   模型、工具、知识 Wiki、MCP 插件
 src/urgs_agent/runtime   LangGraph 编译与 Worker 执行
 src/urgs_agent/storage   PostgreSQL、Redis 与仓储
 migrations               Runtime 自有 Alembic 迁移

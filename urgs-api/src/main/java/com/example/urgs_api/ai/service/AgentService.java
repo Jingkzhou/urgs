@@ -71,28 +71,23 @@ public class AgentService {
             } else if (!isBlank(agent.getAgentAppTools())) {
                 buildMode = "AGENT_APP";
             } else {
-                buildMode = "RAG";
+                buildMode = "DIRECT";
             }
         }
 
-        if (!"DIFY".equals(buildMode) && !"RAG".equals(buildMode) && !"AGENT_APP".equals(buildMode)) {
-            buildMode = "RAG";
+        if (!"DIRECT".equals(buildMode) && !"DIFY".equals(buildMode) && !"AGENT_APP".equals(buildMode)) {
+            buildMode = "DIRECT";
         }
         agent.setBuildMode(buildMode);
 
         if ("DIFY".equals(buildMode)) {
-            agent.setKnowledgeBase(null);
-            agent.setRagInstruction(null);
-            agent.setAgentAppTools(null);
-        } else if ("RAG".equals(buildMode)) {
-            agent.setDifyApiKey(null);
-            agent.setDifyApiBase(null);
             agent.setAgentAppTools(null);
         } else {
-            agent.setKnowledgeBase(null);
-            agent.setRagInstruction(null);
             agent.setDifyApiKey(null);
             agent.setDifyApiBase(null);
+            if ("DIRECT".equals(buildMode)) {
+                agent.setAgentAppTools(null);
+            }
         }
     }
 

@@ -1,6 +1,6 @@
 # URGS (Unified Resource Governance System)
 
-URGS 是一个企业级统一资源治理与调度系统。它集成了任务调度、数据治理（元数据与血缘分析）、知识库检索（RAG）以及可视化的运维监控能力。
+URGS 是一个企业级统一资源治理与调度系统。它集成了任务调度、数据治理（元数据与血缘分析）、AI 智能体以及可视化的运维监控能力。
 
 ## 🏗️ 软件架构
 
@@ -11,7 +11,7 @@ URGS 是一个企业级统一资源治理与调度系统。它集成了任务调
 | **Backend API**  | [urgs-api](./urgs-api)                                       | 核心后端服务，负责业务逻辑、调度管理、Auth等 | Spring Boot 3, MyBatis-Plus, Quartz        |
 | **Frontend**     | [urgs-web](./urgs-web)                                       | 现代化前端界面                               | React 18, Vite, Ant Design, Tailwind       |
 | **Executor**     | [urgs-executor](./urgs-executor)                             | 独立任务执行引擎，支持分布式部署             | Spring Boot 3, ProcessBuilder              |
-| **AI / RAG**     | [urgs-rag](./urgs-rag)                                       | 智能知识库与检索服务，支持 SQL 解释与问答    | Python 3.10, LangChain, ChromaDB           |
+| **AI Agent**     | [urgs-agent](./urgs-agent)                                   | 智能体运行时与工具编排                       | Python, LangGraph                          |
 | **Lineage**      | [sql-lineage-engine](./sql-lineage-engine)                   | SQL 血缘分析引擎                             | Python, Java (GSP)                         |
 | **Presentation** | [urgs+-presentation-platform](./urgs+-presentation-platform) | 演示交互平台                                 | React, Vite, Tailwind                      |
 | **Dify AI**      | [urgs-dify](./urgs-dify)                                     | 全栈 LLM 应用开发平台 (Integrated)           | Python (Flask), Next.js, PostgreSQL, Redis |
@@ -41,7 +41,6 @@ docker-compose up -d
 | ---------------- | ------------------------------------------------------------------------------ | ------------------------------ |
 | **前端页面**     | [http://localhost:3000](http://localhost:3000)                                 | -                              |
 | **后端接口**     | [http://localhost:8080/swagger-ui.html](http://localhost:8080/swagger-ui.html) | API 文档                       |
-| **RAG 文档**     | [http://localhost:8001/doc](http://localhost:8001/doc)                         | AI 服务接口文档                |
 | **Neo4j**        | [http://localhost:7474](http://localhost:7474)                                 | neo4j / 12345678               |
 | **Presentation** | [http://localhost:3002](http://localhost:3002)                                 | -                              |
 | **MySQL**        | `localhost:3306`                                                               | root / a8548879 (库: urgs_dev) |
@@ -53,14 +52,14 @@ docker-compose up -d
 
 ### 4. 服务调用说明
 
-#### urgs-api / urgs-executor / urgs-web / urgs-rag
+#### urgs-api / urgs-executor / urgs-web / urgs-agent
 这些服务在 `docker-compose up -d` 后自动启动，无需手动干预。
 
 ```bash
 # 查看服务日志
 docker-compose logs -f urgs-api
 docker-compose logs -f urgs-executor
-docker-compose logs -f urgs-rag
+docker-compose logs -f urgs-agent
 docker-compose logs -f urgs-dify-api
 
 # 重启单个服务
@@ -163,15 +162,7 @@ cd urgs-executor
 ./mvnw spring-boot:run
 ```
 
-### 4. 智能服务 (urgs-rag)
-确保 Python 3.10+ 和 Java 21 (用于依赖库)。
-```bash
-cd urgs-rag
-pip install -r requirements.txt
-uvicorn app.main:app --reload --port 8001
-```
-
-### 5. AI 应用平台 (urgs-dify)
+### 4. AI 应用平台 (urgs-dify)
 Dify 作为子模块引入，支持可视化编排：
 ```bash
 # 启动 Dify 核心服务

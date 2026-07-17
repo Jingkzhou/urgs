@@ -1,9 +1,8 @@
 import React, { useState } from 'react';
 import { Tabs } from 'antd';
-import { ApiOutlined, RobotOutlined, DatabaseOutlined, ToolOutlined } from '@ant-design/icons';
+import { ApiOutlined, RobotOutlined, ToolOutlined } from '@ant-design/icons';
 import AiApiManager from './AiApiManager';
 import AiAgentManager from './AiAgentManager';
-import AiKnowledgeManager from './AiKnowledgeManager';
 import AiAgentAppSkillManager from './AiAgentAppSkillManager';
 import Auth from '../../Auth';
 
@@ -47,19 +46,6 @@ const AiManagement: React.FC = () => {
             children: (
                 <Auth code="sys:ai:agent-app-skills:list">
                     <AiAgentAppSkillManager />
-                </Auth>
-            ),
-        },
-        {
-            key: 'knowledge',
-            label: (
-                <span className="px-2">
-                    <DatabaseOutlined /> 知识库管理
-                </span>
-            ),
-            children: (
-                <Auth code="sys:ai:knowledge:list">
-                    <AiKnowledgeManager />
                 </Auth>
             ),
         },

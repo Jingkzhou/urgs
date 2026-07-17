@@ -10,7 +10,6 @@ const CONFIG_FILE_NAME: &str = "desktop-config.json";
 #[serde(rename_all = "SCREAMING_SNAKE_CASE")]
 struct DesktopRuntimeConfig {
     vite_api_url: String,
-    vite_rag_url: String,
     vite_ws_url: String,
 }
 
@@ -42,7 +41,6 @@ fn validate_url(value: &str, allowed_schemes: &[&str], field_name: &str) -> Resu
 fn validate_config(config: DesktopRuntimeConfig) -> Result<DesktopRuntimeConfig, String> {
     Ok(DesktopRuntimeConfig {
         vite_api_url: validate_url(&config.vite_api_url, &["http", "https"], "API 服务地址")?,
-        vite_rag_url: validate_url(&config.vite_rag_url, &["http", "https"], "RAG 服务地址")?,
         vite_ws_url: validate_url(&config.vite_ws_url, &["ws", "wss"], "WebSocket 地址")?,
     })
 }
@@ -97,10 +95,9 @@ pub fn run() {
 mod tests {
     use super::{validate_config, DesktopRuntimeConfig};
 
-    fn config(api_url: &str, rag_url: &str, ws_url: &str) -> DesktopRuntimeConfig {
+    fn config(api_url: &str, ws_url: &str) -> DesktopRuntimeConfig {
         DesktopRuntimeConfig {
             vite_api_url: api_url.to_string(),
-            vite_rag_url: rag_url.to_string(),
             vite_ws_url: ws_url.to_string(),
         }
     }
@@ -109,13 +106,11 @@ mod tests {
     fn accepts_supported_service_urls_and_normalizes_trailing_slashes() {
         let validated = validate_config(config(
             "https://urgs.example.com/",
-            "https://rag.example.com///",
             "wss://urgs.example.com/ws/im/",
         ))
         .expect("valid desktop config");
 
         assert_eq!(validated.vite_api_url, "https://urgs.example.com");
-        assert_eq!(validated.vite_rag_url, "https://rag.example.com");
         assert_eq!(validated.vite_ws_url, "wss://urgs.example.com/ws/im");
     }
 
@@ -123,13 +118,11 @@ mod tests {
     fn rejects_unsupported_or_incomplete_urls() {
         assert!(validate_config(config(
             "file:///tmp/urgs",
-            "https://rag.example.com",
             "wss://urgs.example.com/ws/im",
         ))
         .is_err());
         assert!(validate_config(config(
             "https://urgs.example.com",
-            "https://rag.example.com",
             "https://urgs.example.com/ws/im",
         ))
         .is_err());

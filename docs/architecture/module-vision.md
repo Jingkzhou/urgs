@@ -73,7 +73,7 @@
 ### 现状
 - SSE 流式聊天接口
 - 聊天会话管理（创建/列表/删除/标题生成）
-- 多种 Agent 构建模式（RAG / DIFY / AGENT_APP）
+- 三种 Agent 构建模式（DIRECT / DIFY / AGENT_APP）
 - AI 使用日志、API 配置管理
 - 血缘报告 AI 生成
 
@@ -378,7 +378,7 @@
 ### 现状
 - Python FastAPI 服务
 - 与 Dify 平台集成
-- RAG 检索增强
+- 知识 Wiki 工具与业务 API 工具
 - Agent Skill 管理
 
 ### 终极目标：**可自主规划、可工具调用、可持续学习的 Agent 平台**

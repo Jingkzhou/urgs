@@ -1,6 +1,6 @@
 agent_id: lineage-supervisor
 name: Lineage Research Supervisor
-description: Parallel RAG and Hive lineage analysis with final synthesis.
+description: Parallel Hive lineage analysis with final synthesis.
 definition:
   template: supervisor
   system_prompt: Synthesize specialist evidence into an accurate lineage answer. State uncertainty explicitly.
@@ -11,17 +11,10 @@ definition:
     temperature: 0.0
     max_tokens: 8192
   tools:
-    - rag_search
     - lineage_analyze
   required_permissions:
-    - knowledge:read
     - lineage:analyze
   specialists:
-    - id: rag_expert
-      description: Retrieve relevant metadata and documentation.
-      system_prompt: You are a metadata and knowledge retrieval specialist.
-      tools:
-        - rag_search
     - id: lineage_expert
       description: Analyze Hive SQL table and column lineage.
       system_prompt: You are a Hive SQL lineage specialist. Preserve exact table and column evidence.

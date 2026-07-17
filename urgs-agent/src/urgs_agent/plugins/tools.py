@@ -7,26 +7,7 @@ from mcp.client.stdio import stdio_client
 from mcp.client.streamable_http import streamablehttp_client
 from pydantic import BaseModel, Field
 
-from urgs_agent.plugins.contracts import Retriever, ToolContext, ToolPlugin
-
-
-class RagSearchArgs(BaseModel):
-    query: str
-    knowledge_bases: list[str] = Field(default_factory=list)
-
-
-class RagSearchTool(ToolPlugin):
-    name = "rag_search"
-    description = "Search URGS knowledge bases and return cited passages."
-    args_schema = RagSearchArgs
-    required_permissions = frozenset({"knowledge:read"})
-
-    def __init__(self, retriever: Retriever) -> None:
-        self.retriever = retriever
-
-    async def execute(self, arguments: dict[str, Any], context: ToolContext) -> dict[str, Any]:
-        args = self.args_schema.model_validate(arguments)
-        return {"results": await self.retriever.search(args.query, args.knowledge_bases, context)}
+from urgs_agent.plugins.contracts import ToolContext, ToolPlugin
 
 
 class LineageArgs(BaseModel):

@@ -2,7 +2,6 @@ import React, { useState, useEffect, useRef, useCallback } from 'react';
 import { motion, AnimatePresence } from 'framer-motion';
 import {
   ShieldCheck,
-  Cpu,
   Layout,
   ArrowUpRight,
   Sparkles,
@@ -74,7 +73,6 @@ const SystemLinks: React.FC<SystemLinksProps> = ({
   };
 
   const getSystemIcon = (name: string) => {
-    if (name.includes('RAG')) return <Cpu className="w-5 h-5" />;
     if (name.includes('血缘')) return <Sparkles className="w-5 h-5" />;
     if (name.includes('仓库')) return <Layout className="w-5 h-5" />;
     if (name.includes('监管')) return <ShieldCheck className="w-5 h-5" />;

@@ -38,14 +38,12 @@ apply_runtime_defaults() {
     TZ="${TZ:-Asia/Shanghai}"
     API_PORT="${API_PORT:-8080}"
     EXECUTOR_PORT="${EXECUTOR_PORT:-8082}"
-    RAG_PORT="${RAG_PORT:-8001}"
     AGENT_PORT="${AGENT_PORT:-8002}"
     WEB_LISTEN_PORT="${WEB_LISTEN_PORT:-18080}"
     WEB_SERVER_NAME="${WEB_SERVER_NAME:-_}"
     API_TARGET="${API_TARGET:-http://127.0.0.1:${API_PORT}}"
     API_UPSTREAM_SERVERS="${API_UPSTREAM_SERVERS:-}"
     API_UPSTREAM_STICKY="${API_UPSTREAM_STICKY:-ip_hash}"
-    RAG_TARGET="${RAG_TARGET:-http://127.0.0.1:${RAG_PORT}}"
     IM_API_TARGET="${IM_API_TARGET:-${API_TARGET}}"
     NGINX_ENABLED="${NGINX_ENABLED:-1}"
     NGINX_USE_SYSTEM="${NGINX_USE_SYSTEM:-0}"
@@ -79,7 +77,6 @@ apply_runtime_defaults() {
     LOG_TOTAL_SIZE_CAP="${LOG_TOTAL_SIZE_CAP:-5GB}"
     SERVICE_LOG_MAX_SIZE_MB="${SERVICE_LOG_MAX_SIZE_MB:-200}"
     LOG_CLEAN_ON_START="${LOG_CLEAN_ON_START:-1}"
-    RAG_LOG_LEVEL="${RAG_LOG_LEVEL:-INFO}"
     STOP_CONFLICTING_PORTS="${STOP_CONFLICTING_PORTS:-1}"
     BACKUP_BEFORE_DEPLOY="${BACKUP_BEFORE_DEPLOY:-1}"
     BACKUP_ROOT="${BACKUP_ROOT:-${ROOT_DIR}/backups}"
@@ -155,7 +152,7 @@ Usage:
   bin/deploy.sh stop             Stop selected services.
   bin/deploy.sh restart          Restart selected services.
   bin/deploy.sh status           Show selected service status.
-  bin/deploy.sh restart api      Restart one service: api, executor, rag, redis, nginx, web-static.
+  bin/deploy.sh restart api      Restart one service: api, executor, agent, redis, nginx, web-static.
   bin/deploy.sh nginx-config     Render nginx config to stdout.
 
 Before running, edit config/deploy.env only when the package was not generated with production values.
@@ -250,7 +247,7 @@ install_package_to_deploy_home() {
     while IFS= read -r service || [ -n "$service" ]; do
         [ -n "$service" ] || continue
         case "$service" in
-            api | web | executor | rag | lineage)
+            api | web | executor | agent | lineage)
                 copy_dir_replace_with_backup "${PACKAGE_DIR}/services/${service}" "${ROOT_DIR}/services/${service}" "$backup_dir" "services/${service}"
                 ;;
             nginx | redis | onlyoffice)
@@ -596,7 +593,6 @@ export_common_env() {
     export SPRING_NEO4J_AUTHENTICATION_USERNAME="${SPRING_NEO4J_AUTHENTICATION_USERNAME:-${NEO4J_USER:-neo4j}}"
     export SPRING_NEO4J_AUTHENTICATION_PASSWORD="${SPRING_NEO4J_AUTHENTICATION_PASSWORD:-${NEO4J_PASSWORD:-}}"
     export URGS_INBOUND_SSO_RSA_PRIVATE_KEY="${URGS_INBOUND_SSO_RSA_PRIVATE_KEY:-}"
-    export RAG_BASE_URL="${RAG_BASE_URL:-http://127.0.0.1:${RAG_PORT}/api/rag}"
     export EXECUTOR_BASE_URL="${EXECUTOR_BASE_URL:-http://127.0.0.1:${EXECUTOR_PORT}}"
     export MONITOR_COLLECT_INTERVAL_MS="${MONITOR_COLLECT_INTERVAL_MS:-60000}"
     export MONITOR_SLOW_SQL_INTERVAL_MS="${MONITOR_SLOW_SQL_INTERVAL_MS:-300000}"
@@ -613,11 +609,6 @@ export_common_env() {
     export URGS_PROFILE="${URGS_PROFILE:-${DATA_ROOT}/api/uploads}"
     export IM_UPLOAD_PATH="${IM_UPLOAD_PATH:-${DATA_ROOT}/api/im-uploads}"
     export ISSUE_ATTACHMENT_PATH="${ISSUE_ATTACHMENT_PATH:-${DATA_ROOT}/api/attachments}"
-    export RAG_DOC_STORE_PATH="${RAG_DOC_STORE_PATH:-${DATA_ROOT}/rag/doc_store}"
-    export CHROMA_PERSIST_DIRECTORY="${CHROMA_PERSIST_DIRECTORY:-${DATA_ROOT}/rag/chroma_db}"
-    export DOC_STORAGE_PATH="${DOC_STORAGE_PATH:-${DATA_ROOT}/rag/doc_store}"
-    export PARENT_DOC_STORE_PATH="${PARENT_DOC_STORE_PATH:-${DATA_ROOT}/rag/parent_store}"
-    export CLEAN_SAMPLE_DIR="${CLEAN_SAMPLE_DIR:-${DATA_ROOT}/rag/clean_samples}"
     export DEPLOY_TOOL_WORKDIR="${DEPLOY_TOOL_WORKDIR:-${DATA_ROOT}/db_deploy}"
     export LINEAGE_ENGINE_SHARED_DIR="${LINEAGE_ENGINE_SHARED_DIR:-${DATA_ROOT}/lineage/share}"
 }
@@ -661,18 +652,6 @@ ensure_venv() {
     fi
 }
 
-start_rag() {
-    service_enabled rag || return 0
-    ensure_venv rag
-    stop_conflicting_port rag "$RAG_PORT"
-    export_common_env
-    export LLM_API_BASE="${LLM_API_BASE:-}"
-    export LLM_MODEL="${LLM_MODEL:-}"
-    export LLM_API_KEY="${LLM_API_KEY:-}"
-    export URGS_API_URL="${URGS_API_URL:-http://127.0.0.1:${API_PORT}}"
-    (cd "${ROOT_DIR}/services/rag" && start_background rag .venv/bin/python -m uvicorn app.main:app --host "${RAG_HOST:-0.0.0.0}" --port "$RAG_PORT" --log-level "$(lowercase "$RAG_LOG_LEVEL")")
-}
-
 start_agent() {
     service_enabled agent || return 0
     ensure_venv agent
@@ -680,7 +659,7 @@ start_agent() {
     export_common_env
     export AGENT_PORT AGENT_DATABASE_URL AGENT_CHECKPOINT_DATABASE_URL AGENT_REDIS_URL
     export AGENT_OPENAI_BASE_URL AGENT_OPENAI_API_KEY AGENT_OPENAI_MODEL
-    export AGENT_URGS_API_URL AGENT_RAG_URL AGENT_LINEAGE_URL AGENT_API_KEY
+    export AGENT_URGS_API_URL AGENT_LINEAGE_URL AGENT_API_KEY
     export AGENT_CALLBACK_HMAC_SECRET AGENT_ENVIRONMENT AGENT_LOG_LEVEL
     (cd "${ROOT_DIR}/services/agent" && .venv/bin/python -m alembic upgrade head)
     (cd "${ROOT_DIR}/services/agent" && \
@@ -760,7 +739,6 @@ render_nginx_config() {
         line="${line//__WEB_SERVER_NAME__/$WEB_SERVER_NAME}"
         line="${line//__WEB_ROOT__/$web_root}"
         line="${line//__API_PROXY_TARGET__/$api_proxy_target}"
-        line="${line//__RAG_TARGET__/$RAG_TARGET}"
         line="${line//__IM_API_TARGET__/$IM_API_TARGET}"
         line="${line//__ONLYOFFICE_TARGET__/$ONLYOFFICE_TARGET}"
         printf '%s\n' "$line"
@@ -870,12 +848,10 @@ stop_nginx() {
 install_all() {
     export_common_env
     mkdir -p "$LOG_DIR" "$PID_DIR" "$DATA_ROOT" "$URGS_PROFILE" "$IM_UPLOAD_PATH" "$ISSUE_ATTACHMENT_PATH" \
-        "$RAG_DOC_STORE_PATH" "$CHROMA_PERSIST_DIRECTORY" "$PARENT_DOC_STORE_PATH" \
-        "$CLEAN_SAMPLE_DIR" "$DEPLOY_TOOL_WORKDIR" "$LINEAGE_ENGINE_SHARED_DIR"
+        "$DEPLOY_TOOL_WORKDIR" "$LINEAGE_ENGINE_SHARED_DIR"
     service_enabled nginx && extract_component_tarballs nginx
     service_enabled redis && extract_component_tarballs redis
     service_enabled onlyoffice && install_onlyoffice
-    service_enabled rag && ensure_venv rag
     service_enabled agent && ensure_venv agent
     service_enabled lineage && ensure_venv lineage
     install_nginx_config
@@ -909,7 +885,6 @@ start_redis() {
 start_all() {
     start_redis
     start_onlyoffice
-    start_rag
     start_agent
     start_executor
     start_api
@@ -924,7 +899,6 @@ start_one() {
     case "$1" in
         api) start_api ;;
         executor) start_executor ;;
-        rag) start_rag ;;
         agent) start_agent ;;
         redis) start_redis ;;
         onlyoffice) start_onlyoffice ;;
@@ -939,7 +913,6 @@ stop_all() {
     stop_nginx
     service_enabled api && stop_service api
     service_enabled executor && stop_service executor
-    service_enabled rag && stop_service rag
     service_enabled agent && stop_service agent-worker
     service_enabled agent && stop_service agent-api
     service_enabled redis && stop_service redis
@@ -949,7 +922,7 @@ stop_all() {
 
 stop_one() {
     case "$1" in
-        api | executor | rag | redis | web-static) stop_service "$1" ;;
+        api | executor | redis | web-static) stop_service "$1" ;;
         onlyoffice) stop_onlyoffice ;;
         agent) stop_service agent-worker; stop_service agent-api ;;
         nginx) stop_nginx ;;
@@ -960,7 +933,6 @@ stop_one() {
 status_all() {
     service_enabled api && status_service api
     service_enabled executor && status_service executor
-    service_enabled rag && status_service rag
     service_enabled agent && status_service agent-api
     service_enabled agent && status_service agent-worker
     service_enabled redis && status_service redis
@@ -973,7 +945,7 @@ status_all() {
 
 status_one() {
     case "$1" in
-        api | executor | rag | redis | nginx | web-static) status_service "$1" ;;
+        api | executor | redis | nginx | web-static) status_service "$1" ;;
         onlyoffice) status_onlyoffice ;;
         agent) status_service agent-api; status_service agent-worker ;;
         *) die "Unknown service: $1" ;;

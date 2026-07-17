@@ -3,7 +3,6 @@ package com.example.urgs_api.ai.service;
 import com.example.urgs_api.ai.entity.AiApiConfig;
 import com.example.urgs_api.ai.service.agent.AgentAppBuildModeHandler;
 import com.example.urgs_api.ai.service.agent.DifyBuildModeHandler;
-import com.example.urgs_api.ai.service.agent.RagBuildModeHandler;
 import com.fasterxml.jackson.databind.JsonNode;
 import com.fasterxml.jackson.databind.ObjectMapper;
 import org.slf4j.Logger;
@@ -52,9 +51,6 @@ public class AiChatServiceImpl implements AiChatService {
 
     @Autowired
     private AgentAppBuildModeHandler agentAppBuildModeHandler;
-
-    @Autowired
-    private RagBuildModeHandler ragBuildModeHandler;
 
     @Autowired
     private DifyBuildModeHandler difyBuildModeHandler;
@@ -119,24 +115,13 @@ public class AiChatServiceImpl implements AiChatService {
             return;
         }
 
-        String contextAugmentation = "";
         if (sessionAgent != null) {
-            log.info("Checking Agent Configuration - ID: {}, Name: {}, Mode: {}, KB: {}",
-                    sessionAgent.getId(), sessionAgent.getName(), sessionAgent.getBuildMode(), sessionAgent.getKnowledgeBase());
-            if (ragBuildModeHandler.supports(sessionAgent)) {
-                RagBuildModeHandler.RagPreparation preparation = ragBuildModeHandler
-                        .prepare(sessionAgent, systemPrompt, userPrompt, emitter);
-                systemPrompt = preparation.systemPrompt();
-                contextAugmentation = preparation.contextAugmentation();
-            } else if (sessionAgent.getSystemPrompt() != null && !sessionAgent.getSystemPrompt().isBlank()) {
+            log.info("Checking Agent Configuration - ID: {}, Name: {}, Mode: {}",
+                    sessionAgent.getId(), sessionAgent.getName(), sessionAgent.getBuildMode());
+            if (sessionAgent.getSystemPrompt() != null && !sessionAgent.getSystemPrompt().isBlank()) {
                 systemPrompt = sessionAgent.getSystemPrompt();
             }
         }
-
-        // Merge Context to User Prompt logic moved to AFTER message construction to
-        // ensure visibility
-        // previously: userPrompt = userPrompt + contextAugmentation; (removed as it was
-        // ignored)
 
         AiApiConfig activeConfig = aiApiConfigService.getDefaultConfig();
         int contextWindowTokens = resolveContextWindowTokens(activeConfig);
@@ -157,11 +142,6 @@ public class AiChatServiceImpl implements AiChatService {
 
         // 构建消息列表：System + [Summary] + Recent History (Pruned)
         List<Map<String, String>> messages = buildContextMessages(systemPrompt, history, sessionSummary);
-
-        if (!contextAugmentation.isEmpty()) {
-            log.info("Injecting RAG Context into Request Messages");
-            ragBuildModeHandler.applyContextToMessages(sessionAgent, messages, contextAugmentation);
-        }
 
         // 计算当前上下文 Token 用量，用于前端展示 (Calculate usage for frontend display)
         long totalChars = 0;

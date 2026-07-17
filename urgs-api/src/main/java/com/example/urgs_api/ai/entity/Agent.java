@@ -26,12 +26,6 @@ public class Agent {
     @TableField("build_mode")
     private String buildMode;
 
-    @TableField("knowledge_base")
-    private String knowledgeBase;
-
-    @TableField("rag_instruction")
-    private String ragInstruction;
-
     // JSON string storing list of prompts
     private String prompts;
 

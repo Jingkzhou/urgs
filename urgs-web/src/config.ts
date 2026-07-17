@@ -2,7 +2,6 @@
 
 export interface RuntimeConfig {
     VITE_API_URL?: string;
-    VITE_RAG_URL?: string;
     VITE_WS_URL?: string;
 }
 
@@ -28,8 +27,6 @@ const readRuntimeValue = (key: keyof RuntimeConfig) => {
 export const isDesktopRuntime = () => typeof window !== 'undefined' && Boolean(window.__TAURI_INTERNALS__);
 
 export const getApiBaseUrl = () => readRuntimeValue('VITE_API_URL');
-
-export const getRagBaseUrl = () => readRuntimeValue('VITE_RAG_URL') || getApiBaseUrl();
 
 export const deriveWebSocketUrl = (apiBaseUrl: string) => {
     const url = new URL(apiBaseUrl);
@@ -72,10 +69,6 @@ const ABSOLUTE_URL_PATTERN = /^(?:[a-z][a-z\d+.-]*:|\/\/)/i;
 export const resolveServiceUrl = (url: string) => {
     if (!url || !isDesktopRuntime() || ABSOLUTE_URL_PATTERN.test(url)) {
         return url;
-    }
-
-    if (url.startsWith('/api/rag') || url.startsWith('/api/knowledge')) {
-        return joinBaseUrl(getRagBaseUrl(), url);
     }
 
     if (url.startsWith('/api') || url.startsWith('/uploads') || url.startsWith('/profile')) {

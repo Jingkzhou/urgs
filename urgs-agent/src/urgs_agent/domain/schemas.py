@@ -43,7 +43,6 @@ class WorkflowDefinition(BaseModel):
     model: ModelPolicy
     tools: list[str] = Field(default_factory=list)
     required_permissions: list[str] = Field(default_factory=list)
-    knowledge_bases: list[str] = Field(default_factory=list)
     limits: RunLimits = Field(default_factory=RunLimits)
     specialists: list[SpecialistConfig] = Field(default_factory=list)
     require_tool_approval: list[str] = Field(default_factory=list)
