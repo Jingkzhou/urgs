@@ -86,15 +86,26 @@ const ReviewCenter: React.FC<ReviewCenterProps> = ({ todoFocus }) => {
         setLoading(true);
         try {
             if (tab === 'pending') {
-                const pendingRes = await getPendingReviewTasks({
-                    current: 1,
-                    size: 50,
-                    system: queryFilters.system || undefined,
-                    requirementNumber: queryFilters.requirementNumber || undefined,
-                    deadlineStart: queryFilters.deadlineStart ? `${queryFilters.deadlineStart}T00:00:00` : undefined,
-                    deadlineEnd: queryFilters.deadlineEnd ? `${queryFilters.deadlineEnd}T23:59:59` : undefined,
-                });
+                const [pendingRes, historyCountRes] = await Promise.all([
+                    getPendingReviewTasks({
+                        current: 1,
+                        size: 50,
+                        system: queryFilters.system || undefined,
+                        requirementNumber: queryFilters.requirementNumber || undefined,
+                        deadlineStart: queryFilters.deadlineStart ? `${queryFilters.deadlineStart}T00:00:00` : undefined,
+                        deadlineEnd: queryFilters.deadlineEnd ? `${queryFilters.deadlineEnd}T23:59:59` : undefined,
+                    }),
+                    getReviewHistoryTasks({
+                        current: 1,
+                        size: 1,
+                        system: queryFilters.system || undefined,
+                        requirementNumber: queryFilters.requirementNumber || undefined,
+                        deadlineStart: queryFilters.deadlineStart ? `${queryFilters.deadlineStart}T00:00:00` : undefined,
+                        deadlineEnd: queryFilters.deadlineEnd ? `${queryFilters.deadlineEnd}T23:59:59` : undefined,
+                    }),
+                ]);
                 setTasks(pendingRes?.records || []);
+                setHistoryTotal(historyCountRes?.total || 0);
             } else {
                 const historyRes = await getReviewHistoryTasks({
                     current: historyPage,

@@ -6,6 +6,7 @@ import {
     ArrowUpRight,
     CheckCircle2,
     Clock3,
+    FolderOpen,
     GitBranch,
     GitCommitHorizontal,
     GitPullRequest,
@@ -34,6 +35,10 @@ interface RepositoryActivity {
     commit: GitCommit | null;
     openPullRequests: number;
     loadFailed: boolean;
+}
+
+interface VersionOverviewProps {
+    onOpenRepository?: (repositoryId: number) => void;
 }
 
 interface MetricCardProps {
@@ -88,12 +93,18 @@ const getRepositoryWebUrl = (repository: GitRepository) => {
     return /^https?:\/\//i.test(url) ? url.replace(/\.git$/, '') : '';
 };
 
+const getRepositoryPlatformName = (platform?: string) => ({
+    gitlab: 'GitLab',
+    github: 'GitHub',
+    gitee: 'Gitee'
+})[platform?.toLowerCase() || ''] || platform || '仓库';
+
 const normalizeRepositoryId = (id: unknown): number | null => {
     const value = typeof id === 'number' ? id : Number(id);
     return Number.isSafeInteger(value) && value > 0 ? value : null;
 };
 
-const VersionOverview: React.FC = () => {
+const VersionOverview: React.FC<VersionOverviewProps> = ({ onOpenRepository }) => {
     const [repositories, setRepositories] = useState<GitRepository[]>([]);
     const [activities, setActivities] = useState<RepositoryActivity[]>([]);
     const [stats, setStats] = useState<OverviewStats | null>(null);
@@ -333,16 +344,27 @@ const VersionOverview: React.FC = () => {
                                             )}
                                         </div>
                                     </div>
-                                    {getRepositoryWebUrl(item.repository) && (
-                                        <a
-                                            href={getRepositoryWebUrl(item.repository)}
-                                            target="_blank"
-                                            rel="noreferrer"
-                                            className="inline-flex shrink-0 items-center gap-1 text-xs font-medium text-blue-600 hover:text-blue-700"
-                                        >
-                                            打开仓库 <ArrowUpRight size={13} />
-                                        </a>
-                                    )}
+                                    <div className="flex shrink-0 flex-wrap items-center gap-3 text-xs font-medium">
+                                        {getRepositoryWebUrl(item.repository) && (
+                                            <a
+                                                href={getRepositoryWebUrl(item.repository)}
+                                                target="_blank"
+                                                rel="noreferrer"
+                                                className="inline-flex items-center gap-1 text-blue-600 hover:text-blue-700"
+                                            >
+                                                打开 {getRepositoryPlatformName(item.repository.platform)} <ArrowUpRight size={13} />
+                                            </a>
+                                        )}
+                                        {onOpenRepository && item.repository.id && (
+                                            <button
+                                                type="button"
+                                                onClick={() => onOpenRepository(item.repository.id!)}
+                                                className="inline-flex items-center gap-1 text-slate-600 hover:text-indigo-700"
+                                            >
+                                                在系统中打开 <FolderOpen size={13} />
+                                            </button>
+                                        )}
+                                    </div>
                                 </div>
                             ))}
                         </div>

@@ -50,7 +50,7 @@ interface SelectedRelation {
     targetTable: string;
     sourceColumns: string[];
     targetColumns: string[];
-    sourceFile?: string;
+    sourceFiles: string[];
 }
 
 interface NodeMetric {
@@ -86,14 +86,11 @@ const getRelationMarkerId = (type?: string) => (
     `column-lineage-arrow-${normalizeRelationType(type).replace(/[^a-zA-Z0-9_-]/g, '-')}`
 );
 
-const getSourceFile = (link: LinkData) => {
-    const sourceFiles = link.properties?.sourceFiles;
-    if (Array.isArray(sourceFiles)) {
-        return sourceFiles[0] ? String(sourceFiles[0]) : undefined;
-    }
-    const value = sourceFiles || link.properties?.source_file || link.properties?.sourceFile;
-    return value ? String(value) : undefined;
-};
+const getSourceFiles = (link: LinkData) => Array.from(new Set([
+    ...normalizeArray(link.properties?.sourceFiles),
+    ...normalizeArray(link.properties?.source_file),
+    ...normalizeArray(link.properties?.sourceFile),
+]));
 
 
 const formatDetailList = (items: string[]) => (items.length > 0 ? items.join('、') : '-');
@@ -359,6 +356,7 @@ const ColumnLineageDiagram: React.FC<ColumnLineageDiagramProps> = ({
     const relationOptionsKey = relationOptions.join('|');
     const [selectedRelationTypes, setSelectedRelationTypes] = useState<string[]>([]);
     const [relationModalVisible, setRelationModalVisible] = useState(false);
+    const [sourceFilesModalVisible, setSourceFilesModalVisible] = useState(false);
     const [selectedRelation, setSelectedRelation] = useState<SelectedRelation | null>(null);
 
     useEffect(() => {
@@ -775,7 +773,7 @@ const ColumnLineageDiagram: React.FC<ColumnLineageDiagramProps> = ({
             targetTable: targetNode?.title || link.properties?.targetTable || '-',
             sourceColumns: sourceColumn ? [sourceColumn] : normalizeArray(link.properties?.sourceColumns),
             targetColumns: targetColumn ? [targetColumn] : normalizeArray(link.properties?.targetColumns),
-            sourceFile: getSourceFile(link),
+            sourceFiles: getSourceFiles(link),
         });
         setRelationModalVisible(true);
     };
@@ -1108,31 +1106,31 @@ const ColumnLineageDiagram: React.FC<ColumnLineageDiagramProps> = ({
                         </div>
                     );
                 })}
-                {relationLegend.length > 0 ? (
-                    <div className="sticky left-5 top-5 z-20 inline-flex max-w-[520px] flex-wrap gap-x-4 gap-y-2 rounded-md border border-slate-200 bg-white/92 px-3 py-2 text-xs text-slate-600 shadow-sm backdrop-blur">
-                        {relationLegend.map(({ type, style, label }) => (
-                            <div key={type} className="flex items-center gap-2">
-                                <svg width="34" height="10" viewBox="0 0 34 10" aria-hidden="true">
-                                    <line
-                                        x1="1"
-                                        y1="5"
-                                        x2="31"
-                                        y2="5"
-                                        stroke={style.color}
-                                        strokeWidth="2"
-                                        strokeLinecap="round"
-                                        strokeDasharray={style.strokeDasharray}
-                                    />
-                                    <path d="M 28 1 L 34 5 L 28 9 z" fill={style.color} />
-                                </svg>
-                                <span>{label}</span>
-                            </div>
-                        ))}
-                    </div>
-                ) : null}
                 </div>
             </div>
             </div>
+            {relationLegend.length > 0 ? (
+                <div className="absolute left-5 top-5 z-30 inline-flex max-w-[520px] flex-wrap gap-x-4 gap-y-2 rounded-md border border-slate-200 bg-white/92 px-3 py-2 text-xs text-slate-600 shadow-sm backdrop-blur">
+                    {relationLegend.map(({ type, style, label }) => (
+                        <div key={type} className="flex items-center gap-2">
+                            <svg width="34" height="10" viewBox="0 0 34 10" aria-hidden="true">
+                                <line
+                                    x1="1"
+                                    y1="5"
+                                    x2="31"
+                                    y2="5"
+                                    stroke={style.color}
+                                    strokeWidth="2"
+                                    strokeLinecap="round"
+                                    strokeDasharray={style.strokeDasharray}
+                                />
+                                <path d="M 28 1 L 34 5 L 28 9 z" fill={style.color} />
+                            </svg>
+                            <span>{label}</span>
+                        </div>
+                    ))}
+                </div>
+            ) : null}
             <div className="absolute bottom-6 left-6 z-30 flex gap-2 rounded-xl border border-slate-200 bg-white/90 p-2 shadow-lg backdrop-blur">
                 <Tooltip title="放大" placement="top">
                     <Button
@@ -1180,7 +1178,10 @@ const ColumnLineageDiagram: React.FC<ColumnLineageDiagramProps> = ({
                         </Button>
                     ) : null}
                     width={920}
-                    onCancel={() => setRelationModalVisible(false)}
+                    onCancel={() => {
+                        setRelationModalVisible(false);
+                        setSourceFilesModalVisible(false);
+                    }}
                 >
                     <Descriptions size="small" bordered column={1}>
                         <Descriptions.Item label="源表">{selectedRelation.sourceTable}</Descriptions.Item>
@@ -1209,7 +1210,15 @@ const ColumnLineageDiagram: React.FC<ColumnLineageDiagramProps> = ({
                             {formatDetailList(selectedRelation.targetColumns)}
                         </Descriptions.Item>
                         <Descriptions.Item label="源文件">
-                            {selectedRelation.sourceFile || '-'}
+                            {selectedRelation.sourceFiles.length > 1 ? (
+                                <Button
+                                    type="link"
+                                    className="px-0"
+                                    onClick={() => setSourceFilesModalVisible(true)}
+                                >
+                                    共 {selectedRelation.sourceFiles.length} 个文件，查看列表
+                                </Button>
+                            ) : selectedRelation.sourceFiles[0] || '-'}
                         </Descriptions.Item>
                         <Descriptions.Item label="解析来源">
                             {formatDetailList(normalizeArray(selectedRelation.link.properties?.lineageOrigins))}
@@ -1232,6 +1241,24 @@ const ColumnLineageDiagram: React.FC<ColumnLineageDiagramProps> = ({
                             targetColumn={selectedRelation.targetColumns[0]}
                         />
                     )}
+                </Modal>
+            ) : null}
+            {selectedRelation ? (
+                <Modal
+                    open={sourceFilesModalVisible}
+                    title={`来源文件（${selectedRelation.sourceFiles.length}）`}
+                    footer={null}
+                    width={680}
+                    zIndex={1100}
+                    onCancel={() => setSourceFilesModalVisible(false)}
+                >
+                    <div className="max-h-[420px] space-y-2 overflow-auto">
+                        {selectedRelation.sourceFiles.map(file => (
+                            <div key={file} className="rounded-md border border-slate-200 bg-slate-50 px-3 py-2 text-sm break-all">
+                                {file}
+                            </div>
+                        ))}
+                    </div>
                 </Modal>
             ) : null}
         </div>

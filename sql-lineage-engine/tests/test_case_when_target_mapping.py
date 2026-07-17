@@ -218,3 +218,68 @@ def test_case_condition_column_used_as_value_keeps_direct_lineage(
         and dep.get("dependency_type") == "fdd"
         for dep in deps
     )
+
+
+def test_nested_union_constant_case_condition_is_not_direct_value_lineage(
+    mock_metadata_resolver,
+    monkeypatch,
+):
+    sql = """
+    INSERT INTO TARGET_TABLE (ITEM_NUM)
+    SELECT ITEM_NUM
+      FROM (
+            SELECT CASE A.CURR_CD
+                     WHEN 'USD' THEN 'A'
+                     WHEN 'EUR' THEN 'B'
+                   END AS ITEM_NUM
+              FROM SOURCE_TABLE A
+            UNION
+            SELECT CASE A.CURR_CD
+                     WHEN 'USD' THEN 'A'
+                     WHEN 'EUR' THEN 'B'
+                   END AS ITEM_NUM
+              FROM SOURCE_TABLE A
+           ) U
+     GROUP BY ITEM_NUM
+    """
+    parser = LineageParser("hive")
+    monkeypatch.setattr(
+        parser.parser,
+        "parse",
+        lambda *_args, **_kwargs: {
+            "gsp_json": {
+                "dlineage": {
+                    "relationships": [
+                        {
+                            "type": "fdd",
+                            "target": {
+                                "parentName": "TARGET_TABLE",
+                                "column": "ITEM_NUM",
+                            },
+                            "sources": [
+                                {
+                                    "parentName": "SOURCE_TABLE",
+                                    "column": "CURR_CD",
+                                }
+                            ],
+                        }
+                    ]
+                }
+            }
+        },
+    )
+
+    deps = parser.get_column_lineage(sql)
+
+    assert any(
+        dep.get("source_column") == "CURR_CD"
+        and dep.get("target_column") == "ITEM_NUM"
+        and dep.get("neo4j_type") == "CASE_WHEN"
+        for dep in deps
+    )
+    assert not any(
+        dep.get("source_column") == "CURR_CD"
+        and dep.get("target_column") == "ITEM_NUM"
+        and dep.get("dependency_type") == "fdd"
+        for dep in deps
+    )

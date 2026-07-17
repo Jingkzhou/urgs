@@ -201,9 +201,12 @@ class IndirectFlowParser(IndirectFlowMutationHelperMixin, IndirectFlowHelperMixi
                         walk(cte)
 
             # Fallback to standard traverse just in case we miss something and it helps?
-            # But standard traverse might reinvoke walk... avoid loop.
+            # Set operations keep their branch scopes outside ``sources``. The standard
+            # traversal is therefore still required for UNION/EXCEPT/INTERSECT branches.
             
         walk(root)
+        for nested_scope in root.traverse():
+            walk(nested_scope)
         return scopes
 
     def _process_scope(self, scope, target_info, source_file, stmt_sql: str = None, stmt_obj=None) -> List[Dict]:
@@ -691,7 +694,43 @@ class IndirectFlowParser(IndirectFlowMutationHelperMixin, IndirectFlowHelperMixi
 
     def _resolve_expression_to_physical_refs(self, expression, scope) -> Set[Tuple[str, str]]:
         inner = expression.this if isinstance(expression, exp.Alias) else expression
-        columns = [inner] if isinstance(inner, exp.Column) else list(inner.find_all(exp.Column))
+        if isinstance(inner, exp.Case):
+            value_expressions = [
+                branch.args.get("true")
+                for branch in inner.args.get("ifs") or []
+                if branch.args.get("true") is not None
+            ]
+            if inner.args.get("default") is not None:
+                value_expressions.append(inner.args.get("default"))
+            columns = [
+                column
+                for value_expression in value_expressions
+                for column in (
+                    [value_expression]
+                    if isinstance(value_expression, exp.Column)
+                    else list(value_expression.find_all(exp.Column))
+                )
+            ]
+        elif isinstance(inner, exp.If):
+            value_expressions = [
+                value_expression
+                for value_expression in (
+                    inner.args.get("true"),
+                    inner.args.get("false"),
+                )
+                if value_expression is not None
+            ]
+            columns = [
+                column
+                for value_expression in value_expressions
+                for column in (
+                    [value_expression]
+                    if isinstance(value_expression, exp.Column)
+                    else list(value_expression.find_all(exp.Column))
+                )
+            ]
+        else:
+            columns = [inner] if isinstance(inner, exp.Column) else list(inner.find_all(exp.Column))
         refs = set()
         for source_col in columns:
             refs.update(self._resolve_column_to_physical_refs(source_col, scope, expression))

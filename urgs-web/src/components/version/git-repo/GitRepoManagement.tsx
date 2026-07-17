@@ -49,9 +49,15 @@ const parseFullNameFromCloneUrl = (cloneUrl?: string): string | null => {
 
 interface GitRepoManagementProps {
     manageable?: boolean;
+    selectedRepoId?: number;
+    onSelectedRepoIdHandled?: () => void;
 }
 
-const GitRepoManagement: React.FC<GitRepoManagementProps> = ({ manageable = false }) => {
+const GitRepoManagement: React.FC<GitRepoManagementProps> = ({
+    manageable = false,
+    selectedRepoId,
+    onSelectedRepoIdHandled
+}) => {
     const canAdd = manageable && hasPermission('sys:repo:add');
     const canEdit = manageable && hasPermission('sys:repo:edit');
     const canDelete = manageable && hasPermission('sys:repo:del');
@@ -69,6 +75,14 @@ const GitRepoManagement: React.FC<GitRepoManagementProps> = ({ manageable = fals
         fetchRepos();
         fetchSsoList();
     }, []);
+
+    useEffect(() => {
+        if (!selectedRepoId) return;
+        const repository = repos.find(repo => repo.id === selectedRepoId);
+        if (!repository) return;
+        setSelectedRepo(repository);
+        onSelectedRepoIdHandled?.();
+    }, [selectedRepoId, repos]);
 
     const fetchRepos = async () => {
         setLoading(true);

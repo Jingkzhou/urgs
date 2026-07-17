@@ -11,6 +11,7 @@ import { getRepoPrCounts } from '@/api/version';
 const VersionManagementContent: React.FC = () => {
     const [activeTab, setActiveTab] = useState<string>('');
     const [openPullRequestCount, setOpenPullRequestCount] = useState(0);
+    const [selectedRepoId, setSelectedRepoId] = useState<number | undefined>(undefined);
 
     const TABS = [
         { id: 'repos', label: '仓库管理', subLabel: 'Repositories', icon: GitBranch, code: 'version:repo:list', component: GitRepoManagement },
@@ -52,6 +53,12 @@ const VersionManagementContent: React.FC = () => {
     ];
 
     const ActiveComponent = allTabs.find(tab => tab.id === activeTab)?.component;
+    const canViewRepositories = visibleTabs.some(tab => tab.id === 'repos');
+
+    const openRepositoryInSystem = (repositoryId: number) => {
+        setSelectedRepoId(repositoryId);
+        setActiveTab('repos');
+    };
 
     const { items, setBreadcrumbs } = useBreadcrumbs();
 
@@ -192,7 +199,14 @@ const VersionManagementContent: React.FC = () => {
                             transition={{ duration: 0.25, ease: [0.22, 1, 0.36, 1] }}
                             className="h-full"
                         >
-                            {ActiveComponent ? <ActiveComponent /> : (
+                            {activeTab === 'overview' ? (
+                                <VersionOverview onOpenRepository={canViewRepositories ? openRepositoryInSystem : undefined} />
+                            ) : activeTab === 'repos' && canViewRepositories ? (
+                                <GitRepoManagement
+                                    selectedRepoId={selectedRepoId}
+                                    onSelectedRepoIdHandled={() => setSelectedRepoId(undefined)}
+                                />
+                            ) : ActiveComponent ? <ActiveComponent /> : (
                                 <div className="h-full flex flex-col items-center justify-center text-slate-400">
                                     <div className="w-16 h-16 rounded-2xl bg-white flex items-center justify-center mb-4 border border-slate-200 border-dashed shadow-sm">
                                         <ShieldCheck size={32} className="opacity-30" />
