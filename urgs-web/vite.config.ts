@@ -10,15 +10,6 @@ export default defineConfig(({ mode }) => {
       host: '0.0.0.0',
       strictPort: true,
       proxy: {
-        '/api/rag': {
-          target: env.VITE_RAG_URL || 'http://localhost:8001',
-          changeOrigin: true,
-        },
-        '/api/knowledge': {
-          target: env.VITE_RAG_URL || 'http://localhost:8001',
-          changeOrigin: true,
-        },
-
         '/api': {
           target: env.URGS_API_URL || 'http://localhost:8080',
           changeOrigin: true,

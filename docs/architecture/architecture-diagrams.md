@@ -118,15 +118,12 @@ sequenceDiagram
     participant W as urgs-web
     participant A as urgs-api<br/>AiChatController
     participant G as urgs-agent<br/>Python 服务
-    participant V as MongoDB<br/>向量索引
     participant D as Dify 平台<br/>大模型
 
     U->>W: 输入提问
     W->>A: POST /api/ai/chat (SSE)
     A->>G: HTTP 调用 Agent
-    G->>V: 向量相似度检索
-    V-->>G: 召回相关文档片段
-    G->>G: 拼装 RAG Prompt
+    G->>G: 规划并调用业务工具
     G->>D: 调用大模型推理
     D-->>G: 流式返回答案
     G-->>A: SSE 流式响应

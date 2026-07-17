@@ -2,6 +2,7 @@ import React, { useRef, useState } from 'react';
 import { User, Phone, Building, Briefcase, Camera, Shield, KeyRound } from 'lucide-react';
 import { userService } from '../services/userService';
 import { hasPermission } from '../utils/permission';
+import { getAvatarUrl } from '../utils/avatarUtils';
 
 const DEFAULT_AVATARS = ['avatar', 'animal-avatar'].flatMap(prefix =>
     Array.from(
@@ -246,7 +247,7 @@ const BasicInfo: React.FC<{ userInfo: UserInfo | null }> = ({ userInfo }) => {
                             >
                                 <div className="w-full h-full rounded-[2rem] bg-slate-100 flex items-center justify-center overflow-hidden relative shadow-inner">
                                     {displayInfo.avatarUrl ? (
-                                        <img src={displayInfo.avatarUrl} alt={displayInfo.name} className="w-full h-full object-cover group-hover/avatar:scale-110 transition-transform duration-700" />
+                                        <img src={getAvatarUrl(displayInfo.avatarUrl, displayInfo.name)} alt={displayInfo.name} className="w-full h-full object-cover group-hover/avatar:scale-110 transition-transform duration-700" />
                                     ) : (
                                         <User size={48} className="text-slate-300" />
                                     )}

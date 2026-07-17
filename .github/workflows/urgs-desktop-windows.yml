@@ -1,0 +1,85 @@
+name: URGS Windows 客户端
+
+on:
+  workflow_dispatch:
+  push:
+    branches:
+      - "codex/windows-desktop"
+    paths:
+      - ".github/workflows/urgs-desktop-windows.yml"
+      - ".github/workflows/urgs-desktop-release.yml"
+      - "urgs-desktop/**"
+      - "urgs-web/**"
+  pull_request:
+    paths:
+      - ".github/workflows/urgs-desktop-windows.yml"
+      - ".github/workflows/urgs-desktop-release.yml"
+      - "urgs-desktop/**"
+      - "urgs-web/**"
+permissions:
+  contents: read
+
+jobs:
+  build-windows:
+    name: 构建 Windows 安装包
+    runs-on: windows-latest
+    timeout-minutes: 60
+
+    steps:
+      - name: 检出代码
+        uses: actions/checkout@v4
+
+      - name: 配置 Node.js
+        uses: actions/setup-node@v4
+        with:
+          node-version: "22"
+
+      - name: 配置 pnpm
+        shell: pwsh
+        run: npm install --global pnpm@11.9.0
+
+      - name: 配置 Rust
+        shell: pwsh
+        run: |
+          rustup update stable
+          rustup default stable
+
+      - name: 安装前端依赖
+        shell: pwsh
+        run: pnpm --dir urgs-web install --frozen-lockfile
+
+      - name: 安装桌面端依赖
+        shell: pwsh
+        run: pnpm --dir urgs-desktop install --frozen-lockfile
+
+      - name: 前端类型检查
+        shell: pwsh
+        run: pnpm --dir urgs-web exec tsc --noEmit
+
+      - name: Rust 单元测试
+        shell: pwsh
+        run: cargo test --manifest-path urgs-desktop/src-tauri/Cargo.toml
+
+      - name: 安装包验收器单元测试
+        shell: pwsh
+        run: pnpm --dir urgs-desktop test
+
+      - name: 构建 MSI 和 Setup.exe
+        shell: pwsh
+        run: pnpm --dir urgs-desktop build:unsigned
+
+      - name: 验收安装包并生成 SHA-256 清单
+        shell: pwsh
+        run: pnpm --dir urgs-desktop verify:windows
+
+      - name: 上传 Windows 安装包
+        uses: actions/upload-artifact@v4
+        with:
+          name: urgs-windows-${{ github.run_id }}-${{ github.run_attempt }}
+          if-no-files-found: error
+          retention-days: 14
+          path: |
+            urgs-desktop/src-tauri/target/release/bundle/msi/*.msi
+            urgs-desktop/src-tauri/target/release/bundle/nsis/*-setup.exe
+            urgs-desktop/src-tauri/target/release/bundle/windows-build-manifest.json
+            urgs-desktop/src-tauri/target/release/bundle/SHA256SUMS.txt

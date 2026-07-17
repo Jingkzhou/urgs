@@ -1,7 +1,7 @@
 import React, { useState, useEffect, useRef, useMemo, useLayoutEffect, useCallback } from 'react';
 import { v4 as uuidv4 } from 'uuid';
 import { RobotOutlined } from '@ant-design/icons';
-import { Sparkles, Database, Cpu, Layers, PenTool, Settings, Sliders, ArrowDown, PanelLeftClose, PanelLeftOpen, SquarePen } from 'lucide-react';
+import { Sparkles, Database, Cpu, Layers, PenTool, ArrowDown, PanelLeftClose, PanelLeftOpen, SquarePen } from 'lucide-react';
 import { motion, AnimatePresence } from 'framer-motion';
 import Sidebar from './Sidebar';
 import ChatMessage from './ChatMessage';
@@ -63,12 +63,6 @@ const ArkPage: React.FC = () => {
     const [viewportHeight, setViewportHeight] = useState(0);
     const [measurementVersion, setMeasurementVersion] = useState(0);
 
-    // RAG Config
-    const [showRagConfig, setShowRagConfig] = useState(false);
-    const [ragConfig, setRagConfig] = useState({
-        fusionStrategy: 'rrf', // rrf | weighted
-        topK: 4
-    });
     const [showScrollBottom, setShowScrollBottom] = useState(false);
 
     const abortControllerRef = useRef<AbortController | null>(null);
@@ -510,15 +504,6 @@ const ArkPage: React.FC = () => {
                 abortControllerRef.current.signal,
                 persistedSessionId,
                 (m) => setMetrics(m),
-                (sources) => {
-                    setMessages(prev => {
-                        const index = prev.findIndex(m => m.id === aiMsgId);
-                        if (index === -1) return prev;
-                        const next = prev.slice();
-                        next[index] = { ...prev[index], sources, status: null }; // Clear status when sources arrive
-                        return next;
-                    });
-                },
                 (status) => {
                     setMessages(prev => {
                         const index = prev.findIndex(m => m.id === aiMsgId);
@@ -528,16 +513,6 @@ const ArkPage: React.FC = () => {
                         return next;
                     });
                 },
-                (intent) => {
-                    setMessages(prev => {
-                        const index = prev.findIndex(m => m.id === aiMsgId);
-                        if (index === -1) return prev;
-                        const next = prev.slice();
-                        next[index] = { ...prev[index], intent }; // Update intent
-                        return next;
-                    });
-                },
-                ragConfig, // Pass config here
                 selectedAgentAppSkill,
                 conversationContext
             );
@@ -593,65 +568,7 @@ const ArkPage: React.FC = () => {
                     </button>
                 </div>
 
-                <div className="relative flex items-center justify-end gap-1.5">
-                    <button
-                        type="button"
-                        onClick={() => setShowRagConfig(prev => !prev)}
-                        className={`flex h-9 w-9 items-center justify-center rounded-lg transition-colors ${showRagConfig ? 'bg-[#f4f4f4] text-slate-900' : 'text-slate-500 hover:bg-[#f4f4f4] hover:text-slate-900'}`}
-                        title="检索设置"
-                    >
-                        <Settings size={18} />
-                    </button>
-                    <AnimatePresence>
-                        {showRagConfig && (
-                            <motion.div
-                                initial={{ opacity: 0, y: 8, scale: 0.98 }}
-                                animate={{ opacity: 1, y: 0, scale: 1 }}
-                                exit={{ opacity: 0, y: 8, scale: 0.98 }}
-                                className="absolute right-0 top-11 z-50 w-72 rounded-lg border border-slate-200 bg-white p-3 shadow-xl"
-                            >
-                                <div className="mb-3 flex items-center gap-2 text-sm font-semibold text-slate-900">
-                                    <Sliders size={16} />
-                                    检索设置
-                                </div>
-                                <div className="space-y-3">
-                                    <div>
-                                        <div className="mb-1.5 text-xs font-medium text-slate-500">融合策略</div>
-                                        <div className="grid grid-cols-2 gap-1 rounded-lg bg-[#f4f4f4] p-1">
-                                            {[
-                                                { label: 'RRF', value: 'rrf' },
-                                                { label: '加权', value: 'weighted' }
-                                            ].map(item => (
-                                                <button
-                                                    key={item.value}
-                                                    type="button"
-                                                    onClick={() => setRagConfig(prev => ({ ...prev, fusionStrategy: item.value }))}
-                                                    className={`rounded-md px-3 py-1.5 text-xs font-semibold transition-colors ${ragConfig.fusionStrategy === item.value ? 'bg-white text-slate-900 shadow-sm' : 'text-slate-500 hover:text-slate-900'}`}
-                                                >
-                                                    {item.label}
-                                                </button>
-                                            ))}
-                                        </div>
-                                    </div>
-                                    <div>
-                                        <div className="mb-1.5 flex items-center justify-between text-xs font-medium text-slate-500">
-                                            <span>Top K</span>
-                                            <span>{ragConfig.topK}</span>
-                                        </div>
-                                        <input
-                                            type="range"
-                                            min={1}
-                                            max={10}
-                                            value={ragConfig.topK}
-                                            onChange={(e) => setRagConfig(prev => ({ ...prev, topK: Number(e.target.value) }))}
-                                            className="w-full accent-slate-900"
-                                        />
-                                    </div>
-                                </div>
-                            </motion.div>
-                        )}
-                    </AnimatePresence>
-                </div>
+                <div className="w-9" />
             </header>
 
             <div className="flex min-h-0 flex-1">
@@ -712,12 +629,6 @@ const ArkPage: React.FC = () => {
                                                 <span className="mt-1 line-clamp-2 block text-sm leading-5 text-slate-500">
                                                     {agent.description || '专业处理特定领域任务'}
                                                 </span>
-                                                {agent.knowledgeBase && (
-                                                    <span className="mt-2 inline-flex max-w-full items-center gap-1 rounded-md bg-slate-100 px-2 py-0.5 text-[11px] font-medium text-slate-500">
-                                                        <Database size={11} />
-                                                        <span className="truncate">{agent.knowledgeBase}</span>
-                                                    </span>
-                                                )}
                                             </span>
                                         </button>
                                     ))}

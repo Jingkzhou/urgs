@@ -40,7 +40,7 @@ SCRIPT_DIR="$(cd -- "$(dirname -- "${BASH_SOURCE[0]}")" && pwd)"
 API_DIR="$SCRIPT_DIR/urgs-api"
 EXECUTOR_DIR="$SCRIPT_DIR/urgs-executor"
 WEB_DIR="$SCRIPT_DIR/urgs-web"
-RAG_DIR="$SCRIPT_DIR/urgs-rag"
+DESKTOP_DIR="$SCRIPT_DIR/urgs-desktop"
 PRESENTATION_DIR="$SCRIPT_DIR/urgs+-presentation-platform"
 LOCAL_ENV_FILE="${START_ENV_FILE:-$SCRIPT_DIR/deploy/templates/deploy.${ENVIRONMENT}.env}"
 if [ "$ENVIRONMENT" = "local" ]; then
@@ -56,7 +56,7 @@ ONLYOFFICE_LOCAL_CONTAINER_STARTED=false
 ENABLE_BACKEND=false
 ENABLE_EXECUTOR=false
 ENABLE_FRONTEND=false
-ENABLE_RAG=false
+ENABLE_DESKTOP=false
 ENABLE_PRESENTATION=false
 ENABLE_ONLYOFFICE=false
 
@@ -105,7 +105,8 @@ kill_port_if_exists() {
     local existing
     existing=$(lsof -ti :"$port" 2>/dev/null || true)
     if [ -n "$existing" ]; then
-      echo "Found process on port $port (PID: $existing), killing..."
+      local pid_list="${existing//$'\n'/ }"
+      echo "Found process on port $port (PID: $pid_list), killing..."
       kill -9 $existing 2>/dev/null || true
     fi
   else
@@ -135,17 +136,11 @@ configure_storage_env() {
   export DATA_ROOT="$effective_data_root"
   export URGS_PROFILE="${URGS_PROFILE:-${DATA_ROOT}/api/uploads}"
   export IM_UPLOAD_PATH="${IM_UPLOAD_PATH:-${DATA_ROOT}/api/im-uploads}"
-  export RAG_DOC_STORE_PATH="${RAG_DOC_STORE_PATH:-${DATA_ROOT}/rag/doc_store}"
-  export CHROMA_PERSIST_DIRECTORY="${CHROMA_PERSIST_DIRECTORY:-${DATA_ROOT}/rag/chroma_db}"
-  export DOC_STORAGE_PATH="${DOC_STORAGE_PATH:-${DATA_ROOT}/rag/doc_store}"
-  export PARENT_DOC_STORE_PATH="${PARENT_DOC_STORE_PATH:-${DATA_ROOT}/rag/parent_store}"
-  export CLEAN_SAMPLE_DIR="${CLEAN_SAMPLE_DIR:-${DATA_ROOT}/rag/clean_samples}"
   export DEPLOY_TOOL_WORKDIR="${DEPLOY_TOOL_WORKDIR:-${DATA_ROOT}/db_deploy}"
   export LINEAGE_ENGINE_SHARED_DIR="${LINEAGE_ENGINE_SHARED_DIR:-${DATA_ROOT}/lineage/share}"
   export ISSUE_ATTACHMENT_PATH="${ISSUE_ATTACHMENT_PATH:-${DATA_ROOT}/attachments}"
 
-  for path_var in URGS_PROFILE IM_UPLOAD_PATH RAG_DOC_STORE_PATH CHROMA_PERSIST_DIRECTORY \
-    DOC_STORAGE_PATH PARENT_DOC_STORE_PATH CLEAN_SAMPLE_DIR DEPLOY_TOOL_WORKDIR \
+  for path_var in URGS_PROFILE IM_UPLOAD_PATH DEPLOY_TOOL_WORKDIR \
     LINEAGE_ENGINE_SHARED_DIR ISSUE_ATTACHMENT_PATH; do
     local path_value="${!path_var}"
     if [[ "$path_value" != /* ]]; then
@@ -154,9 +149,8 @@ configure_storage_env() {
     fi
   done
 
-  mkdir -p "$URGS_PROFILE" "$IM_UPLOAD_PATH" "$RAG_DOC_STORE_PATH" \
-    "$CHROMA_PERSIST_DIRECTORY" "$PARENT_DOC_STORE_PATH" "$CLEAN_SAMPLE_DIR" \
-    "$DEPLOY_TOOL_WORKDIR" "$LINEAGE_ENGINE_SHARED_DIR" "$ISSUE_ATTACHMENT_PATH"
+  mkdir -p "$URGS_PROFILE" "$IM_UPLOAD_PATH" "$DEPLOY_TOOL_WORKDIR" \
+    "$LINEAGE_ENGINE_SHARED_DIR" "$ISSUE_ATTACHMENT_PATH"
 }
 
 generate_internal_api_token() {
@@ -235,11 +229,6 @@ start_backend() {
   echo "Starting backend (env: $ENVIRONMENT, profile: $spring_profile, config: $LOCAL_ENV_FILE)..."
   echo "Backend JVM opts: $API_JAVA_OPTS"
 
-  # Explicitly export RAG properties to avoid placeholder resolution issues
-  export RAG_BASE_URL="${RAG_SERVICE_URL:-http://localhost:8001}/api/rag"
-  export AI_RAG_BASE_URL="$RAG_BASE_URL"
-  export AI_RAG_DOC_STORE_PATH="$RAG_DOC_STORE_PATH"
-
   # Construct Neo4j Properties if var exists
   if [ -n "${NEO4J_HOST:-}" ]; then
     # 如果在宿主机运行，neo4j 习惯上访问 localhost
@@ -272,25 +261,35 @@ start_frontend() {
   pids+=($!)
 }
 
-start_rag() {
-  echo "Starting rag..."
-  cd "$RAG_DIR"
-  load_env_file
-  configure_storage_env
-  
-  if [ ! -d ".venv" ]; then
-    echo "Creating virtual environment for RAG..."
-    chmod +x install_env.sh
-    ./install_env.sh
+start_desktop() {
+  echo "Starting desktop client ($ENVIRONMENT)..."
+  cd "$DESKTOP_DIR"
+  kill_port_if_exists 3000
+  kill_port_if_exists 3001
+
+  local pnpm_bin
+  local -a pnpm_cmd
+  pnpm_bin="$(command -v pnpm || true)"
+  if [ -n "$pnpm_bin" ]; then
+    pnpm_cmd=("$pnpm_bin")
+  else
+    echo "pnpm not found; using pnpm 10 through npm."
+    pnpm_cmd=("$NPM_BIN" exec --yes --package=pnpm@10 -- pnpm)
+  fi
+  if ! command -v cargo >/dev/null 2>&1; then
+    echo "Rust/Cargo not found. Install the Rust toolchain before starting urgs-desktop."
+    exit 1
+  fi
+  if [ ! -x "$WEB_DIR/node_modules/.bin/vite" ]; then
+    echo "Installing frontend dependencies in $WEB_DIR..."
+    CI=true "${pnpm_cmd[@]}" --dir "$WEB_DIR" install --frozen-lockfile
+  fi
+  if [ ! -x "node_modules/.bin/tauri" ]; then
+    echo "Installing desktop dependencies in $DESKTOP_DIR..."
+    CI=true "${pnpm_cmd[@]}" install --frozen-lockfile
   fi
 
-  kill_port_if_exists 8001
-  
-  if [ "$ENVIRONMENT" = "local" ] || [ "$ENVIRONMENT" = "dev" ]; then
-    .venv_312/bin/uvicorn app.main:app --host 0.0.0.0 --port 8001 --reload --loop asyncio &
-  else
-    .venv_312/bin/uvicorn app.main:app --host 0.0.0.0 --port 8001 --loop asyncio &
-  fi
+  "${pnpm_cmd[@]}" dev &
   pids+=($!)
 }
 
@@ -417,16 +416,16 @@ start_agent() {
 
 # --- Interactive Menu ---
 echo "Multiple services detected. Please select which ones to start:"
-echo "  [1] All Services (Backend, Executor, Frontend, RAG, Agent)"
+echo "  [1] All Services (Backend, Executor, Frontend, Agent)"
 echo "  [2] Backend (urgs-api)"
 echo "  [3] Executor (urgs-executor)"
 echo "  [4] Frontend (urgs-web)"
-echo "  [5] RAG (urgs-rag)"
-echo "  [6] Presentation (urgs-presentation)"
-echo "  [7] Agent (urgs-agent)"
-echo "  [8] ONLYOFFICE Docs"
+echo "  [5] Presentation (urgs-presentation)"
+echo "  [6] Agent (urgs-agent)"
+echo "  [7] ONLYOFFICE Docs"
+echo "  [8] Desktop Client (urgs-desktop, includes frontend)"
 echo ""
-echo "Enter your choice (e.g., '1' for all, or '2 7' for Backend+Agent):"
+echo "Enter your choice (e.g., '1' for all, or '2 3 8' for Backend+Executor+Desktop):"
 read -r -a choices
 
 if [ ${#choices[@]} -eq 0 ]; then
@@ -440,7 +439,6 @@ for choice in "${choices[@]}"; do
       ENABLE_BACKEND=true
       ENABLE_EXECUTOR=true
       ENABLE_FRONTEND=true
-      ENABLE_RAG=true
       ENABLE_PRESENTATION=true
       ENABLE_AGENT=true
       ENABLE_ONLYOFFICE=true
@@ -448,25 +446,30 @@ for choice in "${choices[@]}"; do
     2) ENABLE_BACKEND=true ;;
     3) ENABLE_EXECUTOR=true ;;
     4) ENABLE_FRONTEND=true ;;
-    5) ENABLE_RAG=true ;;
-    6) ENABLE_PRESENTATION=true ;;
-    7) ENABLE_AGENT=true ;;
-    8) ENABLE_ONLYOFFICE=true ;;
+    5) ENABLE_PRESENTATION=true ;;
+    6) ENABLE_AGENT=true ;;
+    7) ENABLE_ONLYOFFICE=true ;;
+    8) ENABLE_DESKTOP=true ;;
     *) echo "Unknown option: $choice (ignored)" ;;
   esac
 done
 
-if [ "$ENABLE_BACKEND" = true ] && [ "$ENABLE_FRONTEND" = true ] && [ "$ENABLE_EXECUTOR" != true ]; then
-  echo "Backend + frontend selected; enabling executor because task trigger APIs call urgs-executor on port 8082."
+if [ "$ENABLE_DESKTOP" = true ] && [ "$ENABLE_FRONTEND" = true ]; then
+  echo "Desktop starts urgs-web automatically; disabling the standalone frontend to avoid a port conflict."
+  ENABLE_FRONTEND=false
+fi
+
+if [ "$ENABLE_BACKEND" = true ] && { [ "$ENABLE_FRONTEND" = true ] || [ "$ENABLE_DESKTOP" = true ]; } && [ "$ENABLE_EXECUTOR" != true ]; then
+  echo "Backend + UI selected; enabling executor because task trigger APIs call urgs-executor on port 8082."
   ENABLE_EXECUTOR=true
 fi
 
 if [ "$ENABLE_ONLYOFFICE" = true ]; then start_onlyoffice; fi
 if [ "$ENABLE_BACKEND" = true ]; then start_backend; fi
 if [ "$ENABLE_EXECUTOR" = true ]; then start_executor; fi
-if [ "$ENABLE_FRONTEND" = true ] || [ "$ENABLE_PRESENTATION" = true ]; then resolve_node_runtime; fi
+if [ "$ENABLE_FRONTEND" = true ] || [ "$ENABLE_DESKTOP" = true ] || [ "$ENABLE_PRESENTATION" = true ]; then resolve_node_runtime; fi
 if [ "$ENABLE_FRONTEND" = true ]; then start_frontend; fi
-if [ "$ENABLE_RAG" = true ]; then start_rag; fi
+if [ "$ENABLE_DESKTOP" = true ]; then start_desktop; fi
 if [ "$ENABLE_PRESENTATION" = true ]; then start_presentation; fi
 if [ "$ENABLE_AGENT" = true ]; then start_agent; fi
 

@@ -52,13 +52,3 @@ class ModelProvider(ABC):
     @abstractmethod
     def create(self, target: ModelTarget, **kwargs: Any) -> BaseChatModel:
         raise NotImplementedError
-
-
-class Retriever(ABC):
-    name: str
-
-    @abstractmethod
-    async def search(
-        self, query: str, knowledge_bases: list[str], context: ToolContext
-    ) -> list[dict[str, Any]]:
-        raise NotImplementedError

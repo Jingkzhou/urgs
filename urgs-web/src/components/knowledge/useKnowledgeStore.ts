@@ -3,6 +3,7 @@ import { message } from 'antd';
 import * as api from '../../api/knowledge';
 import type { FolderTreeNode, KnowledgeDocument, KnowledgeTag } from '../../api/knowledge';
 import { hasPermission } from '../../utils/permission';
+import { resolveServiceUrl } from '@/config';
 
 const getErrorMessage = (error: unknown, fallback: string) => {
     if (error instanceof Error && error.message) {
@@ -349,7 +350,7 @@ export function useKnowledgeStore() {
         handleDownloadItem: (doc: KnowledgeDocument) => {
             if (doc.fileUrl) {
                 const link = document.createElement('a');
-                link.href = doc.fileUrl;
+                link.href = resolveServiceUrl(doc.fileUrl);
                 link.download = doc.fileName || doc.title;
                 document.body.appendChild(link);
                 link.click();

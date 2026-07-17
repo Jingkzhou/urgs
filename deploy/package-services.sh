@@ -28,7 +28,6 @@ Services:
   api          Build and package urgs-api Spring Boot service.
   web          Build and package urgs-web static frontend.
   executor     Build and package urgs-executor Spring Boot service.
-  rag          Package urgs-rag Python service source and requirements.
   agent        Package urgs-agent LangGraph runtime source and lock file.
   lineage      Package sql-lineage-engine source and requirements.
 
@@ -38,7 +37,7 @@ Components:
   onlyoffice   Package official ARM64 ONLYOFFICE Document Server DEB.
 
 Groups:
-  app-all      api web executor rag agent lineage
+  app-all      api web executor agent lineage
   deps-all     nginx redis onlyoffice
   full         app-all deps-all
 
@@ -47,7 +46,6 @@ Examples:
   deploy/package-services.sh --env pre full
   deploy/package-services.sh --env sit api web nginx redis
   deploy/package-services.sh api web
-  deploy/package-services.sh api web executor rag
   deploy/package-services.sh full
   REDIS_TARBALL=/tmp/redis.tar.gz deploy/package-services.sh api web redis
   NGINX_TARBALL=/tmp/nginx.tar.gz REDIS_TARBALL=/tmp/redis.tar.gz deploy/package-services.sh full
@@ -87,7 +85,6 @@ normalize_service() {
         api | urgs-api) echo "api" ;;
         web | urgs-web | frontend) echo "web" ;;
         executor | urgs-executor) echo "executor" ;;
-        rag | urgs-rag) echo "rag" ;;
         agent | urgs-agent) echo "agent" ;;
         lineage | sql-lineage-engine) echo "lineage" ;;
         nginx) echo "nginx" ;;
@@ -326,13 +323,6 @@ build_web() {
     cp -R "${ROOT_DIR}/urgs-web/dist" "${WORK_DIR}/services/web/dist"
 }
 
-package_rag() {
-    log "Packaging urgs-rag source."
-    [ -f "${ROOT_DIR}/urgs-rag/requirements.txt" ] || die "urgs-rag/requirements.txt does not exist."
-    mkdir -p "${WORK_DIR}/services/rag"
-    copy_with_rsync "${ROOT_DIR}/urgs-rag/" "${WORK_DIR}/services/rag/"
-}
-
 package_agent() {
     log "Packaging urgs-agent source."
     [ -f "${ROOT_DIR}/urgs-agent/pyproject.toml" ] || die "urgs-agent/pyproject.toml does not exist."
@@ -466,13 +456,13 @@ configure_package_name
 for raw_service in "${ARGS[@]}"; do
     case "$raw_service" in
         app-all)
-            for service in api web executor rag agent lineage; do append_service "$service"; done
+            for service in api web executor agent lineage; do append_service "$service"; done
             ;;
         deps-all)
             for service in nginx redis onlyoffice; do append_service "$service"; done
             ;;
         full)
-            for service in api web executor rag agent lineage nginx redis onlyoffice; do append_service "$service"; done
+            for service in api web executor agent lineage nginx redis onlyoffice; do append_service "$service"; done
             ;;
         *)
             service="$(normalize_service "$raw_service")" || die "Unknown service: ${raw_service}"
@@ -494,7 +484,6 @@ for service in "${SERVICES[@]}"; do
         api) build_api ;;
         web) build_web ;;
         executor) build_executor ;;
-        rag) package_rag ;;
         agent) package_agent ;;
         lineage) package_lineage ;;
         nginx | redis | onlyoffice) package_component "$service" ;;

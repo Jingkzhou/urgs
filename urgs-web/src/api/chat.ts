@@ -217,10 +217,7 @@ export const streamChatResponse = async (
     signal?: AbortSignal,
     sessionId?: string,
     onMetrics?: (metrics: { used: number, limit: number }) => void,
-    onSources?: (sources: any[]) => void,
     onStatus?: (status: string) => void,
-    onIntent?: (intent: string) => void,
-    ragConfig?: { fusionStrategy?: string; topK?: number },
     agentAppSkill?: { appCode: string; code: string; name: string } | null,
     conversationContext?: ConversationContextMessage[]
 ) => {
@@ -239,7 +236,6 @@ export const streamChatResponse = async (
             body: JSON.stringify({
                 userPrompt: userMessage,
                 sessionId: sessionId,
-                ragConfig,
                 agentAppSkillAppCode: agentAppSkill?.appCode,
                 agentAppSkillCode: agentAppSkill?.code,
                 conversationContext: conversationContext && conversationContext.length > 0
@@ -271,7 +267,7 @@ export const streamChatResponse = async (
                 const { done, value } = await reader.read();
                 if (done) {
                     if (buffer.trim()) {
-                        processLines(buffer, onChunk, safeOnComplete, onMetrics, onStatus, onSources, onIntent, currentEventName);
+                        processLines(buffer, onChunk, safeOnComplete, onMetrics, onStatus, currentEventName);
                     }
                     safeOnComplete();
                     break;
@@ -293,7 +289,7 @@ export const streamChatResponse = async (
                         continue;
                     }
                     // 处理 data: 行
-                    processLine(line, onChunk, safeOnComplete, onMetrics, onStatus, onSources, onIntent, currentEventName);
+                    processLine(line, onChunk, safeOnComplete, onMetrics, onStatus, currentEventName);
                     // 空行表示事件结束，重置事件名称
                     if (!line.trim()) {
                         currentEventName = '';
@@ -310,14 +306,14 @@ export const streamChatResponse = async (
     }
 };
 
-const processLines = (text: string, onChunk: (c: string) => void, onComplete: () => void, onMetrics?: (m: any) => void, onStatus?: (s: string) => void, onSources?: (s: any[]) => void, onIntent?: (i: string) => void, eventName?: string) => {
+const processLines = (text: string, onChunk: (c: string) => void, onComplete: () => void, onMetrics?: (m: any) => void, onStatus?: (s: string) => void, eventName?: string) => {
     const lines = text.split('\n');
     for (const line of lines) {
-        processLine(line, onChunk, onComplete, onMetrics, onStatus, onSources, onIntent, eventName);
+        processLine(line, onChunk, onComplete, onMetrics, onStatus, eventName);
     }
 };
 
-const processLine = (line: string, onChunk: (c: string) => void, onComplete: () => void, onMetrics?: (m: any) => void, onStatus?: (s: string) => void, onSources?: (s: any[]) => void, onIntent?: (i: string) => void, eventName?: string) => {
+const processLine = (line: string, onChunk: (c: string) => void, onComplete: () => void, onMetrics?: (m: any) => void, onStatus?: (s: string) => void, eventName?: string) => {
     if (!line.trim()) return;
 
     // event: 行已在主循环中处理，这里直接跳过
@@ -344,23 +340,10 @@ const processLine = (line: string, onChunk: (c: string) => void, onComplete: () 
         return;
     }
 
-    if (data === 'searching') {
-        if (onStatus) onStatus('searching');
-        return;
-    }
-
     try {
         const parsed = JSON.parse(data);
 
         // 根据事件名称路由处理
-        if (eventName === 'sources') {
-            // sources 事件：数据是数组
-            if (onSources && Array.isArray(parsed)) {
-                onSources(parsed);
-            }
-            return;
-        }
-
         if (eventName === 'metrics') {
             if (onMetrics) onMetrics(parsed);
             return;
@@ -374,19 +357,11 @@ const processLine = (line: string, onChunk: (c: string) => void, onComplete: () 
         // 默认处理（无事件名称或 message 事件）
         if (parsed.status === 'compressing') {
             if (onStatus) onStatus('compressing');
-        } else if (parsed.status === 'searching') {
-            if (onStatus) onStatus('searching');
         } else if (parsed.content) {
             onChunk(parsed.content);
         } else if (parsed.used !== undefined && parsed.limit !== undefined) {
             // 处理指标数据
             if (onMetrics) onMetrics(parsed);
-        } else if (Array.isArray(parsed)) {
-            // 处理来源数据 (兼容无事件名称的情况)
-            if (onSources) onSources(parsed);
-        } else if (parsed.intent) {
-            // 处理意图数据
-            if (onIntent) onIntent(parsed.intent);
         } else if (parsed.error) {
             console.error("Stream reported error:", parsed.error);
         }

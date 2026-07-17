@@ -1,6 +1,7 @@
 import React, { useEffect, useState } from 'react';
 import { Building, Calendar, Moon, ShieldCheck, Sun, User } from 'lucide-react';
 import { motion } from 'framer-motion';
+import { getAvatarUrl } from '@/utils/avatarUtils';
 
 interface UserInfo {
   name?: string;
@@ -61,7 +62,7 @@ const OpsWelcomeCard: React.FC = () => {
         <div className="flex min-w-0 items-center gap-3.5">
           <div className="flex h-12 w-12 shrink-0 items-center justify-center rounded-2xl bg-gradient-to-br from-red-500 to-rose-600 p-0.5 text-white shadow-lg shadow-red-500/10">
             {userInfo?.avatarUrl ? (
-              <img src={userInfo.avatarUrl} alt={userInfo.name || '用户'} className="h-full w-full rounded-[0.85rem] object-cover" />
+              <img src={getAvatarUrl(userInfo.avatarUrl, userInfo.name)} alt={userInfo.name || '用户'} className="h-full w-full rounded-[0.85rem] object-cover" />
             ) : (
               <User className="h-5 w-5" />
             )}

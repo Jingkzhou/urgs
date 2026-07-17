@@ -3,6 +3,7 @@ import { getAvatarUrl } from '../../utils/avatarUtils';
 import { Card, Tag, Button, Avatar, Divider, Input, message, List, Space, Mentions, Tooltip } from 'antd';
 import { User, Clock, Calendar, MessageSquare, Reply, ArrowLeft, Download, Paperclip, Share2, Heart, MoreVertical, Megaphone, FileText } from 'lucide-react';
 import { debounce } from 'lodash';
+import { resolveServiceUrl } from '@/config';
 
 
 
@@ -327,7 +328,7 @@ const AnnouncementDetail: React.FC<AnnouncementDetailProps> = ({ id, onBack }) =
                                         {(typeof detail.attachments === 'string' ? JSON.parse(detail.attachments) : detail.attachments)?.map((file: any, idx: number) => (
                                             <a
                                                 key={idx}
-                                                href={file.url}
+                                                href={resolveServiceUrl(file.url)}
                                                 target="_blank"
                                                 className="flex items-center justify-between p-3 bg-white rounded-2xl border border-slate-200 hover:border-violet-300 hover:shadow-md transition-all group"
                                             >

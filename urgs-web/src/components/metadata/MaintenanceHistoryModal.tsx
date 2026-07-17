@@ -1,6 +1,6 @@
 import React, { useEffect, useState } from 'react';
 import { X, Calendar, User, Tag, Clock } from 'lucide-react';
-import axios from 'axios';
+import { get } from '@/utils/request';
 
 interface MaintenanceRecord {
     id: string;
@@ -54,8 +54,7 @@ const MaintenanceHistoryModal: React.FC<MaintenanceHistoryModalProps> = ({
     const fetchRecords = async () => {
         setLoading(true);
         try {
-            const token = localStorage.getItem('auth_token');
-            const params: any = {
+            const params: Record<string, string | number> = {
                 tableName,
                 size: 100,
             };
@@ -65,11 +64,11 @@ const MaintenanceHistoryModal: React.FC<MaintenanceHistoryModalProps> = ({
             if (fieldName) {
                 params.fieldName = fieldName;
             }
-            const response = await axios.get('/api/metadata/maintenance-record', {
-                params,
-                headers: { 'Authorization': `Bearer ${token}` }
-            });
-            setRecords(response.data.records);
+            const response = await get<{ records: MaintenanceRecord[] }>(
+                '/api/metadata/maintenance-record',
+                params
+            );
+            setRecords(response.records);
         } catch (error) {
             console.error('Failed to fetch maintenance history', error);
             setRecords([]);

@@ -3,6 +3,7 @@ import { MoreHorizontal, Paperclip, Mic, Send, Image, ZoomIn, ZoomOut, RotateCw,
 import { message as antdMessage } from 'antd';
 import { getAvatarUrl } from '../../utils/avatarUtils';
 import { copyToClipboard } from '../../utils/clipboard';
+import { resolveServiceUrl } from '@/config';
 
 interface Message {
     id: number;
@@ -173,7 +174,7 @@ const ChatWindow: React.FC<ChatWindowProps> = ({ sessionName, messages, onSendMe
         e?.stopPropagation();
         if (!previewImage) return;
         const link = document.createElement('a');
-        link.href = previewImage;
+        link.href = resolveServiceUrl(previewImage);
         link.download = `image_${Date.now()}.png`; // Simple download
         document.body.appendChild(link);
         link.click();
@@ -248,7 +249,7 @@ const ChatWindow: React.FC<ChatWindowProps> = ({ sessionName, messages, onSendMe
             const file = parseFilePayload(msg.content);
             return (
                 <a
-                    href={file.url}
+                    href={resolveServiceUrl(file.url)}
                     download={file.name}
                     target="_blank"
                     rel="noreferrer"
@@ -268,7 +269,7 @@ const ChatWindow: React.FC<ChatWindowProps> = ({ sessionName, messages, onSendMe
         }
         return (
             <img
-                src={msg.content}
+                src={resolveServiceUrl(msg.content)}
                 alt="Content"
                 className={`rounded-lg max-w-full cursor-pointer hover:opacity-95 max-h-64 object-contain ${isSelf ? 'border border-sky-100 bg-white' : 'bg-white'}`}
                 onDoubleClick={() => setPreviewImage(msg.content)}
@@ -486,7 +487,7 @@ const ChatWindow: React.FC<ChatWindowProps> = ({ sessionName, messages, onSendMe
                         onMouseLeave={handleMouseUp}
                     >
                         <img
-                            src={previewImage}
+                            src={resolveServiceUrl(previewImage)}
                             alt="Preview"
                             className="max-w-none transition-transform duration-75 ease-linear"
                             style={{

@@ -18,6 +18,10 @@ dayjs.extend(weekYear);
 dayjs.locale('zh-cn');
 
 import App from './App';
+import DesktopConnectionSetup from './components/desktop/DesktopConnectionSetup';
+import DesktopAutoUpdater from './components/desktop/DesktopAutoUpdater';
+import { getApiBaseUrl, installServiceRequestAdapters, isDesktopRuntime } from './config';
+import { initializeDesktopRuntimeConfig } from './utils/desktopRuntime';
 import './index.css';
 
 const rootElement = document.getElementById('root');
@@ -26,8 +30,18 @@ if (!rootElement) {
 }
 
 const root = ReactDOM.createRoot(rootElement);
-root.render(
-  <React.StrictMode>
-    <App />
-  </React.StrictMode>
-);
+
+const startApplication = async () => {
+  await initializeDesktopRuntimeConfig();
+  installServiceRequestAdapters();
+  const editDesktopConnection = localStorage.getItem('urgs_desktop_edit_connection') === '1';
+
+  root.render(
+    <React.StrictMode>
+      {isDesktopRuntime() && (!getApiBaseUrl() || editDesktopConnection) ? <DesktopConnectionSetup /> : <App />}
+      <DesktopAutoUpdater />
+    </React.StrictMode>
+  );
+};
+
+void startApplication();

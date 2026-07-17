@@ -30,7 +30,6 @@ class Settings(BaseSettings):
     openai_api_key: str = "not-set"
     openai_model: str = "qwen3"
     urgs_api_url: str = "http://127.0.0.1:8080"
-    rag_url: str = "http://127.0.0.1:8001"
     lineage_url: str = "http://127.0.0.1:8080"
     http_timeout_seconds: float = 60.0
     knowledge_wiki_root: str = (

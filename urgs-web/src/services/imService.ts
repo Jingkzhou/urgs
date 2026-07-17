@@ -1,5 +1,4 @@
-import axios from 'axios';
-import { get, post } from '@/utils/request';
+import { del, get, post } from '@/utils/request';
 
 // Interfaces matching Backend Entities
 export interface ImUser {
@@ -115,31 +114,19 @@ export const imService = {
     },
 
     clearHistory: async (peerId: number, chatType: number) => {
-        return axios.delete(`${API_BASE}/session/${peerId}/history`, {
-            params: { chatType },
-            headers: { 'Authorization': `Bearer ${localStorage.getItem('auth_token')}` }
-        });
+        return del(`${API_BASE}/session/${peerId}/history`, { chatType });
     },
 
     deleteSession: async (peerId: number, chatType?: number) => {
         // DELETE request
-        return axios.delete(`${API_BASE}/session/${peerId}`, {
-            params: { chatType },
-            headers: { 'Authorization': `Bearer ${localStorage.getItem('auth_token')}` }
-        });
+        return del(`${API_BASE}/session/${peerId}`, { chatType });
     },
 
     addGroupMembers: async (groupId: number, memberIds: number[]) => {
-        const response = await axios.post(`${API_BASE}/group/addMembers`, { groupId, memberIds }, {
-            headers: { 'Authorization': `Bearer ${localStorage.getItem('auth_token')}` }
-        });
-        return response.data; // "success"
+        return post<string>(`${API_BASE}/group/addMembers`, { groupId, memberIds });
     },
 
     removeGroupMembers: async (groupId: number, memberIds: number[]) => {
-        const response = await axios.post(`${API_BASE}/group/kick`, { groupId, memberIds }, {
-            headers: { 'Authorization': `Bearer ${localStorage.getItem('auth_token')}` }
-        });
-        return response.data;
+        return post<string>(`${API_BASE}/group/kick`, { groupId, memberIds });
     }
 };

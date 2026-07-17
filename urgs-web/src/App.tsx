@@ -20,6 +20,7 @@ import ToolsPage from './components/tools/ToolsPage';
 import { DashboardViewDefinition, DashboardViewKey, dashboardViewDefinitions } from './components/home/dashboardViews';
 import { getMarketplaceTodos } from './api/marketplace';
 import { LOGO_URL } from './constants';
+import { resolveServiceUrl } from './config';
 
 const NAV_ITEMS = [
     { id: 'dashboard', label: '工作台', icon: LayoutDashboard, permission: 'dashboard' },
@@ -380,7 +381,7 @@ const App: React.FC = () => {
                                 }`}
                             >
                                 {userInfo?.avatarUrl ? (
-                                    <img src={userInfo.avatarUrl} alt="Avatar" className="h-full w-full object-cover grayscale-[0.5] transition-all duration-700 group-hover:grayscale-0" />
+                                    <img src={resolveServiceUrl(userInfo.avatarUrl)} alt="Avatar" className="h-full w-full object-cover grayscale-[0.5] transition-all duration-700 group-hover:grayscale-0" />
                                 ) : (
                                     <UserCircle size={22} className="text-slate-400" />
                                 )}
@@ -554,7 +555,7 @@ const App: React.FC = () => {
                                             `}
                                             >
                                                 {userInfo?.avatarUrl ? (
-                                                    <img src={userInfo.avatarUrl} alt="Avatar" className="w-full h-full object-cover grayscale-[0.5] group-hover:grayscale-0 transition-all duration-700" />
+                                                    <img src={resolveServiceUrl(userInfo.avatarUrl)} alt="Avatar" className="w-full h-full object-cover grayscale-[0.5] group-hover:grayscale-0 transition-all duration-700" />
                                                 ) : (
                                                     <div className="w-full h-full flex items-center justify-center bg-gradient-to-br from-slate-100 to-slate-50 text-slate-400">
                                                         <UserCircle size={28} strokeWidth={1.5} />

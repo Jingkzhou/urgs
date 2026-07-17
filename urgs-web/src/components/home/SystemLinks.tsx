@@ -2,7 +2,6 @@ import React, { useState, useEffect, useRef, useCallback } from 'react';
 import { motion, AnimatePresence } from 'framer-motion';
 import {
   ShieldCheck,
-  Cpu,
   Layout,
   ArrowUpRight,
   Sparkles,
@@ -11,6 +10,8 @@ import {
   ChevronLeft
 } from 'lucide-react';
 import { getSystemList, jumpSystem } from '@/api/ops';
+import { isDesktopRuntime } from '@/config';
+import { openExternalUrl } from '@/utils/desktopRuntime';
 
 interface SystemLinksProps {
   fullWidth?: boolean;
@@ -72,7 +73,6 @@ const SystemLinks: React.FC<SystemLinksProps> = ({
   };
 
   const getSystemIcon = (name: string) => {
-    if (name.includes('RAG')) return <Cpu className="w-5 h-5" />;
     if (name.includes('血缘')) return <Sparkles className="w-5 h-5" />;
     if (name.includes('仓库')) return <Layout className="w-5 h-5" />;
     if (name.includes('监管')) return <ShieldCheck className="w-5 h-5" />;
@@ -110,7 +110,7 @@ const SystemLinks: React.FC<SystemLinksProps> = ({
       return;
     }
 
-    const jumpWindow = window.open('about:blank', '_blank');
+    const jumpWindow = isDesktopRuntime() ? null : window.open('about:blank', '_blank');
     try {
       const result = await jumpSystem(system.id);
       if (!result?.targetUrl) {
@@ -128,7 +128,9 @@ const SystemLinks: React.FC<SystemLinksProps> = ({
         systemName: system.name,
         targetOrigin: new URL(result.targetUrl, window.location.origin).origin,
       });
-      if (jumpWindow) {
+      if (isDesktopRuntime()) {
+        await openExternalUrl(result.targetUrl);
+      } else if (jumpWindow) {
         jumpWindow.location.href = result.targetUrl;
       } else {
         window.location.href = result.targetUrl;

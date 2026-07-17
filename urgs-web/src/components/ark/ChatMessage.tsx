@@ -187,7 +187,7 @@ const ChatMessage: React.FC<ChatMessageProps> = ({ message, isStreaming = false 
                             </div>
                         )}
 
-                        {/* RAG Sources Citations */}
+                        {/* Historical source citations */}
                         {message.sources && message.sources.length > 0 && (
                             <motion.div
                                 initial={{ opacity: 0, y: 10 }}

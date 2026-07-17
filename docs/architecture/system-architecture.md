@@ -8,7 +8,7 @@
 
 ## 一、系统概述
 
-URGS 是一个面向数据团队的综合性治理平台，整合了**任务调度、数据血缘治理、知识库检索（RAG）、元数据管理、版本发布**等核心能力，通过统一 Web 控制台提供可视化的运维监控与治理体验。
+URGS 是一个面向数据团队的综合性治理平台，整合了**任务调度、数据血缘治理、AI 智能体、元数据管理、版本发布**等核心能力，通过统一 Web 控制台提供可视化的运维监控与治理体验。
 
 ### 核心能力
 
@@ -17,7 +17,7 @@ URGS 是一个面向数据团队的综合性治理平台，整合了**任务调�
 | 任务调度 | 基于 Quartz 的分布式定时任务调度，支持任务依赖、日志追踪 |
 | 数据血缘 | SQL 静态分析 + 运行时采集，构建表级/字段级血缘图谱 |
 | 元数据管理 | 监管报表元数据注册、数据资产目录、数据源动态接入 |
-| 知识库 RAG | 文档向量化检索、AI 对话助手、监管规则问答 |
+| AI 智能体 | 流式对话、工具编排、业务任务执行 |
 | 版本管理 | Git 平台集成、生产包构建、发布流水线 |
 | 运维监控 | 基础设施资产管理、Docker 容器监控、指标可视化 |
 | 工作流 | 审批流程、任务协作、工单闭环 |
@@ -205,19 +205,19 @@ urgs-executor/
 Python 实现的 AI Agent 服务，提供：
 
 - 与大模型（Dify 平台）的集成
-- 知识库向量检索与 RAG 推理
-- 监管规则智能问答
+- 知识 Wiki 与业务 API 工具调用
+- 场景化智能问答
 - Agent Skill 管理（App Code 模式）
 
 ```
-urg-agent/
-├── agent/              # Agent 核心逻辑
-│   ├── rag/            # RAG 检索增强生成
-│   ├── skill/          # Skill 加载与执行
-│   └── llm/            # 大模型调用封装
-├── api/                # FastAPI / Flask 接口层
-├── config/             # 模型配置、知识库配置
-└── requirements.txt
+urgs-agent/
+├── src/urgs_agent/
+│   ├── api/            # FastAPI 与 SSE
+│   ├── plugins/        # 模型、工具、知识 Wiki 与 MCP 插件
+│   ├── runtime/        # Agent 编译与 Worker 执行
+│   └── storage/        # PostgreSQL、Redis 与仓储
+├── migrations/         # Alembic 迁移
+└── pyproject.toml
 ```
 
 ---
@@ -407,11 +407,10 @@ VersionPackage（版本包）
 | 数据库迁移 | Flyway | 版本化 Schema 管理 |
 | 调度 | Quartz | 分布式定时任务 |
 | 图数据库 | Neo4j | 血缘关系图存储 |
-| 文档库 | MongoDB | 知识库文档存储 |
 | 缓存 | Redis | 会话、热点数据 |
 | 时序数据 | Cassandra | 指标时序存储 |
 | 容器化 | Docker Compose | 本地开发与部署 |
-| AI 集成 | Dify 平台 | 大模型推理 + RAG |
+| AI 集成 | Dify 平台 / Agent App | 大模型推理与工具编排 |
 
 ---
 

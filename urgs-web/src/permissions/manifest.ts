@@ -100,12 +100,6 @@ export const permissionManifest: FunctionPoint[] = [
     { id: '3-7-4-2', name: '新增', code: 'sys:ai:agent-app-skills:add', type: 'button', path: '-', level: 3, parentId: '3-7-4' },
     { id: '3-7-4-3', name: '编辑', code: 'sys:ai:agent-app-skills:edit', type: 'button', path: '-', level: 3, parentId: '3-7-4' },
     { id: '3-7-4-4', name: '删除', code: 'sys:ai:agent-app-skills:del', type: 'button', path: '-', level: 3, parentId: '3-7-4' },
-    // 知识库管理模块
-    { id: '3-7-3', name: '知识库管理', code: 'sys:ai:knowledge', type: 'menu', path: '/admin/ai/knowledge', level: 2, parentId: '3-7' },
-    { id: '3-7-3-1', name: '查询', code: 'sys:ai:knowledge:list', type: 'button', path: '-', level: 3, parentId: '3-7-3' },
-    { id: '3-7-3-2', name: '新增', code: 'sys:ai:knowledge:add', type: 'button', path: '-', level: 3, parentId: '3-7-3' },
-    { id: '3-7-3-3', name: '编辑', code: 'sys:ai:knowledge:edit', type: 'button', path: '-', level: 3, parentId: '3-7-3' },
-    { id: '3-7-3-4', name: '删除', code: 'sys:ai:knowledge:del', type: 'button', path: '-', level: 3, parentId: '3-7-3' },
     { id: '4', name: '版本管理', code: 'version', type: 'menu', path: '/version', level: 0, parentId: 'root' },
     { id: '9', name: '任务中心', code: 'marketplace', type: 'menu', path: '/marketplace', level: 0, parentId: 'root' },
     { id: '9-1', name: '任务大厅', code: 'marketplace:market', type: 'menu', path: '/marketplace/market', level: 1, parentId: '9' },

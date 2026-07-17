@@ -1,3 +1,1 @@
-window.__RUNTIME_CONFIG__ = {
-    VITE_WS_URL: "ws://localhost:8080/ws/im"
-};
+window.__RUNTIME_CONFIG__ = window.__RUNTIME_CONFIG__ || {};
