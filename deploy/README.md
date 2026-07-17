@@ -114,11 +114,11 @@ dist-packages/urgs-<环境>-<时间戳>.tar.gz
 常用服务组合：
 
 ```bash
-# 完整包：api web executor rag agent lineage nginx redis onlyoffice
+# 完整包：api web executor agent lineage nginx redis onlyoffice
 DEPLOY_ENV=prod deploy/package-services.sh full
 
 # 只打应用，不带 nginx / redis
-DEPLOY_ENV=prod deploy/package-services.sh api web executor rag agent lineage
+DEPLOY_ENV=prod deploy/package-services.sh api web executor agent lineage
 
 # 只升级 api 和 web
 DEPLOY_ENV=prod PACKAGE_NAME=urgs-api-web deploy/package-services.sh api web nginx
@@ -207,7 +207,6 @@ bin/deploy.sh restart
 bin/deploy.sh restart api
 bin/deploy.sh restart nginx
 bin/deploy.sh restart executor
-bin/deploy.sh restart rag
 bin/deploy.sh restart agent
 bin/deploy.sh restart redis
 bin/deploy.sh restart onlyoffice
@@ -250,7 +249,6 @@ bin/deploy.sh nginx-config
 ```text
 logs/api.log
 logs/executor.log
-logs/rag.log
 logs/agent-api.log
 logs/agent-worker.log
 logs/nginx/error.log
@@ -262,13 +260,13 @@ logs/java/urgs-executor-prod.log
 默认日志策略：
 
 - Java 服务使用 `logs/java/` 下的 logback 滚动日志，按 `LOG_MAX_FILE_SIZE` 切分，历史保留 `LOG_RETENTION_DAYS` 天，总量受 `LOG_TOTAL_SIZE_CAP` 控制。
-- `api.log`、`executor.log`、`rag.log`、`agent-*.log` 和 nginx 日志用于进程 stdout/stderr，启动前超过 `SERVICE_LOG_MAX_SIZE_MB` 会归档到 `logs/**/archive/`。
+- `api.log`、`executor.log`、`agent-*.log` 和 nginx 日志用于进程 stdout/stderr，启动前超过 `SERVICE_LOG_MAX_SIZE_MB` 会归档到 `logs/**/archive/`。
 - `LOG_CLEAN_ON_START=1` 时，启动服务会清理 `logs/` 下超过 `LOG_RETENTION_DAYS` 的归档日志。
 - prod 默认 `LOG_LEVEL_ROOT/SPRING_WEB/APP=ERROR`；sit 默认 `ROOT=INFO`、`SPRING_WEB=WARN`、`APP=INFO`。
 
 ## 8. 补充说明
 
-- `full` 包含：`api web executor rag agent lineage nginx redis onlyoffice`。
+- `full` 包含：`api web executor agent lineage nginx redis onlyoffice`。
 - `lineage` 是随包分发的命令行工具，不是常驻服务。
 - `onlyoffice` 使用官方 ARM64 DEB 安装为 Linux 系统服务，首次执行 `bin/deploy.sh install/up` 需要 sudo 权限并安装 PostgreSQL、RabbitMQ、字体、Nginx 等系统依赖。
 - MySQL 和 Neo4j 不放入部署包，只通过 `config/deploy.env` 配置连接。

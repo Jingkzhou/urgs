@@ -548,6 +548,14 @@ stop_service() {
     rm -f "$file"
 }
 
+stop_legacy_rag() {
+    local file
+    file="$(pid_file rag)"
+    [ -f "$file" ] || return 0
+    log "Stopping legacy RAG service from a previous deployment."
+    stop_service rag
+}
+
 status_service() {
     local service="$1"
     if is_running "$service"; then
@@ -913,6 +921,7 @@ stop_all() {
     stop_nginx
     service_enabled api && stop_service api
     service_enabled executor && stop_service executor
+    stop_legacy_rag
     service_enabled agent && stop_service agent-worker
     service_enabled agent && stop_service agent-api
     service_enabled redis && stop_service redis
