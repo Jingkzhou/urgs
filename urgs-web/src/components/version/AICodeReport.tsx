@@ -206,37 +206,149 @@ const AICodeReport: React.FC = () => {
         lines.push('');
     };
 
+    const appendMarkdownCodeBlock = (
+        lines: string[],
+        title: string,
+        language: string,
+        content?: string | null
+    ) => {
+        lines.push(`## ${title}`, '', `\`\`\`\`${language}`, content || '-', '\`\`\`\`', '');
+    };
+
     const buildIssueMarkdownReport = (issue: LineageReviewIssue) => {
         const target = `${issue.tableName || '-'}${issue.columnName ? `.${issue.columnName}` : ''}`;
+        const snapshot = issue.graphSnapshot || {};
+        const presentation = snapshot.aiReview;
         const ruleHits = (issue.ruleHits || []).map(item => `${toDisplayLabel(item, ruleHitLabelMap)} (${item})`);
+        const sourceFiles = Array.isArray(snapshot.sourceFiles)
+            ? snapshot.sourceFiles.map(item => String(item))
+            : [];
+        const evidenceRefs = presentation?.evidenceRefs || issue.evidenceRefs || [];
         const lines = [
-            `# 血缘疑点详情 - ${target}`,
+            `# SQL 血缘解析程序独立自检任务 - ${target}`,
             '',
-            '## 基础信息',
+            '> 使用方式：将本文完整发送给能够阅读代码的 AI，并同时提供 SQL 血缘解析程序仓库。',
+            '> 本文中的“已有疑点”和“已有 AI 判断”都只是待验证假设，不是正确答案。',
             '',
+            '## 给 AI 的任务话术',
+            '',
+            '你是一名资深 SQL 解析器与字段级数据血缘工程师。请根据本文提供的 SQL 原文、程序解析关系、图谱查询结果和证据编号，独立检查 SQL 血缘解析程序是否存在问题。',
+            '',
+            '不要复述或默认接受已有疑点结论。你必须先独立推导 SQL 的正确字段级语义，再与程序输出逐项比较，并在能够访问代码仓库时继续定位到具体解析阶段、代码位置和可复现测试。',
+            '',
+            '你需要回答以下核心问题：',
+            '',
+            '1. 根据 SQL 本身，目标字段应有哪些直接值来源、条件影响、过滤、关联、分组或排序依赖？',
+            '2. `programRelations` 是否准确表达这些关系？是否存在遗漏来源、错误来源、错误目标、字段错位或关系类型错误？',
+            '3. `graphFieldRelations` 与 `programRelations` 是否一致？若不一致，问题更可能发生在解析、事实持久化、入图还是查询投影阶段？',
+            '4. 已有疑点是否成立？如果不成立，明确说明它为什么是误报。',
+            '5. 如果程序存在问题，给出最小修复方向、应检查的代码路径以及可直接加入测试集的最小 SQL 回归用例和期望关系。',
+            '',
+            '## 强制检查规则',
+            '',
+            '- 只依据本文证据和仓库代码判断；证据不足时必须明确写出缺失项，不得臆造表、字段或关系。',
+            '- SQL 原文是语义真值来源；已有 AI 结论、疑点类型、严重级别和建议来源只能作为待验证线索。',
+            '- 必须区分值级派生与条件影响。`CASE_WHEN`、`FILTERS`、`JOINS`、`GROUPS`、`ORDERS` 不应被一律当成 `DERIVES_TO`。',
+            '- 表级关系或字段摘要不能证明一一字段映射；只有明确的源字段和目标字段才能作为字段级关系证据。',
+            '- 对 INSERT/SELECT、CTE、子查询、别名、星号展开、窗口函数、CASE/IF、UNION、JOIN USING、GROUP BY/HAVING 等结构，必须检查作用域和目标列位置映射。',
+            '- 如果 SQL 片段不完整、依赖动态 SQL、缺少 DDL/字段元数据或无法确定目标列顺序，应判定为证据不足，并说明还需要什么。',
+            '',
+            '## 必须采用的检查步骤',
+            '',
+            '1. 独立阅读 SQL，识别语句类型、目标表、目标字段、各层查询作用域和别名绑定。',
+            '2. 针对本疑点目标字段，人工推导期望的字段级关系集合，并给每条关系标注关系类型。',
+            '3. 用证据编号逐条对比 `programRelations`，找出缺失、冗余、错连、错位或类型错误。',
+            '4. 再对比 `graphFieldRelations`，判断解析输出是否在后续持久化或查询阶段发生丢失或变形。',
+            '5. 阅读仓库代码，定位最可能的处理阶段和条件分支；不要仅根据类名猜测。',
+            '6. 构造最小可复现 SQL，并给出精确的期望关系断言，用它验证修复前后行为。',
+            '',
+            '## 结论分类',
+            '',
+            '最终结论必须从以下分类中选择一个主分类，必要时附带次分类：',
+            '',
+            '- `PARSER_DEFECT`：AST、作用域、字段解析或关系生成错误。',
+            '- `FACT_PERSISTENCE_DEFECT`：解析正确，但事实落库、去重、过滤或转换时丢失/变形。',
+            '- `GRAPH_PROJECTION_DEFECT`：事实正确，但入图或图谱查询投影错误。',
+            '- `METADATA_INSUFFICIENT`：缺少 DDL、字段顺序、星号展开或物理模型信息，无法可靠判定。',
+            '- `SQL_AMBIGUITY`：SQL 或动态拼接本身无法静态确定。',
+            '- `EXISTING_REVIEW_FALSE_POSITIVE`：程序结果正确，已有疑点不成立。',
+            '',
+            '## 要求的回答格式',
+            '',
+            '请严格按以下结构回答：',
+            '',
+            '### 1. 最终结论',
+            '- 主分类、是否确认程序存在问题、置信度、两三句话结论。',
+            '',
+            '### 2. SQL 独立语义推导',
+            '- 用表格列出：源字段、目标字段、期望关系类型、SQL 行号/表达式、推导理由。',
+            '',
+            '### 3. 程序输出逐项核对',
+            '- 用表格列出：证据编号、程序关系、期望结果、是否正确、问题说明。',
+            '',
+            '### 4. 图谱结果逐项核对',
+            '- 说明图谱结果是否与程序事实一致，以及差异首次出现在哪个阶段。',
+            '',
+            '### 5. 根因定位',
+            '- 给出仓库文件、类/函数、关键分支及调用链证据；无法访问代码时列出必须检查的位置和原因。',
+            '',
+            '### 6. 最小修复方案',
+            '- 只修改造成问题的职责边界，说明修复逻辑和可能影响面。',
+            '',
+            '### 7. 回归测试',
+            '- 给出最小 SQL、输入元数据、期望关系集合以及应断言不存在的错误关系。',
+            '',
+            '### 8. 仍缺少的证据',
+            '- 没有则写“无”；不得用猜测补齐。',
+            '',
+            '## 案例定位信息',
+            '',
+            `- 疑点 ID: ${issue.id}`,
+            `- 任务 ID: ${issue.taskId}`,
+            `- 分析记录 ID: ${normalizeMarkdownValue(issue.analysisRecordId)}`,
+            `- 版本 ID: ${normalizeMarkdownValue(issue.versionId)}`,
+            `- 系统分片: ${normalizeMarkdownValue(issue.systemKey)}`,
+            `- 路径前缀: ${normalizeMarkdownValue(issue.pathPrefix)}`,
             `- 目标对象: ${target}`,
             `- 对象类型: ${normalizeMarkdownValue(issue.objectType)}`,
+            ''
+        ];
+        appendMarkdownList(lines, '源文件', sourceFiles);
+        lines.push(
+            '## 已有疑点假设（必须独立验证）',
+            '',
             `- 疑点类型: ${toDisplayLabel(issue.issueType, issueTypeLabelMap)} (${normalizeMarkdownValue(issue.issueType)})`,
             `- 严重级别: ${toDisplayLabel(issue.severity, severityLabelMap)} (${normalizeMarkdownValue(issue.severity)})`,
-            `- AI 判定: ${toDisplayLabel(issue.verdict, verdictLabelMap)} / ${Number(issue.confidence || 0).toFixed(2)}`,
+            `- 已有 AI 判定: ${toDisplayLabel(issue.verdict, verdictLabelMap)} / ${Number(issue.confidence || 0).toFixed(2)}`,
+            `- 已有 AI 摘要: ${normalizeMarkdownValue(presentation?.summary)}`,
+            `- 当前解析描述: ${normalizeMarkdownValue(presentation?.currentState)}`,
+            `- SQL 期待描述: ${normalizeMarkdownValue(presentation?.expectedState)}`,
+            `- 关键差异描述: ${normalizeMarkdownValue(presentation?.difference)}`,
+            `- 已有处置建议: ${normalizeMarkdownValue(presentation?.recommendation)}`,
             `- 人工状态: ${toDisplayLabel(issue.reviewStatus, reviewStatusLabelMap, '待处理')}`,
             `- 确认问题类型: ${toDisplayLabel(issue.confirmedProblemType, confirmedProblemTypeLabelMap)}`,
             `- 确认问题描述: ${normalizeMarkdownValue(issue.confirmedProblemDescription)}`,
             `- 人工备注: ${normalizeMarkdownValue(issue.reviewerNote)}`,
             ''
-        ];
-        lines.push('## 复核原因说明', '', normalizeMarkdownBlock(issue.reason), '');
+        );
+        lines.push('## 已有复核原因（待验证）', '', normalizeMarkdownBlock(issue.reason), '');
         appendMarkdownList(lines, '规则命中', ruleHits);
         appendMarkdownList(lines, '建议来源', issue.suggestedSources);
-        appendMarkdownList(lines, '证据引用', issue.evidenceRefs);
-        lines.push('## 局部证据包', '', '```json', JSON.stringify(issue.graphSnapshot || {}, null, 2), '```', '');
+        appendMarkdownList(lines, '已有结论引用的证据编号', evidenceRefs);
+        appendMarkdownCodeBlock(lines, 'SQL 原文（语义真值来源）', 'sql', String(snapshot.sqlSnippet || '-'));
+        appendMarkdownCodeBlock(lines, 'SQL 逐行证据', 'json', JSON.stringify(snapshot.sqlLines || [], null, 2));
+        appendMarkdownCodeBlock(lines, '程序解析关系 programRelations', 'json', JSON.stringify(snapshot.programRelations || [], null, 2));
+        appendMarkdownCodeBlock(lines, '图谱字段关系 graphFieldRelations', 'json', JSON.stringify(snapshot.graphFieldRelations || [], null, 2));
+        appendMarkdownCodeBlock(lines, '关系类型定义', 'json', JSON.stringify(snapshot.relationTypeDescriptions || {}, null, 2));
+        appendMarkdownCodeBlock(lines, '系统原始审核指令（仅作背景）', 'text', String(snapshot.auditInstruction || '-'));
+        appendMarkdownCodeBlock(lines, '完整原始证据包（用于防止结构化摘录丢失信息）', 'json', JSON.stringify(snapshot, null, 2));
         return lines.join('\n');
     };
 
     const buildIssueMarkdownFileName = (issue: LineageReviewIssue) => {
         const target = `${issue.tableName || 'unknown'}${issue.columnName ? `_${issue.columnName}` : ''}`;
         const safeTarget = target.replace(/[\\/:*?"<>|]+/g, '_').replace(/\s+/g, '_').slice(0, 120);
-        return `lineage-review-issue-${issue.id || 'detail'}-${safeTarget}.md`;
+        return `lineage-parser-self-check-${issue.id || 'detail'}-${safeTarget}.md`;
     };
 
     const handleDownloadIssueMarkdown = () => {
@@ -247,7 +359,7 @@ const AICodeReport: React.FC = () => {
             type: 'text/markdown;charset=utf-8'
         });
         downloadBlob(blob, buildIssueMarkdownFileName(selectedIssue));
-        message.success('疑点 Markdown 报告下载开始');
+        message.success('AI 自检 Markdown 下载开始');
     };
 
     const loadTaskSummaries = async () => {
@@ -675,8 +787,8 @@ const AICodeReport: React.FC = () => {
                 extra={
                     selectedIssue && (
                         <Space>
-                            <Button size="small" onClick={handleDownloadIssueMarkdown}>
-                                下载 Markdown
+                            <Button size="small" loading={issueDetailLoading} onClick={handleDownloadIssueMarkdown}>
+                                下载 AI 自检版
                             </Button>
                             <Button
                                 size="small"

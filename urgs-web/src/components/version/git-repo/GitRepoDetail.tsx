@@ -526,8 +526,13 @@ const GitRepoDetail: React.FC<Props> = ({ repo, ssoList, onBack }) => {
                             <div className="flex items-center gap-2">
                                 <Select
                                     value={currentRef}
-                                    onChange={(val) => { setCurrentRef(val); setViewingFile(null); }}
-                                    style={{ width: 140 }}
+                                    onChange={(val) => {
+                                        setCurrentRef(val);
+                                        setCurrentPath('');
+                                        setViewingFile(null);
+                                    }}
+                                    style={{ width: 280 }}
+                                    popupMatchSelectWidth={false}
                                     variant="borderless"
                                     className="bg-slate-100 rounded hover:bg-slate-200 transition-colors"
                                 >
