@@ -604,6 +604,7 @@ export_common_env() {
     export MONITOR_SSH_KNOWN_HOSTS="${MONITOR_SSH_KNOWN_HOSTS:-${HOME}/.ssh/known_hosts}"
     export MONITOR_SSH_CONNECT_TIMEOUT_MS="${MONITOR_SSH_CONNECT_TIMEOUT_MS:-8000}"
     export URGS_API_BASE_URL="${URGS_API_BASE_URL:-}"
+    export URGS_CORS_ALLOWED_ORIGINS="${URGS_CORS_ALLOWED_ORIGINS:-http://tauri.localhost,https://tauri.localhost}"
     export ONLYOFFICE_DOCUMENT_SERVER_URL="${ONLYOFFICE_DOCUMENT_SERVER_URL:-http://localhost:${ONLYOFFICE_PORT}}"
     export ONLYOFFICE_CALLBACK_SECRET="${ONLYOFFICE_CALLBACK_SECRET:-urgs-onlyoffice-callback-secret}"
     export ONLYOFFICE_JWT_SECRET="${ONLYOFFICE_JWT_SECRET:-}"
