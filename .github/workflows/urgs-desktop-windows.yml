@@ -2,6 +2,14 @@ name: URGS Windows 客户端
 
 on:
   workflow_dispatch:
+  push:
+    branches:
+      - "codex/windows-desktop"
+    paths:
+      - ".github/workflows/urgs-desktop-windows.yml"
+      - ".github/workflows/urgs-desktop-release.yml"
+      - "urgs-desktop/**"
+      - "urgs-web/**"
   pull_request:
     paths:
       - ".github/workflows/urgs-desktop-windows.yml"
