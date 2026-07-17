@@ -48,9 +48,7 @@ if [ "$ENVIRONMENT" = "local" ]; then
 fi
 
 pids=()
-external_services=0
 AGENT_COMPOSE_DEPS_STARTED=false
-ONLYOFFICE_LOCAL_CONTAINER_STARTED=false
 
 # Flags for services
 ENABLE_BACKEND=false
@@ -58,7 +56,6 @@ ENABLE_EXECUTOR=false
 ENABLE_FRONTEND=false
 ENABLE_DESKTOP=false
 ENABLE_PRESENTATION=false
-ENABLE_ONLYOFFICE=false
 
 NODE_BIN=""
 NPM_BIN=""
@@ -214,9 +211,6 @@ cleanup() {
   if [ "$AGENT_COMPOSE_DEPS_STARTED" = true ]; then
     (cd "$AGENT_DIR" && docker compose stop postgres redis >/dev/null 2>&1) || true
   fi
-  if [ "$ONLYOFFICE_LOCAL_CONTAINER_STARTED" = true ]; then
-    docker stop "${ONLYOFFICE_LOCAL_DOCKER_CONTAINER:-urgs-onlyoffice-test}" >/dev/null 2>&1 || true
-  fi
 }
 trap cleanup EXIT
 
@@ -316,44 +310,6 @@ start_presentation() {
   pids+=($!)
 }
 
-start_onlyoffice() {
-  load_env_file
-  local onlyoffice_port="${ONLYOFFICE_PORT:-8088}"
-
-  if curl -fsS "http://127.0.0.1:${onlyoffice_port}/healthcheck" 2>/dev/null | grep -qi true; then
-    echo "ONLYOFFICE Document Server is already running on port ${onlyoffice_port}."
-    external_services=$((external_services + 1))
-    return
-  fi
-
-  if [[ "$OSTYPE" == "linux"* ]]; then
-    if command -v systemctl >/dev/null 2>&1 && systemctl list-unit-files ds-docservice.service >/dev/null 2>&1; then
-      echo "Starting system ONLYOFFICE Document Server..."
-      sudo systemctl restart ds-docservice ds-converter ds-metrics nginx
-      external_services=$((external_services + 1))
-      return
-    fi
-    echo "ONLYOFFICE is not installed. Package it with deploy/package-services.sh onlyoffice and install it through bin/deploy.sh."
-    exit 1
-  fi
-
-  if [[ "$OSTYPE" == "darwin"* ]]; then
-    local container="${ONLYOFFICE_LOCAL_DOCKER_CONTAINER:-urgs-onlyoffice-test}"
-    if command -v docker >/dev/null 2>&1 && docker inspect "$container" >/dev/null 2>&1; then
-      echo "macOS cannot run the Linux ARM64 DEB directly; starting existing local development container ${container}."
-      docker start "$container" >/dev/null
-      ONLYOFFICE_LOCAL_CONTAINER_STARTED=true
-      external_services=$((external_services + 1))
-      return
-    fi
-    echo "macOS cannot run the ONLYOFFICE Linux package directly. Start it in a Linux VM or create the local development container first."
-    exit 1
-  fi
-
-  echo "Unsupported platform for ONLYOFFICE: ${OSTYPE}"
-  exit 1
-}
-
 AGENT_DIR="$SCRIPT_DIR/urgs-agent"
 
 # ... (existing flags)
@@ -422,10 +378,9 @@ echo "  [3] Executor (urgs-executor)"
 echo "  [4] Frontend (urgs-web)"
 echo "  [5] Presentation (urgs-presentation)"
 echo "  [6] Agent (urgs-agent)"
-echo "  [7] ONLYOFFICE Docs"
-echo "  [8] Desktop Client (urgs-desktop, includes frontend)"
+echo "  [7] Desktop Client (urgs-desktop, includes frontend)"
 echo ""
-echo "Enter your choice (e.g., '1' for all, or '2 3 8' for Backend+Executor+Desktop):"
+echo "Enter your choice (e.g., '1' for all, or '2 3 7' for Backend+Executor+Desktop):"
 read -r -a choices
 
 if [ ${#choices[@]} -eq 0 ]; then
@@ -441,15 +396,13 @@ for choice in "${choices[@]}"; do
       ENABLE_FRONTEND=true
       ENABLE_PRESENTATION=true
       ENABLE_AGENT=true
-      ENABLE_ONLYOFFICE=true
       ;;
     2) ENABLE_BACKEND=true ;;
     3) ENABLE_EXECUTOR=true ;;
     4) ENABLE_FRONTEND=true ;;
     5) ENABLE_PRESENTATION=true ;;
     6) ENABLE_AGENT=true ;;
-    7) ENABLE_ONLYOFFICE=true ;;
-    8) ENABLE_DESKTOP=true ;;
+    7) ENABLE_DESKTOP=true ;;
     *) echo "Unknown option: $choice (ignored)" ;;
   esac
 done
@@ -464,7 +417,6 @@ if [ "$ENABLE_BACKEND" = true ] && { [ "$ENABLE_FRONTEND" = true ] || [ "$ENABLE
   ENABLE_EXECUTOR=true
 fi
 
-if [ "$ENABLE_ONLYOFFICE" = true ]; then start_onlyoffice; fi
 if [ "$ENABLE_BACKEND" = true ]; then start_backend; fi
 if [ "$ENABLE_EXECUTOR" = true ]; then start_executor; fi
 if [ "$ENABLE_FRONTEND" = true ] || [ "$ENABLE_DESKTOP" = true ] || [ "$ENABLE_PRESENTATION" = true ]; then resolve_node_runtime; fi
@@ -473,7 +425,7 @@ if [ "$ENABLE_DESKTOP" = true ]; then start_desktop; fi
 if [ "$ENABLE_PRESENTATION" = true ]; then start_presentation; fi
 if [ "$ENABLE_AGENT" = true ]; then start_agent; fi
 
-if [ ${#pids[@]} -eq 0 ] && [ "$external_services" -eq 0 ]; then
+if [ ${#pids[@]} -eq 0 ]; then
   echo "No services selected. Exiting."
   exit 0
 fi

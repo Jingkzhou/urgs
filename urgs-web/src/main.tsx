@@ -21,6 +21,7 @@ import App from './App';
 import DesktopConnectionSetup from './components/desktop/DesktopConnectionSetup';
 import DesktopAutoUpdater from './components/desktop/DesktopAutoUpdater';
 import { getApiBaseUrl, installServiceRequestAdapters, isDesktopRuntime } from './config';
+import { installDesktopDownloadAdapter } from './utils/desktopDownload';
 import { initializeDesktopRuntimeConfig } from './utils/desktopRuntime';
 import './index.css';
 
@@ -34,6 +35,7 @@ const root = ReactDOM.createRoot(rootElement);
 const startApplication = async () => {
   await initializeDesktopRuntimeConfig();
   installServiceRequestAdapters();
+  installDesktopDownloadAdapter();
   const editDesktopConnection = localStorage.getItem('urgs_desktop_edit_connection') === '1';
 
   root.render(
