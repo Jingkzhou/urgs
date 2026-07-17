@@ -11,6 +11,8 @@ import {
   ChevronLeft
 } from 'lucide-react';
 import { getSystemList, jumpSystem } from '@/api/ops';
+import { isDesktopRuntime } from '@/config';
+import { openExternalUrl } from '@/utils/desktopRuntime';
 
 interface SystemLinksProps {
   fullWidth?: boolean;
@@ -110,7 +112,7 @@ const SystemLinks: React.FC<SystemLinksProps> = ({
       return;
     }
 
-    const jumpWindow = window.open('about:blank', '_blank');
+    const jumpWindow = isDesktopRuntime() ? null : window.open('about:blank', '_blank');
     try {
       const result = await jumpSystem(system.id);
       if (!result?.targetUrl) {
@@ -128,7 +130,9 @@ const SystemLinks: React.FC<SystemLinksProps> = ({
         systemName: system.name,
         targetOrigin: new URL(result.targetUrl, window.location.origin).origin,
       });
-      if (jumpWindow) {
+      if (isDesktopRuntime()) {
+        await openExternalUrl(result.targetUrl);
+      } else if (jumpWindow) {
         jumpWindow.location.href = result.targetUrl;
       } else {
         window.location.href = result.targetUrl;

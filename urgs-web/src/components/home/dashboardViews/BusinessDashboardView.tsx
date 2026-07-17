@@ -15,6 +15,7 @@ import Auth from '../../Auth';
 import { hasPermission } from '../../../utils/permission';
 import { fetchBatchStatusStats, TaskStatsVO } from '../../../api/stats';
 import { useSmartPolling } from '../../../hooks/useSmartPolling';
+import { getAvatarUrl } from '../../../utils/avatarUtils';
 
 const BusinessDashboardView: React.FC = () => {
   const [userInfo, setUserInfo] = useState<{
@@ -116,7 +117,7 @@ const BusinessDashboardView: React.FC = () => {
               <div className="w-16 h-16 rounded-[1.5rem] bg-gradient-to-br from-red-500 to-rose-600 p-0.5 shadow-lg shadow-red-500/10 flex items-center justify-center text-white">
                 {userInfo?.avatarUrl ? (
                   <img
-                    src={userInfo.avatarUrl}
+                    src={getAvatarUrl(userInfo.avatarUrl, userInfo.name)}
                     alt={userInfo.name || 'User'}
                     className="w-full h-full object-cover rounded-[1.35rem]"
                   />

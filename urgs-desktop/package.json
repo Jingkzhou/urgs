@@ -1,0 +1,18 @@
+{
+  "name": "urgs-desktop",
+  "private": true,
+  "version": "0.1.0",
+  "type": "module",
+  "scripts": {
+    "dev": "tauri dev",
+    "build": "tauri build",
+    "build:unsigned": "tauri build --config src-tauri/tauri.unsigned.conf.json",
+    "build:web": "pnpm --dir ../urgs-web build --mode desktop",
+    "icon": "tauri icon ../urgs-web/public/favicon_large.png",
+    "test": "node --test scripts/*.test.mjs",
+    "verify:windows": "node scripts/verify-windows-bundle.mjs"
+  },
+  "devDependencies": {
+    "@tauri-apps/cli": "^2.11.4"
+  }
+}

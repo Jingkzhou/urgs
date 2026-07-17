@@ -1,0 +1,116 @@
+name: 发布 URGS Windows 客户端
+
+on:
+  push:
+    tags:
+      - "desktop-v*"
+
+permissions:
+  contents: write
+
+jobs:
+  release-windows:
+    name: 签名并发布 Windows 自动更新
+    runs-on: windows-latest
+    timeout-minutes: 60
+
+    steps:
+      - name: 检出代码
+        uses: actions/checkout@v4
+
+      - name: 配置 Node.js
+        uses: actions/setup-node@v4
+        with:
+          node-version: "22"
+
+      - name: 配置 pnpm
+        shell: pwsh
+        run: npm install --global pnpm@11.9.0
+
+      - name: 配置 Rust
+        uses: dtolnay/rust-toolchain@stable
+
+      - name: 安装前端依赖
+        shell: pwsh
+        run: pnpm --dir urgs-web install --frozen-lockfile
+
+      - name: 安装桌面端依赖
+        shell: pwsh
+        run: pnpm --dir urgs-desktop install --frozen-lockfile
+
+      - name: 验证版本标签
+        shell: pwsh
+        run: |
+          $version = (Get-Content urgs-desktop/src-tauri/tauri.conf.json | ConvertFrom-Json).version
+          $expectedTag = "desktop-v$version"
+          if ($env:GITHUB_REF_NAME -ne $expectedTag) {
+            throw "发布标签 $env:GITHUB_REF_NAME 与客户端版本 $version 不一致，应使用 $expectedTag"
+          }
+
+      - name: 验证更新签名 Secret
+        shell: pwsh
+        env:
+          TAURI_SIGNING_PRIVATE_KEY: ${{ secrets.TAURI_SIGNING_PRIVATE_KEY }}
+          TAURI_SIGNING_PRIVATE_KEY_PASSWORD: ${{ secrets.TAURI_SIGNING_PRIVATE_KEY_PASSWORD }}
+        run: |
+          if ([string]::IsNullOrWhiteSpace($env:TAURI_SIGNING_PRIVATE_KEY)) {
+            throw "缺少 GitHub Secret: TAURI_SIGNING_PRIVATE_KEY"
+          }
+          if ([string]::IsNullOrWhiteSpace($env:TAURI_SIGNING_PRIVATE_KEY_PASSWORD)) {
+            throw "缺少 GitHub Secret: TAURI_SIGNING_PRIVATE_KEY_PASSWORD"
+          }
+
+      - name: 前端类型检查
+        shell: pwsh
+        run: pnpm --dir urgs-web exec tsc --noEmit
+
+      - name: Rust 单元测试
+        shell: pwsh
+        run: cargo test --manifest-path urgs-desktop/src-tauri/Cargo.toml
+
+      - name: 安装包验收器单元测试
+        shell: pwsh
+        run: pnpm --dir urgs-desktop test
+
+      - name: 构建并发布自动更新
+        uses: tauri-apps/tauri-action@v1
+        env:
+          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+          TAURI_SIGNING_PRIVATE_KEY: ${{ secrets.TAURI_SIGNING_PRIVATE_KEY }}
+          TAURI_SIGNING_PRIVATE_KEY_PASSWORD: ${{ secrets.TAURI_SIGNING_PRIVATE_KEY_PASSWORD }}
+        with:
+          projectPath: urgs-desktop
+          tauriScript: pnpm tauri
+          tagName: ${{ github.ref_name }}
+          releaseName: "URGS Desktop v__VERSION__"
+          releaseBody: "URGS Windows 客户端自动更新版本。"
+          generateReleaseNotes: true
+          releaseDraft: false
+          prerelease: false
+          uploadUpdaterJson: true
+          updaterJsonPreferNsis: true
+          uploadUpdaterSignatures: true
+
+      - name: 验证线上自动更新清单
+        shell: pwsh
+        run: |
+          $manifestUrl = "https://github.com/Jingkzhou/urgs/releases/latest/download/latest.json"
+          $version = (Get-Content urgs-desktop/src-tauri/tauri.conf.json | ConvertFrom-Json).version
+          $manifest = $null
+          for ($attempt = 1; $attempt -le 6; $attempt++) {
+            try {
+              $manifest = Invoke-RestMethod -Uri $manifestUrl -Headers @{ "Cache-Control" = "no-cache" }
+              break
+            } catch {
+              if ($attempt -eq 6) { throw }
+              Start-Sleep -Seconds 10
+            }
+          }
+          if ($manifest.version -ne $version) {
+            throw "latest.json 版本 $($manifest.version) 与发布版本 $version 不一致"
+          }
+          $windows = $manifest.platforms.'windows-x86_64'
+          if ([string]::IsNullOrWhiteSpace($windows.url) -or [string]::IsNullOrWhiteSpace($windows.signature)) {
+            throw "latest.json 缺少 windows-x86_64 下载地址或签名"
+          }
+          Write-Host "自动更新清单验证通过：$manifestUrl"

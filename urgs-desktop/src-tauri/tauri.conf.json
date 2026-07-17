@@ -1,0 +1,66 @@
+{
+  "$schema": "https://schema.tauri.app/config/2",
+  "productName": "URGS",
+  "version": "0.1.0",
+  "identifier": "com.jilinbank.urgs",
+  "build": {
+    "frontendDist": "../../urgs-web/dist",
+    "devUrl": "http://localhost:3000",
+    "beforeDevCommand": "pnpm --dir ../urgs-web dev",
+    "beforeBuildCommand": "pnpm run build:web"
+  },
+  "app": {
+    "windows": [
+      {
+        "label": "main",
+        "title": "URGS 统一监管治理平台",
+        "width": 1440,
+        "height": 900,
+        "minWidth": 1100,
+        "minHeight": 700,
+        "center": true,
+        "resizable": true,
+        "fullscreen": false
+      }
+    ],
+    "security": {
+      "csp": "default-src 'self' customprotocol: asset:; base-uri 'self'; object-src 'none'; form-action 'self' http: https:; script-src 'self' http: https:; style-src 'self' 'unsafe-inline' http: https:; font-src 'self' data: http: https:; img-src 'self' asset: http://asset.localhost data: blob: http: https:; media-src 'self' data: blob: http: https:; connect-src 'self' ipc: http://ipc.localhost http: https: ws: wss:; frame-src 'self' data: blob: http: https:; worker-src 'self' blob:"
+    }
+  },
+  "plugins": {
+    "updater": {
+      "pubkey": "dW50cnVzdGVkIGNvbW1lbnQ6IG1pbmlzaWduIHB1YmxpYyBrZXk6IDk5MTI1NUE4OERDMTc1QwpSV1JjRjl5SVdpV1JDWjdZQUdabmVvV05HYmMxQVREVTFReUZqRlcyUStDelRoYmI5WEZyVWNFVQo=",
+      "endpoints": [
+        "https://github.com/Jingkzhou/urgs/releases/latest/download/latest.json"
+      ],
+      "windows": {
+        "installMode": "passive"
+      }
+    }
+  },
+  "bundle": {
+    "active": true,
+    "targets": ["msi", "nsis"],
+    "createUpdaterArtifacts": true,
+    "category": "Business",
+    "shortDescription": "统一监管治理平台 Windows 客户端",
+    "longDescription": "URGS 统一监管治理平台 Windows 桌面客户端",
+    "icon": [
+      "icons/32x32.png",
+      "icons/128x128.png",
+      "icons/128x128@2x.png",
+      "icons/icon.ico"
+    ],
+    "windows": {
+      "webviewInstallMode": {
+        "type": "downloadBootstrapper",
+        "silent": true
+      },
+      "nsis": {
+        "installMode": "currentUser",
+        "displayLanguageSelector": false,
+        "languages": ["SimpChinese"]
+      }
+    }
+  }
+}

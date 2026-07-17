@@ -1,3 +1,5 @@
+import { resolveServiceUrl } from '@/config';
+
 /**
  * Generate a consistent color based on a string (e.g., username or ID)
  */
@@ -56,13 +58,13 @@ export const getAvatarUrl = (originalUrl?: string | null, seed?: string | number
     // This solves the issue where hardcoded IPs in DB cause 404/Connection Refused on different networks
     if (originalUrl.includes('/profile/')) {
         const parts = originalUrl.split('/profile/');
-        return '/profile/' + parts[parts.length - 1];
+        return resolveServiceUrl('/profile/' + parts[parts.length - 1]);
     }
 
     // Handle relative paths (e.g. "profile/...")
     if (originalUrl.startsWith('profile/')) {
-        return '/' + originalUrl;
+        return resolveServiceUrl('/' + originalUrl);
     }
 
-    return originalUrl;
+    return resolveServiceUrl(originalUrl);
 };

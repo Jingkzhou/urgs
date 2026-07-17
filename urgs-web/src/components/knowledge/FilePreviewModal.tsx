@@ -15,6 +15,7 @@ import mammoth from 'mammoth/mammoth.browser';
 import type { KnowledgeDocument } from '../../api/knowledge';
 import { getPreviewType } from '../../utils/filePreview';
 import { getFileIcon } from '../../utils/fileIcons';
+import { resolveServiceUrl } from '@/config';
 
 interface FilePreviewModalProps {
     open: boolean;
@@ -239,7 +240,7 @@ const WordPreview: React.FC<{ url: string; fileName: string; onDownload: () => v
 
 // ==================== Office 在线预览 ====================
 const OfficeOnlinePreview: React.FC<{ url: string; fileName: string; onDownload: () => void }> = ({ url, fileName, onDownload }) => {
-    const absoluteUrl = new URL(url, window.location.origin).href;
+    const absoluteUrl = new URL(resolveServiceUrl(url), window.location.origin).href;
     const viewerUrl = `https://view.officeapps.live.com/op/embed.aspx?src=${encodeURIComponent(absoluteUrl)}`;
 
     return (
@@ -420,6 +421,7 @@ const FilePreviewModal: React.FC<FilePreviewModalProps> = ({
 
     const fileName = doc?.fileName || doc?.title || '';
     const fileUrl = doc?.fileUrl || '';
+    const resolvedFileUrl = resolveServiceUrl(fileUrl);
     const previewType = fileName ? getPreviewType(fileName) : { kind: 'unsupported' as const };
 
     const renderPreview = () => {
@@ -427,24 +429,24 @@ const FilePreviewModal: React.FC<FilePreviewModalProps> = ({
 
         switch (previewType.kind) {
             case 'image':
-                return <ImagePreview url={fileUrl} />;
+                return <ImagePreview url={resolvedFileUrl} />;
 
             case 'pdf':
                 return (
                     <iframe
-                        src={fileUrl}
+                        src={resolvedFileUrl}
                         className="w-full h-full rounded-xl bg-white"
                         title="PDF Preview"
                     />
                 );
 
             case 'spreadsheet':
-                return <SpreadsheetPreview url={fileUrl} />;
+                return <SpreadsheetPreview url={resolvedFileUrl} />;
 
             case 'word':
                 return (
                     <WordPreview
-                        url={fileUrl}
+                        url={resolvedFileUrl}
                         fileName={fileName}
                         onDownload={() => onDownload(doc)}
                     />
@@ -453,7 +455,7 @@ const FilePreviewModal: React.FC<FilePreviewModalProps> = ({
             case 'presentation':
                 return (
                     <OfficeOnlinePreview
-                        url={fileUrl}
+                        url={resolvedFileUrl}
                         fileName={fileName}
                         onDownload={() => onDownload(doc)}
                     />
@@ -465,7 +467,7 @@ const FilePreviewModal: React.FC<FilePreviewModalProps> = ({
                         <video
                             controls
                             autoPlay
-                            src={fileUrl}
+                            src={resolvedFileUrl}
                             className="max-w-full max-h-full rounded-xl shadow-2xl"
                         />
                     </div>
@@ -478,18 +480,18 @@ const FilePreviewModal: React.FC<FilePreviewModalProps> = ({
                             {getFileIcon(fileName, 64)}
                         </div>
                         <p className="text-white/80 text-lg font-medium">{fileName}</p>
-                        <audio controls src={fileUrl} className="w-96 max-w-full" />
+                        <audio controls src={resolvedFileUrl} className="w-96 max-w-full" />
                     </div>
                 );
 
             case 'code':
-                return <TextContentPreview url={fileUrl} kind="code" language={previewType.language} />;
+                return <TextContentPreview url={resolvedFileUrl} kind="code" language={previewType.language} />;
 
             case 'markdown':
-                return <TextContentPreview url={fileUrl} kind="markdown" />;
+                return <TextContentPreview url={resolvedFileUrl} kind="markdown" />;
 
             case 'text':
-                return <TextContentPreview url={fileUrl} kind="text" />;
+                return <TextContentPreview url={resolvedFileUrl} kind="text" />;
 
             case 'unsupported':
                 return (

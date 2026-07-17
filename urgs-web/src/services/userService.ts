@@ -1,4 +1,3 @@
-import axios from 'axios';
 import { get, post, put } from '@/utils/request';
 
 const API_BASE = '/api/users';
@@ -43,17 +42,8 @@ export const userService = {
     uploadFile: async (file: File) => {
         const formData = new FormData();
         formData.append('file', file);
-        const token = localStorage.getItem('auth_token');
-        const response = await axios.post(`${COMMON_API}/upload`, formData, {
-            headers: {
-                'Content-Type': 'multipart/form-data',
-                'Authorization': `Bearer ${token}`
-            }
-        });
-        return response.data.url as string; // Common API returns { url: ... } or just string? Let's check CommonController.
-        // CommonController returns map: { url: ..., name: ... }
-        // Wait, ImFileController returned string?
-        // Let's re-verify CommonController return type in next step if needed, assuming map based on code reading.
+        const response = await post<{ url: string }>(`${COMMON_API}/upload`, formData);
+        return response.url;
     },
 
     // Update Profile

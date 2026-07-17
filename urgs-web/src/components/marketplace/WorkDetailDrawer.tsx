@@ -25,6 +25,7 @@ import UserSelect from './UserSelect';
 import TaskAuditTrail from './TaskAuditTrail';
 import AssetObjectDetailLink from './AssetObjectDetailLink';
 import TaskVersionMergeRequests from './TaskVersionMergeRequests';
+import { resolveServiceUrl } from '@/config';
 
 const { Title, Paragraph, Text } = Typography;
 
@@ -364,7 +365,7 @@ const WorkDetailDrawer: React.FC<WorkDetailDrawerProps> = ({ workId, isOpen, onC
                     {files.map((file: any, index: number) => (
                         <a
                             key={index}
-                            href={file.url}
+                            href={resolveServiceUrl(file.url)}
                             target="_blank"
                             rel="noopener noreferrer"
                             className="flex items-center gap-2 p-2 bg-slate-50 rounded-lg hover:bg-slate-100 transition-colors border border-slate-100"

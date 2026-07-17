@@ -6,6 +6,7 @@ import GitRepoDetail from './GitRepoDetail';
 import PageHeader from '../../common/PageHeader';
 import StatusTag from '../../common/StatusTag';
 import { hasPermission } from '@/utils/permission';
+import { openExternalUrl } from '@/utils/desktopRuntime';
 
 const { Option } = Select;
 
@@ -252,7 +253,7 @@ const GitRepoManagement: React.FC<GitRepoManagementProps> = ({ manageable = fals
                     <Button
                         type="text"
                         icon={<ExternalLink size={14} />}
-                        onClick={() => window.open(record.cloneUrl, '_blank')}
+                        onClick={() => void openExternalUrl(record.cloneUrl)}
                     />
                     {canEdit && <Button type="text" icon={<Edit size={14} />} onClick={() => handleEdit(record)} />}
                     {canDelete && (
@@ -356,7 +357,7 @@ const GitRepoManagement: React.FC<GitRepoManagementProps> = ({ manageable = fals
                                 </div>
 
                                 <div className="flex-1 space-y-3 mb-4">
-                                    <div className="flex items-center gap-2 text-xs text-slate-500 bg-slate-50 p-2 rounded border border-slate-100 font-mono break-all cursor-pointer hover:bg-slate-100" onClick={() => window.open(repo.cloneUrl, '_blank')}>
+                                    <div className="flex items-center gap-2 text-xs text-slate-500 bg-slate-50 p-2 rounded border border-slate-100 font-mono break-all cursor-pointer hover:bg-slate-100" onClick={() => void openExternalUrl(repo.cloneUrl)}>
                                         <ExternalLink size={12} className="shrink-0" />
                                         <span className="truncate">{repo.cloneUrl?.replace(/^https?:\/\//, '')}</span>
                                     </div>

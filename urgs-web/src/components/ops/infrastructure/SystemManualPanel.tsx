@@ -12,6 +12,7 @@ import type { SsoConfig } from '@/api/version';
 import type { KnowledgeDocument } from '@/api/knowledge';
 import FilePreviewModal from '@/components/knowledge/FilePreviewModal';
 import { getSystemName } from './utils';
+import { resolveServiceUrl } from '@/config';
 
 interface SystemManualPanelProps {
     manuals: InfrastructureSystemManual[];
@@ -100,10 +101,10 @@ const SystemManualPanel: React.FC<SystemManualPanelProps> = ({
         onChanged();
     };
 
-    const handleDownload = (doc: KnowledgeDocument) => {
+    const handleDownload = (doc: Pick<KnowledgeDocument, 'fileUrl' | 'fileName' | 'title'>) => {
         if (!doc.fileUrl) return;
         const link = document.createElement('a');
-        link.href = doc.fileUrl;
+        link.href = resolveServiceUrl(doc.fileUrl);
         link.download = doc.fileName || doc.title || 'manual';
         link.target = '_blank';
         link.click();
@@ -154,8 +155,7 @@ const SystemManualPanel: React.FC<SystemManualPanelProps> = ({
                                     type="link"
                                     size="small"
                                     icon={<Download size={13} />}
-                                    href={manual.fileUrl}
-                                    target="_blank"
+                                    onClick={() => handleDownload(manual)}
                                 >
                                     下载
                                 </Button>,

@@ -37,6 +37,7 @@ import type { TabKey } from './hooks/useDocumentList';
 import { usePermissionGroups } from './hooks/usePermissionGroups';
 import { useDocumentPermissions } from './hooks/useDocumentPermissions';
 import { useQuickAccess } from './hooks/useQuickAccess';
+import { resolveServiceUrl } from '@/config';
 
 const PAGE_SIZE = 12;
 type BlankDocumentType = 'word' | 'cell';
@@ -160,7 +161,7 @@ const OnlineDocsTool: React.FC = () => {
 
     const handleDownload = useCallback((doc: OnlineDocument) => {
         const link = document.createElement('a');
-        link.href = doc.fileUrl;
+        link.href = resolveServiceUrl(doc.fileUrl);
         link.download = doc.fileName || doc.title;
         document.body.appendChild(link);
         link.click();

@@ -1,6 +1,8 @@
 import React, { useState, useEffect } from "react";
 import { LOGIN_DARK_LOGO_URL, LOGO_URL } from "../../constants";
-import { Lock, User, Eye, EyeOff, ShieldCheck, ChevronRight, Landmark, Activity } from "lucide-react";
+import { Lock, User, Eye, EyeOff, ShieldCheck, ChevronRight, Landmark, Activity, ServerCog } from "lucide-react";
+import { isDesktopRuntime } from "../../config";
+import { openExternalUrl } from "../../utils/desktopRuntime";
 
 /* ── Particle type ─────────────────────────────────────────────── */
 interface Particle {
@@ -146,7 +148,12 @@ const LoginPage: React.FC<LoginProps> = ({ onLogin }) => {
             const authData = await authRes.json();
             const separator = authData.redirect_uri.includes("?") ? "&" : "?";
             const stateQuery = authData.state ? `&state=${encodeURIComponent(authData.state)}` : "";
-            window.location.href = `${authData.redirect_uri}${separator}code=${encodeURIComponent(authData.code)}${stateQuery}`;
+            const targetUrl = `${authData.redirect_uri}${separator}code=${encodeURIComponent(authData.code)}${stateQuery}`;
+            if (isDesktopRuntime()) {
+              await openExternalUrl(targetUrl);
+            } else {
+              window.location.href = targetUrl;
+            }
             return;
           } else {
             console.error("OAuth authorization failed");
@@ -176,6 +183,19 @@ const LoginPage: React.FC<LoginProps> = ({ onLogin }) => {
 
   return (
     <div className="min-h-screen max-h-screen overflow-hidden grid lg:grid-cols-2 bg-slate-50 relative">
+      {isDesktopRuntime() && (
+        <button
+          type="button"
+          onClick={() => {
+            localStorage.setItem('urgs_desktop_edit_connection', '1');
+            window.location.reload();
+          }}
+          className="absolute right-5 top-5 z-50 flex items-center gap-2 rounded-xl border border-slate-200 bg-white/90 px-3 py-2 text-xs font-bold text-slate-600 shadow-sm backdrop-blur transition hover:border-blue-200 hover:text-blue-600"
+        >
+          <ServerCog size={15} />
+          连接设置
+        </button>
+      )}
       {/* Soft transition gradient to blend dark and light sides */}
       <div className="absolute inset-0 pointer-events-none hidden lg:block z-10"
            style={{ background: 'linear-gradient(90deg, rgba(2,6,23,1) 0%, rgba(248,250,252,0.8) 10%, rgba(248,250,252,0) 30%, rgba(248,250,252,0) 70%, rgba(248,250,252,0.8) 90%, rgba(2,6,23,1) 100%)', opacity: 0.15 }} />
