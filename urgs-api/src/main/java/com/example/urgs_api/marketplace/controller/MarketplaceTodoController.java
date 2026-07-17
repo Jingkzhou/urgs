@@ -60,19 +60,6 @@ public class MarketplaceTodoController {
         List<MarketplaceTodoDTO> todos = new ArrayList<>();
         LocalDateTime now = LocalDateTime.now();
 
-        long assignedCount = workTaskService.lambdaQuery()
-                .eq(WorkTask::getAssigneeId, userId)
-                .eq(WorkTask::getStatus, TaskStatus.READY.name())
-                .count();
-        WorkTask assignedTask = workTaskService.lambdaQuery()
-                .eq(WorkTask::getAssigneeId, userId)
-                .eq(WorkTask::getStatus, TaskStatus.READY.name())
-                .orderByAsc(WorkTask::getDeadline)
-                .orderByDesc(WorkTask::getCreateTime)
-                .last("LIMIT 1")
-                .one();
-        addTodo(todos, "READY", "待开始任务", "已确定负责人但尚未开始", assignedCount, "mine", "info", assignedTask);
-
         long rejectedCount = workTaskService.lambdaQuery()
                 .eq(WorkTask::getAssigneeId, userId)
                 .eq(WorkTask::getStatus, TaskStatus.REWORK.name())
