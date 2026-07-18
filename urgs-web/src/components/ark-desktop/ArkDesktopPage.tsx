@@ -3,7 +3,7 @@ import ReactMarkdown from 'react-markdown';
 import {
     AlertCircle, Bot, BriefcaseBusiness, Check, CheckCircle2, CheckSquare,
     ChevronDown, CircleStop, Clock3, Code2, FileText, Folder,
-    Lightbulb, LoaderCircle, LogIn, Paperclip, Pencil, Play, Plus, RefreshCw,
+    Lightbulb, LoaderCircle, Paperclip, Pencil, Play, Plus, RefreshCw,
     Search, Send, Settings, Sparkles, Trash2, WandSparkles, Wrench, X,
 } from 'lucide-react';
 import { useArkDesktopRuntime } from './useArkDesktopRuntime';
@@ -12,7 +12,7 @@ import GrokConfigEditor from './GrokConfigEditor';
 import GrokExecutionSettingsPanel from './GrokExecutionSettingsPanel';
 import type {
     ArkDesktopAgent, ArkDesktopAutomation, ArkDesktopSection, ArkDesktopSkill,
-    ArkDesktopTask, ArkDesktopTaskStatus, AutomationSchedule,
+    ArkDesktopModelProvider, ArkDesktopTask, ArkDesktopTaskStatus, AutomationSchedule,
 } from './types';
 
 const taskTags = [
@@ -111,6 +111,7 @@ const ArkDesktopPage: React.FC = () => {
     const [editor, setEditor] = useState<{ type: 'agent' | 'skill' | 'automation'; id?: string } | null>(null);
     const [actionPending, setActionPending] = useState(false);
     const schedulingRef = useRef(false);
+    const preparedAgentsKeyRef = useRef('');
 
     useEffect(() => {
         const initializeSchedules = () => {
@@ -147,6 +148,18 @@ const ArkDesktopPage: React.FC = () => {
         }, 30_000);
         return () => window.clearInterval(timer);
     }, [runtime.setSnapshot, runtime.snapshot.automations, runtime.snapshot.tasks, runtime.startTask, runtime.setRuntimeError]);
+
+    useEffect(() => {
+        if (section !== 'agents') return;
+        const { workspace, grokModel } = runtime.snapshot.settings;
+        const key = `${workspace}\u0000${grokModel}`;
+        if (!workspace || !grokModel || preparedAgentsKeyRef.current === key) return;
+        preparedAgentsKeyRef.current = key;
+        void runtime.prepareEngine().catch((error) => {
+            preparedAgentsKeyRef.current = '';
+            runtime.setRuntimeError(error instanceof Error ? error.message : String(error));
+        });
+    }, [section, runtime.prepareEngine, runtime.setRuntimeError, runtime.snapshot.settings.grokModel, runtime.snapshot.settings.modelProviders, runtime.snapshot.settings.workspace]);
 
     const selectedAgent = runtime.snapshot.agents.find((agent) => agent.id === selectedAgentId);
     const query = searchValue.trim().toLowerCase();
@@ -221,7 +234,8 @@ const ArkDesktopPage: React.FC = () => {
     const renderRuntimeBadge = () => {
         if (!runtime.runtimeStatus) return <span className="text-slate-400">检测中…</span>;
         if (!runtime.runtimeStatus.available) return <span className="text-red-600">内置智能引擎未就绪</span>;
-        if (!runtime.runtimeStatus.authenticated) return <span className="text-amber-600">等待登录</span>;
+        const provider = runtime.snapshot.settings.modelProviders.find((item) => item.id === runtime.snapshot.settings.grokModel);
+        if (!provider?.enabled || !provider.hasApiKey) return <span className="text-amber-600">请配置模型连接</span>;
         return <span className="text-emerald-600">内置智能引擎已就绪</span>;
     };
 
@@ -268,7 +282,6 @@ const ArkDesktopPage: React.FC = () => {
                         <div className="min-w-0"><div className="truncate text-sm font-semibold text-slate-800">{runtime.activeTask?.title || (section === 'settings' ? '设置' : sectionItems.find((item) => item.id === section)?.label)}</div><div className="truncate text-[11px] text-slate-400">{runtime.snapshot.settings.workspace || '尚未选择本地工作区'}</div></div>
                     </div>
                     <div className="flex items-center gap-2">
-                        {!runtime.runtimeStatus?.authenticated && <button type="button" onClick={() => void runtime.startLogin().catch((error) => runtime.setRuntimeError(String(error)))} className="flex items-center gap-1.5 rounded-lg bg-slate-900 px-3 py-2 text-xs font-medium text-white"><LogIn size={15} />登录服务</button>}
                         <button type="button" onClick={() => void runtime.refreshRuntimeStatus()} className="rounded-lg p-2 text-slate-500 hover:bg-slate-100" title="刷新运行状态"><RefreshCw size={17} /></button>
                         <button type="button" onClick={openSettings} className={`rounded-lg p-2 transition ${section === 'settings' && !runtime.activeTask ? 'bg-slate-100 text-slate-900' : 'text-slate-500 hover:bg-slate-100'}`} title="设置" aria-label="设置"><Settings size={17} /></button>
                     </div>
@@ -382,7 +395,7 @@ const TaskModelPicker: React.FC<{ task: ArkDesktopTask; runtime: ReturnType<type
     const modelOptions = runtime.snapshot.settings.modelOptions;
     const selectedModel = task.model || runtime.snapshot.settings.grokModel;
     if (modelOptions.length === 0) return null;
-    const canSwitch = Boolean(task.sessionId) && task.engine !== 'headless';
+    const canSwitch = task.status === 'running' && Boolean(task.sessionId) && task.engine !== 'headless';
     const switchModel = async (model: string) => {
         if (!canSwitch || model === selectedModel) return;
         setSwitching(true);
@@ -394,7 +407,8 @@ const TaskModelPicker: React.FC<{ task: ArkDesktopTask; runtime: ReturnType<type
             setSwitching(false);
         }
     };
-    return <div className="mt-3 flex items-center gap-2 text-xs text-slate-500"><span>会话模型</span><select value={selectedModel} disabled={!canSwitch || switching} onChange={(event) => void switchModel(event.target.value)} className="max-w-56 rounded-lg border border-slate-200 bg-white px-2 py-1.5 text-xs text-slate-700 outline-none disabled:cursor-not-allowed disabled:opacity-60">{modelOptions.map((model) => <option key={model} value={model}>{model}</option>)}</select>{switching && <LoaderCircle size={13} className="animate-spin" />}{!canSwitch && <span className="text-slate-400">后台模式将在新任务中应用模型</span>}</div>;
+    const providers = new Map(runtime.snapshot.settings.modelProviders.map((provider) => [provider.id, provider]));
+    return <div className="mt-3 flex items-center gap-2 text-xs text-slate-500"><span>会话模型</span><select value={selectedModel} disabled={!canSwitch || switching} onChange={(event) => void switchModel(event.target.value)} className="max-w-56 rounded-lg border border-slate-200 bg-white px-2 py-1.5 text-xs text-slate-700 outline-none disabled:cursor-not-allowed disabled:opacity-60">{modelOptions.map((model) => { const provider = providers.get(model); return <option key={model} value={model}>{provider ? `${provider.name} · ${provider.model}` : model}</option>; })}</select>{switching && <LoaderCircle size={13} className="animate-spin" />}{!canSwitch && <span className="text-slate-400">后台模式将在新任务中应用模型</span>}</div>;
 };
 
 const TaskView: React.FC<{ task: ArkDesktopTask; runtime: ReturnType<typeof useArkDesktopRuntime>; followUp: string; setFollowUp: (value: string) => void }> = ({ task, runtime, followUp, setFollowUp }) => {
@@ -422,16 +436,20 @@ const AutomationsView: React.FC<{ automations: ArkDesktopAutomation[]; runtime: 
     return <div className="p-6 md:p-8"><ViewHeader title="自动化" description="保存可重复任务；每日/每周计划会在 URGS 桌面客户端运行期间自动触发。" onCreate={onCreate} button="新建自动化" /><div className="space-y-4">{automations.map((automation) => <div key={automation.id} className="rounded-2xl border border-slate-200 p-5"><div className="flex flex-wrap items-start justify-between gap-4"><div><div className="flex items-center gap-2"><h3 className="font-semibold text-slate-900">{automation.name}</h3>{automation.schedule !== 'manual' && <span className="rounded-full bg-blue-50 px-2 py-1 text-[11px] text-blue-600"><Clock3 size={11} className="mr-1 inline" />{automation.schedule === 'daily' ? '每日' : '每周'} {automation.scheduleTime}</span>}</div><p className="mt-1 text-sm text-slate-500">{automation.description}</p><p className="mt-3 line-clamp-2 text-sm leading-6 text-slate-600">{automation.prompt}</p><div className="mt-3 text-xs text-slate-400">上次：{formatDateTime(automation.lastRunAt)}{automation.nextRunAt ? ` · 下次：${formatDateTime(automation.nextRunAt)}` : ''}</div></div><div className="flex items-center gap-2"><Toggle checked={automation.enabled} label={`启用 ${automation.name}`} onChange={() => runtime.setSnapshot((current) => ({ ...current, automations: current.automations.map((item) => item.id === automation.id ? { ...item, enabled: !item.enabled, nextRunAt: !item.enabled ? nextRunAt(item.schedule, item.scheduleTime, item.scheduleWeekday) : undefined } : item) }))} /><button type="button" onClick={() => onEdit(automation.id)} className="rounded-lg border border-slate-200 p-2 text-slate-500"><Pencil size={16} /></button><button type="button" disabled={!automation.enabled} onClick={() => void run(automation)} className="flex items-center gap-1.5 rounded-lg bg-slate-900 px-3 py-2 text-xs font-medium text-white disabled:opacity-40"><Play size={14} />立即运行</button></div></div></div>)}</div></div>;
 };
 
-const ModelLibraryPanel: React.FC<{ models: string[]; currentModel: string; onAdd: (model: string) => Promise<void>; onSelect: (model: string) => Promise<void>; onError: (message: string) => void }> = ({ models, currentModel, onAdd, onSelect, onError }) => {
-    const [modelId, setModelId] = useState('');
+const ModelProviderPanel: React.FC<{ providers: ArkDesktopModelProvider[]; currentModel: string; onSave: ReturnType<typeof useArkDesktopRuntime>['saveModelProvider']; onSelect: (model: string) => Promise<void>; onDelete: ReturnType<typeof useArkDesktopRuntime>['removeModelProvider']; onError: (message: string) => void }> = ({ providers, currentModel, onSave, onSelect, onDelete, onError }) => {
+    const [name, setName] = useState('');
+    const [model, setModel] = useState('');
+    const [baseUrl, setBaseUrl] = useState('');
+    const [apiKey, setApiKey] = useState('');
+    const [apiBackend, setApiBackend] = useState<ArkDesktopModelProvider['apiBackend']>('chat_completions');
+    const [authScheme, setAuthScheme] = useState<ArkDesktopModelProvider['authScheme']>('bearer');
+    const [contextWindow, setContextWindow] = useState('128000');
+    const [editingProviderId, setEditingProviderId] = useState<string>();
     const [saving, setSaving] = useState(false);
-    const [synced, setSynced] = useState(false);
     const apply = async (action: () => Promise<void>) => {
         setSaving(true);
-        setSynced(false);
         try {
             await action();
-            setSynced(true);
         } catch (error) {
             onError(error instanceof Error ? error.message : String(error));
         } finally {
@@ -439,30 +457,56 @@ const ModelLibraryPanel: React.FC<{ models: string[]; currentModel: string; onAd
         }
     };
     const add = async () => {
-        const value = modelId.trim();
-        if (!value) return;
+        if (!name.trim() || !model.trim() || !baseUrl.trim()) return;
         await apply(async () => {
-            if (models.includes(value)) await onSelect(value);
-            else await onAdd(value);
-            setModelId('');
+            await onSave({
+                id: editingProviderId || `model-${Date.now().toString(36)}`,
+                name: name.trim(),
+                model: model.trim(),
+                baseUrl: baseUrl.trim(),
+                apiBackend,
+                authScheme,
+                contextWindow: Number(contextWindow) || 128000,
+                enabled: true,
+                apiKey: apiKey.trim() || undefined,
+            });
+            setName('');
+            setModel('');
+            setBaseUrl('');
+            setApiKey('');
+            setEditingProviderId(undefined);
         });
     };
-    return <div className="rounded-2xl border border-slate-200 p-5"><div className="flex flex-wrap items-start justify-between gap-3"><div><h3 className="font-semibold text-slate-900">模型库</h3><p className="mt-1 text-sm leading-6 text-slate-500">添加模型后会同步为本地智能引擎默认模型；新建任务和 ACP 会话均可使用已添加模型。</p></div>{synced && <span className="flex items-center gap-1 text-xs text-emerald-600"><CheckCircle2 size={14} />已同步</span>}</div><div className="mt-4 flex gap-2"><input value={modelId} onChange={(event) => setModelId(event.target.value)} onKeyDown={(event) => { if (event.key === 'Enter') { event.preventDefault(); void add(); } }} placeholder="输入模型标识" className={inputClass} /><button type="button" disabled={saving || !modelId.trim()} onClick={() => void add()} className="flex shrink-0 items-center gap-1.5 rounded-xl bg-slate-900 px-3.5 text-sm text-white disabled:opacity-40">{saving ? <LoaderCircle size={15} className="animate-spin" /> : <Plus size={15} />}添加并同步</button></div><div className="mt-4 flex flex-wrap gap-2">{models.length === 0 ? <span className="text-xs text-slate-400">暂未添加模型</span> : models.map((model) => <button key={model} type="button" disabled={saving} onClick={() => void apply(() => onSelect(model))} className={`rounded-lg border px-3 py-2 text-xs transition disabled:opacity-50 ${model === currentModel ? 'border-slate-900 bg-slate-900 text-white' : 'border-slate-200 bg-white text-slate-600 hover:border-slate-400'}`}>{model === currentModel && <Check size={13} className="mr-1 inline" />}{model}</button>)}</div></div>;
+    const edit = (provider: ArkDesktopModelProvider) => {
+        setEditingProviderId(provider.id);
+        setName(provider.name);
+        setModel(provider.model);
+        setBaseUrl(provider.baseUrl);
+        setApiBackend(provider.apiBackend);
+        setAuthScheme(provider.authScheme);
+        setContextWindow(String(provider.contextWindow));
+        setApiKey('');
+    };
+    const remove = async (provider: ArkDesktopModelProvider) => {
+        if (!window.confirm(`确认删除模型连接“${provider.name}”吗？系统凭据库中的密钥也会一并删除。`)) return;
+        await apply(() => onDelete(provider.id));
+    };
+    return <div className="rounded-2xl border border-slate-200 p-5"><div><h3 className="font-semibold text-slate-900">模型连接</h3><p className="mt-1 text-sm leading-6 text-slate-500">添加 OpenAI 兼容、Responses 或 Messages 协议的模型。任务仍由内置智能引擎执行工具和工作区操作，仅推理由这里配置的模型完成。</p></div><div className="mt-5 grid gap-3 md:grid-cols-2"><Field label="连接名称"><input value={name} onChange={(event) => setName(event.target.value)} placeholder="例如：通义千问" className={inputClass} /></Field><Field label="模型标识"><input value={model} onChange={(event) => setModel(event.target.value)} placeholder="例如：qwen-plus" className={inputClass} /></Field><Field label="API Base URL"><input value={baseUrl} onChange={(event) => setBaseUrl(event.target.value)} placeholder="例如：http://127.0.0.1:1234/v1" className={inputClass} /></Field><Field label="API Key"><input type="password" value={apiKey} onChange={(event) => setApiKey(event.target.value)} placeholder={editingProviderId ? '留空则保留已有密钥' : '仅保存到系统凭据库'} className={inputClass} /></Field><Field label="API 协议"><select value={apiBackend} onChange={(event) => setApiBackend(event.target.value as ArkDesktopModelProvider['apiBackend'])} className={inputClass}><option value="chat_completions">Chat Completions（Kimi / Qwen / OpenAI）</option><option value="responses">Responses</option><option value="messages">Messages</option></select></Field><Field label="认证方式"><select value={authScheme} onChange={(event) => setAuthScheme(event.target.value as ArkDesktopModelProvider['authScheme'])} className={inputClass}><option value="bearer">Bearer Token</option><option value="x_api_key">x-api-key</option></select></Field><Field label="上下文窗口"><input type="number" min="4096" max="2000000" value={contextWindow} onChange={(event) => setContextWindow(event.target.value)} className={inputClass} /></Field></div><div className="mt-4 flex justify-end gap-2">{editingProviderId && <button type="button" disabled={saving} onClick={() => { setEditingProviderId(undefined); setName(''); setModel(''); setBaseUrl(''); setApiKey(''); }} className="rounded-xl border border-slate-200 px-3.5 py-2.5 text-sm text-slate-600">取消编辑</button>}<button type="button" disabled={saving || !name.trim() || !model.trim() || !baseUrl.trim()} onClick={() => void add()} className="flex items-center gap-1.5 rounded-xl bg-slate-900 px-3.5 py-2.5 text-sm text-white disabled:opacity-40">{saving ? <LoaderCircle size={15} className="animate-spin" /> : <Plus size={15} />}{editingProviderId ? '保存连接' : '添加并设为默认'}</button></div><div className="mt-5 space-y-2">{providers.length === 0 ? <div className="rounded-xl bg-slate-50 px-3 py-3 text-sm text-slate-400">暂未添加模型连接。添加后即可在新任务和会话中选择。</div> : providers.map((provider) => <div key={provider.id} className={`flex flex-wrap items-center justify-between gap-3 rounded-xl border px-3.5 py-3 ${provider.id === currentModel ? 'border-slate-800 bg-slate-50' : 'border-slate-200'}`}><div className="min-w-0"><div className="flex items-center gap-2"><span className="font-medium text-slate-800">{provider.name}</span>{provider.id === currentModel && <span className="rounded bg-slate-900 px-1.5 py-0.5 text-[10px] text-white">默认</span>}{provider.hasApiKey ? <span className="text-xs text-emerald-600">密钥已保存</span> : <span className="text-xs text-amber-600">未配置密钥</span>}</div><p className="mt-1 truncate text-xs text-slate-500">{provider.model} · {provider.baseUrl}</p></div><div className="flex items-center gap-2"><button type="button" disabled={saving} onClick={() => edit(provider)} className="rounded-lg border border-slate-200 px-2.5 py-1.5 text-xs text-slate-600 disabled:opacity-40">编辑</button><button type="button" disabled={saving || provider.id === currentModel} onClick={() => void apply(() => onSelect(provider.id))} className="rounded-lg border border-slate-200 px-2.5 py-1.5 text-xs text-slate-600 disabled:opacity-40">设为默认</button><button type="button" disabled={saving} onClick={() => void remove(provider)} className="rounded-lg p-1.5 text-slate-400 hover:bg-red-50 hover:text-red-600 disabled:opacity-40" title="删除模型连接"><Trash2 size={16} /></button></div></div>)}</div></div>;
 };
 
 const SettingsView: React.FC<{ runtime: ReturnType<typeof useArkDesktopRuntime>; chooseWorkspace: () => Promise<void> }> = ({ runtime, chooseWorkspace }) => <div className="mx-auto max-w-4xl p-6 md:p-8">
     <div className="mb-6"><h1 className="text-2xl font-semibold text-slate-900">设置</h1><p className="mt-1 text-sm text-slate-500">配置本地运行环境和全部任务级执行参数。</p></div>
     <div className="space-y-4">
-        <div className="rounded-2xl border border-slate-200 p-5"><div className="flex items-start justify-between gap-3"><div><h3 className="font-semibold text-slate-900">内置智能引擎</h3><p className="mt-1 text-sm text-slate-500">{runtime.runtimeStatus?.available ? '运行环境已准备就绪' : '正在检测安装包内置组件'}</p><p className="mt-2 text-xs text-slate-400">配置由 URGS 本地管理</p></div>{runtime.runtimeStatus?.authenticated ? <span className="flex items-center gap-1.5 text-sm text-emerald-600"><CheckCircle2 size={16} />已登录</span> : <button type="button" onClick={() => void runtime.startLogin().catch((error) => runtime.setRuntimeError(String(error)))} className="rounded-lg bg-slate-900 px-3 py-2 text-xs text-white">登录服务</button>}</div></div>
+        <div className="rounded-2xl border border-slate-200 p-5"><div className="flex items-start justify-between gap-3"><div><h3 className="font-semibold text-slate-900">内置智能引擎</h3><p className="mt-1 text-sm text-slate-500">{runtime.runtimeStatus?.available ? '运行环境已准备就绪' : '正在检测安装包内置组件'}</p><p className="mt-2 text-xs text-slate-400">通过下方模型连接提供推理能力，工具执行和工作区操作始终留在本地。</p></div>{runtime.snapshot.settings.modelProviders.some((provider) => provider.hasApiKey) && <span className="flex items-center gap-1.5 text-sm text-emerald-600"><CheckCircle2 size={16} />模型已连接</span>}</div></div>
         <div className="rounded-2xl border border-slate-200 p-5"><h3 className="font-semibold text-slate-900">默认工作区</h3><p className="mt-2 break-all text-sm text-slate-500">{runtime.snapshot.settings.workspace || '尚未选择'}</p><button type="button" onClick={() => void chooseWorkspace()} className="mt-4 flex items-center gap-2 rounded-lg border border-slate-200 px-3 py-2 text-sm text-slate-600"><Folder size={16} />选择目录</button></div>
-        <ModelLibraryPanel models={runtime.snapshot.settings.modelOptions} currentModel={runtime.snapshot.settings.grokModel} onAdd={runtime.addModel} onSelect={runtime.selectModel} onError={runtime.setRuntimeError} />
+        <ModelProviderPanel providers={runtime.snapshot.settings.modelProviders} currentModel={runtime.snapshot.settings.grokModel} onSave={runtime.saveModelProvider} onSelect={runtime.selectModel} onDelete={runtime.removeModelProvider} onError={runtime.setRuntimeError} />
         <GrokExecutionSettingsPanel
             value={runtime.snapshot.settings.execution}
             onChange={(execution) => runtime.setSnapshot((current) => ({ ...current, settings: { ...current.settings, execution } }))}
         />
         <GrokConfigEditor workspace={runtime.snapshot.settings.workspace} onError={runtime.setRuntimeError} />
         <div className="border-t border-slate-200 pt-4">
-            <GrokCliCenter workspace={runtime.snapshot.settings.workspace} onError={runtime.setRuntimeError} onLogin={runtime.startLogin} onRuntimeRefresh={runtime.refreshRuntimeStatus} />
+            <GrokCliCenter workspace={runtime.snapshot.settings.workspace} onError={runtime.setRuntimeError} />
         </div>
         <div className="rounded-2xl border border-red-200 p-5"><h3 className="font-semibold text-slate-900">重置本地数据</h3><p className="mt-1 text-sm text-slate-500">清除自定义智能体、技能、运行配置、自动化和任务历史，不会删除工作区文件。</p><button type="button" onClick={() => { if (window.confirm('确认重置智能任务中心的全部本地配置和历史？')) runtime.resetAll(); }} className="mt-4 flex items-center gap-2 rounded-lg bg-red-50 px-3 py-2 text-sm text-red-700"><Trash2 size={16} />重置数据</button></div>
     </div>

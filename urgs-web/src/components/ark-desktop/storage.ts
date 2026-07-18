@@ -20,6 +20,7 @@ export const createDefaultArkDesktopSnapshot = (): ArkDesktopSnapshot => ({
         workspace: '',
         grokModel: '',
         modelOptions: [],
+        modelProviders: [],
         defaultAgentId: 'grok-general',
         defaultSkillIds: [],
         execution: {
@@ -97,23 +98,36 @@ export const loadArkDesktopSnapshot = (): ArkDesktopSnapshot => {
                 agentId: validAgentIds.has(automation.agentId) ? automation.agentId : defaults.settings.defaultAgentId,
                 skillIds: automation.skillIds.filter((id) => validSkillIds.has(id)),
             }));
+        const tasks = Array.isArray(stored.tasks) ? stored.tasks.slice(0, MAX_TASK_HISTORY).map((task) => {
+            const interrupted = task.status === 'running';
+            const acpSessionExpired = task.engine !== 'headless' && Boolean(task.sessionId);
+            return {
+                ...task,
+                ...(interrupted ? { status: 'failed' as const, error: '桌面客户端已重新启动，本次执行已中断', updatedAt: Date.now() } : {}),
+                ...(acpSessionExpired ? { sessionId: undefined } : {}),
+            };
+        }) : [];
         const configuredModel = stored.settings?.grokModel?.trim() || '';
+        const modelProviders = Array.isArray(stored.settings?.modelProviders)
+            ? stored.settings.modelProviders
+            : [];
         const modelOptions = Array.from(new Set([
             ...(Array.isArray(stored.settings?.modelOptions) ? stored.settings!.modelOptions : []),
             configuredModel,
+            ...modelProviders.map((provider) => provider.id || ''),
+            ...tasks.map((task) => task.model || ''),
         ].map((model) => model.trim()).filter(Boolean)));
         const snapshot: ArkDesktopSnapshot = {
             agents,
             skills,
             automations,
-            tasks: Array.isArray(stored.tasks) ? stored.tasks.slice(0, MAX_TASK_HISTORY).map((task) => task.status === 'running'
-                ? { ...task, status: 'failed' as const, error: '桌面客户端已重新启动，本次执行已中断', updatedAt: Date.now() }
-                : task) : [],
+            tasks,
             settings: {
                 ...defaults.settings,
                 ...(stored.settings || {}),
                 grokModel: configuredModel,
                 modelOptions,
+                modelProviders,
                 defaultAgentId: validAgentIds.has(stored.settings?.defaultAgentId || '') ? stored.settings!.defaultAgentId : defaults.settings.defaultAgentId,
                 defaultSkillIds: (stored.settings?.defaultSkillIds || []).filter((id) => validSkillIds.has(id)),
                 execution: { ...defaults.settings.execution, ...(stored.settings?.execution || {}) },

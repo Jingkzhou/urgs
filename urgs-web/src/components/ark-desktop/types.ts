@@ -79,9 +79,22 @@ export interface ArkDesktopSettings {
     workspace: string;
     grokModel: string;
     modelOptions: string[];
+    modelProviders: ArkDesktopModelProvider[];
     defaultAgentId: string;
     defaultSkillIds: string[];
     execution: GrokExecutionSettings;
+}
+
+export interface ArkDesktopModelProvider {
+    id: string;
+    name: string;
+    model: string;
+    baseUrl: string;
+    apiBackend: 'chat_completions' | 'responses' | 'messages';
+    authScheme: 'bearer' | 'x_api_key';
+    contextWindow: number;
+    enabled: boolean;
+    hasApiKey: boolean;
 }
 
 export interface GrokExecutionSettings {

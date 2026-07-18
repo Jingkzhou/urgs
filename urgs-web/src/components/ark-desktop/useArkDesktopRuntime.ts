@@ -6,18 +6,24 @@ import {
     chooseGrokAttachments,
     chooseGrokWorkspace,
     createGrokSession,
+    deleteGrokModelProvider,
     getGrokRuntimeStatus,
     listGrokCliServices,
+    listGrokModelProviders,
     runGrokCli,
     respondGrokPermission,
+    prepareGrokRuntime,
     startGrokCliService,
     stopGrokCliService,
     sendGrokPrompt,
     setGrokSessionModel,
+    saveGrokModelProvider,
     startGrokLogin,
     subscribeGrokEvents,
     type GrokBridgeEvent,
     type GrokRuntimeStatus,
+    type GrokModelProvider,
+    type GrokModelProviderInput,
 } from '@/services/grokDesktop';
 import { loadArkDesktopSnapshot, resetArkDesktopSnapshot, saveArkDesktopSnapshot } from './storage';
 import type {
@@ -27,6 +33,7 @@ import type {
     ArkDesktopSkill,
     ArkDesktopSnapshot,
     ArkDesktopTask,
+    ArkDesktopModelProvider,
 } from './types';
 import { buildGrokHeadlessArguments, extractGrokHeadlessSessionId, extractGrokHeadlessText } from './execution';
 
@@ -133,6 +140,22 @@ export const useArkDesktopRuntime = () => {
         }
     }, []);
 
+    const refreshModelProviders = useCallback(async () => {
+        if (!isDesktopRuntime()) return;
+        const modelProviders = await listGrokModelProviders();
+        setSnapshot((current) => ({
+            ...current,
+            settings: {
+                ...current.settings,
+                modelProviders,
+                modelOptions: Array.from(new Set([
+                    ...current.settings.modelOptions,
+                    ...modelProviders.map((provider) => provider.id),
+                ])),
+            },
+        }));
+    }, []);
+
     const handleGrokEvent = useCallback((event: GrokBridgeEvent) => {
         const taskId = activeTaskIdRef.current;
         if (event.eventType === 'session_update' && taskId) {
@@ -168,6 +191,23 @@ export const useArkDesktopRuntime = () => {
                     };
                     if (existingIndex >= 0) tools[existingIndex] = { ...tools[existingIndex], ...nextTool };
                     else tools.push(nextTool);
+                    return { ...task, tools, updatedAt: Date.now() };
+                });
+                return;
+            }
+            if (updateType === 'retry_state') {
+                const attempt = Number(update.attempt || 0);
+                const maxRetries = Number(update.max_retries || 0);
+                const reason = redactRuntimeText(String(update.reason || '模型服务暂时不可用'));
+                updateTask(taskId, (task) => {
+                    const tools = task.tools.filter((tool) => tool.id !== 'inference-retry');
+                    tools.push({
+                        id: 'inference-retry',
+                        title: `模型请求重试 ${attempt}${maxRetries ? `/${maxRetries}` : ''}`,
+                        status: reason,
+                        kind: 'inference',
+                        updatedAt: Date.now(),
+                    });
                     return { ...task, tools, updatedAt: Date.now() };
                 });
             }
@@ -211,6 +251,9 @@ export const useArkDesktopRuntime = () => {
     useEffect(() => {
         if (!isDesktopRuntime()) return;
         void refreshRuntimeStatus();
+        void refreshModelProviders().catch((error) => {
+            setRuntimeError(redactRuntimeText(error instanceof Error ? error.message : '无法读取模型连接'));
+        });
         let unlisten: (() => void) | undefined;
         void subscribeGrokEvents(handleGrokEvent).then((dispose) => {
             unlisten = dispose;
@@ -218,7 +261,7 @@ export const useArkDesktopRuntime = () => {
             setRuntimeError(redactRuntimeText(error instanceof Error ? error.message : '无法订阅本地任务事件'));
         });
         return () => unlisten?.();
-    }, [handleGrokEvent, refreshRuntimeStatus]);
+    }, [handleGrokEvent, refreshModelProviders, refreshRuntimeStatus]);
 
     const selectWorkspace = useCallback(async () => {
         const selected = await chooseGrokWorkspace();
@@ -245,8 +288,11 @@ export const useArkDesktopRuntime = () => {
         const workspace = current.settings.workspace;
         if (!isDesktopRuntime()) throw new Error('请在 URGS 桌面客户端中运行 ARK Desktop');
         if (!runtimeStatus?.available) throw new Error('未检测到内置智能引擎，请先检查桌面安装包');
-        if (!runtimeStatus.authenticated) throw new Error('请先登录任务服务');
         if (!workspace) throw new Error('请先选择本地工作区');
+        const selectedProvider = current.settings.modelProviders.find((provider) => provider.id === current.settings.grokModel);
+        if (!current.settings.grokModel || !selectedProvider) throw new Error('请先在设置中添加并选择模型连接');
+        if (!selectedProvider.enabled) throw new Error(`模型连接“${selectedProvider.name}”已停用`);
+        if (!selectedProvider.hasApiKey) throw new Error(`模型连接“${selectedProvider.name}”尚未配置 API Key`);
         const promptRequired = current.settings.execution.engine !== 'headless' || current.settings.execution.promptMode === 'text';
         if (promptRequired && !prompt.trim()) throw new Error('请输入要完成的任务');
         if (current.tasks.some((task) => task.status === 'running')) throw new Error('已有本地任务正在执行，请等待完成或先停止任务');
@@ -363,6 +409,30 @@ export const useArkDesktopRuntime = () => {
         return taskId;
     }, [runtimeStatus, updateTask]);
 
+    const prepareEngine = useCallback(async () => {
+        const current = snapshotRef.current;
+        const workspace = current.settings.workspace;
+        const provider = current.settings.modelProviders.find((item) => item.id === current.settings.grokModel);
+        if (!isDesktopRuntime() || !runtimeStatus?.available || !workspace || !provider?.enabled || !provider.hasApiKey) return;
+        setRuntimeError('');
+        const execution = current.settings.execution;
+        await prepareGrokRuntime(workspace, provider.id, {
+            reasoningEffort: execution.reasoningEffort,
+            alwaysApprove: execution.alwaysApprove,
+            reauth: execution.reauth,
+            agentProfile: execution.agentProfile,
+            pluginDirs: execution.pluginDirs.split('\n').map((item) => item.trim()).filter(Boolean),
+            leaderMode: execution.leaderMode,
+            grokWsOrigin: execution.grokWsOrigin,
+            grokWsUrl: execution.grokWsUrl,
+            cliChatProxyUrl: execution.cliChatProxyUrl,
+            xaiApiBaseUrl: execution.xaiApiBaseUrl,
+            debug: execution.debug,
+            debugFile: execution.debugFile,
+            leaderSocket: execution.leaderSocket,
+        });
+    }, [runtimeStatus]);
+
     const sendFollowUp = useCallback(async (taskId: string, prompt: string) => {
         const task = snapshotRef.current.tasks.find((item) => item.id === taskId);
         if (!task?.sessionId) throw new Error('该历史任务的本地会话已经结束，请新建任务');
@@ -372,29 +442,37 @@ export const useArkDesktopRuntime = () => {
             messages: [...value.messages, { id: createId('message'), role: 'user', content: prompt, createdAt: Date.now() }],
             updatedAt: Date.now(),
         }));
-        if (task.engine === 'headless') {
-            const current = snapshotRef.current;
-            const service = await startGrokCliService([
+        try {
+            if (task.engine === 'headless') {
+                const current = snapshotRef.current;
+                const service = await startGrokCliService([
                 ...(current.settings.grokModel.trim() ? ['--model', current.settings.grokModel.trim()] : []),
                 '--resume', task.sessionId,
                 '--output-format', current.settings.execution.outputFormat,
                 '--single', prompt,
-            ], task.workspace);
-            updateTask(taskId, (value) => ({ ...value, cliServiceId: service.id, updatedAt: Date.now() }));
-            const result = await waitForCliService(service.id);
-            if (result.exitCode !== 0 && !cancelledTaskIdsRef.current.has(taskId)) throw new Error(result.stderr || '后台任务追问失败');
-            const response = redactRuntimeText(extractGrokHeadlessText(result.stdout, current.settings.execution.outputFormat));
-            updateTask(taskId, (value) => ({
-                ...value,
-                messages: [...value.messages, { id: createId('message'), role: 'assistant', content: response || '补充任务已完成。', createdAt: Date.now() }],
-                updatedAt: Date.now(),
-            }));
-        } else {
-            await sendGrokPrompt(task.sessionId, prompt);
+                ], task.workspace);
+                updateTask(taskId, (value) => ({ ...value, cliServiceId: service.id, updatedAt: Date.now() }));
+                const result = await waitForCliService(service.id);
+                if (result.exitCode !== 0 && !cancelledTaskIdsRef.current.has(taskId)) throw new Error(result.stderr || '后台任务追问失败');
+                const response = redactRuntimeText(extractGrokHeadlessText(result.stdout, current.settings.execution.outputFormat));
+                updateTask(taskId, (value) => ({
+                    ...value,
+                    messages: [...value.messages, { id: createId('message'), role: 'assistant', content: response || '补充任务已完成。', createdAt: Date.now() }],
+                    updatedAt: Date.now(),
+                }));
+            } else {
+                await sendGrokPrompt(task.sessionId, prompt);
+            }
+            updateTask(taskId, (value) => cancelledTaskIdsRef.current.has(taskId)
+                ? value
+                : { ...value, status: 'completed', updatedAt: Date.now() });
+        } catch (error) {
+            const message = redactRuntimeText(error instanceof Error ? error.message : String(error));
+            if (!cancelledTaskIdsRef.current.has(taskId)) {
+                updateTask(taskId, (value) => ({ ...value, status: 'failed', error: message, updatedAt: Date.now() }));
+            }
+            throw error;
         }
-        updateTask(taskId, (value) => cancelledTaskIdsRef.current.has(taskId)
-            ? value
-            : { ...value, status: 'completed', updatedAt: Date.now() });
     }, [updateTask]);
 
     const cancelTask = useCallback(async (taskId: string) => {
@@ -432,7 +510,48 @@ export const useArkDesktopRuntime = () => {
     const selectModel = useCallback(async (model: string) => {
         const modelId = model.trim();
         await applyGrokModel(modelId);
-        setSnapshot((current) => ({ ...current, settings: { ...current.settings, grokModel: modelId } }));
+        setSnapshot((current) => ({
+            ...current,
+            settings: {
+                ...current.settings,
+                grokModel: modelId,
+                modelOptions: Array.from(new Set([...current.settings.modelOptions, modelId])),
+            },
+        }));
+    }, []);
+
+    const saveModelProvider = useCallback(async (input: GrokModelProviderInput): Promise<GrokModelProvider> => {
+        const provider = await saveGrokModelProvider(input);
+        setSnapshot((current) => ({
+            ...current,
+            settings: {
+                ...current.settings,
+                grokModel: provider.id,
+                modelOptions: Array.from(new Set([...current.settings.modelOptions, provider.id])),
+                modelProviders: [
+                    ...current.settings.modelProviders.filter((item) => item.id !== provider.id),
+                    provider as ArkDesktopModelProvider,
+                ],
+            },
+        }));
+        return provider;
+    }, []);
+
+    const removeModelProvider = useCallback(async (providerId: string) => {
+        await deleteGrokModelProvider(providerId);
+        setSnapshot((current) => {
+            const modelProviders = current.settings.modelProviders.filter((provider) => provider.id !== providerId);
+            const fallbackModel = current.settings.grokModel === providerId ? modelProviders[0]?.id || '' : current.settings.grokModel;
+            return {
+                ...current,
+                settings: {
+                    ...current.settings,
+                    grokModel: fallbackModel,
+                    modelOptions: current.settings.modelOptions.filter((model) => model !== providerId),
+                    modelProviders,
+                },
+            };
+        });
     }, []);
 
     const switchTaskModel = useCallback(async (taskId: string, model: string) => {
@@ -468,12 +587,16 @@ export const useArkDesktopRuntime = () => {
         selectWorkspace,
         selectAttachments,
         startTask,
+        prepareEngine,
         sendFollowUp,
         cancelTask,
         permission,
         answerPermission,
         addModel,
         selectModel,
+        saveModelProvider,
+        removeModelProvider,
+        refreshModelProviders,
         switchTaskModel,
         activeTask,
         activeTaskId,

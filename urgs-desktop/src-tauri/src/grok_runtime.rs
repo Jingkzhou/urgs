@@ -1,3 +1,4 @@
+use keyring::Entry;
 use serde::{Deserialize, Serialize};
 use serde_json::{json, Value};
 use std::collections::HashMap;
@@ -13,6 +14,8 @@ use tokio::sync::{oneshot, Mutex as AsyncMutex};
 
 const GROK_EVENT_NAME: &str = "grok-event";
 const REQUEST_TIMEOUT: Duration = Duration::from_secs(30);
+const MODEL_PROVIDER_FILE: &str = "model-providers.json";
+const MODEL_CREDENTIAL_SERVICE: &str = "com.urgs.desktop.grok-model";
 
 #[derive(Debug, Clone, Serialize)]
 #[serde(rename_all = "camelCase")]
@@ -80,6 +83,35 @@ pub struct GrokConfigFile {
     pub path: String,
     pub exists: bool,
     pub content: String,
+}
+
+#[derive(Debug, Clone, Serialize, Deserialize)]
+#[serde(rename_all = "camelCase")]
+pub struct GrokModelProvider {
+    pub id: String,
+    pub name: String,
+    pub model: String,
+    pub base_url: String,
+    pub api_backend: String,
+    pub auth_scheme: String,
+    pub context_window: u64,
+    pub enabled: bool,
+    #[serde(default)]
+    pub has_api_key: bool,
+}
+
+#[derive(Debug, Deserialize)]
+#[serde(rename_all = "camelCase")]
+pub struct GrokModelProviderInput {
+    pub id: String,
+    pub name: String,
+    pub model: String,
+    pub base_url: String,
+    pub api_backend: String,
+    pub auth_scheme: String,
+    pub context_window: u64,
+    pub enabled: bool,
+    pub api_key: Option<String>,
 }
 
 #[derive(Debug, Clone, Serialize)]
@@ -381,6 +413,318 @@ fn grok_home(app: &AppHandle) -> Result<PathBuf, String> {
     Ok(directory)
 }
 
+fn model_provider_path(app: &AppHandle) -> Result<PathBuf, String> {
+    Ok(grok_home(app)?.join(MODEL_PROVIDER_FILE))
+}
+
+fn normalize_provider_id(value: &str) -> Result<String, String> {
+    let value = value.trim();
+    if value.is_empty()
+        || value.len() > 64
+        || !value
+            .chars()
+            .all(|character| character.is_ascii_alphanumeric() || matches!(character, '-' | '_'))
+    {
+        return Err("模型连接标识仅支持字母、数字、短横线和下划线，且长度不超过 64".to_string());
+    }
+    Ok(value.to_string())
+}
+
+fn model_key_env_name(provider_id: &str) -> String {
+    format!(
+        "URGS_GROK_MODEL_{}",
+        provider_id
+            .chars()
+            .map(|character| if character.is_ascii_alphanumeric() {
+                character.to_ascii_uppercase()
+            } else {
+                '_'
+            })
+            .collect::<String>()
+    )
+}
+
+fn provider_credential(provider_id: &str) -> Result<Entry, String> {
+    Entry::new(MODEL_CREDENTIAL_SERVICE, provider_id)
+        .map_err(|error| format!("无法访问系统凭据库: {error}"))
+}
+
+fn provider_has_api_key(provider_id: &str) -> bool {
+    provider_credential(provider_id)
+        .and_then(|entry| entry.get_password().map_err(|error| error.to_string()))
+        .map(|api_key| !api_key.trim().is_empty())
+        .unwrap_or(false)
+}
+
+fn read_model_providers(app: &AppHandle) -> Result<Vec<GrokModelProvider>, String> {
+    let path = model_provider_path(app)?;
+    if !path.is_file() {
+        return Ok(Vec::new());
+    }
+    let content =
+        fs::read_to_string(&path).map_err(|error| format!("读取模型连接失败: {error}"))?;
+    let mut providers = serde_json::from_str::<Vec<GrokModelProvider>>(&content)
+        .map_err(|error| format!("解析模型连接失败: {error}"))?;
+    providers
+        .iter_mut()
+        .for_each(|provider| provider.has_api_key = provider_has_api_key(&provider.id));
+    Ok(providers)
+}
+
+fn write_model_providers(app: &AppHandle, providers: &[GrokModelProvider]) -> Result<(), String> {
+    let path = model_provider_path(app)?;
+    let mut persisted = providers.to_vec();
+    persisted
+        .iter_mut()
+        .for_each(|provider| provider.has_api_key = false);
+    let content = serde_json::to_string_pretty(&persisted)
+        .map_err(|error| format!("序列化模型连接失败: {error}"))?;
+    fs::write(path, content).map_err(|error| format!("保存模型连接失败: {error}"))
+}
+
+fn normalize_model_provider(
+    input: GrokModelProviderInput,
+) -> Result<(GrokModelProvider, Option<String>), String> {
+    let id = normalize_provider_id(&input.id)?;
+    let name = input.name.trim();
+    let model = normalize_model_id(&input.model)?;
+    let base_url = input.base_url.trim().trim_end_matches('/');
+    let parsed = url::Url::parse(base_url).map_err(|_| "模型服务地址格式不正确".to_string())?;
+    if !matches!(parsed.scheme(), "http" | "https") || parsed.host_str().is_none() {
+        return Err("模型服务地址必须是有效的 HTTP 或 HTTPS 地址".to_string());
+    }
+    if name.is_empty() || name.len() > 80 {
+        return Err("请输入长度不超过 80 个字符的连接名称".to_string());
+    }
+    if !matches!(
+        input.api_backend.as_str(),
+        "chat_completions" | "responses" | "messages"
+    ) {
+        return Err("暂不支持该模型 API 协议".to_string());
+    }
+    if !matches!(input.auth_scheme.as_str(), "bearer" | "x_api_key") {
+        return Err("暂不支持该认证方案".to_string());
+    }
+    if !(4_096..=2_000_000).contains(&input.context_window) {
+        return Err("上下文窗口应在 4096 到 2000000 之间".to_string());
+    }
+    Ok((
+        GrokModelProvider {
+            id,
+            name: name.to_string(),
+            model,
+            base_url: base_url.to_string(),
+            api_backend: input.api_backend,
+            auth_scheme: input.auth_scheme,
+            context_window: input.context_window,
+            enabled: input.enabled,
+            has_api_key: false,
+        },
+        input.api_key,
+    ))
+}
+
+fn parse_grok_toml(content: &str) -> Result<toml::Value, String> {
+    if content.trim().is_empty() {
+        return Ok(toml::Value::Table(toml::map::Map::new()));
+    }
+    if let Ok(config) = content.parse::<toml::Value>() {
+        return Ok(config);
+    }
+    // A previous release serialized the document root as an inline table. TOML
+    // documents cannot start with `{`, but the table itself can be recovered by
+    // assigning it to a temporary key and then extracting that value.
+    let inline_root = content.trim();
+    if inline_root.starts_with('{') && inline_root.ends_with('}') {
+        let wrapped = format!("__urgs_recovery_root = {inline_root}");
+        if let Ok(recovered) = wrapped.parse::<toml::Value>() {
+            if let Some(root) = recovered.get("__urgs_recovery_root") {
+                return Ok(root.clone());
+            }
+        }
+    }
+    content
+        .parse::<toml::Value>()
+        .map_err(|error| format!("本地智能引擎 TOML 配置无效: {error}"))
+}
+
+fn serialize_grok_toml(config: &toml::Value) -> Result<String, String> {
+    toml::to_string(config).map_err(|error| format!("序列化本地智能引擎配置失败: {error}"))
+}
+
+fn sync_provider_to_grok_config(
+    app: &AppHandle,
+    provider: &GrokModelProvider,
+) -> Result<(), String> {
+    let path = grok_config_path(app, "user", "config", None)?;
+    let content = if path.is_file() {
+        fs::read_to_string(&path).map_err(|error| format!("读取本地智能引擎配置失败: {error}"))?
+    } else {
+        String::new()
+    };
+    let mut config = parse_grok_toml(&content)?;
+    let root = config
+        .as_table_mut()
+        .ok_or_else(|| "本地智能引擎配置根节点必须是对象".to_string())?;
+    let models = root
+        .entry("model".to_string())
+        .or_insert_with(|| toml::Value::Table(toml::map::Map::new()))
+        .as_table_mut()
+        .ok_or_else(|| "本地智能引擎配置中的 model 必须是对象".to_string())?;
+    let entry = models
+        .entry(provider.id.clone())
+        .or_insert_with(|| toml::Value::Table(toml::map::Map::new()))
+        .as_table_mut()
+        .ok_or_else(|| "模型配置必须是对象".to_string())?;
+    entry.insert(
+        "model".to_string(),
+        toml::Value::String(provider.model.clone()),
+    );
+    entry.insert(
+        "base_url".to_string(),
+        toml::Value::String(provider.base_url.clone()),
+    );
+    entry.insert(
+        "name".to_string(),
+        toml::Value::String(provider.name.clone()),
+    );
+    entry.insert(
+        "env_key".to_string(),
+        toml::Value::String(model_key_env_name(&provider.id)),
+    );
+    entry.insert(
+        "api_backend".to_string(),
+        toml::Value::String(provider.api_backend.clone()),
+    );
+    entry.insert(
+        "auth_scheme".to_string(),
+        toml::Value::String(provider.auth_scheme.clone()),
+    );
+    entry.insert(
+        "context_window".to_string(),
+        toml::Value::Integer(provider.context_window as i64),
+    );
+    entry.insert(
+        "agent_type".to_string(),
+        toml::Value::String("grok-build".to_string()),
+    );
+    entry.insert("supported_in_api".to_string(), toml::Value::Boolean(true));
+    entry.remove("api_key");
+    let parent = path
+        .parent()
+        .ok_or_else(|| "本地智能引擎配置目录无效".to_string())?;
+    fs::create_dir_all(parent).map_err(|error| format!("创建本地智能引擎配置目录失败: {error}"))?;
+    if path.is_file() {
+        fs::copy(&path, path.with_extension("toml.urgs-backup"))
+            .map_err(|error| format!("备份本地智能引擎配置失败: {error}"))?;
+    }
+    fs::write(path, serialize_grok_toml(&config)?)
+        .map_err(|error| format!("保存本地智能引擎配置失败: {error}"))
+}
+
+fn provider_is_registered_in_grok_config(
+    app: &AppHandle,
+    provider: &GrokModelProvider,
+) -> Result<bool, String> {
+    let path = grok_config_path(app, "user", "config", None)?;
+    if !path.is_file() {
+        return Ok(false);
+    }
+    let content =
+        fs::read_to_string(path).map_err(|error| format!("读取本地智能引擎配置失败: {error}"))?;
+    if content.trim_start().starts_with('{') {
+        return Ok(false);
+    }
+    let config = parse_grok_toml(&content)?;
+    let entry = config
+        .get("model")
+        .and_then(toml::Value::as_table)
+        .and_then(|models| models.get(&provider.id))
+        .and_then(toml::Value::as_table);
+    Ok(entry.is_some_and(|entry| {
+        entry.get("model").and_then(toml::Value::as_str) == Some(provider.model.as_str())
+            && entry.get("base_url").and_then(toml::Value::as_str)
+                == Some(provider.base_url.as_str())
+            && entry.get("env_key").and_then(toml::Value::as_str)
+                == Some(model_key_env_name(&provider.id).as_str())
+            && entry.get("api_backend").and_then(toml::Value::as_str)
+                == Some(provider.api_backend.as_str())
+    }))
+}
+
+fn remove_provider_from_grok_config(app: &AppHandle, provider_id: &str) -> Result<(), String> {
+    let path = grok_config_path(app, "user", "config", None)?;
+    if !path.is_file() {
+        return Ok(());
+    }
+    let content =
+        fs::read_to_string(&path).map_err(|error| format!("读取本地智能引擎配置失败: {error}"))?;
+    let mut config = parse_grok_toml(&content)?;
+    let root = config
+        .as_table_mut()
+        .ok_or_else(|| "本地智能引擎配置根节点必须是对象".to_string())?;
+    if let Some(models) = root.get_mut("model").and_then(toml::Value::as_table_mut) {
+        models.remove(provider_id);
+    }
+    if let Some(models) = root.get_mut("models").and_then(toml::Value::as_table_mut) {
+        if models.get("default").and_then(toml::Value::as_str) == Some(provider_id) {
+            models.remove("default");
+        }
+    }
+    fs::copy(&path, path.with_extension("toml.urgs-backup"))
+        .map_err(|error| format!("备份本地智能引擎配置失败: {error}"))?;
+    fs::write(path, serialize_grok_toml(&config)?)
+        .map_err(|error| format!("保存本地智能引擎配置失败: {error}"))
+}
+
+fn model_provider_envs(app: &AppHandle) -> Result<Vec<(String, String)>, String> {
+    read_model_providers(app).map(|providers| {
+        providers
+            .into_iter()
+            .filter(|provider| provider.enabled)
+            .filter_map(|provider| {
+                provider_credential(&provider.id)
+                    .ok()
+                    .and_then(|entry| entry.get_password().ok())
+                    .filter(|api_key| !api_key.trim().is_empty())
+                    .map(|api_key| (model_key_env_name(&provider.id), api_key))
+            })
+            .collect()
+    })
+}
+
+fn ensure_model_provider_ready(app: &AppHandle, model: Option<&str>) -> Result<(), String> {
+    let Some(model) = model.map(str::trim).filter(|model| !model.is_empty()) else {
+        return Ok(());
+    };
+    let Some(provider) = read_model_providers(app)?
+        .into_iter()
+        .find(|provider| provider.id == model)
+    else {
+        return Ok(());
+    };
+    if !provider.enabled {
+        return Err(format!(
+            "模型连接“{}”已停用，请在设置中启用后再使用",
+            provider.name
+        ));
+    }
+    if !provider_has_api_key(&provider.id) {
+        return Err(format!("模型连接“{}”尚未配置 API Key", provider.name));
+    }
+    if !provider_is_registered_in_grok_config(app, &provider)? {
+        sync_provider_to_grok_config(app, &provider)?;
+    }
+    Ok(())
+}
+
+fn model_from_arguments(arguments: &[String]) -> Option<&str> {
+    arguments
+        .windows(2)
+        .find(|pair| pair[0] == "--model")
+        .map(|pair| pair[1].as_str())
+}
+
 fn validate_workspace(workspace: &str) -> Result<PathBuf, String> {
     let candidate = PathBuf::from(workspace.trim());
     if workspace.trim().is_empty() || !candidate.is_absolute() {
@@ -594,6 +938,7 @@ fn spawn_grok_process(
     model: Option<&str>,
     options: &GrokAcpOptions,
 ) -> Result<Arc<GrokProcess>, String> {
+    ensure_model_provider_ready(app, model)?;
     let home = grok_home(app)?;
     let mut arguments = vec!["--no-auto-update".to_string(), "agent".to_string()];
     if let Some(model) = model.filter(|value| !value.trim().is_empty()) {
@@ -658,6 +1003,7 @@ fn spawn_grok_process(
         options.leader_socket.as_ref(),
     );
     arguments.push("stdio".to_string());
+    let model_envs = model_provider_envs(app)?;
     let (mut receiver, child) = app
         .shell()
         .sidecar("grok")
@@ -665,6 +1011,7 @@ fn spawn_grok_process(
         .args(arguments)
         .current_dir(workspace)
         .env("GROK_HOME", &home)
+        .envs(model_envs)
         .spawn()
         .map_err(|error| format!("启动本地 Grok Build 失败: {error}"))?;
     let process = Arc::new(GrokProcess::new(child));
@@ -728,6 +1075,31 @@ pub async fn grok_runtime_status(app: AppHandle) -> Result<GrokRuntimeStatus, St
 }
 
 #[tauri::command]
+pub async fn grok_runtime_prepare(
+    app: AppHandle,
+    state: State<'_, GrokRuntimeState>,
+    workspace: String,
+    model: String,
+    options: Option<GrokAcpOptions>,
+) -> Result<(), String> {
+    let workspace = validate_workspace(&workspace)?;
+    let model = normalize_model_id(&model)?;
+    if active_process(&state).is_ok() {
+        return Ok(());
+    }
+    let process = spawn_grok_process(&app, &workspace, Some(&model), &options.unwrap_or_default())?;
+    if let Err(error) = process.initialize(None).await {
+        process.stop();
+        return Err(error);
+    }
+    *state
+        .process
+        .lock()
+        .map_err(|_| "本地智能引擎运行时锁不可用".to_string())? = Some(process);
+    Ok(())
+}
+
+#[tauri::command]
 pub async fn grok_cli_run(
     app: AppHandle,
     workspace: Option<String>,
@@ -735,6 +1107,7 @@ pub async fn grok_cli_run(
     timeout_seconds: Option<u64>,
 ) -> Result<GrokCliResult, String> {
     validate_cli_arguments(&arguments)?;
+    ensure_model_provider_ready(&app, model_from_arguments(&arguments))?;
     let current_dir = match workspace.filter(|value| !value.trim().is_empty()) {
         Some(workspace) => validate_workspace(&workspace)?,
         None => grok_home(&app)?,
@@ -747,7 +1120,8 @@ pub async fn grok_cli_run(
         .map_err(|error| format!("无法定位内置 Grok Build: {error}"))?
         .args(command_arguments)
         .current_dir(current_dir)
-        .env("GROK_HOME", grok_home(&app)?);
+        .env("GROK_HOME", grok_home(&app)?)
+        .envs(model_provider_envs(&app)?);
     let timeout = Duration::from_secs(timeout_seconds.unwrap_or(120).clamp(5, 600));
     let output = tokio::time::timeout(timeout, command.output())
         .await
@@ -796,9 +1170,7 @@ pub fn grok_config_save(
     content: String,
 ) -> Result<GrokConfigFile, String> {
     if !content.trim().is_empty() {
-        content
-            .parse::<toml::Value>()
-            .map_err(|error| format!("Grok TOML 配置无效: {error}"))?;
+        parse_grok_toml(&content)?;
     }
     let kind = kind.unwrap_or_else(|| "config".to_string());
     let path = grok_config_path(&app, &scope, &kind, workspace.as_deref())?;
@@ -811,6 +1183,14 @@ pub fn grok_config_save(
             .map_err(|error| format!("备份 Grok 配置失败: {error}"))?;
     }
     fs::write(&path, content.as_bytes()).map_err(|error| format!("保存 Grok 配置失败: {error}"))?;
+    let content = if scope == "user" && kind == "config" {
+        for provider in read_model_providers(&app)? {
+            sync_provider_to_grok_config(&app, &provider)?;
+        }
+        fs::read_to_string(&path).map_err(|error| format!("读取已保存配置失败: {error}"))?
+    } else {
+        content
+    };
     Ok(GrokConfigFile {
         scope,
         kind,
@@ -825,7 +1205,7 @@ fn normalize_model_id(model: &str) -> Result<String, String> {
     if model.is_empty() {
         return Err("请输入模型标识".to_string());
     }
-    if model.len() > 128 || model.chars().any(char::is_control) {
+    if model.len() > 128 || model.chars().any(|character| character.is_control()) {
         return Err("模型标识格式无效".to_string());
     }
     Ok(model.to_string())
@@ -840,13 +1220,7 @@ pub fn grok_model_apply(app: AppHandle, model: String) -> Result<(), String> {
     } else {
         String::new()
     };
-    let mut config = if content.trim().is_empty() {
-        toml::Value::Table(toml::map::Map::new())
-    } else {
-        content
-            .parse::<toml::Value>()
-            .map_err(|error| format!("Grok TOML 配置无效: {error}"))?
-    };
+    let mut config = parse_grok_toml(&content)?;
     let root = config
         .as_table_mut()
         .ok_or_else(|| "Grok 配置根节点必须是对象".to_string())?;
@@ -867,7 +1241,58 @@ pub fn grok_model_apply(app: AppHandle, model: String) -> Result<(), String> {
         fs::copy(&path, path.with_extension("toml.urgs-backup"))
             .map_err(|error| format!("备份 Grok 配置失败: {error}"))?;
     }
-    fs::write(&path, config.to_string()).map_err(|error| format!("保存 Grok 配置失败: {error}"))?;
+    fs::write(&path, serialize_grok_toml(&config)?)
+        .map_err(|error| format!("保存 Grok 配置失败: {error}"))?;
+    Ok(())
+}
+
+#[tauri::command]
+pub fn grok_model_provider_list(app: AppHandle) -> Result<Vec<GrokModelProvider>, String> {
+    read_model_providers(&app)
+}
+
+#[tauri::command]
+pub fn grok_model_provider_save(
+    app: AppHandle,
+    input: GrokModelProviderInput,
+) -> Result<GrokModelProvider, String> {
+    let (provider, api_key) = normalize_model_provider(input)?;
+    let mut providers = read_model_providers(&app)?;
+    if let Some(index) = providers.iter().position(|item| item.id == provider.id) {
+        providers[index] = provider.clone();
+    } else {
+        providers.push(provider.clone());
+    }
+    if let Some(api_key) = api_key {
+        let credential = provider_credential(&provider.id)?;
+        if api_key.trim().is_empty() {
+            let _ = credential.delete_credential();
+        } else {
+            credential
+                .set_password(api_key.trim())
+                .map_err(|error| format!("保存模型密钥到系统凭据库失败: {error}"))?;
+        }
+    }
+    write_model_providers(&app, &providers)?;
+    sync_provider_to_grok_config(&app, &provider)?;
+    grok_model_apply(app.clone(), provider.id.clone())?;
+    let mut result = provider;
+    result.has_api_key = provider_has_api_key(&result.id);
+    Ok(result)
+}
+
+#[tauri::command]
+pub fn grok_model_provider_delete(app: AppHandle, provider_id: String) -> Result<(), String> {
+    let provider_id = normalize_provider_id(&provider_id)?;
+    let mut providers = read_model_providers(&app)?;
+    let before = providers.len();
+    providers.retain(|provider| provider.id != provider_id);
+    if before == providers.len() {
+        return Err("未找到该模型连接".to_string());
+    }
+    let _ = provider_credential(&provider_id)?.delete_credential();
+    write_model_providers(&app, &providers)?;
+    remove_provider_from_grok_config(&app, &provider_id)?;
     Ok(())
 }
 
@@ -879,12 +1304,14 @@ pub fn grok_cli_service_start(
     arguments: Vec<String>,
 ) -> Result<GrokCliServiceInfo, String> {
     validate_service_arguments(&arguments)?;
+    ensure_model_provider_ready(&app, model_from_arguments(&arguments))?;
     let current_dir = match workspace.filter(|value| !value.trim().is_empty()) {
         Some(workspace) => validate_workspace(&workspace)?,
         None => grok_home(&app)?,
     };
     let mut command_arguments = vec!["--no-auto-update".to_string()];
     command_arguments.extend(arguments.iter().cloned());
+    let model_envs = model_provider_envs(&app)?;
     let (mut receiver, child) = app
         .shell()
         .sidecar("grok")
@@ -892,6 +1319,7 @@ pub fn grok_cli_service_start(
         .args(command_arguments)
         .current_dir(current_dir)
         .env("GROK_HOME", grok_home(&app)?)
+        .envs(model_envs)
         .spawn()
         .map_err(|error| format!("启动 Grok CLI 服务失败: {error}"))?;
     let pid = child.pid();
@@ -1080,11 +1508,13 @@ pub async fn grok_send_prompt(
 
 #[tauri::command]
 pub async fn grok_session_set_model(
+    app: AppHandle,
     state: State<'_, GrokRuntimeState>,
     session_id: String,
     model: String,
 ) -> Result<(), String> {
     let model = normalize_model_id(&model)?;
+    ensure_model_provider_ready(&app, Some(&model))?;
     let session_id = session_id.trim();
     if session_id.is_empty() {
         return Err("会话标识不能为空".to_string());
@@ -1193,8 +1623,9 @@ pub fn grok_start_login(
 #[cfg(test)]
 mod tests {
     use super::{
-        format_rpc_error, select_auth_method, validate_cli_arguments, validate_service_arguments,
-        GrokCliService,
+        format_rpc_error, model_key_env_name, normalize_model_id, normalize_model_provider,
+        parse_grok_toml, select_auth_method, serialize_grok_toml, validate_cli_arguments,
+        validate_service_arguments, GrokCliService, GrokModelProviderInput,
     };
     use serde_json::json;
     use std::sync::Mutex;
@@ -1240,6 +1671,55 @@ mod tests {
         .is_ok());
         assert!(validate_cli_arguments(&["bash".to_string()]).is_err());
         assert!(validate_cli_arguments(&[]).is_err());
+    }
+
+    #[test]
+    fn validates_model_identifier_before_persisting_config() {
+        assert_eq!(normalize_model_id("  model-1  ").unwrap(), "model-1");
+        assert!(normalize_model_id("").is_err());
+        assert!(normalize_model_id("model\n1").is_err());
+    }
+
+    #[test]
+    fn normalizes_openai_compatible_model_provider() {
+        let (provider, api_key) = normalize_model_provider(GrokModelProviderInput {
+            id: "qwen-plus".into(),
+            name: "Qwen 连接".into(),
+            model: "qwen-plus".into(),
+            base_url: "https://dashscope.aliyuncs.com/compatible-mode/v1/".into(),
+            api_backend: "chat_completions".into(),
+            auth_scheme: "bearer".into(),
+            context_window: 128_000,
+            enabled: true,
+            api_key: Some("secret".into()),
+        })
+        .unwrap();
+        assert_eq!(
+            provider.base_url,
+            "https://dashscope.aliyuncs.com/compatible-mode/v1"
+        );
+        assert_eq!(
+            model_key_env_name(&provider.id),
+            "URGS_GROK_MODEL_QWEN_PLUS"
+        );
+        assert_eq!(api_key.as_deref(), Some("secret"));
+    }
+
+    #[test]
+    fn recovers_and_rewrites_legacy_inline_root_toml() {
+        let legacy = r#"{ marketplace = { official_marketplace_auto_installed = true, sources = [{ git = "https://github.com/xai-org/plugin-marketplace.git", name = "xAI Official" }] }, models = { default = "Ff" } }"#;
+        let config = parse_grok_toml(legacy).unwrap();
+        assert_eq!(
+            config
+                .get("models")
+                .and_then(toml::Value::as_table)
+                .and_then(|models| models.get("default"))
+                .and_then(toml::Value::as_str),
+            Some("Ff")
+        );
+        let rewritten = serialize_grok_toml(&config).unwrap();
+        assert!(!rewritten.trim_start().starts_with('{'));
+        assert!(rewritten.parse::<toml::Value>().is_ok());
     }
 
     #[test]

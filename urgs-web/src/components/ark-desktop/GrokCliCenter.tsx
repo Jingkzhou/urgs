@@ -1,7 +1,7 @@
 import React, { useEffect, useMemo, useState } from 'react';
 import {
     AlertTriangle, CheckCircle2, Clipboard, Code2, LoaderCircle, Play,
-    RefreshCw, Server, Square, TerminalSquare, XCircle,
+    RefreshCw, Square, TerminalSquare, XCircle,
 } from 'lucide-react';
 import {
     listGrokCliServices,
@@ -25,8 +25,6 @@ import {
 interface GrokCliCenterProps {
     workspace: string;
     onError: (message: string) => void;
-    onLogin: (method?: 'browser' | 'oauth' | 'device') => Promise<void>;
-    onRuntimeRefresh: () => Promise<void>;
 }
 
 const inputClass = 'w-full rounded-xl border border-slate-200 bg-white px-3 py-2.5 text-sm text-slate-800 outline-none transition focus:border-slate-400 focus:ring-2 focus:ring-slate-100';
@@ -61,7 +59,7 @@ const FieldControl: React.FC<{
     return <label className="block"><span className="mb-1.5 block text-xs font-medium text-slate-600">{field.label}{field.required && ' *'}</span><input type={field.type === 'number' ? 'number' : 'text'} className={inputClass} value={String(value)} placeholder={field.placeholder} onChange={(event) => onChange(event.target.value)} /></label>;
 };
 
-const GrokCliCenter: React.FC<GrokCliCenterProps> = ({ workspace, onError, onLogin, onRuntimeRefresh }) => {
+const GrokCliCenter: React.FC<GrokCliCenterProps> = ({ workspace, onError }) => {
     const [category, setCategory] = useState<GrokCliCategory>('runtime');
     const initialAction = GROK_CLI_ACTIONS.find((action) => action.category === 'runtime')!;
     const [actionId, setActionId] = useState(initialAction.id);
@@ -72,10 +70,9 @@ const GrokCliCenter: React.FC<GrokCliCenterProps> = ({ workspace, onError, onLog
     const [debug, setDebug] = useState(false);
     const [debugFile, setDebugFile] = useState('');
     const [leaderSocket, setLeaderSocket] = useState('');
-    const [loginMethod, setLoginMethod] = useState<'browser' | 'oauth' | 'device'>('browser');
     const [services, setServices] = useState<GrokCliServiceInfo[]>([]);
 
-    const categoryActions = useMemo(() => GROK_CLI_ACTIONS.filter((action) => action.category === category), [category]);
+    const categoryActions = useMemo(() => GROK_CLI_ACTIONS.filter((action) => action.category === category && action.id !== 'logout'), [category]);
     const action = GROK_CLI_ACTIONS.find((item) => item.id === actionId) || categoryActions[0];
 
     const refreshServices = async () => {
@@ -117,7 +114,7 @@ const GrokCliCenter: React.FC<GrokCliCenterProps> = ({ workspace, onError, onLog
 
     const executeArguments = async (arguments_: string[], timeoutSeconds = 120, confirmation?: string) => {
         if (confirmation && !window.confirm(confirmation)) return;
-        if (!workspace && !['version', 'models', 'login', 'logout', 'update', 'setup', 'completions', 'help'].includes(arguments_[0])) {
+        if (!workspace && !['version', 'models', 'update', 'setup', 'completions', 'help'].includes(arguments_[0])) {
             onError('该 CLI 功能需要工作区，请先在设置中选择本地目录');
             return;
         }
@@ -127,7 +124,6 @@ const GrokCliCenter: React.FC<GrokCliCenterProps> = ({ workspace, onError, onLog
             const response = await runGrokCli(appendCommonArguments(arguments_), workspace, timeoutSeconds);
             setResult(response);
             if (!response.success) onError(redactVendorText(response.stderr || `内置命令退出码：${response.exitCode ?? '未知'}`));
-            if (arguments_[0] === 'logout' || arguments_[0] === 'setup') await onRuntimeRefresh();
         } catch (error) {
             onError(redactVendorText(error instanceof Error ? error.message : String(error)));
         } finally {
@@ -192,7 +188,6 @@ const GrokCliCenter: React.FC<GrokCliCenterProps> = ({ workspace, onError, onLog
 
         <div className="grid gap-5 xl:grid-cols-[280px_minmax(0,1fr)]">
             <div className="space-y-2">
-                {category === 'runtime' && <div className="mb-2 rounded-xl bg-slate-900 p-2"><select value={loginMethod} onChange={(event) => setLoginMethod(event.target.value as typeof loginMethod)} className="mb-2 w-full rounded-lg border border-white/20 bg-white/10 px-2 py-2 text-xs text-white"><option className="text-slate-900" value="browser">浏览器登录</option><option className="text-slate-900" value="oauth">OAuth 登录</option><option className="text-slate-900" value="device">设备码登录</option></select><button type="button" onClick={() => void onLogin(loginMethod).catch((error) => onError(redactVendorText(String(error))))} className="flex w-full items-center gap-2 rounded-lg px-1 py-1 text-left text-sm font-medium text-white"><Server size={16} />登录服务</button></div>}
                 {categoryActions.map((item) => <button key={item.id} type="button" onClick={() => chooseAction(item)} className={`w-full rounded-xl border px-3 py-3 text-left transition ${action.id === item.id ? 'border-slate-900 bg-slate-50' : 'border-slate-200 hover:border-slate-300'}`}><span className="block text-sm font-medium text-slate-800">{item.title}</span><span className="mt-1 block text-xs leading-5 text-slate-400">{item.description}</span></button>)}
             </div>
 

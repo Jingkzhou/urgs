@@ -61,6 +61,22 @@ export interface GrokConfigFile {
     content: string;
 }
 
+export interface GrokModelProvider {
+    id: string;
+    name: string;
+    model: string;
+    baseUrl: string;
+    apiBackend: 'chat_completions' | 'responses' | 'messages';
+    authScheme: 'bearer' | 'x_api_key';
+    contextWindow: number;
+    enabled: boolean;
+    hasApiKey: boolean;
+}
+
+export interface GrokModelProviderInput extends Omit<GrokModelProvider, 'hasApiKey'> {
+    apiKey?: string;
+}
+
 const assertDesktopRuntime = () => {
     if (!isDesktopRuntime()) {
         throw new Error('ARK Desktop 仅能在 URGS 桌面客户端中使用');
@@ -74,6 +90,9 @@ const invokeGrok = async <T>(command: string, args?: Record<string, unknown>) =>
 };
 
 export const getGrokRuntimeStatus = () => invokeGrok<GrokRuntimeStatus>('grok_runtime_status');
+
+export const prepareGrokRuntime = (workspace: string, model: string, options?: GrokAcpOptions) =>
+    invokeGrok<void>('grok_runtime_prepare', { workspace, model, options: options || null });
 
 export const runGrokCli = (arguments_: string[], workspace?: string, timeoutSeconds = 120) =>
     invokeGrok<GrokCliResult>('grok_cli_run', {
@@ -96,6 +115,14 @@ export const saveGrokConfig = (scope: 'user' | 'project', content: string, works
     invokeGrok<GrokConfigFile>('grok_config_save', { scope, kind, content, workspace: workspace || null });
 
 export const applyGrokModel = (model: string) => invokeGrok<void>('grok_model_apply', { model });
+
+export const listGrokModelProviders = () => invokeGrok<GrokModelProvider[]>('grok_model_provider_list');
+
+export const saveGrokModelProvider = (input: GrokModelProviderInput) =>
+    invokeGrok<GrokModelProvider>('grok_model_provider_save', { input });
+
+export const deleteGrokModelProvider = (providerId: string) =>
+    invokeGrok<void>('grok_model_provider_delete', { providerId });
 
 export const createGrokSession = (workspace: string, rules?: string, model?: string, options?: GrokAcpOptions) =>
     invokeGrok<GrokSession>('grok_create_session', { workspace, rules: rules || null, model: model || null, options: options || null });
