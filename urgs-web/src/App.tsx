@@ -1,6 +1,6 @@
 import React, { useEffect, useState } from 'react';
 import { hasPermission } from './utils/permission';
-import { LayoutDashboard, Bell, UserCircle, LogOut, Settings, PanelTop, PanelLeft, Megaphone, Database, GitBranch, Activity, Lock, User, Sparkles, Award, BookOpen, ChevronDown, Wrench, BriefcaseBusiness, Code2, MonitorCog } from 'lucide-react';
+import { LayoutDashboard, Bell, UserCircle, LogOut, Settings, PanelTop, PanelLeft, Megaphone, Database, GitBranch, Activity, Lock, User, Sparkles, Award, BookOpen, ChevronDown, Wrench, BriefcaseBusiness, Code2 } from 'lucide-react';
 import { motion, AnimatePresence } from 'framer-motion';
 import { createPortal } from 'react-dom';
 import Login from './components/Login';
@@ -14,7 +14,7 @@ import ChangePasswordModal from './components/ChangePasswordModal';
 import ChatWidget from './components/home/ChatWidget';
 import BasicInfo from './components/BasicInfo';
 import ArkPage from './components/ark/ArkPage';
-import ArkAgentsPage from './components/ark/ArkAgentsPage';
+import ArkDesktopPage from './components/ark-desktop/ArkDesktopPage';
 import KnowledgeCenter from './components/knowledge/KnowledgeCenter';
 import MarketplacePage from './components/marketplace/MarketplacePage';
 import ToolsPage from './components/tools/ToolsPage';
@@ -26,7 +26,6 @@ import { resolveServiceUrl } from './config';
 const NAV_ITEMS = [
     { id: 'dashboard', label: '工作台', icon: LayoutDashboard, permission: 'dashboard' },
     { id: 'ark', label: 'Ark (方舟)', icon: Sparkles, permission: 'ark' },
-    { id: 'ark-desktop', label: 'ARK Desktop', icon: MonitorCog, permission: 'ark' },
     { id: 'announcement', label: '公告', icon: Megaphone, permission: 'announcement' },
     { id: 'version', label: '版本', icon: GitBranch, permission: 'version' },
     { id: 'marketplace', label: '任务中心', icon: Award, permission: 'marketplace' },
@@ -44,6 +43,12 @@ const dashboardViewIcons: Record<DashboardViewKey, React.ReactNode> = {
 };
 
 const App: React.FC = () => {
+    const isGrokTaskCenterWindow = window.location.hash.split('?')[0] === '#/grok-task-center';
+
+    if (isGrokTaskCenterWindow) {
+        return <ArkDesktopPage />;
+    }
+
     const initialToken = typeof localStorage !== 'undefined' ? localStorage.getItem('auth_token') : null;
     const initialUser = (() => {
         const storedUser = typeof localStorage !== 'undefined' ? localStorage.getItem('auth_user') : null;
@@ -589,13 +594,9 @@ const App: React.FC = () => {
                             <div className="max-w-[98%] mx-auto h-full">
                                 {activeTab === 'dashboard' && <Dashboard />}
                                 {activeTab === 'ark' && <ArkPage
-                                    onOpenAgents={() => {
-                                        window.location.hash = '#/ark-desktop';
-                                    }}
                                     launchTask={null}
                                     onLaunchTaskHandled={() => undefined}
                                 />}
-                                {activeTab === 'ark-desktop' && <ArkAgentsPage />}
                                 {activeTab === 'announcement' && <AnnouncementManagement />}
                                 {activeTab === 'sys' && <SystemManagement />}
                                 {activeTab === 'version' && <VersionManagement />}

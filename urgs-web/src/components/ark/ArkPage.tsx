@@ -3,9 +3,11 @@ import { v4 as uuidv4 } from 'uuid';
 import { RobotOutlined } from '@ant-design/icons';
 import { Sparkles, Database, Cpu, Layers, PenTool, ArrowDown, PanelLeftClose, PanelLeftOpen, SquarePen, Bot } from 'lucide-react';
 import { motion, AnimatePresence } from 'framer-motion';
+import { WebviewWindow } from '@tauri-apps/api/webviewWindow';
 import Sidebar from './Sidebar';
 import ChatMessage from './ChatMessage';
 import ChatInput from './ChatInput';
+import { isDesktopRuntime } from '../../config';
 import {
     Message, type AgentAppSkill, type ConversationContextMessage, createSession, streamChatResponse, loadSessionMessages, generateSessionTitle, getAgents, getRoleAgents, getAgentAppSkills
 } from '../../api/chat';
@@ -28,7 +30,6 @@ interface ArkLaunchTask {
 }
 
 interface ArkPageProps {
-    onOpenAgents: (agents: any[]) => void;
     launchTask?: ArkLaunchTask | null;
     onLaunchTaskHandled: () => void;
 }
@@ -57,7 +58,7 @@ const buildConversationContext = (items: Message[]): ConversationContextMessage[
         }));
 };
 
-const ArkPage: React.FC<ArkPageProps> = ({ onOpenAgents, launchTask, onLaunchTaskHandled }) => {
+const ArkPage: React.FC<ArkPageProps> = ({ launchTask, onLaunchTaskHandled }) => {
     // ... state remains the same ...
     const [currentSessionId, setCurrentSessionId] = useState<string | null>(null);
     const [messages, setMessages] = useState<Message[]>([]);
@@ -73,6 +74,34 @@ const ArkPage: React.FC<ArkPageProps> = ({ onOpenAgents, launchTask, onLaunchTas
     const [isSidebarCollapsed, setIsSidebarCollapsed] = useState(true);
     const [scrollTop, setScrollTop] = useState(0);
     const [viewportHeight, setViewportHeight] = useState(0);
+
+    const openGrokTaskCenter = async () => {
+        if (!isDesktopRuntime()) {
+            window.open('#/grok-task-center', '_blank', 'noopener,noreferrer');
+            return;
+        }
+
+        const existingWindow = await WebviewWindow.getByLabel('grok-task-center');
+        if (existingWindow) {
+            await existingWindow.show();
+            await existingWindow.setFocus();
+            return;
+        }
+
+        const taskCenterWindow = new WebviewWindow('grok-task-center', {
+            url: '/#/grok-task-center',
+            title: 'URGS 智能任务中心',
+            width: 1440,
+            height: 900,
+            minWidth: 1100,
+            minHeight: 700,
+            center: true,
+            resizable: true,
+        });
+        taskCenterWindow.once('tauri://error', (event) => {
+            console.error('无法打开 URGS 智能任务中心窗口', event.payload);
+        });
+    };
     const [measurementVersion, setMeasurementVersion] = useState(0);
 
     const [showScrollBottom, setShowScrollBottom] = useState(false);
@@ -571,9 +600,9 @@ const ArkPage: React.FC<ArkPageProps> = ({ onOpenAgents, launchTask, onLaunchTas
                         <SquarePen size={18} />
                     </button>
                     <button
-                        onClick={() => onOpenAgents(agents)}
+                        onClick={() => void openGrokTaskCenter()}
                         className="flex h-9 items-center gap-1.5 rounded-lg px-2.5 text-sm font-medium text-slate-500 transition-colors hover:bg-[#f4f4f4] hover:text-slate-900"
-                        title="打开 Agents"
+                        title="打开独立的 URGS 智能任务中心"
                     >
                         <Bot size={17} />
                         <span className="hidden sm:inline">Agents</span>

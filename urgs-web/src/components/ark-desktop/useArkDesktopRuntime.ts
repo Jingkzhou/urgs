@@ -6,7 +6,11 @@ import {
     chooseGrokWorkspace,
     createGrokSession,
     getGrokRuntimeStatus,
+    listGrokCliServices,
+    runGrokCli,
     respondGrokPermission,
+    startGrokCliService,
+    stopGrokCliService,
     sendGrokPrompt,
     startGrokLogin,
     subscribeGrokEvents,
@@ -22,6 +26,7 @@ import type {
     ArkDesktopSnapshot,
     ArkDesktopTask,
 } from './types';
+import { buildGrokHeadlessArguments, extractGrokHeadlessSessionId, extractGrokHeadlessText } from './execution';
 
 interface StartTaskInput {
     prompt: string;
@@ -51,7 +56,7 @@ const selectAgentId = (snapshot: ArkDesktopSnapshot, requestedAgentId?: string, 
         return requestedAgentId;
     }
     if (skillIds.includes('code-development')) return 'grok-code';
-    if (skillIds.includes('data-analysis') || skillIds.includes('regulatory-query')) return 'grok-data';
+    if (skillIds.includes('data-analysis') || skillIds.includes('workspace-search')) return 'grok-data';
     if (skillIds.includes('document-processing') || skillIds.includes('deep-research')) return 'grok-office';
     return snapshot.settings.defaultAgentId || 'grok-general';
 };
@@ -66,6 +71,24 @@ const buildSessionRules = (agent: ArkDesktopAgent, skills: ArkDesktopSkill[]) =>
 const buildTaskPrompt = (prompt: string, attachmentPaths: string[]) => {
     if (attachmentPaths.length === 0) return prompt;
     return `${prompt}\n\n用户为本任务选择了以下本地文件，请按需读取并处理：\n${attachmentPaths.map((path) => `- ${path}`).join('\n')}`;
+};
+
+const waitForCliService = async (serviceId: string) => {
+    const deadline = Date.now() + 60 * 60 * 1000;
+    while (Date.now() < deadline) {
+        const service = (await listGrokCliServices()).find((item) => item.id === serviceId);
+        if (!service) throw new Error('Grok Headless 任务进程不存在');
+        if (!service.alive) return service;
+        await new Promise((resolve) => window.setTimeout(resolve, 800));
+    }
+    await stopGrokCliService(serviceId).catch(() => undefined);
+    throw new Error('Grok Headless 任务执行超过 1 小时');
+};
+
+const findLatestGrokSessionId = async (workspace: string) => {
+    const result = await runGrokCli(['sessions', 'list', '--limit', '1'], workspace, 30);
+    if (!result.success) return undefined;
+    return result.stdout.match(/\b[0-9a-f]{8}(?:-[0-9a-f]{4}){3}-[0-9a-f]{12}\b/i)?.[0];
 };
 
 export const useArkDesktopRuntime = () => {
@@ -200,9 +223,9 @@ export const useArkDesktopRuntime = () => {
 
     const selectAttachments = useCallback(async () => chooseGrokAttachments(), []);
 
-    const startLogin = useCallback(async () => {
+    const startLogin = useCallback(async (method: 'browser' | 'oauth' | 'device' = 'browser') => {
         setRuntimeError('');
-        await startGrokLogin();
+        await startGrokLogin(method);
     }, []);
 
     const startTask = useCallback(async ({
@@ -218,7 +241,8 @@ export const useArkDesktopRuntime = () => {
         if (!runtimeStatus?.available) throw new Error('未检测到内置 Grok Build，请先检查桌面安装包');
         if (!runtimeStatus.authenticated) throw new Error('请先登录 Grok');
         if (!workspace) throw new Error('请先选择本地工作区');
-        if (!prompt.trim()) throw new Error('请输入要完成的任务');
+        const promptRequired = current.settings.execution.engine !== 'headless' || current.settings.execution.promptMode === 'text';
+        if (promptRequired && !prompt.trim()) throw new Error('请输入要完成的任务');
         if (current.tasks.some((task) => task.status === 'running')) throw new Error('已有本地任务正在执行，请等待完成或先停止任务');
 
         const resolvedAgentId = selectAgentId(current, agentId, skillIds);
@@ -228,18 +252,22 @@ export const useArkDesktopRuntime = () => {
         const resolvedSkillIds = Array.from(new Set([...agent.skillIds, ...skillIds]))
             .filter((id) => current.skills.some((skill) => skill.id === id && skill.enabled));
         const skills = current.skills.filter((skill) => resolvedSkillIds.includes(skill.id));
+        const effectivePrompt = prompt.trim()
+            || current.settings.execution.promptFile.trim()
+            || 'Grok CLI JSON 内容块任务';
         const now = Date.now();
         const taskId = createId('task');
         const task: ArkDesktopTask = {
             id: taskId,
-            title: prompt.trim().slice(0, 36),
-            prompt: prompt.trim(),
+            title: effectivePrompt.slice(0, 36),
+            prompt: effectivePrompt,
             agentId: agent.id,
             skillIds: resolvedSkillIds,
             workspace,
             attachmentPaths,
+            engine: current.settings.execution.engine,
             status: 'running',
-            messages: [{ id: createId('message'), role: 'user', content: prompt.trim(), createdAt: now }],
+            messages: [{ id: createId('message'), role: 'user', content: effectivePrompt, createdAt: now }],
             tools: [],
             automationId,
             createdAt: now,
@@ -251,9 +279,62 @@ export const useArkDesktopRuntime = () => {
         setRuntimeError('');
 
         try {
-            const session = await createGrokSession(workspace, buildSessionRules(agent, skills), current.settings.grokModel);
-            updateTask(taskId, (value) => ({ ...value, sessionId: session.sessionId, updatedAt: Date.now() }));
-            await sendGrokPrompt(session.sessionId, buildTaskPrompt(prompt.trim(), attachmentPaths));
+            const sessionRules = buildSessionRules(agent, skills);
+            if (current.settings.execution.engine === 'headless') {
+                const execution = current.settings.execution;
+                const headlessExecution = execution.sessionMode === 'new' && !execution.newSessionId.trim()
+                    ? { ...execution, newSessionId: crypto.randomUUID() }
+                    : execution;
+                const headlessRules = headlessExecution.promptMode === 'text' || attachmentPaths.length === 0
+                    ? sessionRules
+                    : `${sessionRules}\n\n用户为本任务选择了以下本地文件，请按需读取并处理：\n${attachmentPaths.map((path) => `- ${path}`).join('\n')}`;
+                const service = await startGrokCliService(
+                    buildGrokHeadlessArguments(
+                        headlessExecution,
+                        current.settings.grokModel,
+                        buildTaskPrompt(effectivePrompt, attachmentPaths),
+                        headlessRules,
+                    ),
+                    workspace,
+                );
+                updateTask(taskId, (value) => ({ ...value, cliServiceId: service.id, updatedAt: Date.now() }));
+                const result = await waitForCliService(service.id);
+                if (result.exitCode !== 0 && !cancelledTaskIdsRef.current.has(taskId)) throw new Error(result.stderr || 'Grok Headless 任务执行失败');
+                const knownSessionId = headlessExecution.sessionMode === 'new'
+                    ? headlessExecution.newSessionId
+                    : headlessExecution.sessionMode === 'resume' && !headlessExecution.forkSession
+                        ? headlessExecution.resumeSessionId
+                        : '';
+                const sessionId = extractGrokHeadlessSessionId(result.stdout, headlessExecution.outputFormat)
+                    || knownSessionId
+                    || await findLatestGrokSessionId(workspace).catch(() => undefined);
+                const response = extractGrokHeadlessText(result.stdout, headlessExecution.outputFormat);
+                updateTask(taskId, (value) => ({
+                    ...value,
+                    sessionId,
+                    messages: [...value.messages, { id: createId('message'), role: 'assistant', content: response || 'Grok 任务已完成。', createdAt: Date.now() }],
+                    updatedAt: Date.now(),
+                }));
+            } else {
+                const execution = current.settings.execution;
+                const session = await createGrokSession(workspace, sessionRules, current.settings.grokModel, {
+                    reasoningEffort: execution.reasoningEffort,
+                    alwaysApprove: execution.alwaysApprove,
+                    reauth: execution.reauth,
+                    agentProfile: execution.agentProfile,
+                    pluginDirs: execution.pluginDirs.split('\n').map((item) => item.trim()).filter(Boolean),
+                    leaderMode: execution.leaderMode,
+                    grokWsOrigin: execution.grokWsOrigin,
+                    grokWsUrl: execution.grokWsUrl,
+                    cliChatProxyUrl: execution.cliChatProxyUrl,
+                    xaiApiBaseUrl: execution.xaiApiBaseUrl,
+                    debug: execution.debug,
+                    debugFile: execution.debugFile,
+                    leaderSocket: execution.leaderSocket,
+                });
+                updateTask(taskId, (value) => ({ ...value, sessionId: session.sessionId, updatedAt: Date.now() }));
+                await sendGrokPrompt(session.sessionId, buildTaskPrompt(effectivePrompt, attachmentPaths));
+            }
             updateTask(taskId, (value) => cancelledTaskIdsRef.current.has(taskId)
                 ? value
                 : { ...value, status: 'completed', updatedAt: Date.now() });
@@ -284,7 +365,26 @@ export const useArkDesktopRuntime = () => {
             messages: [...value.messages, { id: createId('message'), role: 'user', content: prompt, createdAt: Date.now() }],
             updatedAt: Date.now(),
         }));
-        await sendGrokPrompt(task.sessionId, prompt);
+        if (task.engine === 'headless') {
+            const current = snapshotRef.current;
+            const service = await startGrokCliService([
+                '--model', current.settings.grokModel,
+                '--resume', task.sessionId,
+                '--output-format', current.settings.execution.outputFormat,
+                '--single', prompt,
+            ], task.workspace);
+            updateTask(taskId, (value) => ({ ...value, cliServiceId: service.id, updatedAt: Date.now() }));
+            const result = await waitForCliService(service.id);
+            if (result.exitCode !== 0 && !cancelledTaskIdsRef.current.has(taskId)) throw new Error(result.stderr || 'Grok Headless 追问失败');
+            const response = extractGrokHeadlessText(result.stdout, current.settings.execution.outputFormat);
+            updateTask(taskId, (value) => ({
+                ...value,
+                messages: [...value.messages, { id: createId('message'), role: 'assistant', content: response || 'Grok 追问已完成。', createdAt: Date.now() }],
+                updatedAt: Date.now(),
+            }));
+        } else {
+            await sendGrokPrompt(task.sessionId, prompt);
+        }
         updateTask(taskId, (value) => cancelledTaskIdsRef.current.has(taskId)
             ? value
             : { ...value, status: 'completed', updatedAt: Date.now() });
@@ -292,9 +392,13 @@ export const useArkDesktopRuntime = () => {
 
     const cancelTask = useCallback(async (taskId: string) => {
         const task = snapshotRef.current.tasks.find((item) => item.id === taskId);
-        if (!task?.sessionId) return;
+        if (!task) return;
         cancelledTaskIdsRef.current.add(taskId);
-        await cancelGrokPrompt(task.sessionId);
+        if (task.engine === 'headless' && task.cliServiceId) {
+            await stopGrokCliService(task.cliServiceId);
+        } else if (task.sessionId) {
+            await cancelGrokPrompt(task.sessionId);
+        }
         updateTask(taskId, (value) => ({ ...value, status: 'cancelled', updatedAt: Date.now() }));
         setPermission(null);
     }, [updateTask]);

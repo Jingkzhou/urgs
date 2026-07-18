@@ -4,9 +4,12 @@ import {
     AlertCircle, Bot, BriefcaseBusiness, Check, CheckCircle2, CheckSquare,
     ChevronDown, CircleStop, Clock3, Code2, FileText, Folder, History,
     Lightbulb, LoaderCircle, LogIn, Paperclip, Pencil, Play, Plus, RefreshCw,
-    Search, Send, Settings, Sparkles, Trash2, WandSparkles, Wrench, X,
+    Search, Send, Settings, Sparkles, TerminalSquare, Trash2, WandSparkles, Wrench, X,
 } from 'lucide-react';
 import { useArkDesktopRuntime } from './useArkDesktopRuntime';
+import GrokCliCenter from './GrokCliCenter';
+import GrokConfigEditor from './GrokConfigEditor';
+import GrokExecutionSettingsPanel from './GrokExecutionSettingsPanel';
 import type {
     ArkDesktopAgent, ArkDesktopAutomation, ArkDesktopSection, ArkDesktopSkill,
     ArkDesktopTask, ArkDesktopTaskStatus, AutomationSchedule,
@@ -14,7 +17,7 @@ import type {
 
 const taskTags = [
     { label: '文档处理', icon: FileText, skillId: 'document-processing', prompt: '请读取我选择的文档，整理关键信息并输出可以直接使用的成果。' },
-    { label: '监管数据查询', icon: Search, skillId: 'regulatory-query', prompt: '请分析工作区中的监管数据，核对口径并给出可追溯的查询结果。' },
+    { label: '工作区检索', icon: Search, skillId: 'workspace-search', prompt: '请检索当前工作区，定位与以下目标最相关的代码、文件和上下文，并给出可追溯的结果：' },
     { label: '数据分析及可视化', icon: BriefcaseBusiness, skillId: 'data-analysis', prompt: '请分析我提供的数据，检查数据质量，并生成结论和可视化产物。' },
     { label: '代码开发', icon: Code2, skillId: 'code-development', prompt: '请分析当前代码仓库并完成以下开发任务，修改后运行必要验证：' },
     { label: '深度研究', icon: Lightbulb, skillId: 'deep-research', prompt: '请围绕以下主题开展深度研究，区分事实、推断和待验证内容：' },
@@ -26,6 +29,7 @@ const sectionItems: Array<{ id: ArkDesktopSection; label: string; icon: React.El
     { id: 'agents', label: 'Grok Agents', icon: Bot },
     { id: 'skills', label: 'Grok 技能', icon: WandSparkles },
     { id: 'automations', label: '自动化', icon: BriefcaseBusiness },
+    { id: 'cli', label: 'Grok CLI', icon: TerminalSquare },
     { id: 'settings', label: '设置', icon: Settings },
 ];
 
@@ -158,6 +162,10 @@ const ArkDesktopPage: React.FC = () => {
     };
 
     const runTask = async () => {
+        const execution = runtime.snapshot.settings.execution;
+        if (execution.engine === 'headless' && (execution.alwaysApprove || execution.permissionMode === 'bypassPermissions')) {
+            if (!window.confirm('当前 Headless 配置允许 Grok 无需逐次授权执行本地操作，确认发起任务？')) return;
+        }
         setActionPending(true);
         try {
             await runtime.startTask({
@@ -200,11 +208,11 @@ const ArkDesktopPage: React.FC = () => {
     };
 
     return (
-        <div className="flex h-full min-h-0 overflow-hidden rounded-2xl border border-slate-200 bg-white text-[#2f3034] shadow-sm">
+        <div className="flex h-screen min-h-[680px] overflow-hidden bg-white text-[#2f3034]">
             <aside className="hidden w-[286px] shrink-0 flex-col border-r border-[#e5e6e9] bg-[#fbfbfc] p-4 lg:flex">
                 <div className="mb-6 flex items-center gap-2.5 px-1 pt-1">
                     <div className="flex h-9 w-9 items-center justify-center rounded-xl bg-[#111827] text-white shadow-sm"><Sparkles size={19} /></div>
-                    <div><div className="text-[17px] font-bold tracking-[-0.03em] text-[#17181c]">ARK DESKTOP</div><div className="mt-0.5 text-[11px] font-medium text-slate-400">智能任务中心 · 本地 Grok</div></div>
+                    <div><div className="text-[17px] font-bold tracking-[-0.03em] text-[#17181c]">URGS 智能任务中心</div><div className="mt-0.5 text-[11px] font-medium text-slate-400">内置 Grok · 本地工作执行</div></div>
                 </div>
                 <label className="mb-3 flex h-11 items-center gap-2 rounded-xl border border-[#dedfe3] bg-[#f2f2f3] px-3 text-slate-400 focus-within:bg-white">
                     <Search size={18} /><input value={searchValue} onChange={(event) => setSearchValue(event.target.value)} placeholder="搜索 Grok Agent 或任务" className="min-w-0 flex-1 bg-transparent text-sm text-slate-700 outline-none" />
@@ -262,6 +270,7 @@ const ArkDesktopPage: React.FC = () => {
                             runTask={runTask}
                             chooseAttachments={chooseAttachments}
                             chooseWorkspace={chooseWorkspace}
+                            openExecutionSettings={() => setSection('settings')}
                             actionPending={actionPending}
                         />
                     ) : section === 'agents' ? (
@@ -270,6 +279,8 @@ const ArkDesktopPage: React.FC = () => {
                         <SkillsView skills={runtime.snapshot.skills} runtime={runtime} onEdit={(id) => setEditor({ type: 'skill', id })} onCreate={() => setEditor({ type: 'skill' })} />
                     ) : section === 'automations' ? (
                         <AutomationsView automations={runtime.snapshot.automations} runtime={runtime} onEdit={(id) => setEditor({ type: 'automation', id })} onCreate={() => setEditor({ type: 'automation' })} />
+                    ) : section === 'cli' ? (
+                        <GrokCliCenter workspace={runtime.snapshot.settings.workspace} onError={runtime.setRuntimeError} onLogin={runtime.startLogin} onRuntimeRefresh={runtime.refreshRuntimeStatus} />
                     ) : <SettingsView runtime={runtime} chooseWorkspace={chooseWorkspace} />}
                 </main>
             </section>
@@ -298,20 +309,23 @@ interface NewTaskViewProps {
     runTask: () => Promise<void>;
     chooseAttachments: () => Promise<void>;
     chooseWorkspace: () => Promise<void>;
+    openExecutionSettings: () => void;
     actionPending: boolean;
 }
 
-const NewTaskView: React.FC<NewTaskViewProps> = ({ runtime, draft, setDraft, selectedAgentId, setSelectedAgentId, selectedSkillIds, setSelectedSkillIds, selectedAgent, attachments, setAttachments, agentMenuOpen, setAgentMenuOpen, runTask, chooseAttachments, chooseWorkspace, actionPending }) => (
-    <div className="flex min-h-full flex-col px-5 pb-6 md:px-10 lg:px-16">
-        <div className="mx-auto flex w-full max-w-5xl flex-1 flex-col items-center justify-center py-8">
-            <img src="/ark/ark-agents-robot-cropped.png" alt="Ark 机器人" className="mb-3 h-24 w-24 object-contain mix-blend-multiply" />
-            <h1 className="text-center text-3xl font-semibold tracking-[-0.04em] text-[#303136] sm:text-[34px]">让智能体把想法变成现实</h1>
-            <p className="mt-2 text-center text-base text-slate-500">由安装包内置 Grok 在你选择的本地工作区执行</p>
-            <div className="mt-6 flex w-full max-w-5xl flex-wrap justify-center gap-2.5">
-                {taskTags.map((tag) => { const Icon = tag.icon; const active = selectedSkillIds.includes(tag.skillId); return <button key={tag.label} type="button" onClick={() => { setDraft(tag.prompt); setSelectedSkillIds((current) => active ? current.filter((id) => id !== tag.skillId) : [...current, tag.skillId]); }} className={`flex items-center gap-2 rounded-full px-4 py-2.5 text-sm font-medium transition hover:-translate-y-0.5 ${active ? 'bg-slate-900 text-white' : 'bg-[#e9e9eb] text-[#494a4f] hover:bg-[#dedee1]'}`}><Icon size={17} />{tag.label}{active && <Check size={14} />}</button>; })}
+const NewTaskView: React.FC<NewTaskViewProps> = ({ runtime, draft, setDraft, selectedAgentId, setSelectedAgentId, selectedSkillIds, setSelectedSkillIds, selectedAgent, attachments, setAttachments, agentMenuOpen, setAgentMenuOpen, runTask, chooseAttachments, chooseWorkspace, openExecutionSettings, actionPending }) => (
+    <div className="min-h-full px-5 py-8 md:px-10 lg:px-16">
+        <div className="mx-auto w-full max-w-6xl">
+            <div className="flex flex-col items-center text-center">
+                <img src="/ark/ark-agents-robot-cropped.png" alt="URGS 智能任务中心" className="mb-2 h-20 w-20 object-contain mix-blend-multiply" />
+                <h1 className="text-3xl font-semibold tracking-[-0.04em] text-[#303136] sm:text-[34px]">把本地工作交给 URGS 智能任务中心</h1>
+                <p className="mt-2 text-base text-slate-500">内置 Grok 在你明确选择的工作区内执行，过程和产物都可追溯</p>
+                <div className="mt-5 flex w-full flex-wrap justify-center gap-2.5">
+                    {taskTags.map((tag) => { const Icon = tag.icon; const active = selectedSkillIds.includes(tag.skillId); return <button key={tag.label} type="button" onClick={() => { setDraft(tag.prompt); setSelectedSkillIds((current) => active ? current.filter((id) => id !== tag.skillId) : [...current, tag.skillId]); }} className={`flex items-center gap-2 rounded-full px-4 py-2.5 text-sm font-medium transition hover:-translate-y-0.5 ${active ? 'bg-slate-900 text-white' : 'bg-[#e9e9eb] text-[#494a4f] hover:bg-[#dedee1]'}`}><Icon size={17} />{tag.label}{active && <Check size={14} />}</button>; })}
+                </div>
             </div>
-        </div>
-        <div className="mx-auto w-full max-w-5xl">
+            <div className="mt-7 grid gap-5 lg:grid-cols-[minmax(0,1fr)_300px]">
+                <div>
             {attachments.length > 0 && <div className="mb-2 flex flex-wrap gap-2">{attachments.map((path) => <span key={path} title={path} className="flex max-w-72 items-center gap-1.5 rounded-lg border border-slate-200 bg-white px-2.5 py-1.5 text-xs text-slate-600"><Paperclip size={13} /><span className="truncate">{path.split(/[\\/]/).pop()}</span><button type="button" onClick={() => setAttachments((current) => current.filter((item) => item !== path))}><X size={13} /></button></span>)}</div>}
             <div className="rounded-[26px] border border-slate-200 bg-[#f4f4f5] p-3 shadow-[0_10px_28px_rgba(15,23,42,0.06)] focus-within:border-slate-300">
                 <textarea value={draft} onChange={(event) => setDraft(event.target.value)} onKeyDown={(event) => { if (event.key === 'Enter' && !event.shiftKey) { event.preventDefault(); void runTask(); } }} placeholder="描述你希望 Grok Agent 在本地完成的任务…" rows={3} className="w-full resize-none bg-transparent px-3 py-2 text-base leading-7 text-slate-700 outline-none placeholder:text-slate-400" />
@@ -320,14 +334,22 @@ const NewTaskView: React.FC<NewTaskViewProps> = ({ runtime, draft, setDraft, sel
                         <button type="button" onClick={() => setAgentMenuOpen((open) => !open)} className="flex items-center gap-2 rounded-lg bg-[#e3e3e5] px-3 py-2 text-sm font-medium text-slate-600 hover:bg-[#d8d8db]"><Bot size={16} /><span className="max-w-44 truncate">{selectedAgent?.name || '自动选择 Agent'}</span><ChevronDown size={15} /></button>
                         {agentMenuOpen && <div className="absolute bottom-11 left-0 z-20 max-h-64 w-72 overflow-y-auto rounded-xl border border-slate-200 bg-white p-1.5 shadow-xl"><button type="button" onClick={() => { setSelectedAgentId(''); setAgentMenuOpen(false); }} className="w-full rounded-lg px-3 py-2 text-left text-sm text-slate-600 hover:bg-slate-100">自动选择 Agent</button>{runtime.snapshot.agents.filter((agent) => agent.enabled).map((agent) => <button key={agent.id} type="button" onClick={() => { setSelectedAgentId(agent.id); setAgentMenuOpen(false); }} className="w-full truncate rounded-lg px-3 py-2 text-left text-sm text-slate-700 hover:bg-slate-100">{agent.name}</button>)}</div>}
                         <button type="button" onClick={() => void chooseAttachments()} className="rounded-lg p-2 text-slate-500 hover:bg-[#e3e3e5]" title="添加本地文件"><Paperclip size={18} /></button>
+                        <button type="button" onClick={openExecutionSettings} className="flex items-center gap-1.5 rounded-lg px-2.5 py-2 text-xs font-medium text-slate-500 hover:bg-[#e3e3e5]" title="配置任务执行参数"><Settings size={16} />{runtime.snapshot.settings.execution.engine === 'acp' ? 'ACP' : 'CLI Headless'}</button>
                     </div>
                     <div className="flex items-center gap-2">
                         <button type="button" onClick={() => void chooseWorkspace()} className="flex max-w-64 items-center gap-2 rounded-lg px-3 py-2 text-sm font-medium text-slate-500 hover:bg-[#e3e3e5]" title={runtime.snapshot.settings.workspace}><Folder size={17} /><span className="truncate">{runtime.snapshot.settings.workspace ? runtime.snapshot.settings.workspace.split(/[\\/]/).pop() : '选择工作区'}</span></button>
-                        <button type="button" disabled={actionPending || !draft.trim()} onClick={() => void runTask()} className="flex h-10 w-10 items-center justify-center rounded-full bg-[#202126] text-white shadow-sm transition hover:scale-105 disabled:cursor-not-allowed disabled:opacity-40">{actionPending ? <LoaderCircle size={17} className="animate-spin" /> : <Send size={17} />}</button>
+                        <button type="button" disabled={actionPending || (!draft.trim() && (runtime.snapshot.settings.execution.engine !== 'headless' || runtime.snapshot.settings.execution.promptMode === 'text'))} onClick={() => void runTask()} className="flex h-10 w-10 items-center justify-center rounded-full bg-[#202126] text-white shadow-sm transition hover:scale-105 disabled:cursor-not-allowed disabled:opacity-40">{actionPending ? <LoaderCircle size={17} className="animate-spin" /> : <Send size={17} />}</button>
                     </div>
                 </div>
             </div>
-            <p className="mt-3 text-center text-xs text-slate-400">Grok 仅能访问你选择的工作区；执行命令和写文件前会请求授权。</p>
+                    <p className="mt-3 text-center text-xs text-slate-400">Grok 仅能访问你选择的工作区；执行命令和写文件前会请求授权。</p>
+                </div>
+                <aside className="grid gap-3 sm:grid-cols-3 lg:grid-cols-1">
+                    <button type="button" onClick={() => void chooseWorkspace()} className="rounded-2xl border border-slate-200 bg-white p-4 text-left shadow-sm transition hover:-translate-y-0.5 hover:border-slate-300"><div className="flex items-center justify-between"><Folder size={18} className="text-slate-700" /><span className="text-xs font-medium text-slate-400">工作区</span></div><div className="mt-4 truncate text-sm font-semibold text-slate-800">{runtime.snapshot.settings.workspace ? runtime.snapshot.settings.workspace.split(/[\\/]/).pop() : '选择本地工作区'}</div><p className="mt-1 text-xs leading-5 text-slate-500">限定 Grok 可以读取和操作的范围</p></button>
+                    <button type="button" onClick={openExecutionSettings} className="rounded-2xl border border-slate-200 bg-white p-4 text-left shadow-sm transition hover:-translate-y-0.5 hover:border-slate-300"><div className="flex items-center justify-between"><Settings size={18} className="text-slate-700" /><span className="text-xs font-medium text-slate-400">执行方式</span></div><div className="mt-4 text-sm font-semibold text-slate-800">{runtime.snapshot.settings.execution.engine === 'acp' ? 'ACP Agent' : 'CLI Headless'}</div><p className="mt-1 text-xs leading-5 text-slate-500">模型、授权和 CLI 参数均可配置</p></button>
+                    <button type="button" onClick={() => setAgentMenuOpen(true)} className="rounded-2xl border border-slate-200 bg-white p-4 text-left shadow-sm transition hover:-translate-y-0.5 hover:border-slate-300"><div className="flex items-center justify-between"><Bot size={18} className="text-slate-700" /><span className="text-xs font-medium text-slate-400">当前 Agent</span></div><div className="mt-4 truncate text-sm font-semibold text-slate-800">{selectedAgent?.name || '自动选择'}</div><p className="mt-1 text-xs leading-5 text-slate-500">已选 {selectedSkillIds.length} 项本地技能</p></button>
+                </aside>
+            </div>
         </div>
     </div>
 );
@@ -357,7 +379,21 @@ const AutomationsView: React.FC<{ automations: ArkDesktopAutomation[]; runtime: 
     return <div className="p-6 md:p-8"><ViewHeader title="自动化" description="保存可重复任务；每日/每周计划会在 URGS 桌面客户端运行期间自动触发。" onCreate={onCreate} button="新建自动化" /><div className="space-y-4">{automations.map((automation) => <div key={automation.id} className="rounded-2xl border border-slate-200 p-5"><div className="flex flex-wrap items-start justify-between gap-4"><div><div className="flex items-center gap-2"><h3 className="font-semibold text-slate-900">{automation.name}</h3>{automation.schedule !== 'manual' && <span className="rounded-full bg-blue-50 px-2 py-1 text-[11px] text-blue-600"><Clock3 size={11} className="mr-1 inline" />{automation.schedule === 'daily' ? '每日' : '每周'} {automation.scheduleTime}</span>}</div><p className="mt-1 text-sm text-slate-500">{automation.description}</p><p className="mt-3 line-clamp-2 text-sm leading-6 text-slate-600">{automation.prompt}</p><div className="mt-3 text-xs text-slate-400">上次：{formatDateTime(automation.lastRunAt)}{automation.nextRunAt ? ` · 下次：${formatDateTime(automation.nextRunAt)}` : ''}</div></div><div className="flex items-center gap-2"><Toggle checked={automation.enabled} label={`启用 ${automation.name}`} onChange={() => runtime.setSnapshot((current) => ({ ...current, automations: current.automations.map((item) => item.id === automation.id ? { ...item, enabled: !item.enabled, nextRunAt: !item.enabled ? nextRunAt(item.schedule, item.scheduleTime, item.scheduleWeekday) : undefined } : item) }))} /><button type="button" onClick={() => onEdit(automation.id)} className="rounded-lg border border-slate-200 p-2 text-slate-500"><Pencil size={16} /></button><button type="button" disabled={!automation.enabled} onClick={() => void run(automation)} className="flex items-center gap-1.5 rounded-lg bg-slate-900 px-3 py-2 text-xs font-medium text-white disabled:opacity-40"><Play size={14} />立即运行</button></div></div></div>)}</div></div>;
 };
 
-const SettingsView: React.FC<{ runtime: ReturnType<typeof useArkDesktopRuntime>; chooseWorkspace: () => Promise<void> }> = ({ runtime, chooseWorkspace }) => <div className="mx-auto max-w-3xl p-6 md:p-8"><div className="mb-6"><h1 className="text-2xl font-semibold text-slate-900">设置</h1><p className="mt-1 text-sm text-slate-500">管理本地 Grok 运行时和默认任务配置。</p></div><div className="space-y-4"><div className="rounded-2xl border border-slate-200 p-5"><div className="flex items-start justify-between gap-3"><div><h3 className="font-semibold text-slate-900">Grok Build 运行时</h3><p className="mt-1 text-sm text-slate-500">{runtime.runtimeStatus?.message || (runtime.runtimeStatus?.available ? `版本 ${runtime.runtimeStatus.version || '未知'}` : '正在检测安装包内置组件')}</p><p className="mt-2 break-all text-xs text-slate-400">配置目录：{runtime.runtimeStatus?.grokHome || '-'}</p></div>{runtime.runtimeStatus?.authenticated ? <span className="flex items-center gap-1.5 text-sm text-emerald-600"><CheckCircle2 size={16} />已登录</span> : <button type="button" onClick={() => void runtime.startLogin().catch((error) => runtime.setRuntimeError(String(error)))} className="rounded-lg bg-slate-900 px-3 py-2 text-xs text-white">登录 Grok</button>}</div><div className="mt-4"><Field label="任务模型"><input className={inputClass} value={runtime.snapshot.settings.grokModel} onChange={(event) => runtime.setSnapshot((current) => ({ ...current, settings: { ...current.settings, grokModel: event.target.value } }))} placeholder="例如 grok-4.5-build-free" /><p className="mt-1.5 text-xs text-slate-400">输入当前 Grok 账号可用的模型 ID；新任务生效。</p></Field></div></div><div className="rounded-2xl border border-slate-200 p-5"><h3 className="font-semibold text-slate-900">默认工作区</h3><p className="mt-2 break-all text-sm text-slate-500">{runtime.snapshot.settings.workspace || '尚未选择'}</p><button type="button" onClick={() => void chooseWorkspace()} className="mt-4 flex items-center gap-2 rounded-lg border border-slate-200 px-3 py-2 text-sm text-slate-600"><Folder size={16} />选择目录</button></div><div className="rounded-2xl border border-red-200 p-5"><h3 className="font-semibold text-slate-900">重置本地数据</h3><p className="mt-1 text-sm text-slate-500">清除自定义 Agent、技能、自动化和任务历史，不会删除工作区文件。</p><button type="button" onClick={() => { if (window.confirm('确认重置 ARK Desktop 的全部本地配置和历史？')) runtime.resetAll(); }} className="mt-4 flex items-center gap-2 rounded-lg bg-red-50 px-3 py-2 text-sm text-red-700"><Trash2 size={16} />重置数据</button></div></div></div>;
+const SettingsView: React.FC<{ runtime: ReturnType<typeof useArkDesktopRuntime>; chooseWorkspace: () => Promise<void> }> = ({ runtime, chooseWorkspace }) => <div className="mx-auto max-w-4xl p-6 md:p-8">
+    <div className="mb-6"><h1 className="text-2xl font-semibold text-slate-900">设置</h1><p className="mt-1 text-sm text-slate-500">配置 Grok 本地运行时和全部任务级 CLI 参数。</p></div>
+    <div className="space-y-4">
+        <div className="rounded-2xl border border-slate-200 p-5"><div className="flex items-start justify-between gap-3"><div><h3 className="font-semibold text-slate-900">Grok Build 运行时</h3><p className="mt-1 text-sm text-slate-500">{runtime.runtimeStatus?.message || (runtime.runtimeStatus?.available ? `版本 ${runtime.runtimeStatus.version || '未知'}` : '正在检测安装包内置组件')}</p><p className="mt-2 break-all text-xs text-slate-400">配置目录：{runtime.runtimeStatus?.grokHome || '-'}</p></div>{runtime.runtimeStatus?.authenticated ? <span className="flex items-center gap-1.5 text-sm text-emerald-600"><CheckCircle2 size={16} />已登录</span> : <button type="button" onClick={() => void runtime.startLogin().catch((error) => runtime.setRuntimeError(String(error)))} className="rounded-lg bg-slate-900 px-3 py-2 text-xs text-white">登录 Grok</button>}</div></div>
+        <div className="rounded-2xl border border-slate-200 p-5"><h3 className="font-semibold text-slate-900">默认工作区</h3><p className="mt-2 break-all text-sm text-slate-500">{runtime.snapshot.settings.workspace || '尚未选择'}</p><button type="button" onClick={() => void chooseWorkspace()} className="mt-4 flex items-center gap-2 rounded-lg border border-slate-200 px-3 py-2 text-sm text-slate-600"><Folder size={16} />选择目录</button></div>
+        <GrokExecutionSettingsPanel
+            model={runtime.snapshot.settings.grokModel}
+            value={runtime.snapshot.settings.execution}
+            onModelChange={(grokModel) => runtime.setSnapshot((current) => ({ ...current, settings: { ...current.settings, grokModel } }))}
+            onChange={(execution) => runtime.setSnapshot((current) => ({ ...current, settings: { ...current.settings, execution } }))}
+        />
+        <GrokConfigEditor workspace={runtime.snapshot.settings.workspace} onError={runtime.setRuntimeError} />
+        <div className="rounded-2xl border border-red-200 p-5"><h3 className="font-semibold text-slate-900">重置本地数据</h3><p className="mt-1 text-sm text-slate-500">清除自定义 Grok Agent、技能、CLI 配置、自动化和任务历史，不会删除工作区文件。</p><button type="button" onClick={() => { if (window.confirm('确认重置 ARK Desktop 的全部本地配置和历史？')) runtime.resetAll(); }} className="mt-4 flex items-center gap-2 rounded-lg bg-red-50 px-3 py-2 text-sm text-red-700"><Trash2 size={16} />重置数据</button></div>
+    </div>
+</div>;
 
 const AgentEditor: React.FC<{ id?: string; runtime: ReturnType<typeof useArkDesktopRuntime>; onClose: () => void }> = ({ id, runtime, onClose }) => {
     const source = runtime.snapshot.agents.find((item) => item.id === id);

@@ -13,9 +13,52 @@ export interface GrokSession {
     workspace: string;
 }
 
+export interface GrokAcpOptions {
+    reasoningEffort?: string;
+    alwaysApprove?: boolean;
+    reauth?: boolean;
+    agentProfile?: string;
+    pluginDirs?: string[];
+    leaderMode?: 'default' | 'leader' | 'standalone';
+    grokWsOrigin?: string;
+    grokWsUrl?: string;
+    cliChatProxyUrl?: string;
+    xaiApiBaseUrl?: string;
+    debug?: boolean;
+    debugFile?: string;
+    leaderSocket?: string;
+}
+
 export interface GrokBridgeEvent {
     eventType: string;
     payload: Record<string, any>;
+}
+
+export interface GrokCliResult {
+    arguments: string[];
+    success: boolean;
+    exitCode?: number | null;
+    stdout: string;
+    stderr: string;
+}
+
+export interface GrokCliServiceInfo {
+    id: string;
+    arguments: string[];
+    pid: number;
+    alive: boolean;
+    startedAt: number;
+    exitCode?: number | null;
+    stdout: string;
+    stderr: string;
+}
+
+export interface GrokConfigFile {
+    scope: 'user' | 'project';
+    kind: 'config' | 'appearance';
+    path: string;
+    exists: boolean;
+    content: string;
 }
 
 const assertDesktopRuntime = () => {
@@ -32,8 +75,28 @@ const invokeGrok = async <T>(command: string, args?: Record<string, unknown>) =>
 
 export const getGrokRuntimeStatus = () => invokeGrok<GrokRuntimeStatus>('grok_runtime_status');
 
-export const createGrokSession = (workspace: string, rules?: string, model?: string) =>
-    invokeGrok<GrokSession>('grok_create_session', { workspace, rules: rules || null, model: model || null });
+export const runGrokCli = (arguments_: string[], workspace?: string, timeoutSeconds = 120) =>
+    invokeGrok<GrokCliResult>('grok_cli_run', {
+        arguments: arguments_,
+        workspace: workspace || null,
+        timeoutSeconds,
+    });
+
+export const startGrokCliService = (arguments_: string[], workspace?: string) =>
+    invokeGrok<GrokCliServiceInfo>('grok_cli_service_start', { arguments: arguments_, workspace: workspace || null });
+
+export const listGrokCliServices = () => invokeGrok<GrokCliServiceInfo[]>('grok_cli_service_list');
+
+export const stopGrokCliService = (serviceId: string) => invokeGrok<void>('grok_cli_service_stop', { serviceId });
+
+export const readGrokConfig = (scope: 'user' | 'project', workspace?: string, kind: 'config' | 'appearance' = 'config') =>
+    invokeGrok<GrokConfigFile>('grok_config_read', { scope, kind, workspace: workspace || null });
+
+export const saveGrokConfig = (scope: 'user' | 'project', content: string, workspace?: string, kind: 'config' | 'appearance' = 'config') =>
+    invokeGrok<GrokConfigFile>('grok_config_save', { scope, kind, content, workspace: workspace || null });
+
+export const createGrokSession = (workspace: string, rules?: string, model?: string, options?: GrokAcpOptions) =>
+    invokeGrok<GrokSession>('grok_create_session', { workspace, rules: rules || null, model: model || null, options: options || null });
 
 export const sendGrokPrompt = (sessionId: string, prompt: string) =>
     invokeGrok<void>('grok_send_prompt', { sessionId, prompt });
@@ -43,7 +106,8 @@ export const cancelGrokPrompt = (sessionId: string) => invokeGrok<void>('grok_ca
 export const respondGrokPermission = (requestId: unknown, optionId?: string) =>
     invokeGrok<void>('grok_respond_permission', { requestId, optionId: optionId || null });
 
-export const startGrokLogin = () => invokeGrok<void>('grok_start_login');
+export const startGrokLogin = (method: 'browser' | 'oauth' | 'device' = 'browser') =>
+    invokeGrok<void>('grok_start_login', { method });
 
 export const shutdownGrok = () => invokeGrok<void>('grok_shutdown');
 

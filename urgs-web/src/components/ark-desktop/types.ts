@@ -1,4 +1,4 @@
-export type ArkDesktopSection = 'new-task' | 'agents' | 'skills' | 'automations' | 'settings';
+export type ArkDesktopSection = 'new-task' | 'agents' | 'skills' | 'automations' | 'cli' | 'settings';
 
 export interface ArkDesktopSkill {
     id: string;
@@ -62,7 +62,9 @@ export interface ArkDesktopTask {
     skillIds: string[];
     workspace: string;
     attachmentPaths: string[];
+    engine?: 'acp' | 'headless';
     sessionId?: string;
+    cliServiceId?: string;
     status: ArkDesktopTaskStatus;
     messages: ArkDesktopMessage[];
     tools: ArkDesktopToolActivity[];
@@ -77,6 +79,56 @@ export interface ArkDesktopSettings {
     grokModel: string;
     defaultAgentId: string;
     defaultSkillIds: string[];
+    execution: GrokExecutionSettings;
+}
+
+export interface GrokExecutionSettings {
+    engine: 'acp' | 'headless';
+    reasoningEffort: string;
+    permissionMode: 'default' | 'acceptEdits' | 'auto' | 'dontAsk' | 'bypassPermissions' | 'plan';
+    sandboxProfile: string;
+    maxTurns: number;
+    bestOfN: number;
+    check: boolean;
+    noPlan: boolean;
+    noSubagents: boolean;
+    disableWebSearch: boolean;
+    memoryMode: 'default' | 'disabled' | 'experimental';
+    allowRules: string;
+    denyRules: string;
+    allowedTools: string;
+    disallowedTools: string;
+    additionalRules: string;
+    systemPromptOverride: string;
+    jsonSchema: string;
+    agentName: string;
+    inlineAgentsJson: string;
+    outputFormat: 'plain' | 'json' | 'streaming-json';
+    verbatim: boolean;
+    alwaysApprove: boolean;
+    sessionMode: 'new' | 'continue' | 'resume';
+    resumeSessionId: string;
+    forkSession: boolean;
+    restoreCode: boolean;
+    newSessionId: string;
+    promptMode: 'text' | 'file' | 'json';
+    promptFile: string;
+    promptJson: string;
+    useWorktree: boolean;
+    worktreeName: string;
+    worktreeRef: string;
+    oauth: boolean;
+    debug: boolean;
+    debugFile: string;
+    leaderSocket: string;
+    reauth: boolean;
+    agentProfile: string;
+    pluginDirs: string;
+    leaderMode: 'default' | 'leader' | 'standalone';
+    grokWsOrigin: string;
+    grokWsUrl: string;
+    cliChatProxyUrl: string;
+    xaiApiBaseUrl: string;
 }
 
 export interface ArkDesktopSnapshot {
