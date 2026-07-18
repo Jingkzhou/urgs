@@ -14,6 +14,7 @@ import ChangePasswordModal from './components/ChangePasswordModal';
 import ChatWidget from './components/home/ChatWidget';
 import BasicInfo from './components/BasicInfo';
 import ArkPage from './components/ark/ArkPage';
+import ArkAgentsPage from './components/ark/ArkAgentsPage';
 import KnowledgeCenter from './components/knowledge/KnowledgeCenter';
 import MarketplacePage from './components/marketplace/MarketplacePage';
 import ToolsPage from './components/tools/ToolsPage';
@@ -40,6 +41,12 @@ const dashboardViewIcons: Record<DashboardViewKey, React.ReactNode> = {
     dev: <Code2 size={15} strokeWidth={2.5} />,
     ops: <Activity size={15} strokeWidth={2.5} />,
 };
+
+interface ArkLaunchTask {
+    agentId?: number | string;
+    prompt?: string;
+    requestId: number;
+}
 
 const App: React.FC = () => {
     const initialToken = typeof localStorage !== 'undefined' ? localStorage.getItem('auth_token') : null;
@@ -82,6 +89,9 @@ const App: React.FC = () => {
     const [showMoreNavMenu, setShowMoreNavMenu] = useState(false);
     const [changePasswordVisible, setChangePasswordVisible] = useState(false);
     const [marketplaceTodoCount, setMarketplaceTodoCount] = useState(0);
+    const [isArkAgentsPageOpen, setIsArkAgentsPageOpen] = useState(false);
+    const [arkAgents, setArkAgents] = useState<any[]>([]);
+    const [arkLaunchTask, setArkLaunchTask] = useState<ArkLaunchTask | null>(null);
 
     const userMenuRef = React.useRef<HTMLDivElement>(null);
     const moreMenuRef = React.useRef<HTMLDivElement>(null);
@@ -586,7 +596,14 @@ const App: React.FC = () => {
                         <main className="flex-1 overflow-y-auto p-4 lg:p-8 scroll-smooth bg-slate-50/50">
                             <div className="max-w-[98%] mx-auto h-full">
                                 {activeTab === 'dashboard' && <Dashboard />}
-                                {activeTab === 'ark' && <ArkPage />}
+                                {activeTab === 'ark' && <ArkPage
+                                    onOpenAgents={(agents) => {
+                                        setArkAgents(agents);
+                                        setIsArkAgentsPageOpen(true);
+                                    }}
+                                    launchTask={arkLaunchTask}
+                                    onLaunchTaskHandled={() => setArkLaunchTask(null)}
+                                />}
                                 {activeTab === 'announcement' && <AnnouncementManagement />}
                                 {activeTab === 'sys' && <SystemManagement />}
                                 {activeTab === 'version' && <VersionManagement />}
@@ -610,6 +627,26 @@ const App: React.FC = () => {
                     />
 
                     <ChatWidget />
+
+                    <AnimatePresence>
+                        {isArkAgentsPageOpen && (
+                            <motion.div
+                                initial={{ opacity: 0 }}
+                                animate={{ opacity: 1 }}
+                                exit={{ opacity: 0 }}
+                                className="fixed inset-0 z-[1000] h-screen overflow-hidden bg-white"
+                            >
+                                <ArkAgentsPage
+                                    agents={arkAgents}
+                                    onClose={() => setIsArkAgentsPageOpen(false)}
+                                    onStartTask={(agentId, prompt) => {
+                                        setArkLaunchTask({ agentId, prompt, requestId: Date.now() });
+                                        setIsArkAgentsPageOpen(false);
+                                    }}
+                                />
+                            </motion.div>
+                        )}
+                    </AnimatePresence>
         </div>
     );
 };

@@ -1,7 +1,7 @@
 import React, { useState, useEffect, useRef, useMemo, useLayoutEffect, useCallback } from 'react';
 import { v4 as uuidv4 } from 'uuid';
 import { RobotOutlined } from '@ant-design/icons';
-import { Sparkles, Database, Cpu, Layers, PenTool, ArrowDown, PanelLeftClose, PanelLeftOpen, SquarePen } from 'lucide-react';
+import { Sparkles, Database, Cpu, Layers, PenTool, ArrowDown, PanelLeftClose, PanelLeftOpen, SquarePen, Bot } from 'lucide-react';
 import { motion, AnimatePresence } from 'framer-motion';
 import Sidebar from './Sidebar';
 import ChatMessage from './ChatMessage';
@@ -19,6 +19,18 @@ interface SessionState {
     scrollTop: number;
     itemHeights: Map<string, number>;
     isAtBottom: boolean;
+}
+
+interface ArkLaunchTask {
+    agentId?: number | string;
+    prompt?: string;
+    requestId: number;
+}
+
+interface ArkPageProps {
+    onOpenAgents: (agents: any[]) => void;
+    launchTask?: ArkLaunchTask | null;
+    onLaunchTaskHandled: () => void;
 }
 
 const parseAgentAppTools = (value: any) => {
@@ -45,7 +57,7 @@ const buildConversationContext = (items: Message[]): ConversationContextMessage[
         }));
 };
 
-const ArkPage: React.FC = () => {
+const ArkPage: React.FC<ArkPageProps> = ({ onOpenAgents, launchTask, onLaunchTaskHandled }) => {
     // ... state remains the same ...
     const [currentSessionId, setCurrentSessionId] = useState<string | null>(null);
     const [messages, setMessages] = useState<Message[]>([]);
@@ -403,6 +415,13 @@ const ArkPage: React.FC = () => {
         if (isGenerating) handleStop();
     };
 
+    useEffect(() => {
+        if (!launchTask || loading) return;
+        handleNewChat(launchTask.agentId);
+        setInputValue(launchTask.prompt || '');
+        onLaunchTaskHandled();
+    }, [launchTask?.requestId, loading, agents]);
+
     const resetStreamingState = () => {
         if (flushTimerRef.current !== null) {
             window.clearTimeout(flushTimerRef.current);
@@ -550,6 +569,14 @@ const ArkPage: React.FC = () => {
                         title="新建对话"
                     >
                         <SquarePen size={18} />
+                    </button>
+                    <button
+                        onClick={() => onOpenAgents(agents)}
+                        className="flex h-9 items-center gap-1.5 rounded-lg px-2.5 text-sm font-medium text-slate-500 transition-colors hover:bg-[#f4f4f4] hover:text-slate-900"
+                        title="打开 Agents"
+                    >
+                        <Bot size={17} />
+                        <span className="hidden sm:inline">Agents</span>
                     </button>
                 </div>
 
@@ -729,7 +756,7 @@ const ArkPage: React.FC = () => {
                             )}
                         </motion.div>
                     )}
-                </AnimatePresence>
+                    </AnimatePresence>
 
                 {/* Scroll to Bottom Button */}
                 <AnimatePresence>
