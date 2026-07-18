@@ -1,3 +1,5 @@
+mod grok_runtime;
+
 use serde::{Deserialize, Serialize};
 use std::fs;
 use std::path::PathBuf;
@@ -84,10 +86,19 @@ pub fn run() {
         .plugin(tauri_plugin_fs::init())
         .plugin(tauri_plugin_opener::init())
         .plugin(tauri_plugin_process::init())
+        .plugin(tauri_plugin_shell::init())
         .plugin(tauri_plugin_updater::Builder::new().build())
+        .manage(grok_runtime::GrokRuntimeState::default())
         .invoke_handler(tauri::generate_handler![
             load_desktop_runtime_config,
-            save_desktop_runtime_config
+            save_desktop_runtime_config,
+            grok_runtime::grok_runtime_status,
+            grok_runtime::grok_create_session,
+            grok_runtime::grok_send_prompt,
+            grok_runtime::grok_cancel,
+            grok_runtime::grok_respond_permission,
+            grok_runtime::grok_shutdown,
+            grok_runtime::grok_start_login
         ])
         .run(tauri::generate_context!())
         .expect("error while running URGS desktop application");
@@ -118,11 +129,9 @@ mod tests {
 
     #[test]
     fn rejects_unsupported_or_incomplete_urls() {
-        assert!(validate_config(config(
-            "file:///tmp/urgs",
-            "wss://urgs.example.com/ws/im",
-        ))
-        .is_err());
+        assert!(
+            validate_config(config("file:///tmp/urgs", "wss://urgs.example.com/ws/im",)).is_err()
+        );
         assert!(validate_config(config(
             "https://urgs.example.com",
             "https://urgs.example.com/ws/im",

@@ -21,5 +21,7 @@ tauri-plugin-dialog = "2"
 tauri-plugin-fs = "2"
 tauri-plugin-opener = "2.5.4"
 tauri-plugin-process = "2"
+tauri-plugin-shell = "2"
 tauri-plugin-updater = "2"
+tokio = { version = "1", features = ["sync", "time"] }
 url = "2.5"

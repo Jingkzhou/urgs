@@ -1,6 +1,6 @@
 import React, { useEffect, useState } from 'react';
 import { hasPermission } from './utils/permission';
-import { LayoutDashboard, Bell, UserCircle, LogOut, Settings, PanelTop, PanelLeft, Megaphone, Database, GitBranch, Activity, Lock, User, Sparkles, Award, BookOpen, ChevronDown, Wrench, BriefcaseBusiness, Code2 } from 'lucide-react';
+import { LayoutDashboard, Bell, UserCircle, LogOut, Settings, PanelTop, PanelLeft, Megaphone, Database, GitBranch, Activity, Lock, User, Sparkles, Award, BookOpen, ChevronDown, Wrench, BriefcaseBusiness, Code2, MonitorCog } from 'lucide-react';
 import { motion, AnimatePresence } from 'framer-motion';
 import { createPortal } from 'react-dom';
 import Login from './components/Login';
@@ -26,6 +26,7 @@ import { resolveServiceUrl } from './config';
 const NAV_ITEMS = [
     { id: 'dashboard', label: '工作台', icon: LayoutDashboard, permission: 'dashboard' },
     { id: 'ark', label: 'Ark (方舟)', icon: Sparkles, permission: 'ark' },
+    { id: 'ark-desktop', label: 'ARK Desktop', icon: MonitorCog, permission: 'ark' },
     { id: 'announcement', label: '公告', icon: Megaphone, permission: 'announcement' },
     { id: 'version', label: '版本', icon: GitBranch, permission: 'version' },
     { id: 'marketplace', label: '任务中心', icon: Award, permission: 'marketplace' },
@@ -41,12 +42,6 @@ const dashboardViewIcons: Record<DashboardViewKey, React.ReactNode> = {
     dev: <Code2 size={15} strokeWidth={2.5} />,
     ops: <Activity size={15} strokeWidth={2.5} />,
 };
-
-interface ArkLaunchTask {
-    agentId?: number | string;
-    prompt?: string;
-    requestId: number;
-}
 
 const App: React.FC = () => {
     const initialToken = typeof localStorage !== 'undefined' ? localStorage.getItem('auth_token') : null;
@@ -89,9 +84,6 @@ const App: React.FC = () => {
     const [showMoreNavMenu, setShowMoreNavMenu] = useState(false);
     const [changePasswordVisible, setChangePasswordVisible] = useState(false);
     const [marketplaceTodoCount, setMarketplaceTodoCount] = useState(0);
-    const [isArkAgentsPageOpen, setIsArkAgentsPageOpen] = useState(false);
-    const [arkAgents, setArkAgents] = useState<any[]>([]);
-    const [arkLaunchTask, setArkLaunchTask] = useState<ArkLaunchTask | null>(null);
 
     const userMenuRef = React.useRef<HTMLDivElement>(null);
     const moreMenuRef = React.useRef<HTMLDivElement>(null);
@@ -597,13 +589,13 @@ const App: React.FC = () => {
                             <div className="max-w-[98%] mx-auto h-full">
                                 {activeTab === 'dashboard' && <Dashboard />}
                                 {activeTab === 'ark' && <ArkPage
-                                    onOpenAgents={(agents) => {
-                                        setArkAgents(agents);
-                                        setIsArkAgentsPageOpen(true);
+                                    onOpenAgents={() => {
+                                        window.location.hash = '#/ark-desktop';
                                     }}
-                                    launchTask={arkLaunchTask}
-                                    onLaunchTaskHandled={() => setArkLaunchTask(null)}
+                                    launchTask={null}
+                                    onLaunchTaskHandled={() => undefined}
                                 />}
+                                {activeTab === 'ark-desktop' && <ArkAgentsPage />}
                                 {activeTab === 'announcement' && <AnnouncementManagement />}
                                 {activeTab === 'sys' && <SystemManagement />}
                                 {activeTab === 'version' && <VersionManagement />}
@@ -628,25 +620,6 @@ const App: React.FC = () => {
 
                     <ChatWidget />
 
-                    <AnimatePresence>
-                        {isArkAgentsPageOpen && (
-                            <motion.div
-                                initial={{ opacity: 0 }}
-                                animate={{ opacity: 1 }}
-                                exit={{ opacity: 0 }}
-                                className="fixed inset-0 z-[1000] h-screen overflow-hidden bg-white"
-                            >
-                                <ArkAgentsPage
-                                    agents={arkAgents}
-                                    onClose={() => setIsArkAgentsPageOpen(false)}
-                                    onStartTask={(agentId, prompt) => {
-                                        setArkLaunchTask({ agentId, prompt, requestId: Date.now() });
-                                        setIsArkAgentsPageOpen(false);
-                                    }}
-                                />
-                            </motion.div>
-                        )}
-                    </AnimatePresence>
         </div>
     );
 };
