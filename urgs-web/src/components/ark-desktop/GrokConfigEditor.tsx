@@ -14,10 +14,6 @@ const templates: Array<{ id: string; label: string; content: string }> = [
     { id: 'basic', label: '基础模型与 CLI', content: `[cli]
 auto_update = false
 
-[models]
-default = "grok-4.5-build-free"
-web_search = "grok-4.20-multi-agent"
-
 [features]
 telemetry = false
 feedback = true
@@ -52,7 +48,7 @@ save_on_end = true
 enabled = true
 
 [skills]
-paths = ["~/my-grok-skills"]
+paths = ["~/my-skills"]
 ignore = []
 disabled = []
 ` },
@@ -71,7 +67,7 @@ mcps = true
 hooks = true
 
 [plugins]
-paths = ["~/my-grok-plugins"]
+paths = ["~/my-plugins"]
 disabled = []
 ` },
 ];
@@ -133,7 +129,7 @@ const GrokConfigEditor: React.FC<GrokConfigEditorProps> = ({ workspace, onError 
 
     const save = async () => {
         if (scope === 'project' && !workspace) return;
-        if (!window.confirm(`确认保存 Grok ${scope === 'user' ? '用户级' : '项目级'}配置？已有文件会自动备份。`)) return;
+        if (!window.confirm(`确认保存${scope === 'user' ? '用户级' : '项目级'}运行配置？已有文件会自动备份。`)) return;
         setSaving(true);
         setSaved(false);
         try {
@@ -150,25 +146,25 @@ const GrokConfigEditor: React.FC<GrokConfigEditorProps> = ({ workspace, onError 
 
     return <div className="rounded-2xl border border-slate-200 p-5">
         <div className="flex flex-wrap items-start justify-between gap-3">
-            <div><div className="flex items-center gap-2"><FileCode2 size={17} className="text-slate-500" /><h3 className="font-semibold text-slate-900">Grok 原生配置</h3></div><p className="mt-1 text-sm leading-6 text-slate-500">直接编辑 Grok 的 config.toml 或 pager.toml；保存前由本地端校验 TOML，并为旧文件创建 .urgs-backup 备份。</p></div>
+            <div><div className="flex items-center gap-2"><FileCode2 size={17} className="text-slate-500" /><h3 className="font-semibold text-slate-900">高级运行配置</h3></div><p className="mt-1 text-sm leading-6 text-slate-500">直接编辑功能或终端外观配置；保存前由本地端校验 TOML，并为旧文件创建 .urgs-backup 备份。</p></div>
             <div className="flex rounded-xl bg-slate-100 p-1 text-xs">
                 {(['user', 'project'] as ConfigScope[]).map((item) => <button key={item} type="button" disabled={(item === 'project' && !workspace) || (item === 'project' && kind === 'appearance')} onClick={() => setScope(item)} className={`rounded-lg px-3 py-1.5 ${scope === item ? 'bg-white font-medium text-slate-900 shadow-sm' : 'text-slate-500 disabled:opacity-40'}`}>{item === 'user' ? '用户配置' : '项目配置'}</button>)}
             </div>
         </div>
-        {scope === 'project' && <p className="mt-3 rounded-xl bg-amber-50 px-3 py-2 text-xs leading-5 text-amber-700">项目级配置写入当前工作区 .grok/config.toml；Grok 仅从这里合并 MCP、插件与权限相关项目配置，其余全局选项请写入用户配置。</p>}
+        {scope === 'project' && <p className="mt-3 rounded-xl bg-amber-50 px-3 py-2 text-xs leading-5 text-amber-700">项目级配置仅作用于当前工作区，可配置 MCP、插件与权限相关能力；其余全局选项请写入用户配置。</p>}
         <div className="mt-4 flex flex-wrap items-center gap-2">
-            <select aria-label="Grok 配置文件类型" value={kind} onChange={(event) => { const next = event.target.value as ConfigKind; setKind(next); if (next === 'appearance') setScope('user'); }} className="rounded-lg border border-slate-200 bg-white px-3 py-2 text-xs text-slate-600 outline-none"><option value="config">config.toml（功能配置）</option><option value="appearance">pager.toml（TUI 外观）</option></select>
-            <select aria-label="Grok 配置模板" defaultValue="" onChange={(event) => { appendTemplate(event.target.value); event.target.value = ''; }} className="rounded-lg border border-slate-200 bg-white px-3 py-2 text-xs text-slate-600 outline-none">
+            <select aria-label="运行配置文件类型" value={kind} onChange={(event) => { const next = event.target.value as ConfigKind; setKind(next); if (next === 'appearance') setScope('user'); }} className="rounded-lg border border-slate-200 bg-white px-3 py-2 text-xs text-slate-600 outline-none"><option value="config">功能配置</option><option value="appearance">终端外观</option></select>
+            <select aria-label="运行配置模板" defaultValue="" onChange={(event) => { appendTemplate(event.target.value); event.target.value = ''; }} className="rounded-lg border border-slate-200 bg-white px-3 py-2 text-xs text-slate-600 outline-none">
                 <option value="" disabled>插入配置片段…</option>
                 {kind === 'config' ? templates.map((template) => <option key={template.id} value={template.id}>{template.label}</option>) : <option value="appearance">完整外观模板</option>}
             </select>
             <button type="button" disabled={loading || (scope === 'project' && !workspace)} onClick={() => void load()} className="flex items-center gap-1.5 rounded-lg border border-slate-200 px-3 py-2 text-xs text-slate-600 disabled:opacity-40"><RefreshCw size={14} className={loading ? 'animate-spin' : ''} />重新读取</button>
-            <span className="min-w-0 flex-1 break-all text-right text-[11px] text-slate-400">{file?.path || (scope === 'project' && !workspace ? '请先选择默认工作区' : '正在读取配置路径')}</span>
+            <span className="min-w-0 flex-1 text-right text-[11px] text-slate-400">{file ? '本地运行配置文件' : (scope === 'project' && !workspace ? '请先选择默认工作区' : '正在读取配置')}</span>
         </div>
-        <textarea aria-label={`Grok ${kind === 'config' ? 'config.toml' : 'pager.toml'}`} spellCheck={false} value={content} onChange={(event) => { setContent(event.target.value); setSaved(false); }} rows={22} className="mt-3 w-full resize-y rounded-xl border border-slate-200 bg-slate-950 p-4 font-mono text-xs leading-6 text-slate-100 outline-none focus:border-slate-400" placeholder={`# 在此编辑 Grok ${kind === 'config' ? 'config.toml' : 'pager.toml'}`} />
+        <textarea aria-label={kind === 'config' ? '功能配置' : '终端外观配置'} spellCheck={false} value={content} onChange={(event) => { setContent(event.target.value); setSaved(false); }} rows={22} className="mt-3 w-full resize-y rounded-xl border border-slate-200 bg-slate-950 p-4 font-mono text-xs leading-6 text-slate-100 outline-none focus:border-slate-400" placeholder="# 在此编辑本地运行配置" />
         <div className="mt-3 flex items-center justify-between gap-3">
             <span className="text-xs text-slate-400">{file?.exists ? '配置文件已存在' : '尚未创建配置文件'}</span>
-            <div className="flex items-center gap-3">{saved && <span className="flex items-center gap-1 text-xs text-emerald-600"><CheckCircle2 size={14} />已保存并通过校验</span>}<button type="button" disabled={saving || loading || (scope === 'project' && !workspace)} onClick={() => void save()} className="flex items-center gap-1.5 rounded-lg bg-slate-900 px-3 py-2 text-xs text-white disabled:opacity-40">{saving ? <LoaderCircle size={14} className="animate-spin" /> : <Save size={14} />}保存 Grok 配置</button></div>
+            <div className="flex items-center gap-3">{saved && <span className="flex items-center gap-1 text-xs text-emerald-600"><CheckCircle2 size={14} />已保存并通过校验</span>}<button type="button" disabled={saving || loading || (scope === 'project' && !workspace)} onClick={() => void save()} className="flex items-center gap-1.5 rounded-lg bg-slate-900 px-3 py-2 text-xs text-white disabled:opacity-40">{saving ? <LoaderCircle size={14} className="animate-spin" /> : <Save size={14} />}保存配置</button></div>
         </div>
     </div>;
 };

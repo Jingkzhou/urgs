@@ -820,6 +820,57 @@ pub fn grok_config_save(
     })
 }
 
+fn normalize_model_id(model: &str) -> Result<String, String> {
+    let model = model.trim();
+    if model.is_empty() {
+        return Err("请输入模型标识".to_string());
+    }
+    if model.len() > 128 || model.chars().any(char::is_control) {
+        return Err("模型标识格式无效".to_string());
+    }
+    Ok(model.to_string())
+}
+
+#[tauri::command]
+pub fn grok_model_apply(app: AppHandle, model: String) -> Result<(), String> {
+    let model = normalize_model_id(&model)?;
+    let path = grok_config_path(&app, "user", "config", None)?;
+    let content = if path.is_file() {
+        fs::read_to_string(&path).map_err(|error| format!("读取 Grok 配置失败: {error}"))?
+    } else {
+        String::new()
+    };
+    let mut config = if content.trim().is_empty() {
+        toml::Value::Table(toml::map::Map::new())
+    } else {
+        content
+            .parse::<toml::Value>()
+            .map_err(|error| format!("Grok TOML 配置无效: {error}"))?
+    };
+    let root = config
+        .as_table_mut()
+        .ok_or_else(|| "Grok 配置根节点必须是对象".to_string())?;
+    let models = root
+        .entry("models".to_string())
+        .or_insert_with(|| toml::Value::Table(toml::map::Map::new()))
+        .as_table_mut()
+        .ok_or_else(|| "Grok 配置中的 models 必须是对象".to_string())?;
+    if models.get("default").and_then(toml::Value::as_str) == Some(model.as_str()) {
+        return Ok(());
+    }
+    models.insert("default".to_string(), toml::Value::String(model));
+    let parent = path
+        .parent()
+        .ok_or_else(|| "Grok 配置目录无效".to_string())?;
+    fs::create_dir_all(parent).map_err(|error| format!("创建 Grok 配置目录失败: {error}"))?;
+    if path.is_file() {
+        fs::copy(&path, path.with_extension("toml.urgs-backup"))
+            .map_err(|error| format!("备份 Grok 配置失败: {error}"))?;
+    }
+    fs::write(&path, config.to_string()).map_err(|error| format!("保存 Grok 配置失败: {error}"))?;
+    Ok(())
+}
+
 #[tauri::command]
 pub fn grok_cli_service_start(
     app: AppHandle,
@@ -1022,6 +1073,27 @@ pub async fn grok_send_prompt(
                 "sessionId": session_id,
                 "prompt": [{ "type": "text", "text": prompt.trim() }]
             }),
+        )
+        .await?;
+    Ok(())
+}
+
+#[tauri::command]
+pub async fn grok_session_set_model(
+    state: State<'_, GrokRuntimeState>,
+    session_id: String,
+    model: String,
+) -> Result<(), String> {
+    let model = normalize_model_id(&model)?;
+    let session_id = session_id.trim();
+    if session_id.is_empty() {
+        return Err("会话标识不能为空".to_string());
+    }
+    let process = active_process(&state)?;
+    process
+        .request(
+            "session/set_model",
+            json!({ "sessionId": session_id, "modelId": model }),
         )
         .await?;
     Ok(())

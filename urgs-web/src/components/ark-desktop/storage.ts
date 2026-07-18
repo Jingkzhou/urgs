@@ -18,7 +18,8 @@ export const createDefaultArkDesktopSnapshot = (): ArkDesktopSnapshot => ({
     tasks: [],
     settings: {
         workspace: '',
-        grokModel: 'grok-4.5-build-free',
+        grokModel: '',
+        modelOptions: [],
         defaultAgentId: 'grok-general',
         defaultSkillIds: [],
         execution: {
@@ -96,6 +97,11 @@ export const loadArkDesktopSnapshot = (): ArkDesktopSnapshot => {
                 agentId: validAgentIds.has(automation.agentId) ? automation.agentId : defaults.settings.defaultAgentId,
                 skillIds: automation.skillIds.filter((id) => validSkillIds.has(id)),
             }));
+        const configuredModel = stored.settings?.grokModel?.trim() || '';
+        const modelOptions = Array.from(new Set([
+            ...(Array.isArray(stored.settings?.modelOptions) ? stored.settings!.modelOptions : []),
+            configuredModel,
+        ].map((model) => model.trim()).filter(Boolean)));
         const snapshot: ArkDesktopSnapshot = {
             agents,
             skills,
@@ -106,6 +112,8 @@ export const loadArkDesktopSnapshot = (): ArkDesktopSnapshot => {
             settings: {
                 ...defaults.settings,
                 ...(stored.settings || {}),
+                grokModel: configuredModel,
+                modelOptions,
                 defaultAgentId: validAgentIds.has(stored.settings?.defaultAgentId || '') ? stored.settings!.defaultAgentId : defaults.settings.defaultAgentId,
                 defaultSkillIds: (stored.settings?.defaultSkillIds || []).filter((id) => validSkillIds.has(id)),
                 execution: { ...defaults.settings.execution, ...(stored.settings?.execution || {}) },

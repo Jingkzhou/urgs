@@ -1,6 +1,7 @@
 import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import { isDesktopRuntime } from '@/config';
 import {
+    applyGrokModel,
     cancelGrokPrompt,
     chooseGrokAttachments,
     chooseGrokWorkspace,
@@ -12,6 +13,7 @@ import {
     startGrokCliService,
     stopGrokCliService,
     sendGrokPrompt,
+    setGrokSessionModel,
     startGrokLogin,
     subscribeGrokEvents,
     type GrokBridgeEvent,
@@ -37,6 +39,10 @@ interface StartTaskInput {
 }
 
 const createId = (prefix: string) => `${prefix}-${Date.now()}-${Math.random().toString(16).slice(2)}`;
+
+const redactRuntimeText = (value: string) => value
+    .replace(/\bgrok(?:\s+build)?\b/gi, '内置智能引擎')
+    .replace(/\bxai\b/gi, '服务');
 
 const extractText = (update: Record<string, any>) =>
     update?.content?.text || update?.content?.content?.text || update?.text || '';
@@ -77,12 +83,12 @@ const waitForCliService = async (serviceId: string) => {
     const deadline = Date.now() + 60 * 60 * 1000;
     while (Date.now() < deadline) {
         const service = (await listGrokCliServices()).find((item) => item.id === serviceId);
-        if (!service) throw new Error('Grok Headless 任务进程不存在');
+        if (!service) throw new Error('后台任务进程不存在');
         if (!service.alive) return service;
         await new Promise((resolve) => window.setTimeout(resolve, 800));
     }
     await stopGrokCliService(serviceId).catch(() => undefined);
-    throw new Error('Grok Headless 任务执行超过 1 小时');
+    throw new Error('后台任务执行超过 1 小时');
 };
 
 const findLatestGrokSessionId = async (workspace: string) => {
@@ -123,7 +129,7 @@ export const useArkDesktopRuntime = () => {
             setRuntimeError('');
             setRuntimeStatus(await getGrokRuntimeStatus());
         } catch (error) {
-            setRuntimeError(error instanceof Error ? error.message : '无法检测 Grok Build');
+            setRuntimeError(redactRuntimeText(error instanceof Error ? error.message : '无法检测内置智能引擎'));
         }
     }, []);
 
@@ -155,7 +161,7 @@ export const useArkDesktopRuntime = () => {
                     const existingIndex = tools.findIndex((tool) => tool.id === id);
                     const nextTool = {
                         id,
-                        title: update.title || update.toolCall?.title || '本地工具调用',
+                        title: redactRuntimeText(update.title || update.toolCall?.title || '本地工具调用'),
                         status: statusLabel(update.status),
                         kind: update.kind || update.toolCall?.kind,
                         updatedAt: Date.now(),
@@ -172,7 +178,7 @@ export const useArkDesktopRuntime = () => {
             const params = event.payload?.params || {};
             setPermission({
                 requestId: event.payload?.id,
-                title: params?.toolCall?.title || params?.toolCall?.rawInput || 'Grok 请求执行本地操作',
+                title: redactRuntimeText(params?.toolCall?.title || params?.toolCall?.rawInput || '智能体请求执行本地操作'),
                 options: (params?.options || []).map((option: any) => ({
                     optionId: option.optionId,
                     name: option.name || option.optionId,
@@ -183,7 +189,7 @@ export const useArkDesktopRuntime = () => {
         }
 
         if (event.eventType === 'runtime_error') {
-            const message = event.payload?.message || 'Grok 本地运行时发生错误';
+            const message = redactRuntimeText(event.payload?.message || '本地智能运行时发生错误');
             setRuntimeError(message);
             if (taskId) {
                 updateTask(taskId, (task) => ({ ...task, status: 'failed', error: message, updatedAt: Date.now() }));
@@ -193,7 +199,7 @@ export const useArkDesktopRuntime = () => {
 
         if (event.eventType === 'terminated' && taskId) {
             updateTask(taskId, (task) => task.status === 'running'
-                ? { ...task, status: 'failed', error: 'Grok 本地进程已退出', updatedAt: Date.now() }
+                ? { ...task, status: 'failed', error: '本地任务进程已退出', updatedAt: Date.now() }
                 : task);
         }
 
@@ -209,7 +215,7 @@ export const useArkDesktopRuntime = () => {
         void subscribeGrokEvents(handleGrokEvent).then((dispose) => {
             unlisten = dispose;
         }).catch((error) => {
-            setRuntimeError(error instanceof Error ? error.message : '无法订阅 Grok 事件');
+            setRuntimeError(redactRuntimeText(error instanceof Error ? error.message : '无法订阅本地任务事件'));
         });
         return () => unlisten?.();
     }, [handleGrokEvent, refreshRuntimeStatus]);
@@ -238,8 +244,8 @@ export const useArkDesktopRuntime = () => {
         const current = snapshotRef.current;
         const workspace = current.settings.workspace;
         if (!isDesktopRuntime()) throw new Error('请在 URGS 桌面客户端中运行 ARK Desktop');
-        if (!runtimeStatus?.available) throw new Error('未检测到内置 Grok Build，请先检查桌面安装包');
-        if (!runtimeStatus.authenticated) throw new Error('请先登录 Grok');
+        if (!runtimeStatus?.available) throw new Error('未检测到内置智能引擎，请先检查桌面安装包');
+        if (!runtimeStatus.authenticated) throw new Error('请先登录任务服务');
         if (!workspace) throw new Error('请先选择本地工作区');
         const promptRequired = current.settings.execution.engine !== 'headless' || current.settings.execution.promptMode === 'text';
         if (promptRequired && !prompt.trim()) throw new Error('请输入要完成的任务');
@@ -254,7 +260,7 @@ export const useArkDesktopRuntime = () => {
         const skills = current.skills.filter((skill) => resolvedSkillIds.includes(skill.id));
         const effectivePrompt = prompt.trim()
             || current.settings.execution.promptFile.trim()
-            || 'Grok CLI JSON 内容块任务';
+            || '本地 JSON 内容块任务';
         const now = Date.now();
         const taskId = createId('task');
         const task: ArkDesktopTask = {
@@ -266,6 +272,7 @@ export const useArkDesktopRuntime = () => {
             workspace,
             attachmentPaths,
             engine: current.settings.execution.engine,
+            model: current.settings.grokModel || undefined,
             status: 'running',
             messages: [{ id: createId('message'), role: 'user', content: effectivePrompt, createdAt: now }],
             tools: [],
@@ -299,7 +306,7 @@ export const useArkDesktopRuntime = () => {
                 );
                 updateTask(taskId, (value) => ({ ...value, cliServiceId: service.id, updatedAt: Date.now() }));
                 const result = await waitForCliService(service.id);
-                if (result.exitCode !== 0 && !cancelledTaskIdsRef.current.has(taskId)) throw new Error(result.stderr || 'Grok Headless 任务执行失败');
+                if (result.exitCode !== 0 && !cancelledTaskIdsRef.current.has(taskId)) throw new Error(result.stderr || '后台任务执行失败');
                 const knownSessionId = headlessExecution.sessionMode === 'new'
                     ? headlessExecution.newSessionId
                     : headlessExecution.sessionMode === 'resume' && !headlessExecution.forkSession
@@ -308,11 +315,11 @@ export const useArkDesktopRuntime = () => {
                 const sessionId = extractGrokHeadlessSessionId(result.stdout, headlessExecution.outputFormat)
                     || knownSessionId
                     || await findLatestGrokSessionId(workspace).catch(() => undefined);
-                const response = extractGrokHeadlessText(result.stdout, headlessExecution.outputFormat);
+                const response = redactRuntimeText(extractGrokHeadlessText(result.stdout, headlessExecution.outputFormat));
                 updateTask(taskId, (value) => ({
                     ...value,
                     sessionId,
-                    messages: [...value.messages, { id: createId('message'), role: 'assistant', content: response || 'Grok 任务已完成。', createdAt: Date.now() }],
+                    messages: [...value.messages, { id: createId('message'), role: 'assistant', content: response || '任务已完成。', createdAt: Date.now() }],
                     updatedAt: Date.now(),
                 }));
             } else {
@@ -347,7 +354,7 @@ export const useArkDesktopRuntime = () => {
                 }));
             }
         } catch (error) {
-            const message = error instanceof Error ? error.message : String(error);
+            const message = redactRuntimeText(error instanceof Error ? error.message : String(error));
             if (!cancelledTaskIdsRef.current.has(taskId)) {
                 updateTask(taskId, (value) => ({ ...value, status: 'failed', error: message, updatedAt: Date.now() }));
                 setRuntimeError(message);
@@ -368,18 +375,18 @@ export const useArkDesktopRuntime = () => {
         if (task.engine === 'headless') {
             const current = snapshotRef.current;
             const service = await startGrokCliService([
-                '--model', current.settings.grokModel,
+                ...(current.settings.grokModel.trim() ? ['--model', current.settings.grokModel.trim()] : []),
                 '--resume', task.sessionId,
                 '--output-format', current.settings.execution.outputFormat,
                 '--single', prompt,
             ], task.workspace);
             updateTask(taskId, (value) => ({ ...value, cliServiceId: service.id, updatedAt: Date.now() }));
             const result = await waitForCliService(service.id);
-            if (result.exitCode !== 0 && !cancelledTaskIdsRef.current.has(taskId)) throw new Error(result.stderr || 'Grok Headless 追问失败');
-            const response = extractGrokHeadlessText(result.stdout, current.settings.execution.outputFormat);
+            if (result.exitCode !== 0 && !cancelledTaskIdsRef.current.has(taskId)) throw new Error(result.stderr || '后台任务追问失败');
+            const response = redactRuntimeText(extractGrokHeadlessText(result.stdout, current.settings.execution.outputFormat));
             updateTask(taskId, (value) => ({
                 ...value,
-                messages: [...value.messages, { id: createId('message'), role: 'assistant', content: response || 'Grok 追问已完成。', createdAt: Date.now() }],
+                messages: [...value.messages, { id: createId('message'), role: 'assistant', content: response || '补充任务已完成。', createdAt: Date.now() }],
                 updatedAt: Date.now(),
             }));
         } else {
@@ -409,6 +416,35 @@ export const useArkDesktopRuntime = () => {
         setPermission(null);
     }, [permission]);
 
+    const addModel = useCallback(async (model: string) => {
+        const modelId = model.trim();
+        await applyGrokModel(modelId);
+        setSnapshot((current) => ({
+            ...current,
+            settings: {
+                ...current.settings,
+                grokModel: modelId,
+                modelOptions: Array.from(new Set([...current.settings.modelOptions, modelId])),
+            },
+        }));
+    }, []);
+
+    const selectModel = useCallback(async (model: string) => {
+        const modelId = model.trim();
+        await applyGrokModel(modelId);
+        setSnapshot((current) => ({ ...current, settings: { ...current.settings, grokModel: modelId } }));
+    }, []);
+
+    const switchTaskModel = useCallback(async (taskId: string, model: string) => {
+        const task = snapshotRef.current.tasks.find((item) => item.id === taskId);
+        if (!task?.sessionId) throw new Error('当前会话尚未建立，无法切换模型');
+        if (task.engine === 'headless') throw new Error('后台模式会话仅支持在发起新任务时切换模型');
+        const modelId = model.trim();
+        if (!modelId) throw new Error('请选择模型');
+        await setGrokSessionModel(task.sessionId, modelId);
+        updateTask(taskId, (current) => ({ ...current, model: modelId, updatedAt: Date.now() }));
+    }, [updateTask]);
+
     const activeTask = useMemo(
         () => snapshot.tasks.find((task) => task.id === activeTaskId) || null,
         [activeTaskId, snapshot.tasks],
@@ -426,7 +462,7 @@ export const useArkDesktopRuntime = () => {
         setSnapshot,
         runtimeStatus,
         runtimeError,
-        setRuntimeError,
+        setRuntimeError: (message: string) => setRuntimeError(redactRuntimeText(message)),
         refreshRuntimeStatus,
         startLogin,
         selectWorkspace,
@@ -436,6 +472,9 @@ export const useArkDesktopRuntime = () => {
         cancelTask,
         permission,
         answerPermission,
+        addModel,
+        selectModel,
+        switchTaskModel,
         activeTask,
         activeTaskId,
         setActiveTaskId,

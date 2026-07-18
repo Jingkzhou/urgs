@@ -95,11 +95,16 @@ export const readGrokConfig = (scope: 'user' | 'project', workspace?: string, ki
 export const saveGrokConfig = (scope: 'user' | 'project', content: string, workspace?: string, kind: 'config' | 'appearance' = 'config') =>
     invokeGrok<GrokConfigFile>('grok_config_save', { scope, kind, content, workspace: workspace || null });
 
+export const applyGrokModel = (model: string) => invokeGrok<void>('grok_model_apply', { model });
+
 export const createGrokSession = (workspace: string, rules?: string, model?: string, options?: GrokAcpOptions) =>
     invokeGrok<GrokSession>('grok_create_session', { workspace, rules: rules || null, model: model || null, options: options || null });
 
 export const sendGrokPrompt = (sessionId: string, prompt: string) =>
     invokeGrok<void>('grok_send_prompt', { sessionId, prompt });
+
+export const setGrokSessionModel = (sessionId: string, model: string) =>
+    invokeGrok<void>('grok_session_set_model', { sessionId, model });
 
 export const cancelGrokPrompt = (sessionId: string) => invokeGrok<void>('grok_cancel', { sessionId });
 
@@ -117,7 +122,7 @@ export const chooseGrokWorkspace = async () => {
     const selected = await open({
         directory: true,
         multiple: false,
-        title: '选择 Grok Build 工作区',
+        title: '选择本地工作区',
     });
     return typeof selected === 'string' ? selected : null;
 };
@@ -128,7 +133,7 @@ export const chooseGrokAttachments = async () => {
     const selected = await open({
         directory: false,
         multiple: true,
-        title: '选择提供给 Grok Build 的本地文件',
+        title: '选择任务附件',
     });
     if (!selected) return [];
     return Array.isArray(selected) ? selected : [selected];

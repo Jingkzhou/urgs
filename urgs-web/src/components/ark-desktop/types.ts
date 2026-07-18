@@ -1,4 +1,4 @@
-export type ArkDesktopSection = 'new-task' | 'agents' | 'skills' | 'automations' | 'cli' | 'settings';
+export type ArkDesktopSection = 'new-task' | 'agents' | 'skills' | 'automations' | 'settings';
 
 export interface ArkDesktopSkill {
     id: string;
@@ -63,6 +63,7 @@ export interface ArkDesktopTask {
     workspace: string;
     attachmentPaths: string[];
     engine?: 'acp' | 'headless';
+    model?: string;
     sessionId?: string;
     cliServiceId?: string;
     status: ArkDesktopTaskStatus;
@@ -77,6 +78,7 @@ export interface ArkDesktopTask {
 export interface ArkDesktopSettings {
     workspace: string;
     grokModel: string;
+    modelOptions: string[];
     defaultAgentId: string;
     defaultSkillIds: string[];
     execution: GrokExecutionSettings;

@@ -3,9 +3,7 @@ import { AlertTriangle, ShieldCheck, SlidersHorizontal } from 'lucide-react';
 import type { GrokExecutionSettings } from './types';
 
 interface GrokExecutionSettingsPanelProps {
-    model: string;
     value: GrokExecutionSettings;
-    onModelChange: (model: string) => void;
     onChange: (value: GrokExecutionSettings) => void;
 }
 
@@ -13,7 +11,7 @@ const inputClass = 'w-full rounded-xl border border-slate-200 bg-white px-3 py-2
 const Field: React.FC<{ label: string; children: React.ReactNode; hint?: string }> = ({ label, children, hint }) => <label className="block"><span className="mb-1.5 block text-xs font-medium text-slate-600">{label}</span>{children}{hint && <span className="mt-1 block text-[11px] leading-5 text-slate-400">{hint}</span>}</label>;
 const Toggle: React.FC<{ checked: boolean; label: string; onChange: (checked: boolean) => void }> = ({ checked, label, onChange }) => <label className="flex items-center gap-2 rounded-xl border border-slate-200 px-3 py-2.5 text-sm text-slate-700"><input type="checkbox" checked={checked} onChange={(event) => onChange(event.target.checked)} />{label}</label>;
 
-const GrokExecutionSettingsPanel: React.FC<GrokExecutionSettingsPanelProps> = ({ model, value, onModelChange, onChange }) => {
+const GrokExecutionSettingsPanel: React.FC<GrokExecutionSettingsPanelProps> = ({ value, onChange }) => {
     const set = <K extends keyof GrokExecutionSettings>(key: K, next: GrokExecutionSettings[K]) => onChange({ ...value, [key]: next });
     const dangerous = value.alwaysApprove || value.permissionMode === 'bypassPermissions';
 
@@ -22,15 +20,14 @@ const GrokExecutionSettingsPanel: React.FC<GrokExecutionSettingsPanelProps> = ({
             <div className="mb-4 flex items-center gap-2"><SlidersHorizontal size={17} className="text-slate-500" /><h3 className="font-semibold text-slate-900">任务执行引擎</h3></div>
             <div className="grid gap-4 sm:grid-cols-2">
                 <Field label="执行模式" hint="ACP 支持流式步骤与逐次授权；Headless 开放完整 CLI 参数。"><select className={inputClass} value={value.engine} onChange={(event) => set('engine', event.target.value as GrokExecutionSettings['engine'])}><option value="acp">ACP 交互模式</option><option value="headless">CLI Headless 模式</option></select></Field>
-                <Field label="模型"><input className={inputClass} value={model} onChange={(event) => onModelChange(event.target.value)} placeholder="grok-4.5-build-free" /></Field>
                 <Field label="Reasoning Effort"><input className={inputClass} value={value.reasoningEffort} onChange={(event) => set('reasoningEffort', event.target.value)} placeholder="留空使用模型默认值" /></Field>
                 <Field label="输出格式"><select className={inputClass} value={value.outputFormat} onChange={(event) => set('outputFormat', event.target.value as GrokExecutionSettings['outputFormat'])}><option value="json">JSON</option><option value="plain">纯文本</option><option value="streaming-json">Streaming JSON</option></select></Field>
                 <Field label="权限模式"><select className={inputClass} value={value.permissionMode} onChange={(event) => set('permissionMode', event.target.value as GrokExecutionSettings['permissionMode'])}>{['default', 'acceptEdits', 'auto', 'dontAsk', 'bypassPermissions', 'plan'].map((option) => <option key={option} value={option}>{option}</option>)}</select></Field>
-                <Field label="Sandbox Profile"><input className={inputClass} value={value.sandboxProfile} onChange={(event) => set('sandboxProfile', event.target.value)} placeholder="留空使用 Grok 默认沙箱" /></Field>
+                <Field label="Sandbox Profile"><input className={inputClass} value={value.sandboxProfile} onChange={(event) => set('sandboxProfile', event.target.value)} placeholder="留空使用默认沙箱" /></Field>
                 <Field label="最大轮数"><input type="number" min={0} className={inputClass} value={value.maxTurns} onChange={(event) => set('maxTurns', Number(event.target.value))} /></Field>
                 <Field label="Best of N"><input type="number" min={1} className={inputClass} value={value.bestOfN} onChange={(event) => set('bestOfN', Math.max(1, Number(event.target.value)))} /></Field>
             </div>
-            {dangerous && <div className="mt-4 flex items-start gap-2 rounded-xl border border-red-200 bg-red-50 px-3 py-2.5 text-xs leading-5 text-red-700"><AlertTriangle size={15} className="mt-0.5 shrink-0" />当前配置允许 Grok 无需逐次确认执行本地操作，发起任务时会再次确认。</div>}
+            {dangerous && <div className="mt-4 flex items-start gap-2 rounded-xl border border-red-200 bg-red-50 px-3 py-2.5 text-xs leading-5 text-red-700"><AlertTriangle size={15} className="mt-0.5 shrink-0" />当前配置允许智能体无需逐次确认执行本地操作，发起任务时会再次确认。</div>}
         </div>
 
         <details className="rounded-2xl border border-slate-200 p-5" open>
@@ -86,10 +83,10 @@ const GrokExecutionSettingsPanel: React.FC<GrokExecutionSettingsPanelProps> = ({
                 <Field label="ACP Agent Profile"><input className={inputClass} value={value.agentProfile} onChange={(event) => set('agentProfile', event.target.value)} /></Field>
                 <Field label="临时插件目录" hint="每行一个目录，仅对本次 ACP 进程生效。"><textarea className={inputClass} rows={4} value={value.pluginDirs} onChange={(event) => set('pluginDirs', event.target.value)} /></Field>
                 <Field label="Leader 连接模式"><select className={inputClass} value={value.leaderMode} onChange={(event) => set('leaderMode', event.target.value as GrokExecutionSettings['leaderMode'])}><option value="default">配置默认值</option><option value="leader">连接共享 Leader</option><option value="standalone">独立进程</option></select></Field>
-                <Field label="Grok WS Origin"><input className={inputClass} value={value.grokWsOrigin} onChange={(event) => set('grokWsOrigin', event.target.value)} /></Field>
-                <Field label="Grok WS URL"><input className={inputClass} value={value.grokWsUrl} onChange={(event) => set('grokWsUrl', event.target.value)} /></Field>
+                <Field label="任务服务 WS Origin"><input className={inputClass} value={value.grokWsOrigin} onChange={(event) => set('grokWsOrigin', event.target.value)} /></Field>
+                <Field label="任务服务 WS URL"><input className={inputClass} value={value.grokWsUrl} onChange={(event) => set('grokWsUrl', event.target.value)} /></Field>
                 <Field label="CLI Chat Proxy URL"><input className={inputClass} value={value.cliChatProxyUrl} onChange={(event) => set('cliChatProxyUrl', event.target.value)} /></Field>
-                <Field label="xAI API Base URL"><input className={inputClass} value={value.xaiApiBaseUrl} onChange={(event) => set('xaiApiBaseUrl', event.target.value)} /></Field>
+                <Field label="服务 API Base URL"><input className={inputClass} value={value.xaiApiBaseUrl} onChange={(event) => set('xaiApiBaseUrl', event.target.value)} /></Field>
                 <Field label="Debug 文件"><input className={inputClass} value={value.debugFile} onChange={(event) => set('debugFile', event.target.value)} /></Field>
                 <Field label="Leader Socket"><input className={inputClass} value={value.leaderSocket} onChange={(event) => set('leaderSocket', event.target.value)} /></Field>
             </div>

@@ -1,50 +1,36 @@
-# 我发布的工作列表设计 QA
+**Comparison target**
 
-- Source visual truth: `/Users/zhoujingkun/.codex/generated_images/019f2564-149b-7cf3-b364-eed574302490/call_xjiwouZ9oxblGmTo1yZ93iEY.png`
-- Implementation screenshot: unavailable
-- Viewport: intended `1440x1024`
-- State: “我发布的工作”列表，首条工作展开，展示工作内容、任务进度、主任务、子任务和风险记录
+- Source visual truth: `/var/folders/34/nv2447mj5ns38jjkskrqbb680000gn/T/codex-clipboard-bd6bcb11-f5a4-45c9-bfb2-80e015fb6ee9.png`
+- Implementation screenshot: `/tmp/urgs-task-center-office-mode.png`
+- Combined comparison: `/tmp/urgs-task-center-office-comparison.png`
+- Viewport: 1280 × 720, desktop, new-task empty state, “日常办公” selected.
 
-## Full-view comparison evidence
+**Findings**
 
-未完成。项目要求所有网页操作必须使用 gstack `/browse`，但当前仓库未包含该技能；按项目说明尝试从 GitHub 初始化 gstack 时，环境无法连接 `github.com:443`。
+- No actionable P0/P1/P2 differences. The implementation preserves the reference composition: narrow activity sidebar, high-whitespace centered welcome area, segmented task mode control, horizontal skill shortcuts, and a wide input composer pinned to the lower content area.
+- Intentional product differences: URGS-specific Chinese copy, the existing URGS robot asset, Grok Agent controls, and local-workspace selector replace Code-Buddy branding and controls.
 
-## Focused region comparison evidence
+**Required fidelity surfaces**
 
-未完成。由于无法取得实现截图，不能将参考图与实现图放入同一比较输入，也不能可靠判断密集列表、展开区和任务表的实际渲染差异。
+- Fonts and typography: dark semibold headline, subdued subtitle, compact sidebar text, and muted helper copy preserve the hierarchy of the reference.
+- Spacing and layout rhythm: the hero, mode selector, shortcut row, and composer follow the same vertically staged rhythm; the full-height main canvas avoids a bottom dead area.
+- Colors and visual tokens: off-white canvas, pale-gray chips/composer, black selected mode, and soft gray borders follow the reference’s restrained palette.
+- Image quality and asset fidelity: the existing URGS robot image is centered, kept at its native aspect ratio, and used instead of reproducing the reference product’s branded illustration.
+- Copy and content: all visible labels are URGS/Grok-local-runtime specific and preserve the task-starting purpose.
 
-## Fidelity surfaces
+**Primary interactions tested**
 
-- Fonts and typography: 源码沿用现有项目字体体系和 `text-xs` / `text-sm` 层级，未完成像素级检查。
-- Spacing and layout rhythm: 主列表由 16 列压缩为 8 个信息组，展开区使用左右摘要和分层任务表，未完成浏览器尺寸检查。
-- Colors and visual tokens: 沿用现有 `slate`、`red`、`blue`、`green`、`amber` 语义色，未完成截图采样核对。
-- Image quality and asset fidelity: 本页面没有新增位图资产，图标继续使用项目现有 Lucide 图标库。
-- Copy and content: 保留现有工作字段、任务字段和操作，并新增页面说明与任务进度汇总文案。
+- “日常办公” mode switches to active and updates the task input placeholder.
+- No browser console errors were recorded on the initial empty-state screen.
 
-## Findings
+**Implementation Checklist**
 
-- [P1] 缺少实现截图和同屏视觉比较
-  - Location: `urgs-web/src/components/marketplace/WorkList.tsx`
-  - Evidence: 参考图可读取，但 `/browse` 不可用，无法捕获实现状态。
-  - Impact: 不能确认常用视口下是否存在横向溢出、文字截断或展开区间距偏差。
-  - Fix: gstack `/browse` 可用后，以 `1440x1024` 打开任务中心，展开首条工作，截图并与参考图同屏比较。
+- [x] Recompose the new-task empty state from the supplied reference.
+- [x] Keep existing Agent, file, workspace, and execution-setting actions functional.
+- [x] Compare the source and implementation in one combined image.
 
-## Patches made since previous QA pass
+**Follow-up Polish**
 
-- 将工作主列表从 16 个独立字段列重组为 8 个信息组。
-- 将展开内容重组为工作内容、任务进度、主任务、子任务和风险记录。
-- 增加任务完成率及状态数量汇总。
-- 保留搜索、批量删除、导入、导出、新建、编辑、发布、取消、暂停/继续、资产记录和风险追加操作。
+- [P3] If more task history is available, tune the sidebar’s recent-task density to match the reference’s richer history list.
 
-## Implementation checklist
-
-- 恢复 gstack `/browse`。
-- 捕获 `1440x1024` 的列表和展开状态。
-- 修复截图对比中发现的 P0/P1/P2 问题。
-- 将 `final result` 更新为 `passed`。
-
-## Follow-up polish
-
-待视觉对比后确认。
-
-final result: blocked
+final result: passed
