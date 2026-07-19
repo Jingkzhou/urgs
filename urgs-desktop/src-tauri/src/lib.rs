@@ -105,6 +105,7 @@ pub fn run() {
             grok_runtime::grok_model_provider_save,
             grok_runtime::grok_model_provider_delete,
             grok_runtime::grok_create_session,
+            grok_runtime::grok_load_session,
             grok_runtime::grok_send_prompt,
             grok_runtime::grok_session_set_model,
             grok_runtime::grok_cancel,

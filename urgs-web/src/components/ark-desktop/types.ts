@@ -67,6 +67,8 @@ export interface ArkDesktopTask {
     attachmentPaths: string[];
     engine?: 'acp' | 'headless';
     model?: string;
+    permissionMode?: GrokExecutionSettings['permissionMode'];
+    alwaysApprove?: boolean;
     sessionId?: string;
     runtimeProcessId?: string;
     cliServiceId?: string;
@@ -159,6 +161,9 @@ export interface ArkDesktopSnapshot {
 }
 
 export interface ArkDesktopPermissionRequest {
+    taskId: string;
+    sessionId: string;
+    taskTitle: string;
     requestId: unknown;
     title: string;
     options: Array<{ optionId: string; name: string; kind?: string }>;

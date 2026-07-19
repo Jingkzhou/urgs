@@ -107,11 +107,10 @@ export const loadArkDesktopSnapshot = (): ArkDesktopSnapshot => {
             }));
         const tasks = Array.isArray(stored.tasks) ? stored.tasks.slice(0, MAX_TASK_HISTORY).map((task) => {
             const interrupted = task.status === 'running';
-            const acpSessionExpired = task.engine !== 'headless' && Boolean(task.sessionId);
             return {
                 ...task,
                 ...(interrupted ? { status: 'failed' as const, error: '桌面客户端已重新启动，本次执行已中断', updatedAt: Date.now() } : {}),
-                ...(acpSessionExpired ? { sessionId: undefined } : {}),
+                runtimeProcessId: undefined,
             };
         }) : [];
         const configuredModel = stored.settings?.grokModel?.trim() || '';

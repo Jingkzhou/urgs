@@ -7,8 +7,8 @@ import { oneDark } from 'react-syntax-highlighter/dist/esm/styles/prism';
 import {
     AlertCircle, Bot, BriefcaseBusiness, Check, CheckCircle2, CheckSquare,
     ChevronDown, ChevronRight, CircleStop, Clock3, Code2, Copy, Cpu, FileText, Folder,
-    Lightbulb, LoaderCircle, Paperclip, Pencil, Play, Plus, RefreshCw,
-    Search, Send, Settings, Sparkles, Trash2, WandSparkles, Wrench, X,
+    Hand, Lightbulb, LoaderCircle, Paperclip, Pencil, Play, Plus, RefreshCw,
+    Search, Send, Settings, ShieldAlert, Sparkles, SquareTerminal, Trash2, WandSparkles, Wrench, X,
 } from 'lucide-react';
 import { copyToClipboard } from '@/utils/clipboard';
 import { useArkDesktopRuntime } from './useArkDesktopRuntime';
@@ -17,7 +17,7 @@ import GrokConfigEditor from './GrokConfigEditor';
 import GrokExecutionSettingsPanel from './GrokExecutionSettingsPanel';
 import type {
     ArkDesktopAgent, ArkDesktopAutomation, ArkDesktopSection, ArkDesktopSkill,
-    ArkDesktopModelProvider, ArkDesktopTask, ArkDesktopTaskStatus, AutomationSchedule,
+    ArkDesktopModelProvider, ArkDesktopTask, ArkDesktopTaskStatus, AutomationSchedule, GrokExecutionSettings,
 } from './types';
 
 const taskTags = [
@@ -46,6 +46,19 @@ const taskStatus: Record<ArkDesktopTaskStatus, { label: string; className: strin
 const categoryLabel: Record<ArkDesktopSkill['category'], string> = {
     office: '办公', data: '数据', code: '开发', research: '研究', workflow: '编排',
 };
+
+type PermissionMode = GrokExecutionSettings['permissionMode'];
+
+const permissionModeOptions: Array<{
+    value: PermissionMode;
+    label: string;
+    description: string;
+    icon: React.ElementType;
+    dangerous?: boolean;
+}> = [
+    { value: 'default', label: '请求批准', description: '编辑文件、运行命令和访问网络前询问', icon: Hand },
+    { value: 'bypassPermissions', label: '完全访问权限', description: '不受限制地访问网络和本地工作区', icon: ShieldAlert, dangerous: true },
+];
 
 const createLocalId = (prefix: string) => `${prefix}-${Date.now()}-${Math.random().toString(16).slice(2)}`;
 
@@ -106,17 +119,17 @@ const ArkDesktopPage: React.FC = () => {
     const runtime = useArkDesktopRuntime();
     const [section, setSection] = useState<ArkDesktopSection>('new-task');
     const [draft, setDraft] = useState('');
-    const [followUp, setFollowUp] = useState('');
+    const [followUpDrafts, setFollowUpDrafts] = useState<Record<string, string>>({});
     const [searchValue, setSearchValue] = useState('');
     const [selectedAgentId, setSelectedAgentId] = useState(runtime.snapshot.settings.defaultAgentId);
     const [selectedSkillIds, setSelectedSkillIds] = useState<string[]>(runtime.snapshot.settings.defaultSkillIds);
     const [attachments, setAttachments] = useState<string[]>([]);
     const [agentMenuOpen, setAgentMenuOpen] = useState(false);
     const [collapsedWorkspaceKeys, setCollapsedWorkspaceKeys] = useState<Set<string>>(() => new Set());
+
     const [editor, setEditor] = useState<{ type: 'agent' | 'skill' | 'automation'; id?: string } | null>(null);
     const [actionPending, setActionPending] = useState(false);
     const schedulingRef = useRef(false);
-    const preparedAgentsKeyRef = useRef('');
 
     useEffect(() => {
         const initializeSchedules = () => {
@@ -154,18 +167,6 @@ const ArkDesktopPage: React.FC = () => {
         return () => window.clearInterval(timer);
     }, [runtime.setSnapshot, runtime.snapshot.automations, runtime.snapshot.tasks, runtime.startTask, runtime.setRuntimeError]);
 
-    useEffect(() => {
-        if (section !== 'agents') return;
-        const { workspace, grokModel } = runtime.snapshot.settings;
-        const key = `${workspace}\u0000${grokModel}`;
-        if (!workspace || !grokModel || preparedAgentsKeyRef.current === key) return;
-        preparedAgentsKeyRef.current = key;
-        void runtime.prepareEngine().catch((error) => {
-            preparedAgentsKeyRef.current = '';
-            runtime.setRuntimeError(error instanceof Error ? error.message : String(error));
-        });
-    }, [section, runtime.prepareEngine, runtime.setRuntimeError, runtime.snapshot.settings.grokModel, runtime.snapshot.settings.modelProviders, runtime.snapshot.settings.workspace]);
-
     const selectedAgent = runtime.snapshot.agents.find((agent) => agent.id === selectedAgentId);
     const query = searchValue.trim().toLowerCase();
     const filteredAgents = runtime.snapshot.agents.filter((agent) => !query || `${agent.name} ${agent.description}`.toLowerCase().includes(query));
@@ -199,8 +200,8 @@ const ArkDesktopPage: React.FC = () => {
 
     const runTask = async () => {
         const execution = runtime.snapshot.settings.execution;
-        if (execution.engine === 'headless' && (execution.alwaysApprove || execution.permissionMode === 'bypassPermissions')) {
-            if (!window.confirm('当前后台执行配置允许无需逐次授权执行本地操作，确认发起任务？')) return;
+        if (execution.alwaysApprove || execution.permissionMode === 'bypassPermissions') {
+            if (!window.confirm('当前任务已启用完全访问权限，将无需逐次授权执行本地操作。确认发起任务？')) return;
         }
         setActionPending(true);
         try {
@@ -295,7 +296,7 @@ const ArkDesktopPage: React.FC = () => {
                 {runtime.runtimeError && <div className="mx-5 mt-4 flex items-start gap-2 rounded-xl border border-red-200 bg-red-50 px-4 py-3 text-sm text-red-700"><AlertCircle size={17} className="mt-0.5 shrink-0" /><span className="flex-1">{runtime.runtimeError}</span><button type="button" onClick={() => runtime.setRuntimeError('')}><X size={16} /></button></div>}
 
                 <main className="custom-scrollbar min-h-0 flex-1 overflow-y-auto">
-                    {runtime.activeTask ? <TaskView task={runtime.activeTask} runtime={runtime} followUp={followUp} setFollowUp={setFollowUp} /> : section === 'new-task' ? (
+                    {runtime.activeTask ? <TaskView task={runtime.activeTask} runtime={runtime} followUp={followUpDrafts[runtime.activeTask.id] || ''} setFollowUp={(value) => setFollowUpDrafts((current) => ({ ...current, [runtime.activeTask!.id]: value }))} /> : section === 'new-task' ? (
                         <NewTaskView
                             runtime={runtime}
                             draft={draft}
@@ -328,7 +329,7 @@ const ArkDesktopPage: React.FC = () => {
             {editor?.type === 'agent' && <AgentEditor id={editor.id} runtime={runtime} onClose={() => setEditor(null)} />}
             {editor?.type === 'skill' && <SkillEditor id={editor.id} runtime={runtime} onClose={() => setEditor(null)} />}
             {editor?.type === 'automation' && <AutomationEditor id={editor.id} runtime={runtime} onClose={() => setEditor(null)} />}
-            {runtime.permission && <Modal title="允许智能体执行本地操作？" onClose={() => void runtime.answerPermission()}><p className="mb-5 text-sm leading-6 text-slate-600">{runtime.permission.title}</p><div className="flex flex-wrap justify-end gap-2"><button type="button" onClick={() => void runtime.answerPermission()} className="rounded-lg border border-slate-200 px-4 py-2 text-sm text-slate-600">拒绝</button>{runtime.permission.options.map((option) => <button key={option.optionId} type="button" onClick={() => void runtime.answerPermission(option.optionId)} className="rounded-lg bg-slate-900 px-4 py-2 text-sm text-white">{option.name}</button>)}</div></Modal>}
+            {runtime.permission && <Modal title={`允许“${runtime.permission.taskTitle}”执行本地操作？`} onClose={() => void runtime.answerPermission()}><p className="mb-5 text-sm leading-6 text-slate-600">{runtime.permission.title}</p><div className="flex flex-wrap justify-end gap-2"><button type="button" onClick={() => void runtime.answerPermission()} className="rounded-lg border border-slate-200 px-4 py-2 text-sm text-slate-600">拒绝</button>{runtime.permission.options.map((option) => <button key={option.optionId} type="button" onClick={() => void runtime.answerPermission(option.optionId)} className="rounded-lg bg-slate-900 px-4 py-2 text-sm text-white">{option.name}</button>)}</div></Modal>}
         </div>
     );
 };
@@ -382,6 +383,8 @@ const NewTaskView: React.FC<NewTaskViewProps> = ({ runtime, draft, setDraft, sel
                     <div className="relative flex flex-wrap items-center gap-2">
                         <button type="button" onClick={() => setAgentMenuOpen((open) => !open)} className="flex items-center gap-2 rounded-lg bg-[#e3e3e5] px-3 py-2 text-sm font-medium text-slate-600 hover:bg-[#d8d8db]"><Bot size={16} /><span className="max-w-44 truncate">{selectedAgent?.name || '自动选择 Agent'}</span><ChevronDown size={15} /></button>
                         {agentMenuOpen && <div className="absolute bottom-11 left-0 z-20 max-h-64 w-72 overflow-y-auto rounded-xl border border-slate-200 bg-white p-1.5 shadow-xl"><button type="button" onClick={() => { setSelectedAgentId(''); setAgentMenuOpen(false); }} className="w-full rounded-lg px-3 py-2 text-left text-sm text-slate-600 hover:bg-slate-100">自动选择 Agent</button>{runtime.snapshot.agents.filter((agent) => agent.enabled).map((agent) => <button key={agent.id} type="button" onClick={() => { setSelectedAgentId(agent.id); setAgentMenuOpen(false); }} className="w-full truncate rounded-lg px-3 py-2 text-left text-sm text-slate-700 hover:bg-slate-100">{agent.name}</button>)}</div>}
+                        <PermissionModePicker value={runtime.snapshot.settings.execution.alwaysApprove ? 'bypassPermissions' : runtime.snapshot.settings.execution.permissionMode} onChange={(permissionMode) => runtime.setSnapshot((current) => ({ ...current, settings: { ...current.settings, execution: { ...current.settings.execution, permissionMode, alwaysApprove: false } } }))} />
+                        <DefaultModelPicker runtime={runtime} />
                         <button type="button" onClick={openExecutionSettings} className="flex items-center gap-1.5 rounded-lg px-2.5 py-2 text-xs font-medium text-slate-500 hover:bg-[#e3e3e5]" title="配置任务执行方式"><Settings size={16} />{runtime.snapshot.settings.execution.engine === 'acp' ? '交互执行' : '后台执行'}</button>
                     </div>
                     <div className="flex items-center gap-2">
@@ -390,7 +393,7 @@ const NewTaskView: React.FC<NewTaskViewProps> = ({ runtime, draft, setDraft, sel
                     </div>
                 </div>
             </div>
-            <p className="mt-3 text-center text-xs text-slate-400">内容由 AI 生成，请核实重要信息。</p>
+            <p className="mt-3 text-center text-xs text-slate-400">内容由 Grok 生成，请核实重要信息与工具操作。</p>
         </div>
     </div>;
 };
@@ -450,15 +453,15 @@ const MarkdownContent: React.FC<{ content: string }> = ({ content }) => <div cla
     >{content}</ReactMarkdown>
 </div>;
 
-const TaskModelPicker: React.FC<{ task: ArkDesktopTask; runtime: ReturnType<typeof useArkDesktopRuntime> }> = ({ task, runtime }) => {
-    const [switching, setSwitching] = useState(false);
+const PermissionModePicker: React.FC<{
+    value: PermissionMode;
+    disabled?: boolean;
+    onChange: (value: PermissionMode) => void;
+}> = ({ value, disabled = false, onChange }) => {
     const [open, setOpen] = useState(false);
     const menuRef = useRef<HTMLDivElement>(null);
-    const modelOptions = runtime.snapshot.settings.modelOptions;
-    const selectedModel = task.model || runtime.snapshot.settings.grokModel;
-    const providers = new Map(runtime.snapshot.settings.modelProviders.map((provider) => [provider.id, provider]));
-    const selectedProvider = providers.get(selectedModel);
-    const canSwitch = task.status === 'running' && Boolean(task.sessionId) && task.engine !== 'headless';
+    const selected = permissionModeOptions.find((option) => option.value === value) || permissionModeOptions[0];
+    const SelectedIcon = selected.icon;
 
     useEffect(() => {
         if (!open) return undefined;
@@ -469,45 +472,100 @@ const TaskModelPicker: React.FC<{ task: ArkDesktopTask; runtime: ReturnType<type
         return () => window.removeEventListener('mousedown', close);
     }, [open]);
 
-    if (modelOptions.length === 0) return null;
+    const selectMode = (option: typeof permissionModeOptions[number]) => {
+        if (option.value === value) {
+            setOpen(false);
+            return;
+        }
+        if (option.dangerous && !window.confirm('完全访问权限将允许 Grok 不经逐次批准执行本地操作并访问网络。确认启用？')) return;
+        onChange(option.value);
+        setOpen(false);
+    };
+
+    return <div ref={menuRef} className="relative">
+        <button type="button" disabled={disabled} onClick={() => setOpen((current) => !current)} title={disabled ? '任务运行中不可修改权限' : '设置 Grok 工具权限'} className={`flex max-w-48 items-center gap-1.5 rounded-lg px-2.5 py-2 text-xs font-medium transition disabled:cursor-default disabled:opacity-50 ${selected.dangerous ? 'bg-orange-50 text-orange-600 hover:bg-orange-100' : 'text-slate-500 hover:bg-slate-100 hover:text-slate-700'}`}>
+            <SelectedIcon size={15} className="shrink-0" />
+            <span className="truncate">{selected.label}</span>
+            <ChevronDown size={13} className={`shrink-0 text-slate-400 transition-transform ${open ? 'rotate-180' : ''}`} />
+        </button>
+        {open && <div className="absolute bottom-[calc(100%+8px)] left-0 z-40 w-[min(420px,calc(100vw-40px))] overflow-hidden rounded-2xl border border-slate-200 bg-white p-2 shadow-[0_20px_55px_rgba(15,23,42,0.18)]">
+            <div className="flex items-center justify-between px-2.5 pb-2 pt-1"><span className="text-xs font-semibold text-slate-500">Grok 工具权限</span><span className="text-[11px] text-slate-400">应用于下一次发送</span></div>
+            {permissionModeOptions.map((option) => { const Icon = option.icon; const active = option.value === value; return <button key={option.value} type="button" onClick={() => selectMode(option)} className={`flex w-full items-center gap-3 rounded-xl px-2.5 py-2.5 text-left transition ${active ? option.dangerous ? 'bg-orange-50' : 'bg-slate-100' : 'hover:bg-slate-50'}`}><span className={`flex h-8 w-8 shrink-0 items-center justify-center rounded-lg ${option.dangerous ? 'text-orange-600' : 'text-slate-500'}`}><Icon size={18} /></span><span className="min-w-0 flex-1"><span className={`block text-sm font-medium ${option.dangerous ? 'text-orange-600' : 'text-slate-800'}`}>{option.label}</span><span className={`mt-0.5 block text-xs leading-5 ${option.dangerous ? 'text-orange-500' : 'text-slate-400'}`}>{option.description}</span></span>{active && <Check size={17} className={option.dangerous ? 'text-orange-600' : 'text-slate-700'} />}</button>; })}
+        </div>}
+    </div>;
+};
+
+const ModelPickerControl: React.FC<{
+    runtime: ReturnType<typeof useArkDesktopRuntime>;
+    selectedModel: string;
+    disabled?: boolean;
+    disabledReason?: string;
+    onSelect: (model: string) => Promise<void>;
+    onError?: (error: unknown) => void;
+}> = ({ runtime, selectedModel, disabled = false, disabledReason = '当前不可切换模型', onSelect, onError }) => {
+    const [switching, setSwitching] = useState(false);
+    const [open, setOpen] = useState(false);
+    const menuRef = useRef<HTMLDivElement>(null);
+    const modelOptions = runtime.snapshot.settings.modelOptions;
+    const providers = new Map(runtime.snapshot.settings.modelProviders.map((provider) => [provider.id, provider]));
+    const selectedProvider = providers.get(selectedModel);
+    const hasModelOptions = modelOptions.length > 0;
+
+    useEffect(() => {
+        if (!open) return undefined;
+        const close = (event: MouseEvent) => {
+            if (!menuRef.current?.contains(event.target as Node)) setOpen(false);
+        };
+        window.addEventListener('mousedown', close);
+        return () => window.removeEventListener('mousedown', close);
+    }, [open]);
+
     const switchModel = async (model: string) => {
-        if (!canSwitch || model === selectedModel) return;
+        if (disabled || switching || model === selectedModel) return;
         setSwitching(true);
         try {
-            await runtime.switchTaskModel(task.id, model);
+            await onSelect(model);
             setOpen(false);
         } catch (error) {
-            runtime.setRuntimeError(error instanceof Error ? error.message : String(error));
+            if (onError) onError(error);
+            else runtime.setRuntimeError(error instanceof Error ? error.message : String(error));
         } finally {
             setSwitching(false);
         }
     };
 
     return <div ref={menuRef} className="relative">
-        <button type="button" disabled={!canSwitch || switching} onClick={() => setOpen((value) => !value)} title={canSwitch ? '切换本会话模型' : '此会话不可切换模型'} className="flex max-w-[300px] items-center gap-2 rounded-lg border border-slate-200 bg-white px-2.5 py-1.5 text-left text-xs font-medium text-slate-600 shadow-sm transition hover:border-slate-300 hover:bg-slate-50 disabled:cursor-default disabled:bg-slate-50 disabled:opacity-70">
-            {switching ? <LoaderCircle size={14} className="shrink-0 animate-spin" /> : <Cpu size={14} className="shrink-0 text-slate-400" />}
-            <span className="truncate">{selectedProvider ? `${selectedProvider.name} · ${selectedProvider.model}` : selectedModel}</span>
+        <button type="button" disabled={disabled || switching || !hasModelOptions} onClick={() => setOpen((current) => !current)} title={!hasModelOptions ? '请先在设置中配置模型' : disabled ? disabledReason : '选择模型'} className="flex max-w-56 items-center gap-1.5 rounded-lg px-2.5 py-2 text-xs font-medium text-slate-500 transition hover:bg-slate-100 hover:text-slate-700 disabled:cursor-default disabled:opacity-50">
+            {switching ? <LoaderCircle size={15} className="shrink-0 animate-spin" /> : <Cpu size={15} className="shrink-0" />}
+            <span className="truncate">{selectedProvider?.name || selectedModel || '默认模型'}</span>
             <ChevronDown size={13} className={`shrink-0 text-slate-400 transition-transform ${open ? 'rotate-180' : ''}`} />
         </button>
-        {open && <div className="absolute left-0 top-[calc(100%+8px)] z-30 w-80 overflow-hidden rounded-xl border border-slate-200 bg-white p-1.5 shadow-[0_16px_40px_rgba(15,23,42,0.16)]">
-            <div className="px-2.5 py-2 text-[11px] font-semibold uppercase tracking-[0.12em] text-slate-400">切换会话模型</div>
-            {modelOptions.map((model) => {
-                const provider = providers.get(model);
-                const selected = model === selectedModel;
-                return <button key={model} type="button" disabled={switching || selected} onClick={() => void switchModel(model)} className={`flex w-full items-center gap-3 rounded-lg px-2.5 py-2.5 text-left transition ${selected ? 'bg-slate-100' : 'hover:bg-slate-50 disabled:opacity-100'}`}>
-                    <span className={`flex h-7 w-7 shrink-0 items-center justify-center rounded-md ${selected ? 'bg-slate-900 text-white' : 'bg-slate-100 text-slate-500'}`}>{selected ? <Check size={14} /> : <Cpu size={14} />}</span>
-                    <span className="min-w-0 flex-1"><span className="block truncate text-sm font-medium text-slate-700">{provider?.name || model}</span><span className="mt-0.5 block truncate text-xs text-slate-400">{provider?.model || model}</span></span>
-                </button>;
-            })}
+        {open && hasModelOptions && <div className="absolute bottom-[calc(100%+8px)] left-0 z-40 w-80 overflow-hidden rounded-2xl border border-slate-200 bg-white p-2 shadow-[0_20px_55px_rgba(15,23,42,0.18)]">
+            <div className="px-2.5 pb-2 pt-1 text-xs font-semibold text-slate-500">选择 Grok 推理模型</div>
+            {modelOptions.map((model) => { const provider = providers.get(model); const active = model === selectedModel; return <button key={model} type="button" disabled={switching || active} onClick={() => void switchModel(model)} className={`flex w-full items-center gap-3 rounded-xl px-2.5 py-2.5 text-left transition ${active ? 'bg-slate-100' : 'hover:bg-slate-50 disabled:opacity-100'}`}><span className={`flex h-8 w-8 shrink-0 items-center justify-center rounded-lg ${active ? 'bg-slate-900 text-white' : 'bg-slate-100 text-slate-500'}`}>{active ? <Check size={15} /> : <Cpu size={15} />}</span><span className="min-w-0 flex-1"><span className="block truncate text-sm font-medium text-slate-700">{provider?.name || model}</span><span className="mt-0.5 block truncate text-xs text-slate-400">{provider?.model || model}</span></span></button>; })}
         </div>}
     </div>;
 };
 
+const DefaultModelPicker: React.FC<{ runtime: ReturnType<typeof useArkDesktopRuntime> }> = ({ runtime }) => <ModelPickerControl runtime={runtime} selectedModel={runtime.snapshot.settings.grokModel} onSelect={runtime.selectModel} />;
+
+const TaskModelPicker: React.FC<{ task: ArkDesktopTask; runtime: ReturnType<typeof useArkDesktopRuntime> }> = ({ task, runtime }) => {
+    const disabled = task.status === 'running' || !task.sessionId || task.engine === 'headless';
+    return <ModelPickerControl
+        runtime={runtime}
+        selectedModel={task.model || runtime.snapshot.settings.grokModel}
+        disabled={disabled}
+        disabledReason={task.engine === 'headless' ? '后台模式会话不可切换模型' : task.status === 'running' ? '任务运行中不可切换模型' : '会话恢复后可切换模型'}
+        onSelect={(model) => runtime.switchTaskModel(task.id, model)}
+        onError={() => undefined}
+    />;
+};
+
 const ToolStatusIcon: React.FC<{ status: string }> = ({ status }) => {
-    if (status === '已完成') return <CheckCircle2 size={15} className="text-emerald-600" />;
+    if (status === '已完成') return <Check size={15} className="text-slate-400" />;
     if (status === '失败') return <AlertCircle size={15} className="text-red-500" />;
     if (status === '等待中') return <Clock3 size={15} className="text-slate-400" />;
-    return <LoaderCircle size={15} className="animate-spin text-blue-600" />;
+    return <LoaderCircle size={15} className="animate-spin text-blue-500" />;
 };
 
 const getToolState = (status: string) => {
@@ -521,21 +579,35 @@ const getToolIcon = (tool: ArkDesktopTask['tools'][number]) => {
     const hint = `${tool.kind || ''} ${tool.title}`.toLowerCase();
     if (/search|find|grep|检索|搜索/.test(hint)) return <Search size={14} />;
     if (/read|write|edit|file|文件|读取|写入/.test(hint)) return <FileText size={14} />;
-    if (/code|shell|terminal|command|命令|代码/.test(hint)) return <Code2 size={14} />;
+    if (/code|shell|terminal|command|命令|代码/.test(hint)) return <SquareTerminal size={14} />;
     return <Wrench size={14} />;
 };
 
-const ToolActivityItem: React.FC<{ tool: ArkDesktopTask['tools'][number]; hasNext: boolean }> = ({ tool, hasNext }) => {
+const getToolVerb = (tool: ArkDesktopTask['tools'][number], state: ReturnType<typeof getToolState>) => {
+    const hint = `${tool.kind || ''} ${tool.title}`.toLowerCase();
+    const running = state === 'running' || state === 'pending';
+    if (/write|edit|patch|写入|编辑|修改/.test(hint)) return running ? '正在编辑' : '已编辑';
+    if (/read|file|读取|文件/.test(hint)) return running ? '正在读取' : '已读取';
+    if (/search|find|grep|检索|搜索/.test(hint)) return running ? '正在搜索' : '已搜索';
+    if (/code|shell|terminal|command|命令|运行/.test(hint)) return running ? '正在运行' : '已运行';
+    return running ? '正在使用' : '已使用';
+};
+
+const ToolActivityItem: React.FC<{ tool: ArkDesktopTask['tools'][number] }> = ({ tool }) => {
     const [detailsOpen, setDetailsOpen] = useState(tool.status === '失败');
     const hasDetails = Boolean(tool.input || tool.output);
     const state = getToolState(tool.status);
     useEffect(() => {
         if (state === 'failed') setDetailsOpen(true);
     }, [state]);
-    return <div className="relative flex gap-3 py-3 pl-0">
-        {hasNext && <span className="absolute left-[13px] top-9 h-[calc(100%-12px)] w-px bg-slate-200" />}
-        <span className={`relative z-10 flex h-7 w-7 shrink-0 items-center justify-center rounded-lg border bg-white ${state === 'failed' ? 'border-red-200 text-red-500' : state === 'completed' ? 'border-emerald-200 text-emerald-600' : 'border-blue-200 text-blue-600'}`}>{getToolIcon(tool)}</span>
-        <div className="min-w-0 flex-1"><div className="flex min-h-7 flex-wrap items-center gap-x-2 gap-y-1"><span className="break-words text-[13px] font-medium leading-5 text-slate-700">{tool.title}</span><span className="inline-flex items-center gap-1 text-[11px] text-slate-400"><ToolStatusIcon status={tool.status} />{tool.status}</span></div><div className="mt-0.5 flex items-center gap-2 text-[11px] text-slate-400"><span>{tool.kind ? `${tool.kind} · ` : ''}{formatTime(tool.updatedAt)}</span>{hasDetails && <button type="button" onClick={() => setDetailsOpen((value) => !value)} className="inline-flex items-center gap-0.5 rounded px-1 py-0.5 font-medium text-slate-500 transition hover:bg-slate-100 hover:text-slate-800" aria-expanded={detailsOpen}>{detailsOpen ? '收起' : '查看详情'}<ChevronRight size={12} className={`transition-transform ${detailsOpen ? 'rotate-90' : ''}`} /></button>}</div>{detailsOpen && <div className="mt-2.5 space-y-2.5 rounded-xl border border-slate-200 bg-slate-50/80 p-2.5">{tool.input && <ToolDetail label="调用参数" value={tool.input} />}{tool.output && <ToolDetail label="返回结果" value={tool.output} />}</div>}</div>
+    const verb = getToolVerb(tool, state);
+    return <div>
+        <button type="button" disabled={!hasDetails} onClick={() => setDetailsOpen((value) => !value)} className={`group flex w-full items-center gap-2 rounded-lg px-1.5 py-1.5 text-left transition ${state === 'running' ? 'bg-blue-50/70 ring-1 ring-blue-300' : state === 'failed' ? 'bg-red-50/70' : 'hover:bg-slate-50'} disabled:cursor-default`} aria-expanded={hasDetails ? detailsOpen : undefined}>
+            <span className={`flex h-6 w-6 shrink-0 items-center justify-center ${state === 'failed' ? 'text-red-500' : state === 'running' ? 'text-blue-500' : 'text-slate-400'}`}>{getToolIcon(tool)}</span>
+            <span className="min-w-0 flex-1 truncate text-[13px] leading-6"><strong className={`font-semibold ${state === 'failed' ? 'text-red-600' : 'text-slate-600'}`}>{verb}</strong><span className="ml-1.5 text-slate-400">{tool.title}</span></span>
+            <span className="flex shrink-0 items-center gap-1 text-[11px] text-slate-400"><ToolStatusIcon status={tool.status} />{state === 'failed' ? '失败' : state === 'running' ? '运行中' : ''}{hasDetails && <ChevronRight size={13} className={`transition-transform ${detailsOpen ? 'rotate-90' : ''}`} />}</span>
+        </button>
+        {detailsOpen && hasDetails && <div className="mb-2 ml-8 mt-1.5 space-y-2 rounded-xl border border-slate-200 bg-slate-50/70 p-2.5">{tool.input && <ToolDetail label="调用参数" value={tool.input} />}{tool.output && <ToolDetail label="返回结果" value={tool.output} />}</div>}
     </div>;
 };
 
@@ -547,21 +619,22 @@ const ToolDetail: React.FC<{ label: string; value: string }> = ({ label, value }
 const TaskActivityTimeline: React.FC<{ tools: ArkDesktopTask['tools']; taskStatus: ArkDesktopTaskStatus }> = ({ tools, taskStatus }) => {
     const failed = tools.some((tool) => getToolState(tool.status) === 'failed');
     const isRunning = tools.some((tool) => ['running', 'pending'].includes(getToolState(tool.status))) && taskStatus === 'running';
-    const [expanded, setExpanded] = useState(isRunning || failed);
+    const [expanded, setExpanded] = useState(true);
     const completed = tools.filter((tool) => getToolState(tool.status) === 'completed').length;
-    const summary = failed ? '有步骤需要关注' : isRunning ? '正在执行' : `已完成 ${completed} 个操作`;
+    const summary = failed ? '工具执行需要关注' : isRunning ? `正在使用 ${tools.length} 个工具` : `已使用 ${tools.length} 个工具`;
 
     useEffect(() => {
         if (isRunning || failed) setExpanded(true);
     }, [failed, isRunning]);
 
-    return <section className="my-3 overflow-hidden rounded-xl border border-slate-200 bg-slate-50/70">
-        <button type="button" onClick={() => setExpanded((value) => !value)} className="flex w-full items-center gap-3 px-3.5 py-3 text-left transition hover:bg-slate-100/70" aria-expanded={expanded}>
-            <span className={`flex h-7 w-7 items-center justify-center rounded-lg ${isRunning ? 'bg-blue-100 text-blue-600' : failed ? 'bg-red-100 text-red-600' : 'bg-white text-slate-500 shadow-sm ring-1 ring-slate-200'}`}>{isRunning ? <LoaderCircle size={14} className="animate-spin" /> : failed ? <AlertCircle size={14} /> : <Check size={14} />}</span>
-            <span className="min-w-0 flex-1"><span className="block text-[13px] font-semibold text-slate-700">工作过程</span><span className="mt-0.5 block text-[11px] text-slate-400">{tools.length} 个工具调用 · {summary}</span></span>
-            <ChevronRight size={17} className={`shrink-0 text-slate-400 transition-transform ${expanded ? 'rotate-90' : ''}`} />
+    return <section className="my-4">
+        <button type="button" onClick={() => setExpanded((value) => !value)} className="flex items-center gap-2 rounded-lg px-1.5 py-1.5 text-left text-[13px] text-slate-500 transition hover:bg-slate-50 hover:text-slate-700" aria-expanded={expanded}>
+            {isRunning ? <LoaderCircle size={15} className="animate-spin text-blue-500" /> : failed ? <AlertCircle size={15} className="text-red-500" /> : <SquareTerminal size={15} className="text-slate-400" />}
+            <span className="font-semibold">{summary}</span>
+            {!isRunning && !failed && <span className="text-slate-400">· 已完成 {completed}</span>}
+            <ChevronDown size={14} className={`text-slate-400 transition-transform ${expanded ? '' : '-rotate-90'}`} />
         </button>
-        {expanded && <div className="border-t border-slate-200 bg-white px-3.5 py-1">{tools.map((tool, index) => <ToolActivityItem key={tool.id} tool={tool} hasNext={index < tools.length - 1} />)}</div>}
+        {expanded && <div className="mt-1 max-h-80 space-y-0.5 overflow-y-auto pr-1">{tools.map((tool) => <ToolActivityItem key={tool.id} tool={tool} />)}</div>}
     </section>;
 };
 
@@ -577,16 +650,23 @@ const TaskMessage: React.FC<{ message: ArkDesktopTask['messages'][number] }> = (
         }
     };
     if (message.role === 'user') return <div className="flex justify-end py-2.5"><div className="max-w-[min(86%,680px)] rounded-[20px] rounded-br-md bg-[#f0f1f3] px-4 py-2.5 text-[14px] leading-7 text-slate-800"><span className="whitespace-pre-wrap">{message.content}</span></div></div>;
-    return <div className="group flex gap-3 py-3.5"><span className="mt-0.5 flex h-7 w-7 shrink-0 items-center justify-center rounded-lg bg-slate-900 text-white shadow-sm"><Sparkles size={14} /></span><div className="min-w-0 flex-1 pt-0.5"><div className="mb-2 flex items-center gap-2"><span className="text-xs font-semibold text-slate-600">智能任务中心</span><span className="text-[11px] text-slate-300">{formatTime(message.createdAt)}</span></div><MarkdownContent content={message.content} /><div className="mt-2 flex h-7 items-center"><button type="button" onClick={() => void copy()} className="inline-flex items-center gap-1 rounded-md px-1.5 py-1 text-[11px] text-slate-400 opacity-0 transition hover:bg-slate-100 hover:text-slate-700 focus:opacity-100 group-hover:opacity-100" title="复制回复">{copied ? <Check size={13} className="text-emerald-600" /> : <Copy size={13} />}{copied ? '已复制' : '复制'}</button></div></div></div>;
+    return <div className="group py-4"><MarkdownContent content={message.content} /><div className="mt-2 flex h-7 items-center gap-2"><button type="button" onClick={() => void copy()} className="inline-flex items-center gap-1 rounded-md px-1.5 py-1 text-[11px] text-slate-400 opacity-0 transition hover:bg-slate-100 hover:text-slate-700 focus:opacity-100 group-hover:opacity-100" title="复制回复">{copied ? <Check size={13} className="text-emerald-600" /> : <Copy size={13} />}{copied ? '已复制' : '复制'}</button><span className="text-[11px] text-slate-300 opacity-0 transition group-hover:opacity-100">{formatTime(message.createdAt)}</span></div></div>;
 };
 
-const TaskComposer: React.FC<{ task: ArkDesktopTask; value: string; onChange: (value: string) => void; onSubmit: () => Promise<void>; onCancel: () => Promise<void>; sending: boolean }> = ({ task, value, onChange, onSubmit, onCancel, sending }) => {
+const TaskComposer: React.FC<{ task: ArkDesktopTask; runtime: ReturnType<typeof useArkDesktopRuntime>; value: string; onChange: (value: string) => void; onSubmit: () => Promise<void>; onCancel: () => Promise<void>; sending: boolean }> = ({ task, runtime, value, onChange, onSubmit, onCancel, sending }) => {
     const isRunning = task.status === 'running';
     return <div className="sticky bottom-0 mt-7 bg-gradient-to-t from-white via-white to-white/85 pt-5">
-        <div className="rounded-2xl border border-slate-200 bg-white p-2 shadow-[0_8px_24px_rgba(15,23,42,0.08)] transition focus-within:border-slate-300 focus-within:shadow-[0_10px_30px_rgba(15,23,42,0.12)]">
-            <textarea value={value} onChange={(event) => onChange(event.target.value)} onKeyDown={(event) => { if (event.key === 'Enter' && !event.shiftKey && !isRunning) { event.preventDefault(); void onSubmit(); } }} disabled={isRunning} placeholder={task.sessionId ? '继续补充任务要求…' : '历史会话已结束，请新建任务'} rows={2} className="block w-full resize-none bg-transparent px-2.5 py-2 text-[15px] leading-6 text-slate-800 outline-none placeholder:text-slate-400 disabled:cursor-not-allowed" />
-            <div className="flex items-center justify-between gap-3 px-1 pb-1"><span className="text-[11px] text-slate-400">{isRunning ? '任务正在执行，可随时停止。' : 'Enter 发送 · Shift + Enter 换行'}</span>{isRunning ? <button type="button" onClick={() => void onCancel()} className="flex h-8 items-center gap-1.5 rounded-lg px-2.5 text-xs font-medium text-red-600 hover:bg-red-50"><CircleStop size={15} />停止任务</button> : <button type="button" disabled={sending || !task.sessionId || !value.trim()} onClick={() => void onSubmit()} className="flex h-8 w-8 items-center justify-center rounded-lg bg-slate-900 text-white transition hover:bg-slate-700 disabled:cursor-not-allowed disabled:opacity-35">{sending ? <LoaderCircle size={15} className="animate-spin" /> : <Send size={15} />}</button>}</div>
+        <div className="rounded-[22px] border border-slate-200 bg-white p-2 shadow-[0_10px_28px_rgba(15,23,42,0.09)] transition focus-within:border-slate-300 focus-within:shadow-[0_12px_34px_rgba(15,23,42,0.12)]">
+            <textarea value={value} onChange={(event) => onChange(event.target.value)} onKeyDown={(event) => { if (event.key === 'Enter' && !event.shiftKey && !isRunning && !sending) { event.preventDefault(); void onSubmit(); } }} disabled={isRunning || sending} placeholder={task.sessionId ? '继续补充任务要求…' : '输入指令，将尝试恢复原历史会话…'} rows={2} className="block w-full resize-none bg-transparent px-2.5 py-2 text-[15px] leading-6 text-slate-800 outline-none placeholder:text-slate-400 disabled:cursor-not-allowed" />
+            <div className="flex flex-wrap items-center justify-between gap-2 px-1 pb-1">
+                <div className="flex min-w-0 flex-wrap items-center gap-1">
+                    <PermissionModePicker value={task.alwaysApprove ? 'bypassPermissions' : task.permissionMode || runtime.snapshot.settings.execution.permissionMode} disabled={isRunning} onChange={(permissionMode) => runtime.setTaskPermissionMode(task.id, permissionMode)} />
+                    <TaskModelPicker task={task} runtime={runtime} />
+                </div>
+                <div className="flex items-center gap-2"><span className="hidden text-[11px] text-slate-400 sm:inline">{isRunning ? '任务正在执行' : task.sessionId ? 'Enter 发送' : '发送时恢复历史会话'}</span>{isRunning ? <button type="button" onClick={() => void onCancel()} className="flex h-8 items-center gap-1.5 rounded-lg px-2.5 text-xs font-medium text-red-600 hover:bg-red-50"><CircleStop size={15} />停止任务</button> : <button type="button" disabled={sending || !value.trim()} onClick={() => void onSubmit()} className="flex h-8 w-8 items-center justify-center rounded-full bg-slate-900 text-white transition hover:bg-slate-700 disabled:cursor-not-allowed disabled:opacity-35">{sending ? <LoaderCircle size={15} className="animate-spin" /> : <Send size={15} />}</button>}</div>
+            </div>
         </div>
+        <p className="mt-2 text-center text-[11px] text-slate-400">Grok 可能会出错，请核实重要信息与工具操作。</p>
     </div>;
 };
 
@@ -598,8 +678,8 @@ const TaskView: React.FC<{ task: ArkDesktopTask; runtime: ReturnType<typeof useA
         try {
             await runtime.sendFollowUp(task.id, followUp.trim());
             setFollowUp('');
-        } catch (error) {
-            runtime.setRuntimeError(error instanceof Error ? error.message : String(error));
+        } catch {
+            // 会话级错误由运行时写入当前任务，避免影响其他并发任务。
         } finally {
             setSending(false);
         }
@@ -629,9 +709,9 @@ const TaskView: React.FC<{ task: ArkDesktopTask; runtime: ReturnType<typeof useA
     }, [task.messages, task.tools]);
 
     return <div className="mx-auto flex min-h-full w-full max-w-[920px] flex-col px-5 py-7 font-sans md:px-10 lg:px-14">
-        <div className="mb-6 flex flex-wrap items-start justify-between gap-4 border-b border-slate-100 pb-5"><div className="min-w-0"><div className="mb-2 flex flex-wrap items-center gap-2"><span className="rounded-md bg-slate-100 px-2 py-1 text-[11px] font-medium text-slate-500">任务会话</span><span className="text-xs text-slate-400">{formatDateTime(task.createdAt)}</span></div><h1 className="truncate text-[22px] font-semibold tracking-[-0.025em] text-slate-900">{task.title}</h1><div className="mt-3 flex flex-wrap items-center gap-2"><span className="flex max-w-[280px] items-center gap-1.5 rounded-lg bg-slate-50 px-2 py-1 text-xs text-slate-500"><Folder size={13} className="shrink-0" /><span className="truncate">{workspaceLabel}</span></span><TaskModelPicker task={task} runtime={runtime} /></div></div><span className={`shrink-0 rounded-full px-2.5 py-1.5 text-xs font-medium ${taskStatus[task.status].className}`}>{task.status === 'running' && <LoaderCircle size={12} className="mr-1 inline animate-spin" />}{taskStatus[task.status].label}</span></div>
-        <div className="flex-1">{turns.map((turn, index) => <div key={turn.user?.id || `turn-${index}`} className="border-b border-slate-100 py-2 last:border-b-0">{turn.user && <TaskMessage message={turn.user} />}{turn.tools.length > 0 && <div className="ml-0 sm:ml-10"><TaskActivityTimeline tools={turn.tools} taskStatus={task.status} /></div>}{turn.replies.map((message) => <TaskMessage key={message.id} message={message} />)}</div>)}{task.error && <div className="my-5 flex gap-2 rounded-xl border border-red-200 bg-red-50 px-4 py-3 text-sm leading-6 text-red-700"><AlertCircle size={16} className="mt-0.5 shrink-0" /><span className="flex-1">{task.error}</span><button type="button" onClick={() => runtime.dismissTaskError(task.id)} className="shrink-0 text-red-500 hover:text-red-700" title="关闭提示" aria-label="关闭提示"><X size={16} /></button></div>}{waitingForReply && <div className="ml-0 flex items-center gap-2 py-4 text-sm text-slate-400 sm:ml-10"><LoaderCircle size={16} className="animate-spin" />正在分析任务并调用必要工具…</div>}</div>
-        <TaskComposer task={task} value={followUp} onChange={setFollowUp} onSubmit={submit} onCancel={() => runtime.cancelTask(task.id)} sending={sending} />
+        <div className="mb-6 flex flex-wrap items-start justify-between gap-4 border-b border-slate-100 pb-5"><div className="min-w-0"><div className="mb-2 flex flex-wrap items-center gap-2"><span className="rounded-md bg-slate-100 px-2 py-1 text-[11px] font-medium text-slate-500">任务会话</span><span className="text-xs text-slate-400">{formatDateTime(task.createdAt)}</span></div><h1 className="truncate text-[22px] font-semibold tracking-[-0.025em] text-slate-900">{task.title}</h1><div className="mt-3 flex flex-wrap items-center gap-2"><span className="flex max-w-[280px] items-center gap-1.5 rounded-lg bg-slate-50 px-2 py-1 text-xs text-slate-500"><Folder size={13} className="shrink-0" /><span className="truncate">{workspaceLabel}</span></span></div></div><span className={`shrink-0 rounded-full px-2.5 py-1.5 text-xs font-medium ${taskStatus[task.status].className}`}>{task.status === 'running' && <LoaderCircle size={12} className="mr-1 inline animate-spin" />}{taskStatus[task.status].label}</span></div>
+        <div className="flex-1">{turns.map((turn, index) => <div key={turn.user?.id || `turn-${index}`} className="border-b border-slate-100 py-2 last:border-b-0">{turn.user && <TaskMessage message={turn.user} />}{turn.replies.map((message) => <TaskMessage key={message.id} message={message} />)}{turn.tools.length > 0 && <TaskActivityTimeline tools={turn.tools} taskStatus={task.status} />}</div>)}{task.error && <div className="my-5 flex gap-2 rounded-xl border border-red-200 bg-red-50 px-4 py-3 text-sm leading-6 text-red-700"><AlertCircle size={16} className="mt-0.5 shrink-0" /><span className="flex-1">{task.error}</span><button type="button" onClick={() => runtime.dismissTaskError(task.id)} className="shrink-0 text-red-500 hover:text-red-700" title="关闭提示" aria-label="关闭提示"><X size={16} /></button></div>}{waitingForReply && <div className="flex items-center gap-2 py-4 text-sm text-slate-400"><LoaderCircle size={16} className="animate-spin" />Grok 正在分析并调用必要工具…</div>}</div>
+        <TaskComposer task={task} runtime={runtime} value={followUp} onChange={setFollowUp} onSubmit={submit} onCancel={() => runtime.cancelTask(task.id)} sending={sending} />
     </div>;
 };
 

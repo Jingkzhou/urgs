@@ -16,6 +16,8 @@ export interface GrokSession {
 
 export interface GrokAcpOptions {
     reasoningEffort?: string;
+    permissionMode?: string;
+    sandboxProfile?: string;
     alwaysApprove?: boolean;
     reauth?: boolean;
     agentProfile?: string;
@@ -128,6 +130,9 @@ export const deleteGrokModelProvider = (providerId: string) =>
 export const createGrokSession = (workspace: string, rules?: string, model?: string, options?: GrokAcpOptions) =>
     invokeGrok<GrokSession>('grok_create_session', { workspace, rules: rules || null, model: model || null, options: options || null });
 
+export const loadGrokSession = (sessionId: string, workspace: string, rules?: string, model?: string, options?: GrokAcpOptions) =>
+    invokeGrok<GrokSession>('grok_load_session', { sessionId, workspace, rules: rules || null, model: model || null, options: options || null });
+
 export const sendGrokPrompt = (sessionId: string, prompt: string) =>
     invokeGrok<void>('grok_send_prompt', { sessionId, prompt });
 
@@ -136,8 +141,8 @@ export const setGrokSessionModel = (sessionId: string, model: string) =>
 
 export const cancelGrokPrompt = (sessionId: string) => invokeGrok<void>('grok_cancel', { sessionId });
 
-export const respondGrokPermission = (requestId: unknown, optionId?: string) =>
-    invokeGrok<void>('grok_respond_permission', { requestId, optionId: optionId || null });
+export const respondGrokPermission = (sessionId: string, requestId: unknown, optionId?: string) =>
+    invokeGrok<void>('grok_respond_permission', { sessionId, requestId, optionId: optionId || null });
 
 export const startGrokLogin = (method: 'browser' | 'oauth' | 'device' = 'browser') =>
     invokeGrok<void>('grok_start_login', { method });
