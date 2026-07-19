@@ -102,6 +102,7 @@ pub fn run() {
             grok_runtime::grok_config_save,
             grok_runtime::grok_model_apply,
             grok_runtime::grok_model_provider_list,
+            grok_runtime::grok_model_provider_authorize,
             grok_runtime::grok_model_provider_save,
             grok_runtime::grok_model_provider_delete,
             grok_runtime::grok_create_session,

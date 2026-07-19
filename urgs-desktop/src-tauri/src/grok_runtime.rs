@@ -17,8 +17,11 @@ const REQUEST_TIMEOUT: Duration = Duration::from_secs(30);
 const INITIALIZE_TIMEOUT: Duration = Duration::from_secs(90);
 const MODEL_PROVIDER_FILE: &str = "model-providers.json";
 const MODEL_CREDENTIAL_SERVICE: &str = "com.urgs.desktop.grok-model";
+const MODEL_KEY_AUTHORIZATION_REQUIRED: &str = "MODEL_KEY_AUTHORIZATION_REQUIRED:";
 static PROCESS_SEQUENCE: AtomicU64 = AtomicU64::new(1);
 static MODEL_API_KEY_CACHE: OnceLock<Mutex<HashMap<String, String>>> = OnceLock::new();
+#[cfg(target_os = "macos")]
+static MACOS_KEYCHAIN_READ_LOCK: OnceLock<Mutex<()>> = OnceLock::new();
 
 fn request_timeout(method: &str) -> Duration {
     match method {
@@ -44,6 +47,15 @@ pub struct GrokSession {
     pub session_id: String,
     pub workspace: String,
     pub process_id: String,
+    pub available_commands: Vec<GrokAvailableCommand>,
+}
+
+#[derive(Debug, Clone, Deserialize, Serialize, PartialEq, Eq)]
+#[serde(rename_all = "camelCase")]
+pub struct GrokAvailableCommand {
+    pub name: String,
+    pub description: String,
+    pub input_hint: Option<String>,
 }
 
 #[derive(Debug, Clone, Deserialize, Serialize, Default)]
@@ -234,6 +246,7 @@ struct GrokProcess {
     stderr: Mutex<String>,
     pending_requests: Mutex<HashMap<u64, oneshot::Sender<Result<Value, String>>>>,
     pending_permissions: Mutex<Vec<PendingPermission>>,
+    available_commands: Mutex<Vec<GrokAvailableCommand>>,
     request_sequence: AtomicU64,
     initialized: AsyncMutex<bool>,
     replaying_session: AtomicBool,
@@ -252,6 +265,7 @@ impl GrokProcess {
             stderr: Mutex::new(String::new()),
             pending_requests: Mutex::new(HashMap::new()),
             pending_permissions: Mutex::new(Vec::new()),
+            available_commands: Mutex::new(Vec::new()),
             request_sequence: AtomicU64::new(1),
             initialized: AsyncMutex::new(false),
             replaying_session: AtomicBool::new(false),
@@ -351,6 +365,7 @@ impl GrokProcess {
                 }),
             )
             .await?;
+        self.replace_available_commands(available_commands_from_initialize(&response));
         let method_id = select_auth_method(&response)?;
 
         self.request(
@@ -365,6 +380,19 @@ impl GrokProcess {
 
         *initialized = true;
         Ok(())
+    }
+
+    fn replace_available_commands(&self, commands: Vec<GrokAvailableCommand>) {
+        if let Ok(mut available_commands) = self.available_commands.lock() {
+            *available_commands = commands;
+        }
+    }
+
+    fn available_commands(&self) -> Vec<GrokAvailableCommand> {
+        self.available_commands
+            .lock()
+            .map(|commands| commands.clone())
+            .unwrap_or_default()
     }
 
     fn resolve_response(&self, id: u64, message: Value) {
@@ -475,6 +503,59 @@ impl GrokProcess {
     }
 }
 
+fn parse_available_commands(value: Option<&Value>) -> Vec<GrokAvailableCommand> {
+    let Some(commands) = value.and_then(Value::as_array) else {
+        return Vec::new();
+    };
+    let mut parsed = commands
+        .iter()
+        .filter_map(|command| {
+            let name = command.get("name")?.as_str()?.trim();
+            if name.is_empty() || name.len() > 128 {
+                return None;
+            }
+            let description = command
+                .get("description")
+                .and_then(Value::as_str)
+                .unwrap_or_default()
+                .trim();
+            let input_hint = command
+                .get("input")
+                .and_then(|input| input.get("hint"))
+                .or_else(|| command.get("argumentHint"))
+                .and_then(Value::as_str)
+                .map(str::trim)
+                .filter(|hint| !hint.is_empty())
+                .map(ToString::to_string);
+            Some(GrokAvailableCommand {
+                name: name.to_string(),
+                description: description.to_string(),
+                input_hint,
+            })
+        })
+        .collect::<Vec<_>>();
+    parsed.sort_by(|left, right| left.name.cmp(&right.name));
+    parsed.dedup_by(|left, right| left.name == right.name);
+    parsed
+}
+
+fn available_commands_from_initialize(response: &Value) -> Vec<GrokAvailableCommand> {
+    parse_available_commands(
+        response
+            .get("_meta")
+            .or_else(|| response.get("meta"))
+            .and_then(|meta| meta.get("availableCommands")),
+    )
+}
+
+fn available_commands_from_session_update(message: &Value) -> Option<Vec<GrokAvailableCommand>> {
+    let update = message
+        .get("params")
+        .and_then(|params| params.get("update").or_else(|| params.get("sessionUpdate")))?;
+    (update.get("sessionUpdate").and_then(Value::as_str) == Some("available_commands_update"))
+        .then(|| parse_available_commands(update.get("availableCommands")))
+}
+
 fn grok_home(app: &AppHandle) -> Result<PathBuf, String> {
     let directory = app
         .path()
@@ -546,16 +627,47 @@ fn forget_cached_provider_api_key(provider_id: &str) {
     }
 }
 
-fn read_provider_api_key(provider_id: &str) -> Result<Option<String>, String> {
+#[cfg(target_os = "macos")]
+fn get_provider_password(entry: &Entry, allow_interaction: bool) -> Result<String, keyring::Error> {
+    if allow_interaction {
+        return entry.get_password();
+    }
+    use security_framework::os::macos::keychain::SecKeychain;
+
+    let _read_lock = MACOS_KEYCHAIN_READ_LOCK
+        .get_or_init(|| Mutex::new(()))
+        .lock()
+        .map_err(|_| keyring::Error::PlatformFailure("钥匙串读取锁不可用".into()))?;
+    let _interaction_lock = SecKeychain::disable_user_interaction()
+        .map_err(|error| keyring::Error::PlatformFailure(Box::new(error)))?;
+    entry.get_password()
+}
+
+#[cfg(not(target_os = "macos"))]
+fn get_provider_password(
+    entry: &Entry,
+    _allow_interaction: bool,
+) -> Result<String, keyring::Error> {
+    entry.get_password()
+}
+
+fn read_provider_api_key(
+    provider_id: &str,
+    allow_interaction: bool,
+) -> Result<Option<String>, String> {
     if let Some(api_key) = cached_provider_api_key(provider_id) {
         return Ok(Some(api_key));
     }
-    match provider_credential(provider_id)?.get_password() {
+    match get_provider_password(&provider_credential(provider_id)?, allow_interaction) {
         Ok(api_key) if !api_key.trim().is_empty() => {
             cache_provider_api_key(provider_id, &api_key);
             Ok(Some(api_key))
         }
         Ok(_) | Err(keyring::Error::NoEntry) => Ok(None),
+        #[cfg(target_os = "macos")]
+        Err(_) if !allow_interaction => {
+            Err(format!("{MODEL_KEY_AUTHORIZATION_REQUIRED}{provider_id}"))
+        }
         Err(error) => Err(format!("读取模型密钥失败: {error}")),
     }
 }
@@ -791,7 +903,7 @@ fn model_provider_envs(
             provider.name
         ));
     }
-    let api_key = match read_provider_api_key(&provider.id)? {
+    let api_key = match read_provider_api_key(&provider.id, false)? {
         Some(api_key) => api_key,
         None => {
             let provider_name = provider.name.clone();
@@ -1028,6 +1140,9 @@ fn handle_stdout(app: &AppHandle, process: &Arc<GrokProcess>, line: Vec<u8>) {
         .unwrap_or_default();
     match method {
         "session/update" | "sessionUpdate" => {
+            if let Some(commands) = available_commands_from_session_update(&message) {
+                process.replace_available_commands(commands);
+            }
             if !process.replaying_session.load(Ordering::Relaxed) {
                 emit_process_event(app, process, "session_update", message);
             }
@@ -1489,6 +1604,31 @@ pub fn grok_model_provider_list(app: AppHandle) -> Result<Vec<GrokModelProvider>
 }
 
 #[tauri::command]
+pub fn grok_model_provider_authorize(
+    app: AppHandle,
+    provider_id: String,
+) -> Result<GrokModelProvider, String> {
+    let provider_id = normalize_provider_id(&provider_id)?;
+    let mut providers = read_model_providers(&app)?;
+    let index = providers
+        .iter()
+        .position(|provider| provider.id == provider_id)
+        .ok_or_else(|| "未找到该模型连接".to_string())?;
+    let provider = providers[index].clone();
+    if !provider.enabled {
+        return Err(format!("模型连接“{}”已停用", provider.name));
+    }
+    if read_provider_api_key(&provider.id, true)?.is_none() {
+        providers[index].has_api_key = false;
+        write_model_providers(&app, &providers)?;
+        return Err(format!("模型连接“{}”尚未配置 API Key", provider.name));
+    }
+    providers[index].has_api_key = true;
+    write_model_providers(&app, &providers)?;
+    Ok(providers[index].clone())
+}
+
+#[tauri::command]
 pub fn grok_model_provider_save(
     app: AppHandle,
     input: GrokModelProviderInput,
@@ -1736,6 +1876,7 @@ pub async fn grok_create_session(
         session_id,
         workspace: workspace.to_string_lossy().to_string(),
         process_id: process.process_id.clone(),
+        available_commands: process.available_commands(),
     })
 }
 
@@ -1771,6 +1912,7 @@ pub async fn grok_load_session(
                 session_id,
                 workspace: workspace.to_string_lossy().to_string(),
                 process_id: process.process_id.clone(),
+                available_commands: process.available_commands(),
             });
         }
         processes.remove(&session_id)
@@ -1814,6 +1956,7 @@ pub async fn grok_load_session(
         session_id,
         workspace: workspace.to_string_lossy().to_string(),
         process_id: process.process_id.clone(),
+        available_commands: process.available_commands(),
     })
 }
 
@@ -1960,6 +2103,7 @@ pub fn grok_start_login(
 #[cfg(test)]
 mod tests {
     use super::{
+        available_commands_from_initialize, available_commands_from_session_update,
         cache_provider_api_key, forget_cached_provider_api_key, format_rpc_error,
         grok_agent_arguments, model_key_env_name, normalize_model_id, normalize_model_provider,
         parse_grok_toml, process_launch_key, read_provider_api_key, request_timeout,
@@ -1997,6 +2141,46 @@ mod tests {
             format_rpc_error(&json!({ "message": "认证失败" })),
             "认证失败"
         );
+    }
+
+    #[test]
+    fn parses_available_commands_from_initialize_metadata() {
+        let commands = available_commands_from_initialize(&json!({
+            "_meta": {
+                "availableCommands": [
+                    {
+                        "name": "compact",
+                        "description": "Compress conversation history",
+                        "input": { "hint": "optional context" }
+                    },
+                    { "name": "context", "description": "Show context usage" }
+                ]
+            }
+        }));
+        assert_eq!(commands.len(), 2);
+        assert_eq!(commands[0].name, "compact");
+        assert_eq!(commands[0].input_hint.as_deref(), Some("optional context"));
+        assert_eq!(commands[1].name, "context");
+    }
+
+    #[test]
+    fn parses_available_commands_update_and_rejects_other_updates() {
+        let commands = available_commands_from_session_update(&json!({
+            "method": "session/update",
+            "params": {
+                "sessionId": "session-1",
+                "update": {
+                    "sessionUpdate": "available_commands_update",
+                    "availableCommands": [{ "name": "goal", "description": "Manage goal" }]
+                }
+            }
+        }))
+        .unwrap();
+        assert_eq!(commands[0].name, "goal");
+        assert!(available_commands_from_session_update(&json!({
+            "params": { "update": { "sessionUpdate": "agent_message_chunk" } }
+        }))
+        .is_none());
     }
 
     #[test]
@@ -2105,7 +2289,9 @@ mod tests {
         let provider_id = "urgs-test-cached-provider";
         cache_provider_api_key(provider_id, "cached-secret");
         assert_eq!(
-            read_provider_api_key(provider_id).unwrap().as_deref(),
+            read_provider_api_key(provider_id, false)
+                .unwrap()
+                .as_deref(),
             Some("cached-secret")
         );
         forget_cached_provider_api_key(provider_id);

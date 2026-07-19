@@ -2,6 +2,7 @@ import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import { isDesktopRuntime } from '@/config';
 import {
     applyGrokModel,
+    authorizeGrokModelProvider,
     cancelGrokPrompt,
     chooseGrokAttachments,
     chooseGrokWorkspace,
@@ -47,6 +48,19 @@ interface StartTaskInput {
     attachmentPaths?: string[];
     automationId?: string;
 }
+
+const MODEL_KEY_AUTHORIZATION_REQUIRED = 'MODEL_KEY_AUTHORIZATION_REQUIRED:';
+
+const runtimeErrorText = (error: unknown) => error instanceof Error ? error.message : String(error);
+
+const modelKeyAuthorizationProviderId = (error: unknown) => {
+    const message = runtimeErrorText(error);
+    const markerIndex = message.indexOf(MODEL_KEY_AUTHORIZATION_REQUIRED);
+    if (markerIndex < 0) return undefined;
+    return message
+        .slice(markerIndex + MODEL_KEY_AUTHORIZATION_REQUIRED.length)
+        .match(/^[A-Za-z0-9_-]+/)?.[0];
+};
 
 const createId = (prefix: string) => `${prefix}-${Date.now()}-${Math.random().toString(16).slice(2)}`;
 
@@ -493,9 +507,20 @@ export const useArkDesktopRuntime = () => {
                     }));
                 }
             } catch (error) {
-                const message = redactRuntimeText(error instanceof Error ? error.message : String(error));
                 if (!cancelledTaskIdsRef.current.has(taskId)) {
-                    updateTask(taskId, (value) => ({ ...value, status: 'failed', error: message, updatedAt: Date.now() }));
+                    const providerId = modelKeyAuthorizationProviderId(error);
+                    if (providerId) {
+                        updateTask(taskId, (value) => ({
+                            ...value,
+                            status: 'waiting_authorization',
+                            error: undefined,
+                            modelKeyAuthorization: { providerId, action: 'start' },
+                            updatedAt: Date.now(),
+                        }));
+                    } else {
+                        const message = redactRuntimeText(runtimeErrorText(error));
+                        updateTask(taskId, (value) => ({ ...value, status: 'failed', error: message, updatedAt: Date.now() }));
+                    }
                 }
             }
         })();
@@ -556,6 +581,7 @@ export const useArkDesktopRuntime = () => {
                 ...value,
                 status: 'running',
                 error: undefined,
+                modelKeyAuthorization: undefined,
                 messages: [...value.messages, { id: createId('message'), role: 'user', content: prompt, createdAt: Date.now() }],
                 updatedAt: Date.now(),
             }));
@@ -583,13 +609,79 @@ export const useArkDesktopRuntime = () => {
                 ? value
                 : { ...value, status: 'completed', updatedAt: Date.now() });
         } catch (error) {
-            const message = redactRuntimeText(error instanceof Error ? error.message : String(error));
             if (!cancelledTaskIdsRef.current.has(taskId)) {
-                updateTask(taskId, (value) => ({ ...value, status: 'failed', error: message, updatedAt: Date.now() }));
+                const providerId = modelKeyAuthorizationProviderId(error);
+                if (providerId) {
+                    updateTask(taskId, (value) => {
+                        const lastMessage = value.messages[value.messages.length - 1];
+                        const messages = task.engine === 'headless' && lastMessage?.role === 'user' && lastMessage.content === prompt
+                            ? value.messages.slice(0, -1)
+                            : value.messages;
+                        return {
+                            ...value,
+                            status: 'waiting_authorization',
+                            error: undefined,
+                            modelKeyAuthorization: { providerId, action: 'follow_up', prompt },
+                            messages,
+                            updatedAt: Date.now(),
+                        };
+                    });
+                } else {
+                    const message = redactRuntimeText(runtimeErrorText(error));
+                    updateTask(taskId, (value) => ({ ...value, status: 'failed', error: message, updatedAt: Date.now() }));
+                }
             }
             throw error;
         }
     }, [updateTask]);
+
+    const authorizeTaskModel = useCallback(async (taskId: string) => {
+        const task = snapshotRef.current.tasks.find((item) => item.id === taskId);
+        const authorization = task?.modelKeyAuthorization;
+        if (!task || !authorization) throw new Error('当前任务不需要模型密钥授权');
+        try {
+            const provider = await authorizeGrokModelProvider(authorization.providerId);
+            const updateProvider = (current: ArkDesktopSnapshot): ArkDesktopSnapshot => ({
+                ...current,
+                settings: {
+                    ...current.settings,
+                    modelProviders: current.settings.modelProviders.map((item) => item.id === provider.id
+                        ? provider as ArkDesktopModelProvider
+                        : item),
+                },
+            });
+            if (authorization.action === 'start') {
+                setSnapshot(updateProvider);
+                const nextTaskId = await startTask({
+                    prompt: task.prompt,
+                    agentId: task.agentId,
+                    skillIds: task.skillIds,
+                    attachmentPaths: task.attachmentPaths,
+                    automationId: task.automationId,
+                });
+                setSnapshot((current) => ({
+                    ...current,
+                    tasks: current.tasks.filter((item) => item.id !== taskId),
+                }));
+                return nextTaskId;
+            }
+            setSnapshot((current) => {
+                const next = updateProvider(current);
+                return {
+                    ...next,
+                    tasks: next.tasks.map((item) => item.id === taskId
+                        ? { ...item, modelKeyAuthorization: undefined, error: undefined, updatedAt: Date.now() }
+                        : item),
+                };
+            });
+            await sendFollowUp(taskId, authorization.prompt || '');
+            return taskId;
+        } catch (error) {
+            const message = redactRuntimeText(runtimeErrorText(error));
+            updateTask(taskId, (value) => ({ ...value, error: message, updatedAt: Date.now() }));
+            throw error;
+        }
+    }, [sendFollowUp, startTask, updateTask]);
 
     const cancelTask = useCallback(async (taskId: string) => {
         const task = snapshotRef.current.tasks.find((item) => item.id === taskId);
@@ -600,7 +692,13 @@ export const useArkDesktopRuntime = () => {
         } else if (task.sessionId) {
             await cancelGrokPrompt(task.sessionId);
         }
-        updateTask(taskId, (value) => ({ ...value, status: 'cancelled', updatedAt: Date.now() }));
+        updateTask(taskId, (value) => ({
+            ...value,
+            status: 'cancelled',
+            error: undefined,
+            modelKeyAuthorization: undefined,
+            updatedAt: Date.now(),
+        }));
         setPermissions((current) => current.filter((item) => item.taskId !== taskId));
     }, [updateTask]);
 
@@ -765,6 +863,7 @@ export const useArkDesktopRuntime = () => {
         startTask,
         prepareEngine,
         sendFollowUp,
+        authorizeTaskModel,
         cancelTask,
         permission,
         answerPermission,

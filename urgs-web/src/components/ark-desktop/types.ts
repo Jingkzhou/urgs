@@ -55,7 +55,19 @@ export interface ArkDesktopMessage {
     createdAt: number;
 }
 
-export type ArkDesktopTaskStatus = 'running' | 'completed' | 'failed' | 'cancelled';
+export interface ArkDesktopSlashCommand {
+    name: string;
+    description: string;
+    inputHint?: string | null;
+}
+
+export type ArkDesktopTaskStatus = 'running' | 'waiting_authorization' | 'completed' | 'failed' | 'cancelled';
+
+export interface ArkDesktopModelKeyAuthorization {
+    providerId: string;
+    action: 'start' | 'follow_up';
+    prompt?: string;
+}
 
 export interface ArkDesktopTask {
     id: string;
@@ -75,7 +87,9 @@ export interface ArkDesktopTask {
     status: ArkDesktopTaskStatus;
     messages: ArkDesktopMessage[];
     tools: ArkDesktopToolActivity[];
+    availableCommands?: ArkDesktopSlashCommand[];
     error?: string;
+    modelKeyAuthorization?: ArkDesktopModelKeyAuthorization;
     automationId?: string;
     createdAt: number;
     updatedAt: number;

@@ -12,6 +12,13 @@ export interface GrokSession {
     sessionId: string;
     workspace: string;
     processId: string;
+    availableCommands: GrokAvailableCommand[];
+}
+
+export interface GrokAvailableCommand {
+    name: string;
+    description: string;
+    inputHint?: string | null;
 }
 
 export interface GrokAcpOptions {
@@ -120,6 +127,9 @@ export const saveGrokConfig = (scope: 'user' | 'project', content: string, works
 export const applyGrokModel = (model: string) => invokeGrok<void>('grok_model_apply', { model });
 
 export const listGrokModelProviders = () => invokeGrok<GrokModelProvider[]>('grok_model_provider_list');
+
+export const authorizeGrokModelProvider = (providerId: string) =>
+    invokeGrok<GrokModelProvider>('grok_model_provider_authorize', { providerId });
 
 export const saveGrokModelProvider = (input: GrokModelProviderInput) =>
     invokeGrok<GrokModelProvider>('grok_model_provider_save', { input });

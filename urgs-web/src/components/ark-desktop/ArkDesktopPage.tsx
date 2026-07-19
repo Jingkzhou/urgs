@@ -7,7 +7,7 @@ import { oneDark } from 'react-syntax-highlighter/dist/esm/styles/prism';
 import {
     AlertCircle, Bot, BriefcaseBusiness, Check, CheckCircle2, CheckSquare,
     ChevronDown, ChevronRight, CircleStop, Clock3, Code2, Copy, Cpu, FileText, Folder,
-    Hand, Lightbulb, LoaderCircle, Paperclip, Pencil, Play, Plus, RefreshCw,
+    Hand, KeyRound, Lightbulb, LoaderCircle, Paperclip, Pencil, Play, Plus, RefreshCw,
     Search, Send, Settings, ShieldAlert, Sparkles, SquareTerminal, Trash2, WandSparkles, Wrench, X,
 } from 'lucide-react';
 import { copyToClipboard } from '@/utils/clipboard';
@@ -15,6 +15,7 @@ import { useArkDesktopRuntime } from './useArkDesktopRuntime';
 import GrokCliCenter from './GrokCliCenter';
 import GrokConfigEditor from './GrokConfigEditor';
 import GrokExecutionSettingsPanel from './GrokExecutionSettingsPanel';
+import SlashCommandMenu from './SlashCommandMenu';
 import type {
     ArkDesktopAgent, ArkDesktopAutomation, ArkDesktopSection, ArkDesktopSkill,
     ArkDesktopModelProvider, ArkDesktopTask, ArkDesktopTaskStatus, AutomationSchedule, GrokExecutionSettings,
@@ -38,6 +39,7 @@ const sectionItems: Array<{ id: ArkDesktopSection; label: string; icon: React.El
 
 const taskStatus: Record<ArkDesktopTaskStatus, { label: string; className: string }> = {
     running: { label: '执行中', className: 'bg-blue-50 text-blue-600' },
+    waiting_authorization: { label: '等待授权', className: 'bg-amber-50 text-amber-700' },
     completed: { label: '已完成', className: 'bg-emerald-50 text-emerald-600' },
     failed: { label: '失败', className: 'bg-red-50 text-red-600' },
     cancelled: { label: '已停止', className: 'bg-slate-100 text-slate-500' },
@@ -550,7 +552,7 @@ const ModelPickerControl: React.FC<{
 const DefaultModelPicker: React.FC<{ runtime: ReturnType<typeof useArkDesktopRuntime> }> = ({ runtime }) => <ModelPickerControl runtime={runtime} selectedModel={runtime.snapshot.settings.grokModel} onSelect={runtime.selectModel} />;
 
 const TaskModelPicker: React.FC<{ task: ArkDesktopTask; runtime: ReturnType<typeof useArkDesktopRuntime> }> = ({ task, runtime }) => {
-    const disabled = task.status === 'running' || !task.sessionId || task.engine === 'headless';
+    const disabled = task.status === 'running' || task.status === 'waiting_authorization' || !task.sessionId || task.engine === 'headless';
     return <ModelPickerControl
         runtime={runtime}
         selectedModel={task.model || runtime.snapshot.settings.grokModel}
@@ -655,15 +657,18 @@ const TaskMessage: React.FC<{ message: ArkDesktopTask['messages'][number] }> = (
 
 const TaskComposer: React.FC<{ task: ArkDesktopTask; runtime: ReturnType<typeof useArkDesktopRuntime>; value: string; onChange: (value: string) => void; onSubmit: () => Promise<void>; onCancel: () => Promise<void>; sending: boolean }> = ({ task, runtime, value, onChange, onSubmit, onCancel, sending }) => {
     const isRunning = task.status === 'running';
+    const isWaitingAuthorization = task.status === 'waiting_authorization';
     return <div className="sticky bottom-0 mt-7 bg-gradient-to-t from-white via-white to-white/85 pt-5">
         <div className="rounded-[22px] border border-slate-200 bg-white p-2 shadow-[0_10px_28px_rgba(15,23,42,0.09)] transition focus-within:border-slate-300 focus-within:shadow-[0_12px_34px_rgba(15,23,42,0.12)]">
-            <textarea value={value} onChange={(event) => onChange(event.target.value)} onKeyDown={(event) => { if (event.key === 'Enter' && !event.shiftKey && !isRunning && !sending) { event.preventDefault(); void onSubmit(); } }} disabled={isRunning || sending} placeholder={task.sessionId ? '继续补充任务要求…' : '输入指令，将尝试恢复原历史会话…'} rows={2} className="block w-full resize-none bg-transparent px-2.5 py-2 text-[15px] leading-6 text-slate-800 outline-none placeholder:text-slate-400 disabled:cursor-not-allowed" />
+            <SlashCommandMenu value={value} commands={task.availableCommands || []} onChange={onChange} disabled={task.engine === 'headless' || isRunning || isWaitingAuthorization || sending}>
+                <textarea value={value} onChange={(event) => onChange(event.target.value)} onKeyDown={(event) => { if (event.key === 'Enter' && !event.shiftKey && !isRunning && !isWaitingAuthorization && !sending) { event.preventDefault(); void onSubmit(); } }} disabled={isRunning || isWaitingAuthorization || sending} placeholder={isWaitingAuthorization ? '请先授权读取模型密钥…' : task.sessionId ? '继续补充任务要求，输入 / 查看会话命令…' : '输入指令，将尝试恢复原历史会话…'} rows={2} className="block w-full resize-none bg-transparent px-2.5 py-2 text-[15px] leading-6 text-slate-800 outline-none placeholder:text-slate-400 disabled:cursor-not-allowed" />
+            </SlashCommandMenu>
             <div className="flex flex-wrap items-center justify-between gap-2 px-1 pb-1">
                 <div className="flex min-w-0 flex-wrap items-center gap-1">
-                    <PermissionModePicker value={task.alwaysApprove ? 'bypassPermissions' : task.permissionMode || runtime.snapshot.settings.execution.permissionMode} disabled={isRunning} onChange={(permissionMode) => runtime.setTaskPermissionMode(task.id, permissionMode)} />
+                    <PermissionModePicker value={task.alwaysApprove ? 'bypassPermissions' : task.permissionMode || runtime.snapshot.settings.execution.permissionMode} disabled={isRunning || isWaitingAuthorization} onChange={(permissionMode) => runtime.setTaskPermissionMode(task.id, permissionMode)} />
                     <TaskModelPicker task={task} runtime={runtime} />
                 </div>
-                <div className="flex items-center gap-2"><span className="hidden text-[11px] text-slate-400 sm:inline">{isRunning ? '任务正在执行' : task.sessionId ? 'Enter 发送' : '发送时恢复历史会话'}</span>{isRunning ? <button type="button" onClick={() => void onCancel()} className="flex h-8 items-center gap-1.5 rounded-lg px-2.5 text-xs font-medium text-red-600 hover:bg-red-50"><CircleStop size={15} />停止任务</button> : <button type="button" disabled={sending || !value.trim()} onClick={() => void onSubmit()} className="flex h-8 w-8 items-center justify-center rounded-full bg-slate-900 text-white transition hover:bg-slate-700 disabled:cursor-not-allowed disabled:opacity-35">{sending ? <LoaderCircle size={15} className="animate-spin" /> : <Send size={15} />}</button>}</div>
+                <div className="flex items-center gap-2"><span className="hidden text-[11px] text-slate-400 sm:inline">{isRunning ? '任务正在执行' : isWaitingAuthorization ? '等待模型密钥授权' : task.sessionId ? 'Enter 发送' : '发送时恢复历史会话'}</span>{isRunning ? <button type="button" onClick={() => void onCancel()} className="flex h-8 items-center gap-1.5 rounded-lg px-2.5 text-xs font-medium text-red-600 hover:bg-red-50"><CircleStop size={15} />停止任务</button> : <button type="button" disabled={isWaitingAuthorization || sending || !value.trim()} onClick={() => void onSubmit()} className="flex h-8 w-8 items-center justify-center rounded-full bg-slate-900 text-white transition hover:bg-slate-700 disabled:cursor-not-allowed disabled:opacity-35">{sending ? <LoaderCircle size={15} className="animate-spin" /> : <Send size={15} />}</button>}</div>
             </div>
         </div>
         <p className="mt-2 text-center text-[11px] text-slate-400">Grok 可能会出错，请核实重要信息与工具操作。</p>
@@ -672,6 +677,7 @@ const TaskComposer: React.FC<{ task: ArkDesktopTask; runtime: ReturnType<typeof 
 
 const TaskView: React.FC<{ task: ArkDesktopTask; runtime: ReturnType<typeof useArkDesktopRuntime>; followUp: string; setFollowUp: (value: string) => void }> = ({ task, runtime, followUp, setFollowUp }) => {
     const [sending, setSending] = useState(false);
+    const [authorizing, setAuthorizing] = useState(false);
     const submit = async () => {
         if (!followUp.trim()) return;
         setSending(true);
@@ -682,6 +688,18 @@ const TaskView: React.FC<{ task: ArkDesktopTask; runtime: ReturnType<typeof useA
             // 会话级错误由运行时写入当前任务，避免影响其他并发任务。
         } finally {
             setSending(false);
+        }
+    };
+    const authorizeModelKey = async () => {
+        setAuthorizing(true);
+        try {
+            const action = task.modelKeyAuthorization?.action;
+            await runtime.authorizeTaskModel(task.id);
+            if (action === 'follow_up') setFollowUp('');
+        } catch {
+            // 授权错误保留在当前任务中，用户可继续重试。
+        } finally {
+            setAuthorizing(false);
         }
     };
     const workspaceLabel = task.workspace.split(/[\\/]/).filter(Boolean).pop() || task.workspace || '未选择工作区';
@@ -710,7 +728,7 @@ const TaskView: React.FC<{ task: ArkDesktopTask; runtime: ReturnType<typeof useA
 
     return <div className="mx-auto flex min-h-full w-full max-w-[920px] flex-col px-5 py-7 font-sans md:px-10 lg:px-14">
         <div className="mb-6 flex flex-wrap items-start justify-between gap-4 border-b border-slate-100 pb-5"><div className="min-w-0"><div className="mb-2 flex flex-wrap items-center gap-2"><span className="rounded-md bg-slate-100 px-2 py-1 text-[11px] font-medium text-slate-500">任务会话</span><span className="text-xs text-slate-400">{formatDateTime(task.createdAt)}</span></div><h1 className="truncate text-[22px] font-semibold tracking-[-0.025em] text-slate-900">{task.title}</h1><div className="mt-3 flex flex-wrap items-center gap-2"><span className="flex max-w-[280px] items-center gap-1.5 rounded-lg bg-slate-50 px-2 py-1 text-xs text-slate-500"><Folder size={13} className="shrink-0" /><span className="truncate">{workspaceLabel}</span></span></div></div><span className={`shrink-0 rounded-full px-2.5 py-1.5 text-xs font-medium ${taskStatus[task.status].className}`}>{task.status === 'running' && <LoaderCircle size={12} className="mr-1 inline animate-spin" />}{taskStatus[task.status].label}</span></div>
-        <div className="flex-1">{turns.map((turn, index) => <div key={turn.user?.id || `turn-${index}`} className="border-b border-slate-100 py-2 last:border-b-0">{turn.user && <TaskMessage message={turn.user} />}{turn.replies.map((message) => <TaskMessage key={message.id} message={message} />)}{turn.tools.length > 0 && <TaskActivityTimeline tools={turn.tools} taskStatus={task.status} />}</div>)}{task.error && <div className="my-5 flex gap-2 rounded-xl border border-red-200 bg-red-50 px-4 py-3 text-sm leading-6 text-red-700"><AlertCircle size={16} className="mt-0.5 shrink-0" /><span className="flex-1">{task.error}</span><button type="button" onClick={() => runtime.dismissTaskError(task.id)} className="shrink-0 text-red-500 hover:text-red-700" title="关闭提示" aria-label="关闭提示"><X size={16} /></button></div>}{waitingForReply && <div className="flex items-center gap-2 py-4 text-sm text-slate-400"><LoaderCircle size={16} className="animate-spin" />Grok 正在分析并调用必要工具…</div>}</div>
+        <div className="flex-1">{turns.map((turn, index) => <div key={turn.user?.id || `turn-${index}`} className="border-b border-slate-100 py-2 last:border-b-0">{turn.user && <TaskMessage message={turn.user} />}{turn.replies.map((message) => <TaskMessage key={message.id} message={message} />)}{turn.tools.length > 0 && <TaskActivityTimeline tools={turn.tools} taskStatus={task.status} />}</div>)}{task.modelKeyAuthorization && <div className="my-5 flex flex-wrap items-center gap-3 rounded-xl border border-amber-200 bg-amber-50 px-4 py-3 text-sm text-amber-900"><span className="flex h-8 w-8 shrink-0 items-center justify-center rounded-lg bg-white text-amber-700 shadow-sm"><KeyRound size={16} /></span><div className="min-w-0 flex-1"><div className="font-medium">当前模型密钥需要授权</div><div className="mt-0.5 text-xs leading-5 text-amber-700">URGS 不会自动打开系统窗口。点击授权后将继续当前任务。</div></div><div className="flex items-center gap-2"><button type="button" disabled={authorizing} onClick={() => void runtime.cancelTask(task.id)} className="h-8 rounded-lg px-2.5 text-xs font-medium text-amber-800 hover:bg-amber-100 disabled:opacity-60">取消任务</button><button type="button" disabled={authorizing} onClick={() => void authorizeModelKey()} className="flex h-8 items-center gap-1.5 rounded-lg bg-amber-700 px-3 text-xs font-medium text-white hover:bg-amber-800 disabled:opacity-60">{authorizing ? <LoaderCircle size={14} className="animate-spin" /> : <KeyRound size={14} />}授权读取</button></div></div>}{task.error && <div className="my-5 flex gap-2 rounded-xl border border-red-200 bg-red-50 px-4 py-3 text-sm leading-6 text-red-700"><AlertCircle size={16} className="mt-0.5 shrink-0" /><span className="flex-1">{task.error}</span><button type="button" onClick={() => runtime.dismissTaskError(task.id)} className="shrink-0 text-red-500 hover:text-red-700" title="关闭提示" aria-label="关闭提示"><X size={16} /></button></div>}{waitingForReply && <div className="flex items-center gap-2 py-4 text-sm text-slate-400"><LoaderCircle size={16} className="animate-spin" />Grok 正在分析并调用必要工具…</div>}</div>
         <TaskComposer task={task} runtime={runtime} value={followUp} onChange={setFollowUp} onSubmit={submit} onCancel={() => runtime.cancelTask(task.id)} sending={sending} />
     </div>;
 };

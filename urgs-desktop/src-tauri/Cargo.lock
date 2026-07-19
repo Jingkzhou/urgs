@@ -4473,6 +4473,7 @@ name = "urgs-desktop"
 version = "0.1.0"
 dependencies = [
  "keyring",
+ "security-framework 3.7.0",
  "serde",
  "serde_json",
  "tauri",

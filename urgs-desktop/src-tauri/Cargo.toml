@@ -27,3 +27,6 @@ tokio = { version = "1", features = ["sync", "time"] }
 toml = "0.8"
 url = "2.5"
 keyring = { version = "3", default-features = false, features = ["apple-native", "windows-native", "linux-native"] }
+
+[target.'cfg(target_os = "macos")'.dependencies]
+security-framework = "3.7"
