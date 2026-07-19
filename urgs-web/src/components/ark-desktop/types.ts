@@ -42,6 +42,9 @@ export interface ArkDesktopToolActivity {
     title: string;
     status: string;
     kind?: string;
+    input?: string;
+    output?: string;
+    startedAt?: number;
     updatedAt: number;
 }
 
@@ -65,6 +68,7 @@ export interface ArkDesktopTask {
     engine?: 'acp' | 'headless';
     model?: string;
     sessionId?: string;
+    runtimeProcessId?: string;
     cliServiceId?: string;
     status: ArkDesktopTaskStatus;
     messages: ArkDesktopMessage[];

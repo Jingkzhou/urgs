@@ -11,6 +11,12 @@ const MAX_TASK_HISTORY = 50;
 
 const clone = <T>(value: T): T => JSON.parse(JSON.stringify(value));
 
+const refreshLegacyBuiltInAgent = (agent: ArkDesktopSnapshot['agents'][number]) => {
+    const current = DEFAULT_ARK_DESKTOP_AGENTS.find((item) => item.id === agent.id);
+    if (!current || !agent.builtIn || !/^grok\b/i.test(agent.name.trim())) return agent;
+    return { ...clone(current), enabled: agent.enabled };
+};
+
 export const createDefaultArkDesktopSnapshot = (): ArkDesktopSnapshot => ({
     agents: clone(DEFAULT_ARK_DESKTOP_AGENTS),
     skills: clone(DEFAULT_ARK_DESKTOP_SKILLS),
@@ -90,6 +96,7 @@ export const loadArkDesktopSnapshot = (): ArkDesktopSnapshot => {
         const agents = (isLegacy
             ? [...defaults.agents, ...(stored.agents || []).filter((agent) => !agent.builtIn)]
             : Array.isArray(stored.agents) && stored.agents.length > 0 ? stored.agents : defaults.agents)
+            .map(refreshLegacyBuiltInAgent)
             .map((agent) => ({ ...agent, skillIds: agent.skillIds.filter((id) => validSkillIds.has(id)) }));
         const validAgentIds = new Set(agents.map((agent) => agent.id));
         const automations = (Array.isArray(stored.automations) ? stored.automations : defaults.automations)

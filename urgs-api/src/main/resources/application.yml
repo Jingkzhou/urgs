@@ -53,7 +53,7 @@ urgs:
   api-base-url: "${URGS_API_BASE_URL:}"
   web-base-url: "${URGS_WEB_BASE_URL:}"
   cors:
-    allowed-origins: "${URGS_CORS_ALLOWED_ORIGINS:http://localhost:3000,http://127.0.0.1:3000,http://tauri.localhost,https://tauri.localhost}"
+    allowed-origins: "${URGS_CORS_ALLOWED_ORIGINS:http://localhost:3000,http://127.0.0.1:3000,tauri://localhost,http://tauri.localhost,https://tauri.localhost}"
   onlyoffice:
     document-server-url: "${ONLYOFFICE_DOCUMENT_SERVER_URL:http://localhost:8088}"
     callback-secret: "${ONLYOFFICE_CALLBACK_SECRET:urgs-onlyoffice-callback-secret}"

@@ -14,7 +14,7 @@ public class WebConfig implements WebMvcConfigurer {
     private final AuthenticationInterceptor authenticationInterceptor;
     private final AuthorizationInterceptor authorizationInterceptor;
 
-    @Value("${urgs.cors.allowed-origins:http://localhost:3000,http://127.0.0.1:3000,http://tauri.localhost,https://tauri.localhost}")
+    @Value("${urgs.cors.allowed-origins:http://localhost:3000,http://127.0.0.1:3000,tauri://localhost,http://tauri.localhost,https://tauri.localhost}")
     private String allowedOrigins;
 
     public WebConfig(AuthenticationInterceptor authenticationInterceptor,

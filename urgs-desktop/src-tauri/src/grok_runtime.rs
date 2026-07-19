@@ -16,6 +16,7 @@ const GROK_EVENT_NAME: &str = "grok-event";
 const REQUEST_TIMEOUT: Duration = Duration::from_secs(30);
 const MODEL_PROVIDER_FILE: &str = "model-providers.json";
 const MODEL_CREDENTIAL_SERVICE: &str = "com.urgs.desktop.grok-model";
+static PROCESS_SEQUENCE: AtomicU64 = AtomicU64::new(1);
 
 #[derive(Debug, Clone, Serialize)]
 #[serde(rename_all = "camelCase")]
@@ -32,6 +33,7 @@ pub struct GrokRuntimeStatus {
 pub struct GrokSession {
     pub session_id: String,
     pub workspace: String,
+    pub process_id: String,
 }
 
 #[derive(Debug, Clone, Deserialize, Default)]
@@ -212,6 +214,7 @@ impl GrokCliService {
 }
 
 struct GrokProcess {
+    process_id: String,
     child: Mutex<Option<CommandChild>>,
     pending_requests: Mutex<HashMap<u64, oneshot::Sender<Result<Value, String>>>>,
     pending_permissions: Mutex<Vec<PendingPermission>>,
@@ -223,6 +226,7 @@ struct GrokProcess {
 impl GrokProcess {
     fn new(child: CommandChild) -> Self {
         Self {
+            process_id: format!("runtime-{}", PROCESS_SEQUENCE.fetch_add(1, Ordering::Relaxed)),
             child: Mutex::new(Some(child)),
             pending_requests: Mutex::new(HashMap::new()),
             pending_permissions: Mutex::new(Vec::new()),
@@ -1031,7 +1035,10 @@ fn spawn_grok_process(
                 }
                 CommandEvent::Terminated(status) => {
                     reader_process.alive.store(false, Ordering::Relaxed);
-                    emit_event(&reader_app, "terminated", json!({ "code": status.code }));
+                    emit_event(&reader_app, "terminated", json!({
+                        "code": status.code,
+                        "processId": reader_process.process_id,
+                    }));
                 }
                 _ => {}
             }
@@ -1481,6 +1488,7 @@ pub async fn grok_create_session(
     Ok(GrokSession {
         session_id,
         workspace: workspace.to_string_lossy().to_string(),
+        process_id: process.process_id.clone(),
     })
 }
 

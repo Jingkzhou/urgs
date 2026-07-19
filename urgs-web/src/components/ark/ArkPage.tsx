@@ -90,7 +90,7 @@ const ArkPage: React.FC<ArkPageProps> = ({ launchTask, onLaunchTaskHandled }) =>
 
         const taskCenterWindow = new WebviewWindow('grok-task-center', {
             url: '/#/grok-task-center',
-            title: 'URGS 智能任务中心',
+            title: '',
             width: 1440,
             height: 900,
             minWidth: 1100,

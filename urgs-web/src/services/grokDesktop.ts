@@ -11,6 +11,7 @@ export interface GrokRuntimeStatus {
 export interface GrokSession {
     sessionId: string;
     workspace: string;
+    processId: string;
 }
 
 export interface GrokAcpOptions {

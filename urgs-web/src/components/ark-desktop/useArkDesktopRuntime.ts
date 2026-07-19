@@ -54,6 +54,16 @@ const redactRuntimeText = (value: string) => value
 const extractText = (update: Record<string, any>) =>
     update?.content?.text || update?.content?.content?.text || update?.text || '';
 
+const formatToolDetail = (value: unknown) => {
+    if (value === undefined || value === null || value === '') return undefined;
+    const text = typeof value === 'string'
+        ? value
+        : Array.isArray(value)
+            ? value.map((item) => item?.text || item?.content?.text || JSON.stringify(item)).join('\n')
+            : JSON.stringify(value, null, 2);
+    return redactRuntimeText(text).slice(0, 12_000);
+};
+
 const statusLabel = (status?: string) => {
     switch (status) {
         case 'pending': return '等待中';
@@ -182,11 +192,16 @@ export const useArkDesktopRuntime = () => {
                 updateTask(taskId, (task) => {
                     const tools = task.tools.slice();
                     const existingIndex = tools.findIndex((tool) => tool.id === id);
+                    const input = formatToolDetail(update.rawInput ?? update.toolCall?.rawInput);
+                    const output = formatToolDetail(update.rawOutput ?? update.content ?? update.toolCall?.content);
                     const nextTool = {
                         id,
                         title: redactRuntimeText(update.title || update.toolCall?.title || '本地工具调用'),
                         status: statusLabel(update.status),
                         kind: update.kind || update.toolCall?.kind,
+                        ...(input ? { input } : {}),
+                        ...(output ? { output } : {}),
+                        startedAt: existingIndex >= 0 ? tools[existingIndex].startedAt || tools[existingIndex].updatedAt : Date.now(),
                         updatedAt: Date.now(),
                     };
                     if (existingIndex >= 0) tools[existingIndex] = { ...tools[existingIndex], ...nextTool };
@@ -206,6 +221,7 @@ export const useArkDesktopRuntime = () => {
                         title: `模型请求重试 ${attempt}${maxRetries ? `/${maxRetries}` : ''}`,
                         status: reason,
                         kind: 'inference',
+                        startedAt: Date.now(),
                         updatedAt: Date.now(),
                     });
                     return { ...task, tools, updatedAt: Date.now() };
@@ -238,7 +254,9 @@ export const useArkDesktopRuntime = () => {
         }
 
         if (event.eventType === 'terminated' && taskId) {
-            updateTask(taskId, (task) => task.status === 'running'
+            const processId = String(event.payload?.processId || '');
+            if (!processId) return;
+            updateTask(taskId, (task) => task.runtimeProcessId === processId && task.status === 'running'
                 ? { ...task, status: 'failed', error: '本地任务进程已退出', updatedAt: Date.now() }
                 : task);
         }
@@ -255,12 +273,22 @@ export const useArkDesktopRuntime = () => {
             setRuntimeError(redactRuntimeText(error instanceof Error ? error.message : '无法读取模型连接'));
         });
         let unlisten: (() => void) | undefined;
+        let disposed = false;
         void subscribeGrokEvents(handleGrokEvent).then((dispose) => {
-            unlisten = dispose;
+            if (disposed) {
+                dispose();
+            } else {
+                unlisten = dispose;
+            }
         }).catch((error) => {
-            setRuntimeError(redactRuntimeText(error instanceof Error ? error.message : '无法订阅本地任务事件'));
+            if (!disposed) {
+                setRuntimeError(redactRuntimeText(error instanceof Error ? error.message : '无法订阅本地任务事件'));
+            }
         });
-        return () => unlisten?.();
+        return () => {
+            disposed = true;
+            unlisten?.();
+        };
     }, [handleGrokEvent, refreshModelProviders, refreshRuntimeStatus]);
 
     const selectWorkspace = useCallback(async () => {
@@ -385,7 +413,12 @@ export const useArkDesktopRuntime = () => {
                     debugFile: execution.debugFile,
                     leaderSocket: execution.leaderSocket,
                 });
-                updateTask(taskId, (value) => ({ ...value, sessionId: session.sessionId, updatedAt: Date.now() }));
+                updateTask(taskId, (value) => ({
+                    ...value,
+                    sessionId: session.sessionId,
+                    runtimeProcessId: session.processId,
+                    updatedAt: Date.now(),
+                }));
                 await sendGrokPrompt(session.sessionId, buildTaskPrompt(effectivePrompt, attachmentPaths));
             }
             updateTask(taskId, (value) => cancelledTaskIdsRef.current.has(taskId)
@@ -576,6 +609,10 @@ export const useArkDesktopRuntime = () => {
         setRuntimeError('');
     }, []);
 
+    const dismissTaskError = useCallback((taskId: string) => {
+        updateTask(taskId, (task) => ({ ...task, error: undefined, updatedAt: Date.now() }));
+    }, [updateTask]);
+
     return {
         snapshot,
         setSnapshot,
@@ -601,6 +638,7 @@ export const useArkDesktopRuntime = () => {
         activeTask,
         activeTaskId,
         setActiveTaskId,
+        dismissTaskError,
         resetAll,
     };
 };
