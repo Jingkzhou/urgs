@@ -7,8 +7,8 @@ import { oneDark } from 'react-syntax-highlighter/dist/esm/styles/prism';
 import {
     AlertCircle, Bot, BriefcaseBusiness, Check, CheckCircle2, CheckSquare,
     ChevronDown, ChevronRight, CircleStop, Clock3, Code2, Copy, Cpu, FileText, Folder,
-    Hand, KeyRound, Lightbulb, LoaderCircle, Paperclip, Pencil, Play, Plus, RefreshCw,
-    MoreHorizontal, Search, Send, Settings, ShieldAlert, Sparkles, SquareTerminal, Trash2, WandSparkles, Wrench, X,
+    Hand, KeyRound, Lightbulb, LoaderCircle, Paperclip, Pencil, Play, Plus,
+    PanelLeft, Search, Send, Settings, ShieldAlert, Sparkles, SquareTerminal, Trash2, WandSparkles, Wrench, X,
 } from 'lucide-react';
 import { copyToClipboard } from '@/utils/clipboard';
 import { useArkDesktopRuntime } from './useArkDesktopRuntime';
@@ -129,6 +129,7 @@ const ArkDesktopPage: React.FC = () => {
     const [agentMenuOpen, setAgentMenuOpen] = useState(false);
     const [collapsedWorkspaceKeys, setCollapsedWorkspaceKeys] = useState<Set<string>>(() => new Set());
     const [latestMessageTaskId, setLatestMessageTaskId] = useState<string | null>(null);
+    const [isSidebarCollapsed, setIsSidebarCollapsed] = useState(false);
 
     const [editor, setEditor] = useState<{ type: 'agent' | 'skill' | 'automation'; id?: string } | null>(null);
     const [actionPending, setActionPending] = useState(false);
@@ -247,13 +248,21 @@ const ArkDesktopPage: React.FC = () => {
         if (!provider?.enabled || !provider.hasApiKey) return <span className="text-amber-600">请配置模型连接</span>;
         return <span className="text-emerald-600">内置智能引擎已就绪</span>;
     };
-    const activeWorkspace = runtime.activeTask?.workspace || runtime.snapshot.settings.workspace;
-    const activeWorkspaceLabel = activeWorkspace.split(/[\\/]/).filter(Boolean).pop() || activeWorkspace || '打开位置';
     const headerTitle = runtime.activeTask?.title || (section === 'settings' ? '设置' : sectionItems.find((item) => item.id === section)?.label || '新建任务');
 
+    useEffect(() => { document.title = headerTitle; }, [headerTitle]);
+
     return (
-        <div className="flex h-screen min-h-[680px] overflow-hidden bg-white text-[#292a2e]">
-            <aside className="hidden w-[320px] shrink-0 flex-col border-r border-[#e5e5e7] bg-[#f8f8f9] px-3 py-4 lg:flex">
+        <div className="relative flex h-screen min-h-[680px] overflow-hidden bg-white pt-[52px] text-[#292a2e]">
+            <header className="absolute inset-x-0 top-0 z-10 flex h-[52px] items-center border-b border-[#e9e9ea] bg-white/95">
+                <div data-tauri-drag-region className={`${isSidebarCollapsed ? 'w-[154px]' : 'w-[320px]'} h-full shrink-0 transition-[width] duration-200`} />
+                <button type="button" onClick={() => setIsSidebarCollapsed((current) => !current)} className="absolute left-[116px] top-1/2 flex h-7 w-7 -translate-y-1/2 items-center justify-center rounded-md text-[#8b8e92] transition hover:bg-slate-100 hover:text-slate-700" title={isSidebarCollapsed ? '展开左侧工具栏' : '折叠左侧工具栏'} aria-label={isSidebarCollapsed ? '展开左侧工具栏' : '折叠左侧工具栏'}><PanelLeft className="h-4 w-4" strokeWidth={1.6} /></button>
+                <div className="flex min-w-0 flex-1 items-center justify-between gap-4 px-5 lg:px-7">
+                    <div data-tauri-drag-region className="flex min-w-0 items-center gap-2.5"><Folder size={19} strokeWidth={1.8} className="shrink-0 text-[#44454a]" /><div className="truncate text-[16px] font-semibold tracking-[-0.02em] text-[#303136]">{headerTitle}</div></div>
+                    <button type="button" onClick={openSettings} className={`shrink-0 rounded-md p-1 text-slate-500 transition hover:bg-slate-100 hover:text-slate-800 ${section === 'settings' && !runtime.activeTask ? 'bg-slate-100 text-slate-900' : ''}`} title="设置" aria-label="设置"><Settings size={17} strokeWidth={1.8} /></button>
+                </div>
+            </header>
+            <aside className={`${isSidebarCollapsed ? 'hidden' : 'hidden w-[320px] shrink-0 flex-col border-r border-[#e5e5e7] bg-[#f8f8f9] px-3 py-4 lg:flex'}`}>
                 <div className="mb-4 flex h-10 items-center justify-between px-2">
                     <button type="button" className="flex items-center gap-1.5 rounded-lg py-1 text-[18px] font-semibold tracking-[-0.03em] text-[#303136] hover:text-black" title="URGS 智能任务中心">URGS<ChevronDown size={15} className="text-slate-400" /></button>
                     <label className="flex h-8 w-8 cursor-text items-center justify-center rounded-lg text-slate-400 transition hover:bg-[#eeeeef] focus-within:w-44 focus-within:justify-start focus-within:px-2 focus-within:ring-1 focus-within:ring-slate-200">
@@ -285,21 +294,7 @@ const ArkDesktopPage: React.FC = () => {
                 </div>
                 <div className="mt-3 flex items-center justify-between border-t border-[#e5e5e7] px-2 pt-3 text-xs"><span className="flex items-center gap-2"><span className="flex h-7 w-7 items-center justify-center rounded-full bg-[#313238] text-[10px] font-medium text-white">U</span><span className="font-medium text-[#494a4f]">本地任务</span></span><span>{renderRuntimeBadge()}</span></div>
             </aside>
-
             <section className="relative flex min-w-0 flex-1 flex-col overflow-hidden">
-                <header className="flex h-[60px] shrink-0 items-center justify-between gap-4 border-b border-[#e9e9ea] px-5 lg:px-7">
-                    <div className="flex min-w-0 items-center gap-2.5">
-                        <Folder size={19} strokeWidth={1.8} className="shrink-0 text-[#44454a]" />
-                        <div className="truncate text-[16px] font-semibold tracking-[-0.02em] text-[#303136]">{headerTitle}</div>
-                        <button type="button" className="shrink-0 rounded-md p-1 text-slate-400 hover:bg-slate-100 hover:text-slate-700" title="更多会话操作" aria-label="更多会话操作"><MoreHorizontal size={18} /></button>
-                    </div>
-                    <div className="flex shrink-0 items-center gap-1.5">
-                        <button type="button" onClick={() => void chooseWorkspace()} className="hidden max-w-56 items-center gap-1.5 rounded-xl border border-[#e5e5e7] bg-white px-3 py-1.5 text-xs font-medium text-[#4b4c51] shadow-[0_1px_2px_rgba(15,23,42,0.04)] hover:bg-slate-50 sm:flex" title={activeWorkspace}><Folder size={14} /><span className="max-w-32 truncate">{activeWorkspaceLabel}</span><ChevronDown size={14} className="text-slate-400" /></button>
-                        <button type="button" onClick={() => void runtime.refreshRuntimeStatus()} className="rounded-lg p-2 text-slate-500 hover:bg-slate-100" title="刷新运行状态"><RefreshCw size={17} strokeWidth={1.8} /></button>
-                        <button type="button" onClick={openSettings} className={`rounded-lg p-2 transition ${section === 'settings' && !runtime.activeTask ? 'bg-slate-100 text-slate-900' : 'text-slate-500 hover:bg-slate-100'}`} title="设置" aria-label="设置"><Settings size={17} strokeWidth={1.8} /></button>
-                    </div>
-                </header>
-
                 {runtime.runtimeError && <div className="mx-5 mt-4 flex items-start gap-2 rounded-xl border border-red-200 bg-red-50 px-4 py-3 text-sm text-red-700"><AlertCircle size={17} className="mt-0.5 shrink-0" /><span className="flex-1">{runtime.runtimeError}</span><button type="button" onClick={() => runtime.setRuntimeError('')}><X size={16} /></button></div>}
 
                 <main className="custom-scrollbar min-h-0 flex-1 overflow-y-auto">

@@ -90,13 +90,15 @@ const ArkPage: React.FC<ArkPageProps> = ({ launchTask, onLaunchTaskHandled }) =>
 
         const taskCenterWindow = new WebviewWindow('grok-task-center', {
             url: '/#/grok-task-center',
-            title: '',
+            title: 'URGS 智能任务中心',
             width: 1440,
             height: 900,
             minWidth: 1100,
             minHeight: 700,
             center: true,
             resizable: true,
+            titleBarStyle: 'overlay',
+            hiddenTitle: true,
         });
         taskCenterWindow.once('tauri://error', (event) => {
             console.error('无法打开 URGS 智能任务中心窗口', event.payload);
