@@ -15,7 +15,7 @@ import { useArkDesktopRuntime } from './useArkDesktopRuntime';
 import GrokCliCenter from './GrokCliCenter';
 import GrokConfigEditor from './GrokConfigEditor';
 import GrokExecutionSettingsPanel from './GrokExecutionSettingsPanel';
-import SlashCommandMenu from './SlashCommandMenu';
+import { ConversationPromptInput } from './SlashCommandMenu';
 import type {
     ArkDesktopAgent, ArkDesktopAutomation, ArkDesktopSection, ArkDesktopSkill,
     ArkDesktopModelProvider, ArkDesktopTask, ArkDesktopTaskStatus, AutomationSchedule, GrokExecutionSettings,
@@ -358,44 +358,50 @@ interface NewTaskViewProps {
 
 const NewTaskView: React.FC<NewTaskViewProps> = ({ runtime, draft, setDraft, selectedAgentId, setSelectedAgentId, selectedSkillIds, setSelectedSkillIds, selectedAgent, attachments, setAttachments, agentMenuOpen, setAgentMenuOpen, runTask, chooseAttachments, chooseWorkspace, openExecutionSettings, actionPending }) => {
     const [taskMode, setTaskMode] = useState<'collaboration' | 'office'>('collaboration');
+    const workspaceLabel = runtime.snapshot.settings.workspace.split(/[\\/]/).filter(Boolean).pop() || runtime.snapshot.settings.workspace || '未选择工作区';
+    const execution = runtime.snapshot.settings.execution;
 
-    return <div className="flex min-h-full flex-col px-5 py-6 md:px-10 lg:px-16">
-        <div className="mx-auto flex w-full max-w-6xl flex-1 flex-col items-center justify-end pb-5 text-center">
-            <img src="/ark/ark-agents-robot-cropped.png" alt="URGS 智能任务中心" className="mb-3 h-28 w-28 object-contain mix-blend-multiply" />
-            <h1 className="text-3xl font-semibold tracking-[-0.04em] text-[#303136] sm:text-[34px]">让智能体把想法变成现实</h1>
-            <p className="mt-2 text-base text-slate-500">随时发起任务，在本地安全完成协作</p>
-            <div className="mt-5 flex items-center justify-center gap-3 text-xl font-semibold text-slate-400 sm:text-2xl">
-                <span>开始</span>
-                <div className="flex rounded-full bg-[#e9e9eb] p-1.5 text-sm shadow-inner">
-                    <button type="button" onClick={() => setTaskMode('collaboration')} className={`flex items-center gap-2 rounded-full px-5 py-2.5 font-medium transition ${taskMode === 'collaboration' ? 'bg-[#202126] text-white shadow-sm' : 'text-slate-500 hover:text-slate-800'}`}><Sparkles size={16} />智能协作</button>
-                    <button type="button" onClick={() => setTaskMode('office')} className={`flex items-center gap-2 rounded-full px-5 py-2.5 font-medium transition ${taskMode === 'office' ? 'bg-[#202126] text-white shadow-sm' : 'text-slate-500 hover:text-slate-800'}`}><BriefcaseBusiness size={16} />日常办公</button>
-                </div>
-                <span>任务</span>
+    return <div className="mx-auto flex min-h-full w-full max-w-[920px] flex-col px-5 py-7 font-sans md:px-10 lg:px-14">
+        <div className="mb-6 flex flex-wrap items-start justify-between gap-4 border-b border-slate-100 pb-5">
+            <div className="min-w-0">
+                <div className="mb-2 flex flex-wrap items-center gap-2"><span className="rounded-md bg-slate-100 px-2 py-1 text-[11px] font-medium text-slate-500">任务会话</span><span className="text-xs text-slate-400">新任务</span></div>
+                <h1 className="truncate text-[22px] font-semibold tracking-[-0.025em] text-slate-900">新建任务</h1>
+                <div className="mt-3 flex flex-wrap items-center gap-2"><button type="button" onClick={() => void chooseWorkspace()} className="flex max-w-[280px] items-center gap-1.5 rounded-lg bg-slate-50 px-2 py-1 text-xs text-slate-500 hover:bg-slate-100" title={runtime.snapshot.settings.workspace}><Folder size={13} className="shrink-0" /><span className="truncate">{workspaceLabel}</span></button></div>
             </div>
-            <div className="mt-6 flex w-full flex-wrap justify-center gap-2.5">
+            <span className="shrink-0 rounded-full bg-slate-100 px-2.5 py-1.5 text-xs font-medium text-slate-500">未开始</span>
+        </div>
+        <div className="flex flex-1 flex-col items-center justify-center py-8 text-center">
+            <img src="/ark/ark-agents-robot-cropped.png" alt="URGS 智能任务中心" className="mb-3 h-20 w-20 object-contain mix-blend-multiply" />
+            <h2 className="text-2xl font-semibold tracking-[-0.035em] text-[#303136]">让智能体把想法变成现实</h2>
+            <p className="mt-2 text-sm text-slate-500">输入第一条消息，即可在当前会话中开始执行</p>
+            <div className="mt-5 flex rounded-full bg-[#e9e9eb] p-1 text-xs shadow-inner">
+                <button type="button" onClick={() => setTaskMode('collaboration')} className={`flex items-center gap-1.5 rounded-full px-4 py-2 font-medium transition ${taskMode === 'collaboration' ? 'bg-[#202126] text-white shadow-sm' : 'text-slate-500 hover:text-slate-800'}`}><Sparkles size={14} />智能协作</button>
+                <button type="button" onClick={() => setTaskMode('office')} className={`flex items-center gap-1.5 rounded-full px-4 py-2 font-medium transition ${taskMode === 'office' ? 'bg-[#202126] text-white shadow-sm' : 'text-slate-500 hover:text-slate-800'}`}><BriefcaseBusiness size={14} />日常办公</button>
+            </div>
+            <div className="mt-5 flex w-full flex-wrap justify-center gap-2">
                 {taskTags.map((tag) => { const Icon = tag.icon; const active = selectedSkillIds.includes(tag.skillId); return <button key={tag.label} type="button" onClick={() => { setDraft(tag.prompt); setSelectedSkillIds((current) => active ? current.filter((id) => id !== tag.skillId) : [...current, tag.skillId]); }} className={`flex items-center gap-2 rounded-full px-4 py-2.5 text-sm font-medium transition hover:-translate-y-0.5 ${active ? 'bg-slate-900 text-white' : 'bg-[#e9e9eb] text-[#494a4f] hover:bg-[#dedee1]'}`}><Icon size={17} />{tag.label}{active && <Check size={14} />}</button>; })}
             </div>
         </div>
-        <div className="mx-auto w-full max-w-6xl pb-2">
+        <div className="sticky bottom-0 mt-7 bg-gradient-to-t from-white via-white to-white/85 pt-5">
             {attachments.length > 0 && <div className="mb-2 flex flex-wrap gap-2">{attachments.map((path) => <span key={path} title={path} className="flex max-w-72 items-center gap-1.5 rounded-lg border border-slate-200 bg-white px-2.5 py-1.5 text-xs text-slate-600"><Paperclip size={13} /><span className="truncate">{path.split(/[\\/]/).pop()}</span><button type="button" onClick={() => setAttachments((current) => current.filter((item) => item !== path))}><X size={13} /></button></span>)}</div>}
-            <div className="rounded-[26px] border border-slate-200 bg-[#f4f4f5] p-3 shadow-[0_10px_28px_rgba(15,23,42,0.06)] focus-within:border-slate-300">
-                <div className="flex items-center gap-2 px-3 pt-1 text-slate-500"><Bot size={17} /><button type="button" onClick={() => void chooseAttachments()} className="rounded-md p-1 hover:bg-[#e3e3e5]" title="添加本地文件"><Paperclip size={17} /></button></div>
-                <textarea value={draft} onChange={(event) => setDraft(event.target.value)} onKeyDown={(event) => { if (event.key === 'Enter' && !event.shiftKey) { event.preventDefault(); void runTask(); } }} placeholder={taskMode === 'office' ? '描述需要整理、分析或生成的办公任务…' : '描述希望 Agent 在本地完成的任务…'} rows={3} className="w-full resize-none bg-transparent px-3 py-2 text-base leading-7 text-slate-700 outline-none placeholder:text-slate-400" />
+            <div className="rounded-[22px] border border-slate-200 bg-white p-2 shadow-[0_10px_28px_rgba(15,23,42,0.09)] transition focus-within:border-slate-300 focus-within:shadow-[0_12px_34px_rgba(15,23,42,0.12)]">
+                <div className="flex items-center gap-1 px-1 pt-0.5 text-slate-500"><button type="button" onClick={() => void chooseAttachments()} className="rounded-md p-1.5 hover:bg-slate-100" title="添加本地文件"><Paperclip size={16} /></button></div>
+                <ConversationPromptInput value={draft} commands={runtime.availableCommands} onChange={setDraft} onSubmit={runTask} disabled={actionPending} slashDisabled={execution.engine === 'headless'} placeholder={taskMode === 'office' ? '描述需要整理、分析或生成的办公任务，输入 / 查看会话命令…' : '描述希望 Agent 在本地完成的任务，输入 / 查看会话命令…'} rows={2} />
                 <div className="flex flex-wrap items-center justify-between gap-2 px-1 pt-1">
-                    <div className="relative flex flex-wrap items-center gap-2">
-                        <button type="button" onClick={() => setAgentMenuOpen((open) => !open)} className="flex items-center gap-2 rounded-lg bg-[#e3e3e5] px-3 py-2 text-sm font-medium text-slate-600 hover:bg-[#d8d8db]"><Bot size={16} /><span className="max-w-44 truncate">{selectedAgent?.name || '自动选择 Agent'}</span><ChevronDown size={15} /></button>
+                    <div className="relative flex min-w-0 flex-wrap items-center gap-1">
+                        <button type="button" onClick={() => setAgentMenuOpen((open) => !open)} className="flex items-center gap-1.5 rounded-lg px-2.5 py-2 text-xs font-medium text-slate-500 hover:bg-slate-100"><Bot size={15} /><span className="max-w-36 truncate">{selectedAgent?.name || '自动选择 Agent'}</span><ChevronDown size={14} /></button>
                         {agentMenuOpen && <div className="absolute bottom-11 left-0 z-20 max-h-64 w-72 overflow-y-auto rounded-xl border border-slate-200 bg-white p-1.5 shadow-xl"><button type="button" onClick={() => { setSelectedAgentId(''); setAgentMenuOpen(false); }} className="w-full rounded-lg px-3 py-2 text-left text-sm text-slate-600 hover:bg-slate-100">自动选择 Agent</button>{runtime.snapshot.agents.filter((agent) => agent.enabled).map((agent) => <button key={agent.id} type="button" onClick={() => { setSelectedAgentId(agent.id); setAgentMenuOpen(false); }} className="w-full truncate rounded-lg px-3 py-2 text-left text-sm text-slate-700 hover:bg-slate-100">{agent.name}</button>)}</div>}
                         <PermissionModePicker value={runtime.snapshot.settings.execution.alwaysApprove ? 'bypassPermissions' : runtime.snapshot.settings.execution.permissionMode} onChange={(permissionMode) => runtime.setSnapshot((current) => ({ ...current, settings: { ...current.settings, execution: { ...current.settings.execution, permissionMode, alwaysApprove: false } } }))} />
                         <DefaultModelPicker runtime={runtime} />
-                        <button type="button" onClick={openExecutionSettings} className="flex items-center gap-1.5 rounded-lg px-2.5 py-2 text-xs font-medium text-slate-500 hover:bg-[#e3e3e5]" title="配置任务执行方式"><Settings size={16} />{runtime.snapshot.settings.execution.engine === 'acp' ? '交互执行' : '后台执行'}</button>
+                        <button type="button" onClick={openExecutionSettings} className="flex items-center gap-1.5 rounded-lg px-2.5 py-2 text-xs font-medium text-slate-500 hover:bg-slate-100" title="配置任务执行方式"><Settings size={15} />{execution.engine === 'acp' ? '交互执行' : '后台执行'}</button>
                     </div>
                     <div className="flex items-center gap-2">
-                        <button type="button" onClick={() => void chooseWorkspace()} className="flex max-w-64 items-center gap-2 rounded-lg px-3 py-2 text-sm font-medium text-slate-500 hover:bg-[#e3e3e5]" title={runtime.snapshot.settings.workspace}><Folder size={17} /><span className="truncate">{runtime.snapshot.settings.workspace ? runtime.snapshot.settings.workspace.split(/[\\/]/).pop() : '选择工作区'}</span></button>
-                        <button type="button" disabled={actionPending || (!draft.trim() && (runtime.snapshot.settings.execution.engine !== 'headless' || runtime.snapshot.settings.execution.promptMode === 'text'))} onClick={() => void runTask()} className="flex h-10 w-10 items-center justify-center rounded-full bg-[#202126] text-white shadow-sm transition hover:scale-105 disabled:cursor-not-allowed disabled:opacity-40">{actionPending ? <LoaderCircle size={17} className="animate-spin" /> : <Send size={17} />}</button>
+                        <span className="hidden text-[11px] text-slate-400 sm:inline">Enter 发送</span>
+                        <button type="button" disabled={actionPending || (!draft.trim() && (execution.engine !== 'headless' || execution.promptMode === 'text'))} onClick={() => void runTask()} className="flex h-8 w-8 items-center justify-center rounded-full bg-slate-900 text-white transition hover:bg-slate-700 disabled:cursor-not-allowed disabled:opacity-35">{actionPending ? <LoaderCircle size={15} className="animate-spin" /> : <Send size={15} />}</button>
                     </div>
                 </div>
             </div>
-            <p className="mt-3 text-center text-xs text-slate-400">内容由 Grok 生成，请核实重要信息与工具操作。</p>
+            <p className="mt-2 text-center text-[11px] text-slate-400">Grok 可能会出错，请核实重要信息与工具操作。</p>
         </div>
     </div>;
 };
@@ -660,9 +666,7 @@ const TaskComposer: React.FC<{ task: ArkDesktopTask; runtime: ReturnType<typeof 
     const isWaitingAuthorization = task.status === 'waiting_authorization';
     return <div className="sticky bottom-0 mt-7 bg-gradient-to-t from-white via-white to-white/85 pt-5">
         <div className="rounded-[22px] border border-slate-200 bg-white p-2 shadow-[0_10px_28px_rgba(15,23,42,0.09)] transition focus-within:border-slate-300 focus-within:shadow-[0_12px_34px_rgba(15,23,42,0.12)]">
-            <SlashCommandMenu value={value} commands={task.availableCommands || []} onChange={onChange} disabled={task.engine === 'headless' || isRunning || isWaitingAuthorization || sending}>
-                <textarea value={value} onChange={(event) => onChange(event.target.value)} onKeyDown={(event) => { if (event.key === 'Enter' && !event.shiftKey && !isRunning && !isWaitingAuthorization && !sending) { event.preventDefault(); void onSubmit(); } }} disabled={isRunning || isWaitingAuthorization || sending} placeholder={isWaitingAuthorization ? '请先授权读取模型密钥…' : task.sessionId ? '继续补充任务要求，输入 / 查看会话命令…' : '输入指令，将尝试恢复原历史会话…'} rows={2} className="block w-full resize-none bg-transparent px-2.5 py-2 text-[15px] leading-6 text-slate-800 outline-none placeholder:text-slate-400 disabled:cursor-not-allowed" />
-            </SlashCommandMenu>
+            <ConversationPromptInput value={value} commands={task.availableCommands?.length ? task.availableCommands : runtime.availableCommands} onChange={onChange} onSubmit={onSubmit} disabled={isRunning || isWaitingAuthorization || sending} slashDisabled={task.engine === 'headless'} placeholder={isWaitingAuthorization ? '请先授权读取模型密钥…' : task.sessionId ? '继续补充任务要求，输入 / 查看会话命令…' : '输入指令，将尝试恢复原历史会话…'} rows={2} />
             <div className="flex flex-wrap items-center justify-between gap-2 px-1 pb-1">
                 <div className="flex min-w-0 flex-wrap items-center gap-1">
                     <PermissionModePicker value={task.alwaysApprove ? 'bypassPermissions' : task.permissionMode || runtime.snapshot.settings.execution.permissionMode} disabled={isRunning || isWaitingAuthorization} onChange={(permissionMode) => runtime.setTaskPermissionMode(task.id, permissionMode)} />

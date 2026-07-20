@@ -93,6 +93,7 @@ pub fn run() {
             load_desktop_runtime_config,
             save_desktop_runtime_config,
             grok_runtime::grok_runtime_status,
+            grok_runtime::grok_available_commands,
             grok_runtime::grok_runtime_prepare,
             grok_runtime::grok_cli_run,
             grok_runtime::grok_cli_service_start,

@@ -10,6 +10,7 @@ import {
     deleteGrokModelProvider,
     getGrokRuntimeStatus,
     loadGrokSession,
+    listGrokAvailableCommands,
     listGrokCliServices,
     listGrokModelProviders,
     runGrokCli,
@@ -35,6 +36,7 @@ import type {
     ArkDesktopPermissionRequest,
     ArkDesktopSkill,
     ArkDesktopSnapshot,
+    ArkDesktopSlashCommand,
     ArkDesktopTask,
     ArkDesktopModelProvider,
     GrokExecutionSettings,
@@ -170,6 +172,7 @@ const findUniqueHistoricalSessionId = async (workspace: string, firstPrompt: str
 export const useArkDesktopRuntime = () => {
     const [snapshot, setSnapshot] = useState<ArkDesktopSnapshot>(loadArkDesktopSnapshot);
     const [runtimeStatus, setRuntimeStatus] = useState<GrokRuntimeStatus | null>(null);
+    const [discoveredCommands, setDiscoveredCommands] = useState<ArkDesktopSlashCommand[]>([]);
     const [activeTaskId, setActiveTaskId] = useState<string | null>(null);
     const [permissions, setPermissions] = useState<ArkDesktopPermissionRequest[]>([]);
     const [runtimeError, setRuntimeError] = useState('');
@@ -220,6 +223,28 @@ export const useArkDesktopRuntime = () => {
         }));
     }, []);
 
+    useEffect(() => {
+        const workspace = snapshot.settings.workspace;
+        if (!isDesktopRuntime() || !runtimeStatus?.available || !workspace) {
+            setDiscoveredCommands([]);
+            return undefined;
+        }
+        let cancelled = false;
+        void listGrokAvailableCommands(workspace)
+            .then((commands) => {
+                if (!cancelled) setDiscoveredCommands(commands);
+            })
+            .catch((error) => {
+                if (!cancelled) {
+                    setDiscoveredCommands([]);
+                    setRuntimeError(redactRuntimeText(`加载会话命令失败：${runtimeErrorText(error)}`));
+                }
+            });
+        return () => {
+            cancelled = true;
+        };
+    }, [runtimeStatus?.available, snapshot.settings.workspace]);
+
     const handleGrokEvent = useCallback((event: GrokBridgeEvent) => {
         const processId = eventProcessId(event);
         const sessionId = eventSessionId(event);
@@ -233,6 +258,23 @@ export const useArkDesktopRuntime = () => {
             const params = event.payload?.params || event.payload;
             const update = params?.update || params?.sessionUpdate || {};
             const updateType = update?.sessionUpdate;
+            if (updateType === 'available_commands_update') {
+                const availableCommands = Array.isArray(update.availableCommands)
+                    ? update.availableCommands
+                        .filter((command: any) => typeof command?.name === 'string' && command.name.trim())
+                        .map((command: any) => ({
+                            name: command.name.trim(),
+                            description: typeof command.description === 'string' ? command.description.trim() : '',
+                            inputHint: typeof command.input?.hint === 'string'
+                                ? command.input.hint.trim()
+                                : typeof command.argumentHint === 'string'
+                                    ? command.argumentHint.trim()
+                                    : undefined,
+                        }))
+                    : [];
+                updateTask(taskId, (task) => ({ ...task, availableCommands, updatedAt: Date.now() }));
+                return;
+            }
             if (updateType === 'agent_message_chunk') {
                 const chunk = extractText(update);
                 if (!chunk) return;
@@ -487,6 +529,7 @@ export const useArkDesktopRuntime = () => {
                         ...value,
                         sessionId: session.sessionId,
                         runtimeProcessId: session.processId,
+                        availableCommands: session.availableCommands,
                         updatedAt: Date.now(),
                     }));
                     if (cancelledTaskIdsRef.current.has(taskId)) {
@@ -573,6 +616,7 @@ export const useArkDesktopRuntime = () => {
                 updateTask(taskId, (value) => ({
                     ...value,
                     runtimeProcessId: session.processId,
+                    availableCommands: session.availableCommands,
                     updatedAt: Date.now(),
                 }));
             }
@@ -812,6 +856,7 @@ export const useArkDesktopRuntime = () => {
                 ...value,
                 model: modelId,
                 runtimeProcessId: session.processId,
+                availableCommands: session.availableCommands,
                 error: undefined,
                 updatedAt: Date.now(),
             }));
@@ -830,6 +875,15 @@ export const useArkDesktopRuntime = () => {
             updatedAt: Date.now(),
         }));
     }, [updateTask]);
+
+    const availableCommands = useMemo(() => {
+        const commands = new Map<string, ArkDesktopSlashCommand>();
+        discoveredCommands.forEach((command) => commands.set(command.name, command));
+        snapshot.tasks.forEach((task) => {
+            task.availableCommands?.forEach((command) => commands.set(command.name, command));
+        });
+        return Array.from(commands.values());
+    }, [discoveredCommands, snapshot.tasks]);
 
     const activeTask = useMemo(
         () => snapshot.tasks.find((task) => task.id === activeTaskId) || null,
@@ -874,6 +928,7 @@ export const useArkDesktopRuntime = () => {
         refreshModelProviders,
         switchTaskModel,
         setTaskPermissionMode,
+        availableCommands,
         activeTask,
         activeTaskId,
         setActiveTaskId,

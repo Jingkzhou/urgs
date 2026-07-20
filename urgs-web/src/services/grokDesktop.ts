@@ -101,6 +101,9 @@ const invokeGrok = async <T>(command: string, args?: Record<string, unknown>) =>
 
 export const getGrokRuntimeStatus = () => invokeGrok<GrokRuntimeStatus>('grok_runtime_status');
 
+export const listGrokAvailableCommands = (workspace: string) =>
+    invokeGrok<GrokAvailableCommand[]>('grok_available_commands', { workspace });
+
 export const prepareGrokRuntime = (workspace: string, model: string, options?: GrokAcpOptions) =>
     invokeGrok<void>('grok_runtime_prepare', { workspace, model, options: options || null });
 

@@ -31,6 +31,22 @@ fn request_timeout(method: &str) -> Duration {
     }
 }
 
+fn initialize_client_meta(rules: Option<&str>) -> Value {
+    let mut meta = json!({
+        "clientType": "urgs-ark-desktop",
+        "clientVersion": env!("CARGO_PKG_VERSION"),
+        "startupHints": {
+            "nonInteractive": false,
+            "skipGitStatus": true,
+            "skipProjectLayout": true
+        }
+    });
+    if let Some(rules) = rules.filter(|value| !value.trim().is_empty()) {
+        meta["rules"] = json!(rules);
+    }
+    meta
+}
+
 #[derive(Debug, Clone, Serialize)]
 #[serde(rename_all = "camelCase")]
 pub struct GrokRuntimeStatus {
@@ -339,19 +355,6 @@ impl GrokProcess {
             return Ok(());
         }
 
-        let mut meta = json!({
-            "clientType": "urgs-ark-desktop",
-            "clientVersion": env!("CARGO_PKG_VERSION"),
-            "startupHints": {
-                "nonInteractive": false,
-                "skipGitStatus": true,
-                "skipProjectLayout": true
-            }
-        });
-        if let Some(rules) = rules.filter(|value| !value.trim().is_empty()) {
-            meta["rules"] = json!(rules);
-        }
-
         let response = self
             .request(
                 "initialize",
@@ -361,7 +364,7 @@ impl GrokProcess {
                         "fs": {},
                         "terminal": false
                     },
-                    "_meta": meta
+                    "_meta": initialize_client_meta(rules)
                 }),
             )
             .await?;
@@ -380,6 +383,38 @@ impl GrokProcess {
 
         *initialized = true;
         Ok(())
+    }
+
+    async fn discover_available_commands(
+        &self,
+        workspace: &Path,
+    ) -> Result<Vec<GrokAvailableCommand>, String> {
+        let response = self
+            .request(
+                "initialize",
+                json!({
+                    "protocolVersion": 1,
+                    "clientCapabilities": {
+                        "fs": {},
+                        "terminal": false
+                    },
+                    "_meta": initialize_client_meta(None)
+                }),
+            )
+            .await?;
+        let initialize_commands = available_commands_from_initialize(&response);
+        let response = self
+            .request(
+                "_x.ai/commands/list",
+                json!({ "cwd": workspace.to_string_lossy() }),
+            )
+            .await?;
+        let discovered_commands = available_commands_from_list(&response);
+        Ok(if discovered_commands.is_empty() {
+            initialize_commands
+        } else {
+            discovered_commands
+        })
     }
 
     fn replace_available_commands(&self, commands: Vec<GrokAvailableCommand>) {
@@ -507,7 +542,7 @@ fn parse_available_commands(value: Option<&Value>) -> Vec<GrokAvailableCommand> 
     let Some(commands) = value.and_then(Value::as_array) else {
         return Vec::new();
     };
-    let mut parsed = commands
+    let parsed = commands
         .iter()
         .filter_map(|command| {
             let name = command.get("name")?.as_str()?.trim();
@@ -534,9 +569,15 @@ fn parse_available_commands(value: Option<&Value>) -> Vec<GrokAvailableCommand> 
             })
         })
         .collect::<Vec<_>>();
-    parsed.sort_by(|left, right| left.name.cmp(&right.name));
-    parsed.dedup_by(|left, right| left.name == right.name);
-    parsed
+    parsed.into_iter().fold(Vec::new(), |mut unique, command| {
+        if !unique
+            .iter()
+            .any(|existing: &GrokAvailableCommand| existing.name == command.name)
+        {
+            unique.push(command);
+        }
+        unique
+    })
 }
 
 fn available_commands_from_initialize(response: &Value) -> Vec<GrokAvailableCommand> {
@@ -546,6 +587,10 @@ fn available_commands_from_initialize(response: &Value) -> Vec<GrokAvailableComm
             .or_else(|| response.get("meta"))
             .and_then(|meta| meta.get("availableCommands")),
     )
+}
+
+fn available_commands_from_list(response: &Value) -> Vec<GrokAvailableCommand> {
+    parse_available_commands(response.get("commands"))
 }
 
 fn available_commands_from_session_update(message: &Value) -> Option<Vec<GrokAvailableCommand>> {
@@ -1279,6 +1324,31 @@ fn spawn_grok_process(
     let home = grok_home(app)?;
     let arguments = grok_agent_arguments(model, options)?;
     let model_envs = model_provider_envs(app, model)?;
+    spawn_grok_process_with_env(app, workspace, arguments, model_envs, home, launch_key)
+}
+
+fn spawn_grok_discovery_process(
+    app: &AppHandle,
+    workspace: &Path,
+) -> Result<Arc<GrokProcess>, String> {
+    spawn_grok_process_with_env(
+        app,
+        workspace,
+        grok_agent_arguments(None, &GrokAcpOptions::default())?,
+        Vec::new(),
+        grok_home(app)?,
+        format!("command-discovery:{}", workspace.to_string_lossy()),
+    )
+}
+
+fn spawn_grok_process_with_env(
+    app: &AppHandle,
+    workspace: &Path,
+    arguments: Vec<String>,
+    model_envs: Vec<(String, String)>,
+    home: PathBuf,
+    launch_key: String,
+) -> Result<Arc<GrokProcess>, String> {
     let (mut receiver, child) = app
         .shell()
         .sidecar("grok")
@@ -1402,6 +1472,18 @@ pub async fn grok_runtime_status(app: AppHandle) -> Result<GrokRuntimeStatus, St
         grok_home: home.to_string_lossy().to_string(),
         message: (!available).then(|| String::from_utf8_lossy(&output.stderr).trim().to_string()),
     })
+}
+
+#[tauri::command]
+pub async fn grok_available_commands(
+    app: AppHandle,
+    workspace: String,
+) -> Result<Vec<GrokAvailableCommand>, String> {
+    let workspace = validate_workspace(&workspace)?;
+    let process = spawn_grok_discovery_process(&app, &workspace)?;
+    let result = process.discover_available_commands(&workspace).await;
+    process.stop();
+    result
 }
 
 #[tauri::command]
@@ -2103,13 +2185,13 @@ pub fn grok_start_login(
 #[cfg(test)]
 mod tests {
     use super::{
-        available_commands_from_initialize, available_commands_from_session_update,
-        cache_provider_api_key, forget_cached_provider_api_key, format_rpc_error,
-        grok_agent_arguments, model_key_env_name, normalize_model_id, normalize_model_provider,
-        parse_grok_toml, process_launch_key, read_provider_api_key, request_timeout,
-        select_auth_method, serialize_grok_toml, validate_cli_arguments,
-        validate_service_arguments, GrokAcpOptions, GrokCliService, GrokModelProviderInput,
-        INITIALIZE_TIMEOUT, REQUEST_TIMEOUT,
+        available_commands_from_initialize, available_commands_from_list,
+        available_commands_from_session_update, cache_provider_api_key,
+        forget_cached_provider_api_key, format_rpc_error, grok_agent_arguments, model_key_env_name,
+        normalize_model_id, normalize_model_provider, parse_grok_toml, process_launch_key,
+        read_provider_api_key, request_timeout, select_auth_method, serialize_grok_toml,
+        validate_cli_arguments, validate_service_arguments, GrokAcpOptions, GrokCliService,
+        GrokModelProviderInput, INITIALIZE_TIMEOUT, REQUEST_TIMEOUT,
     };
     use serde_json::json;
     use std::path::Path;
@@ -2161,6 +2243,23 @@ mod tests {
         assert_eq!(commands[0].name, "compact");
         assert_eq!(commands[0].input_hint.as_deref(), Some("optional context"));
         assert_eq!(commands[1].name, "context");
+    }
+
+    #[test]
+    fn parses_available_commands_from_commands_list() {
+        let commands = available_commands_from_list(&json!({
+            "commands": [
+                { "name": "compact", "description": "Compress history" },
+                {
+                    "name": "project:review",
+                    "description": "Review changes",
+                    "input": { "hint": "optional scope" }
+                }
+            ]
+        }));
+        assert_eq!(commands.len(), 2);
+        assert_eq!(commands[1].name, "project:review");
+        assert_eq!(commands[1].input_hint.as_deref(), Some("optional scope"));
     }
 
     #[test]

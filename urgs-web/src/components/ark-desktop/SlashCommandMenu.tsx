@@ -1,5 +1,22 @@
 import React, { useEffect, useMemo, useState } from 'react';
-import { Command, CornerDownLeft } from 'lucide-react';
+import {
+    Brain,
+    CircleDashed,
+    CircleHelp,
+    Code2,
+    Command,
+    CornerDownLeft,
+    FileSearch,
+    GitPullRequest,
+    Info,
+    Repeat2,
+    Search,
+    ShieldCheck,
+    Sparkles,
+    Target,
+    WandSparkles,
+    Wrench,
+} from 'lucide-react';
 import type { ArkDesktopSlashCommand } from './types';
 
 const commandDescriptions: Record<string, string> = {
@@ -22,6 +39,62 @@ const commandDescriptions: Record<string, string> = {
     loop: '按指定间隔重复执行提示词',
 };
 
+const commandLabels: Record<string, string> = {
+    compact: '压缩',
+    'always-approve': '完全访问',
+    flush: '写入记忆',
+    dream: '整理记忆',
+    memory: '记忆',
+    context: '上下文',
+    'session-info': '会话信息',
+    goal: '目标',
+    'check-work': '检查工作',
+    'code-review': '代码审查',
+    'create-skill': '创建技能',
+    help: '帮助',
+    imagine: '图像创作',
+    'find-skills': '查找技能',
+    feedback: '反馈',
+    loop: '循环执行',
+    plugins: '插件',
+    'reload-plugins': '重载插件',
+    'hooks-trust': '信任 Hooks',
+    'hooks-list': '查看 Hooks',
+    'hooks-add': '添加 Hook',
+    'hooks-remove': '移除 Hook',
+    'hooks-untrust': '取消 Hooks 信任',
+    'open-knowledge-discovery': '探索知识库',
+    'open-knowledge-write-skill': '编写技能',
+};
+
+const commandIcon = (name: string) => {
+    if (name === 'compact') return CircleDashed;
+    if (name === 'context') return Sparkles;
+    if (name === 'always-approve') return ShieldCheck;
+    if (name === 'session-info') return Info;
+    if (name === 'goal') return Target;
+    if (name.includes('review')) return GitPullRequest;
+    if (name.includes('check')) return FileSearch;
+    if (name.includes('skill')) return WandSparkles;
+    if (name.includes('memory') || name === 'flush' || name === 'dream') return Brain;
+    if (name.includes('plugin') || name.includes('hook')) return Wrench;
+    if (name === 'feedback') return CircleHelp;
+    if (name === 'loop') return Repeat2;
+    if (name.includes('find') || name === 'help') return Search;
+    if (name === 'imagine') return Sparkles;
+    return Code2;
+};
+
+const commandLabel = (name: string) => commandLabels[name]
+    || name.replace(/[-_]/g, ' ').replace(/\b\w/g, (letter) => letter.toUpperCase());
+
+const coreSessionCommands: ArkDesktopSlashCommand[] = [
+    { name: 'compact', description: 'Compress conversation history', inputHint: 'optional context about what to preserve' },
+    { name: 'always-approve', description: 'Toggle always-approve mode', inputHint: 'on|off' },
+    { name: 'context', description: 'Show context window usage and session stats' },
+    { name: 'session-info', description: 'Show session details' },
+];
+
 const slashQuery = (value: string) => {
     const match = value.match(/^\/([^\s/]*)$/);
     return match ? match[1].toLowerCase() : null;
@@ -35,18 +108,30 @@ export interface SlashCommandMenuProps {
     children: React.ReactNode;
 }
 
+export interface ConversationPromptInputProps {
+    value: string;
+    commands?: ArkDesktopSlashCommand[];
+    onChange: (value: string) => void;
+    onSubmit: () => void | Promise<void>;
+    disabled?: boolean;
+    slashDisabled?: boolean;
+    placeholder: string;
+    rows?: number;
+    className?: string;
+}
+
 const SlashCommandMenu: React.FC<SlashCommandMenuProps> = ({ value, commands, onChange, disabled, children }) => {
     const query = slashQuery(value);
     const [activeIndex, setActiveIndex] = useState(0);
     const [dismissedValue, setDismissedValue] = useState<string | null>(null);
     const filteredCommands = useMemo(() => {
         if (query === null) return [];
-        return commands
+        const availableCommands = commands.length > 0 ? commands : coreSessionCommands;
+        return availableCommands
             .filter((command) => {
                 const searchable = `${command.name} ${command.description} ${commandDescriptions[command.name] || ''}`.toLowerCase();
                 return !query || searchable.includes(query);
-            })
-            .slice(0, 10);
+            });
     }, [commands, query]);
     const visible = !disabled && query !== null && dismissedValue !== value;
 
@@ -59,7 +144,9 @@ const SlashCommandMenu: React.FC<SlashCommandMenuProps> = ({ value, commands, on
     }, [dismissedValue, value]);
 
     const select = (command: ArkDesktopSlashCommand) => {
-        onChange(`/${command.name}${command.inputHint ? ' ' : ''}`);
+        const nextValue = `/${command.name}${command.inputHint ? ' ' : ''}`;
+        setDismissedValue(nextValue);
+        onChange(nextValue);
     };
 
     const handleKeyDownCapture = (event: React.KeyboardEvent<HTMLDivElement>) => {
@@ -86,14 +173,12 @@ const SlashCommandMenu: React.FC<SlashCommandMenuProps> = ({ value, commands, on
     };
 
     return <div className="relative" onKeyDownCapture={handleKeyDownCapture}>
-        {visible && <div className="absolute bottom-[calc(100%+10px)] left-0 right-0 z-30 overflow-hidden rounded-2xl border border-slate-200 bg-white/98 shadow-[0_18px_55px_rgba(15,23,42,0.16)] backdrop-blur-xl" role="listbox" aria-label="Grok 会话命令">
-            <div className="flex items-center justify-between border-b border-slate-100 px-3.5 py-2 text-[11px] font-medium text-slate-400">
-                <span className="flex items-center gap-1.5"><Command size={13} />Grok 会话命令</span>
-                <span>↑↓ 选择 · Enter 填入 · Esc 关闭</span>
-            </div>
-            {filteredCommands.length > 0 ? <div className="custom-scrollbar max-h-72 overflow-y-auto p-1.5">
+        {visible && <div className="absolute bottom-[calc(100%+12px)] left-0 right-0 z-30 overflow-hidden rounded-[22px] border border-white/10 bg-[#292929]/[0.98] p-2 shadow-[0_24px_72px_rgba(15,23,42,0.32)] backdrop-blur-2xl" role="listbox" aria-label="Grok 会话命令">
+            <div className="sr-only">{commands.length > 0 ? 'Grok 当前会话命令' : 'Grok 基础会话命令'}，使用上下方向键选择，按 Enter 填入命令。</div>
+            {filteredCommands.length > 0 ? <div className="custom-scrollbar max-h-[min(440px,calc(100vh-220px))] overflow-y-auto">
                 {filteredCommands.map((command, index) => {
                     const description = commandDescriptions[command.name] || command.description || '执行 Grok 会话命令';
+                    const CommandIcon = commandIcon(command.name);
                     return <button
                         key={command.name}
                         type="button"
@@ -102,20 +187,52 @@ const SlashCommandMenu: React.FC<SlashCommandMenuProps> = ({ value, commands, on
                         onMouseEnter={() => setActiveIndex(index)}
                         onMouseDown={(event) => event.preventDefault()}
                         onClick={() => select(command)}
-                        className={`flex w-full items-start gap-3 rounded-xl px-3 py-2.5 text-left transition ${index === activeIndex ? 'bg-slate-100' : 'hover:bg-slate-50'}`}
+                        className={`grid w-full grid-cols-[minmax(0,0.88fr)_minmax(210px,1.12fr)_16px] items-center gap-4 rounded-2xl px-3.5 py-3 text-left transition-colors duration-150 ${index === activeIndex ? 'bg-white/[0.12]' : 'hover:bg-white/[0.06]'}`}
                     >
-                        <span className="mt-0.5 shrink-0 font-mono text-[13px] font-semibold text-slate-800">/{command.name}</span>
-                        <span className="min-w-0 flex-1">
-                            <span className="block text-xs leading-5 text-slate-500">{description}</span>
-                            {command.inputHint && <span className="mt-0.5 block truncate font-mono text-[10px] text-slate-400">{command.inputHint}</span>}
+                        <span className="flex min-w-0 items-center gap-3">
+                            <CommandIcon size={20} strokeWidth={1.8} className={`shrink-0 ${index === activeIndex ? 'text-zinc-100' : 'text-zinc-300'}`} />
+                            <span className="min-w-0 truncate text-[15px] font-medium leading-5 text-zinc-100">
+                                {commandLabel(command.name)} <span className="font-mono text-[12px] font-normal text-zinc-500">/{command.name}</span>
+                            </span>
                         </span>
-                        <CornerDownLeft size={13} className={`mt-1 shrink-0 ${index === activeIndex ? 'text-slate-500' : 'text-slate-300'}`} />
+                        <span className="min-w-0 text-right">
+                            <span className="block truncate text-[13px] leading-5 text-zinc-400">{description}{command.inputHint ? ` · ${command.inputHint}` : ''}</span>
+                        </span>
+                        <CornerDownLeft size={15} className={`shrink-0 transition-opacity ${index === activeIndex ? 'text-zinc-300 opacity-100' : 'text-zinc-600 opacity-0'}`} />
                     </button>;
                 })}
-            </div> : <div className="px-4 py-5 text-center text-xs text-slate-400">没有匹配的当前会话命令</div>}
+            </div> : <div className="flex min-h-28 flex-col items-center justify-center gap-2 px-4 py-5 text-center text-sm text-zinc-400"><Command size={18} className="text-zinc-500" /><span>没有匹配的当前会话命令</span></div>}
         </div>}
         {children}
     </div>;
 };
+
+export const ConversationPromptInput: React.FC<ConversationPromptInputProps> = ({
+    value,
+    commands = [],
+    onChange,
+    onSubmit,
+    disabled = false,
+    slashDisabled = false,
+    placeholder,
+    rows = 2,
+    className = 'block w-full resize-none bg-transparent px-2.5 py-2 text-[15px] leading-6 text-slate-800 outline-none placeholder:text-slate-400 disabled:cursor-not-allowed',
+}) => (
+    <SlashCommandMenu value={value} commands={commands} onChange={onChange} disabled={disabled || slashDisabled}>
+        <textarea
+            value={value}
+            onChange={(event) => onChange(event.target.value)}
+            onKeyDown={(event) => {
+                if (event.key !== 'Enter' || event.shiftKey || disabled || !value.trim()) return;
+                event.preventDefault();
+                void onSubmit();
+            }}
+            disabled={disabled}
+            placeholder={placeholder}
+            rows={rows}
+            className={className}
+        />
+    </SlashCommandMenu>
+);
 
 export default SlashCommandMenu;
