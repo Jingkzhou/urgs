@@ -1,4 +1,4 @@
-import React, { useEffect, useMemo, useState } from 'react';
+import React, { useEffect, useMemo, useRef, useState } from 'react';
 import {
     Brain,
     CircleDashed,
@@ -124,6 +124,7 @@ const SlashCommandMenu: React.FC<SlashCommandMenuProps> = ({ value, commands, on
     const query = slashQuery(value);
     const [activeIndex, setActiveIndex] = useState(0);
     const [dismissedValue, setDismissedValue] = useState<string | null>(null);
+    const menuRef = useRef<HTMLDivElement>(null);
     const filteredCommands = useMemo(() => {
         if (query === null) return [];
         const availableCommands = commands.length > 0 ? commands : coreSessionCommands;
@@ -142,6 +143,20 @@ const SlashCommandMenu: React.FC<SlashCommandMenuProps> = ({ value, commands, on
     useEffect(() => {
         if (dismissedValue !== null && dismissedValue !== value) setDismissedValue(null);
     }, [dismissedValue, value]);
+
+    useEffect(() => {
+        if (!visible) return;
+        const closeOnOutsideInteraction = (event: Event) => {
+            if (event.target instanceof Node && menuRef.current?.contains(event.target)) return;
+            setDismissedValue(value);
+        };
+        document.addEventListener('pointerdown', closeOnOutsideInteraction, true);
+        document.addEventListener('click', closeOnOutsideInteraction, true);
+        return () => {
+            document.removeEventListener('pointerdown', closeOnOutsideInteraction, true);
+            document.removeEventListener('click', closeOnOutsideInteraction, true);
+        };
+    }, [value, visible]);
 
     const select = (command: ArkDesktopSlashCommand) => {
         const nextValue = `/${command.name}${command.inputHint ? ' ' : ''}`;
@@ -173,7 +188,7 @@ const SlashCommandMenu: React.FC<SlashCommandMenuProps> = ({ value, commands, on
     };
 
     return <div className="relative" onKeyDownCapture={handleKeyDownCapture}>
-        {visible && <div className="absolute bottom-[calc(100%+12px)] left-0 right-0 z-30 overflow-hidden rounded-[22px] border border-white/10 bg-[#292929]/[0.98] p-2 shadow-[0_24px_72px_rgba(15,23,42,0.32)] backdrop-blur-2xl" role="listbox" aria-label="Grok 会话命令">
+        {visible && <div ref={menuRef} className="absolute bottom-[calc(100%+12px)] left-0 right-0 z-30 overflow-hidden rounded-[22px] border border-white/10 bg-[#292929]/[0.98] p-2 shadow-[0_24px_72px_rgba(15,23,42,0.32)] backdrop-blur-2xl" role="listbox" aria-label="Grok 会话命令">
             <div className="sr-only">{commands.length > 0 ? 'Grok 当前会话命令' : 'Grok 基础会话命令'}，使用上下方向键选择，按 Enter 填入命令。</div>
             {filteredCommands.length > 0 ? <div className="custom-scrollbar max-h-[min(440px,calc(100vh-220px))] overflow-y-auto">
                 {filteredCommands.map((command, index) => {
