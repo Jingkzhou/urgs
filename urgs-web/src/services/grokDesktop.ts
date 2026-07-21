@@ -157,6 +157,9 @@ export const cancelGrokPrompt = (sessionId: string) => invokeGrok<void>('grok_ca
 export const respondGrokPermission = (sessionId: string, requestId: unknown, optionId?: string) =>
     invokeGrok<void>('grok_respond_permission', { sessionId, requestId, optionId: optionId || null });
 
+export const respondGrokUserQuestion = (sessionId: string, requestId: unknown, response: Record<string, unknown>) =>
+    invokeGrok<void>('grok_respond_user_question', { sessionId, requestId, response });
+
 export const startGrokLogin = (method: 'browser' | 'oauth' | 'device' = 'browser') =>
     invokeGrok<void>('grok_start_login', { method });
 

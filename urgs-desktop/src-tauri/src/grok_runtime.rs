@@ -169,6 +169,12 @@ struct PendingPermission {
     request_id: Value,
 }
 
+#[derive(Clone)]
+struct PendingUserQuestion {
+    session_id: String,
+    request_id: Value,
+}
+
 pub struct GrokRuntimeState {
     prepared_process: Mutex<Option<Arc<GrokProcess>>>,
     session_processes: Mutex<HashMap<String, Arc<GrokProcess>>>,
@@ -262,6 +268,7 @@ struct GrokProcess {
     stderr: Mutex<String>,
     pending_requests: Mutex<HashMap<u64, oneshot::Sender<Result<Value, String>>>>,
     pending_permissions: Mutex<Vec<PendingPermission>>,
+    pending_user_questions: Mutex<Vec<PendingUserQuestion>>,
     available_commands: Mutex<Vec<GrokAvailableCommand>>,
     request_sequence: AtomicU64,
     initialized: AsyncMutex<bool>,
@@ -281,6 +288,7 @@ impl GrokProcess {
             stderr: Mutex::new(String::new()),
             pending_requests: Mutex::new(HashMap::new()),
             pending_permissions: Mutex::new(Vec::new()),
+            pending_user_questions: Mutex::new(Vec::new()),
             available_commands: Mutex::new(Vec::new()),
             request_sequence: AtomicU64::new(1),
             initialized: AsyncMutex::new(false),
@@ -521,6 +529,38 @@ impl GrokProcess {
         pending.retain(|permission| {
             if permission.session_id == session_id {
                 cancelled.push(permission.request_id.clone());
+                false
+            } else {
+                true
+            }
+        });
+        cancelled
+    }
+
+    fn remember_user_question(&self, session_id: String, request_id: Value) {
+        if let Ok(mut pending) = self.pending_user_questions.lock() {
+            pending.retain(|question| question.request_id != request_id);
+            pending.push(PendingUserQuestion {
+                session_id,
+                request_id,
+            });
+        }
+    }
+
+    fn clear_user_question(&self, request_id: &Value) {
+        if let Ok(mut pending) = self.pending_user_questions.lock() {
+            pending.retain(|question| question.request_id != *request_id);
+        }
+    }
+
+    fn cancel_user_questions(&self, session_id: &str) -> Vec<Value> {
+        let Ok(mut pending) = self.pending_user_questions.lock() else {
+            return Vec::new();
+        };
+        let mut cancelled = Vec::new();
+        pending.retain(|question| {
+            if question.session_id == session_id {
+                cancelled.push(question.request_id.clone());
                 false
             } else {
                 true
@@ -1154,6 +1194,18 @@ fn emit_process_event(
     emit_event(app, event_type, payload);
 }
 
+fn user_question_params(message: &Value) -> Option<&Value> {
+    let method = message.get("method")?.as_str()?;
+    let params = message.get("params")?;
+    if method == "x.ai/ask_user_question" {
+        return Some(params);
+    }
+    (method == "_x.ai/ask_user_question"
+        && params.get("method").and_then(Value::as_str) == Some("x.ai/ask_user_question"))
+    .then(|| params.get("params"))
+    .flatten()
+}
+
 fn handle_stdout(app: &AppHandle, process: &Arc<GrokProcess>, line: Vec<u8>) {
     let line = String::from_utf8_lossy(&line).trim().to_string();
     if line.is_empty() {
@@ -1203,6 +1255,38 @@ fn handle_stdout(app: &AppHandle, process: &Arc<GrokProcess>, line: Vec<u8>) {
             if let Some(request_id) = request_id {
                 process.remember_permission(session_id, request_id);
                 emit_process_event(app, process, "permission_request", message);
+            }
+        }
+        "x.ai/ask_user_question" | "_x.ai/ask_user_question" => {
+            let request_id = message.get("id").cloned();
+            let params = user_question_params(&message);
+            let session_id = params
+                .and_then(|params| params.get("sessionId"))
+                .and_then(Value::as_str)
+                .unwrap_or_default()
+                .to_string();
+            if let (Some(request_id), Some(params)) = (request_id, params) {
+                if session_id.is_empty() {
+                    let _ = process.write_json(json!({
+                        "jsonrpc": "2.0",
+                        "id": request_id,
+                        "error": { "code": -32602, "message": "AskUserQuestion 缺少 sessionId" }
+                    }));
+                    return;
+                }
+                process.remember_user_question(session_id.clone(), request_id.clone());
+                emit_process_event(
+                    app,
+                    process,
+                    "user_question_request",
+                    json!({
+                        "requestId": request_id,
+                        "sessionId": session_id,
+                        "toolCallId": params.get("toolCallId"),
+                        "questions": params.get("questions").cloned().unwrap_or_else(|| json!([])),
+                        "mode": params.get("mode").and_then(Value::as_str).unwrap_or("default"),
+                    }),
+                );
             }
         }
         _ => {
@@ -2098,6 +2182,13 @@ pub fn grok_cancel(state: State<'_, GrokRuntimeState>, session_id: String) -> Re
             "result": { "outcome": { "outcome": "cancelled" } }
         }))?;
     }
+    for request_id in process.cancel_user_questions(&session_id) {
+        process.write_json(json!({
+            "jsonrpc": "2.0",
+            "id": request_id,
+            "result": { "outcome": "cancelled" }
+        }))?;
+    }
     Ok(())
 }
 
@@ -2119,6 +2210,33 @@ pub fn grok_respond_permission(
         "result": { "outcome": outcome }
     }))?;
     process.clear_permission(&request_id);
+    Ok(())
+}
+
+#[tauri::command]
+pub fn grok_respond_user_question(
+    state: State<'_, GrokRuntimeState>,
+    session_id: String,
+    request_id: Value,
+    response: Value,
+) -> Result<(), String> {
+    let process = session_process(&state, &session_id)?;
+    let outcome = response
+        .get("outcome")
+        .and_then(Value::as_str)
+        .unwrap_or_default();
+    if !matches!(
+        outcome,
+        "accepted" | "chat_about_this" | "skip_interview" | "cancelled"
+    ) {
+        return Err("无效的用户问卷响应结果".to_string());
+    }
+    process.write_json(json!({
+        "jsonrpc": "2.0",
+        "id": request_id,
+        "result": response
+    }))?;
+    process.clear_user_question(&request_id);
     Ok(())
 }
 
@@ -2190,12 +2308,40 @@ mod tests {
         forget_cached_provider_api_key, format_rpc_error, grok_agent_arguments, model_key_env_name,
         normalize_model_id, normalize_model_provider, parse_grok_toml, process_launch_key,
         read_provider_api_key, request_timeout, select_auth_method, serialize_grok_toml,
-        validate_cli_arguments, validate_service_arguments, GrokAcpOptions, GrokCliService,
-        GrokModelProviderInput, INITIALIZE_TIMEOUT, REQUEST_TIMEOUT,
+        user_question_params, validate_cli_arguments, validate_service_arguments, GrokAcpOptions,
+        GrokCliService, GrokModelProviderInput, INITIALIZE_TIMEOUT, REQUEST_TIMEOUT,
     };
     use serde_json::json;
     use std::path::Path;
     use std::sync::Mutex;
+
+    #[test]
+    fn extracts_direct_and_wrapped_user_question_requests() {
+        let direct = json!({
+            "method": "x.ai/ask_user_question",
+            "params": { "sessionId": "session-direct", "questions": [] }
+        });
+        assert_eq!(
+            user_question_params(&direct)
+                .and_then(|params| params.get("sessionId"))
+                .and_then(|value| value.as_str()),
+            Some("session-direct")
+        );
+
+        let wrapped = json!({
+            "method": "_x.ai/ask_user_question",
+            "params": {
+                "method": "x.ai/ask_user_question",
+                "params": { "sessionId": "session-wrapped", "questions": [] }
+            }
+        });
+        assert_eq!(
+            user_question_params(&wrapped)
+                .and_then(|params| params.get("sessionId"))
+                .and_then(|value| value.as_str()),
+            Some("session-wrapped")
+        );
+    }
 
     #[test]
     fn prefers_agent_default_auth_method() {

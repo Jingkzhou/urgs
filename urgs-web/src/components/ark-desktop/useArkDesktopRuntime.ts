@@ -14,6 +14,7 @@ import {
     listGrokCliServices,
     listGrokModelProviders,
     runGrokCli,
+    respondGrokUserQuestion,
     respondGrokPermission,
     prepareGrokRuntime,
     startGrokCliService,
@@ -34,6 +35,7 @@ import type {
     ArkDesktopAgent,
     ArkDesktopAutomation,
     ArkDesktopPermissionRequest,
+    ArkDesktopUserQuestionRequest,
     ArkDesktopSkill,
     ArkDesktopSnapshot,
     ArkDesktopSlashCommand,
@@ -175,6 +177,7 @@ export const useArkDesktopRuntime = () => {
     const [discoveredCommands, setDiscoveredCommands] = useState<ArkDesktopSlashCommand[]>([]);
     const [activeTaskId, setActiveTaskId] = useState<string | null>(null);
     const [permissions, setPermissions] = useState<ArkDesktopPermissionRequest[]>([]);
+    const [userQuestions, setUserQuestions] = useState<ArkDesktopUserQuestionRequest[]>([]);
     const [runtimeError, setRuntimeError] = useState('');
     const cancelledTaskIdsRef = useRef(new Set<string>());
     const taskByProcessIdRef = useRef(new Map<string, string>());
@@ -356,6 +359,37 @@ export const useArkDesktopRuntime = () => {
             return;
         }
 
+        if (event.eventType === 'user_question_request' && taskId && sessionId) {
+            const request: ArkDesktopUserQuestionRequest = {
+                taskId,
+                sessionId,
+                requestId: event.payload?.requestId,
+                toolCallId: event.payload?.toolCallId,
+                mode: event.payload?.mode === 'plan' ? 'plan' : 'default',
+                questions: Array.isArray(event.payload?.questions) ? event.payload.questions.map((question: any) => ({
+                    ...(typeof question?.id === 'string' ? { id: question.id } : {}),
+                    question: String(question?.question || '请完成以下选择'),
+                    multiSelect: Boolean(question?.multiSelect ?? question?.multi_select),
+                    options: Array.isArray(question?.options) ? question.options.map((option: any) => ({
+                        ...(typeof option?.id === 'string' ? { id: option.id } : {}),
+                        label: String(option?.label || ''),
+                        ...(typeof option?.description === 'string' ? { description: option.description } : {}),
+                        ...(typeof option?.preview === 'string' ? { preview: option.preview } : {}),
+                    })).filter((option: ArkDesktopUserQuestionRequest['questions'][number]['options'][number]) => option.label) : [],
+                })).filter((question: ArkDesktopUserQuestionRequest['questions'][number]) => question.question && question.options.length > 0) : [],
+            };
+            if (!request.requestId || request.questions.length === 0) {
+                updateTask(taskId, (task) => ({ ...task, error: '收到的用户问卷格式无效', updatedAt: Date.now() }));
+                return;
+            }
+            const requestKey = JSON.stringify(request.requestId);
+            setUserQuestions((current) => [
+                ...current.filter((item) => item.sessionId !== sessionId || JSON.stringify(item.requestId) !== requestKey),
+                request,
+            ]);
+            return;
+        }
+
         if (event.eventType === 'runtime_error') {
             const message = redactRuntimeText(event.payload?.message || '本地智能运行时发生错误');
             if (taskId) {
@@ -370,6 +404,7 @@ export const useArkDesktopRuntime = () => {
             if (!processId) return;
             taskByProcessIdRef.current.delete(processId);
             setPermissions((current) => current.filter((item) => item.taskId !== taskId));
+            setUserQuestions((current) => current.filter((item) => item.taskId !== taskId));
             updateTask(taskId, (task) => task.runtimeProcessId === processId && task.status === 'running'
                 ? { ...task, status: 'failed', error: '本地任务进程已退出', updatedAt: Date.now() }
                 : task);
@@ -744,11 +779,17 @@ export const useArkDesktopRuntime = () => {
             updatedAt: Date.now(),
         }));
         setPermissions((current) => current.filter((item) => item.taskId !== taskId));
+        setUserQuestions((current) => current.filter((item) => item.taskId !== taskId));
     }, [updateTask]);
 
     const permission = useMemo(
         () => permissions.find((item) => item.taskId === activeTaskId) || permissions[0] || null,
         [activeTaskId, permissions],
+    );
+
+    const userQuestion = useMemo(
+        () => userQuestions.find((item) => item.taskId === activeTaskId) || userQuestions[0] || null,
+        [activeTaskId, userQuestions],
     );
 
     const answerPermission = useCallback(async (optionId?: string) => {
@@ -764,6 +805,20 @@ export const useArkDesktopRuntime = () => {
             updateTask(permission.taskId, (task) => ({ ...task, error: message, updatedAt: Date.now() }));
         }
     }, [permission, updateTask]);
+
+    const answerUserQuestion = useCallback(async (response: Record<string, unknown>) => {
+        if (!userQuestion) return;
+        try {
+            await respondGrokUserQuestion(userQuestion.sessionId, userQuestion.requestId, response);
+            const requestKey = JSON.stringify(userQuestion.requestId);
+            setUserQuestions((current) => current.filter((item) => (
+                item.sessionId !== userQuestion.sessionId || JSON.stringify(item.requestId) !== requestKey
+            )));
+        } catch (error) {
+            const message = redactRuntimeText(error instanceof Error ? error.message : String(error));
+            updateTask(userQuestion.taskId, (task) => ({ ...task, error: message, updatedAt: Date.now() }));
+        }
+    }, [updateTask, userQuestion]);
 
     const addModel = useCallback(async (model: string) => {
         const modelId = model.trim();
@@ -895,6 +950,7 @@ export const useArkDesktopRuntime = () => {
         setSnapshot(defaults);
         setActiveTaskId(null);
         setPermissions([]);
+        setUserQuestions([]);
         taskByProcessIdRef.current.clear();
         taskBySessionIdRef.current.clear();
         setRuntimeError('');
@@ -921,6 +977,8 @@ export const useArkDesktopRuntime = () => {
         cancelTask,
         permission,
         answerPermission,
+        userQuestion,
+        answerUserQuestion,
         addModel,
         selectModel,
         saveModelProvider,

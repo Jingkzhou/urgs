@@ -182,3 +182,22 @@ export interface ArkDesktopPermissionRequest {
     title: string;
     options: Array<{ optionId: string; name: string; kind?: string }>;
 }
+
+export interface ArkDesktopUserQuestionRequest {
+    taskId: string;
+    sessionId: string;
+    requestId: unknown;
+    toolCallId?: string;
+    mode: 'default' | 'plan';
+    questions: Array<{
+        id?: string;
+        question: string;
+        multiSelect?: boolean;
+        options: Array<{
+            id?: string;
+            label: string;
+            description?: string;
+            preview?: string;
+        }>;
+    }>;
+}

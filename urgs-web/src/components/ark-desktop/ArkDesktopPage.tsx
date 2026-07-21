@@ -6,9 +6,9 @@ import { Prism as SyntaxHighlighter } from 'react-syntax-highlighter';
 import { oneDark } from 'react-syntax-highlighter/dist/esm/styles/prism';
 import {
     AlertCircle, Bot, BriefcaseBusiness, Check, CheckCircle2, CheckSquare,
-    ChevronDown, ChevronRight, CircleStop, Clock3, Code2, Copy, Cpu, FileText, Folder,
+    ChevronDown, CircleStop, Clock3, Code2, Copy, Cpu, FileText, Folder,
     Hand, KeyRound, Lightbulb, LoaderCircle, Paperclip, Pencil, Play, Plus,
-    Search, Send, Settings, ShieldAlert, Sparkles, SquareTerminal, Trash2, WandSparkles, Wrench, X,
+    Search, Send, Settings, ShieldAlert, Sparkles, Trash2, WandSparkles, Wrench, X,
 } from 'lucide-react';
 import { copyToClipboard } from '@/utils/clipboard';
 import { useArkDesktopRuntime } from './useArkDesktopRuntime';
@@ -17,6 +17,8 @@ import GrokConfigEditor from './GrokConfigEditor';
 import GrokExecutionSettingsPanel from './GrokExecutionSettingsPanel';
 import { ArkDesktopSidebarToggle, ArkDesktopTitleContent } from './ArkDesktopTitleBar';
 import { ConversationPromptInput } from './SlashCommandMenu';
+import TaskActivityTimeline from './TaskActivityTimeline';
+import UserQuestionDialog from './UserQuestionDialog';
 import type {
     ArkDesktopAgent, ArkDesktopAutomation, ArkDesktopSection, ArkDesktopSkill,
     ArkDesktopModelProvider, ArkDesktopTask, ArkDesktopTaskStatus, AutomationSchedule, GrokExecutionSettings,
@@ -135,6 +137,7 @@ const ArkDesktopPage: React.FC = () => {
     const [editor, setEditor] = useState<{ type: 'agent' | 'skill' | 'automation'; id?: string } | null>(null);
     const [actionPending, setActionPending] = useState(false);
     const schedulingRef = useRef(false);
+    const conversationScrollRef = useRef<HTMLDivElement>(null);
 
     useEffect(() => {
         const initializeSchedules = () => {
@@ -295,10 +298,11 @@ const ArkDesktopPage: React.FC = () => {
             <section className="relative flex min-w-0 flex-1 flex-col overflow-hidden">
                 {runtime.runtimeError && <div className="mx-5 mt-4 flex items-start gap-2 rounded-xl border border-red-200 bg-red-50 px-4 py-3 text-sm text-red-700"><AlertCircle size={17} className="mt-0.5 shrink-0" /><span className="flex-1">{runtime.runtimeError}</span><button type="button" onClick={() => runtime.setRuntimeError('')}><X size={16} /></button></div>}
 
-                <main className="custom-scrollbar min-h-0 flex-1 overflow-y-auto">
+                <main ref={conversationScrollRef} className="custom-scrollbar min-h-0 flex-1 overflow-y-auto">
                     {runtime.activeTask || section === 'new-task' ? <TaskView
                         task={runtime.activeTask}
                         runtime={runtime}
+                        scrollContainerRef={conversationScrollRef}
                         followUp={runtime.activeTask ? followUpDrafts[runtime.activeTask.id] || '' : draft}
                         setFollowUp={runtime.activeTask ? (value) => setFollowUpDrafts((current) => ({ ...current, [runtime.activeTask!.id]: value })) : setDraft}
                         locateLatestMessage={latestMessageTaskId === runtime.activeTask?.id}
@@ -332,6 +336,7 @@ const ArkDesktopPage: React.FC = () => {
             {editor?.type === 'skill' && <SkillEditor id={editor.id} runtime={runtime} onClose={() => setEditor(null)} />}
             {editor?.type === 'automation' && <AutomationEditor id={editor.id} runtime={runtime} onClose={() => setEditor(null)} />}
             {runtime.permission && <Modal title={`允许“${runtime.permission.taskTitle}”执行本地操作？`} onClose={() => void runtime.answerPermission()}><p className="mb-5 text-sm leading-6 text-slate-600">{runtime.permission.title}</p><div className="flex flex-wrap justify-end gap-2"><button type="button" onClick={() => void runtime.answerPermission()} className="rounded-lg border border-slate-200 px-4 py-2 text-sm text-slate-600">拒绝</button>{runtime.permission.options.map((option) => <button key={option.optionId} type="button" onClick={() => void runtime.answerPermission(option.optionId)} className="rounded-lg bg-slate-900 px-4 py-2 text-sm text-white">{option.name}</button>)}</div></Modal>}
+            {runtime.userQuestion && <UserQuestionDialog request={runtime.userQuestion} onAnswer={runtime.answerUserQuestion} />}
         </div>
     );
 };
@@ -516,88 +521,6 @@ const TaskModelPicker: React.FC<{ task: ArkDesktopTask; runtime: ReturnType<type
     />;
 };
 
-const ToolStatusIcon: React.FC<{ status: string }> = ({ status }) => {
-    if (status === '已完成') return <Check size={15} className="text-slate-400" />;
-    if (status === '失败') return <AlertCircle size={15} className="text-red-500" />;
-    if (status === '等待中') return <Clock3 size={15} className="text-slate-400" />;
-    return <LoaderCircle size={15} className="animate-spin text-blue-500" />;
-};
-
-const getToolState = (status: string) => {
-    if (status === '已完成') return 'completed';
-    if (status === '失败') return 'failed';
-    if (status === '等待中') return 'pending';
-    return 'running';
-};
-
-const getToolIcon = (tool: ArkDesktopTask['tools'][number]) => {
-    const hint = `${tool.kind || ''} ${tool.title}`.toLowerCase();
-    if (/search|find|grep|检索|搜索/.test(hint)) return <Search size={14} />;
-    if (/read|write|edit|file|文件|读取|写入/.test(hint)) return <FileText size={14} />;
-    if (/code|shell|terminal|command|命令|代码/.test(hint)) return <SquareTerminal size={14} />;
-    return <Wrench size={14} />;
-};
-
-const getToolVerb = (tool: ArkDesktopTask['tools'][number], state: ReturnType<typeof getToolState>) => {
-    const hint = `${tool.kind || ''} ${tool.title}`.toLowerCase();
-    const running = state === 'running' || state === 'pending';
-    if (/write|edit|patch|写入|编辑|修改/.test(hint)) return running ? '正在编辑' : '已编辑';
-    if (/read|file|读取|文件/.test(hint)) return running ? '正在读取' : '已读取';
-    if (/search|find|grep|检索|搜索/.test(hint)) return running ? '正在搜索' : '已搜索';
-    if (/code|shell|terminal|command|命令|运行/.test(hint)) return running ? '正在运行' : '已运行';
-    return running ? '正在使用' : '已使用';
-};
-
-const formatToolDuration = (tool: ArkDesktopTask['tools'][number]) => {
-    if (!tool.startedAt) return '刚刚';
-    const seconds = Math.max(0, Math.round((tool.updatedAt - tool.startedAt) / 1000));
-    if (seconds < 60) return `${seconds} 秒`;
-    return `${Math.floor(seconds / 60)} 分 ${seconds % 60} 秒`;
-};
-
-const ToolActivityItem: React.FC<{ tool: ArkDesktopTask['tools'][number]; isLast: boolean }> = ({ tool, isLast }) => {
-    const [detailsOpen, setDetailsOpen] = useState(false);
-    const hasDetails = Boolean(tool.input || tool.output);
-    const state = getToolState(tool.status);
-    const verb = getToolVerb(tool, state);
-    const statusLabel = state === 'failed' ? '失败' : state === 'running' ? '执行中' : state === 'pending' ? '等待中' : '已完成';
-    return <div className="relative pl-8">
-        {!isLast && <span className="absolute bottom-0 left-[11px] top-7 w-px bg-slate-200" aria-hidden="true" />}
-        <span className={`absolute left-0 top-2 flex h-6 w-6 items-center justify-center rounded-full border-2 border-white ${state === 'failed' ? 'bg-red-100 text-red-500' : state === 'running' ? 'bg-blue-100 text-blue-500' : state === 'pending' ? 'bg-amber-100 text-amber-600' : 'bg-slate-100 text-slate-400'}`}><ToolStatusIcon status={tool.status} /></span>
-        <button type="button" disabled={!hasDetails} onClick={() => setDetailsOpen((value) => !value)} className={`group flex w-full items-center gap-3 rounded-xl border px-3 py-2.5 text-left transition ${state === 'running' ? 'border-blue-200 bg-blue-50/70 shadow-sm' : state === 'failed' ? 'border-red-200 bg-red-50/70' : detailsOpen ? 'border-slate-200 bg-white shadow-sm' : 'border-transparent bg-slate-50/70 hover:border-slate-200 hover:bg-white'} disabled:cursor-default`} aria-expanded={hasDetails ? detailsOpen : undefined}>
-            <span className={`flex h-7 w-7 shrink-0 items-center justify-center rounded-lg ${state === 'failed' ? 'bg-red-100 text-red-500' : state === 'running' ? 'bg-blue-100 text-blue-500' : 'bg-white text-slate-400 shadow-sm ring-1 ring-slate-100'}`}>{getToolIcon(tool)}</span>
-            <span className="min-w-0 flex-1"><span className="flex items-center gap-1.5"><strong className={`truncate text-[13px] font-semibold ${state === 'failed' ? 'text-red-700' : 'text-slate-700'}`}>{verb}</strong><span className="truncate text-[13px] text-slate-500">{tool.title}</span></span><span className="mt-0.5 flex items-center gap-1.5 text-[11px] text-slate-400"><span>{statusLabel}</span><span aria-hidden="true">·</span><span>{formatToolDuration(tool)}</span></span></span>
-            {hasDetails && <span className="flex shrink-0 items-center gap-1 text-[11px] font-medium text-slate-400 group-hover:text-slate-600">详情<ChevronRight size={13} className={`transition-transform ${detailsOpen ? 'rotate-90' : ''}`} /></span>}
-        </button>
-        {detailsOpen && hasDetails && <div className="mb-3 mt-2 space-y-2 rounded-xl border border-slate-200 bg-slate-50/70 p-2.5">{tool.input && <ToolDetail label="调用参数" value={tool.input} />}{tool.output && <ToolDetail label="返回结果" value={tool.output} />}</div>}
-    </div>;
-};
-
-const ToolDetail: React.FC<{ label: string; value: string }> = ({ label, value }) => <div className="overflow-hidden rounded-lg border border-slate-200 bg-white">
-    <div className="flex items-center justify-between border-b border-slate-100 px-2.5 py-1.5"><span className="text-[10px] font-semibold tracking-[0.08em] text-slate-400">{label}</span><ToolCopyButton value={value} /></div>
-    <pre className="max-h-56 overflow-auto whitespace-pre-wrap break-words px-3 py-2.5 font-mono text-[11px] leading-5 text-slate-600">{value}</pre>
-</div>;
-
-const TaskActivityTimeline: React.FC<{ tools: ArkDesktopTask['tools']; taskStatus: ArkDesktopTaskStatus }> = ({ tools, taskStatus }) => {
-    const failed = tools.some((tool) => getToolState(tool.status) === 'failed');
-    const isRunning = tools.some((tool) => ['running', 'pending'].includes(getToolState(tool.status))) && taskStatus === 'running';
-    const [expanded, setExpanded] = useState(false);
-    const completed = tools.filter((tool) => getToolState(tool.status) === 'completed').length;
-    const latestTool = tools[tools.length - 1];
-    const summary = failed ? '工具执行需要关注' : isRunning ? '正在执行工具' : '工具执行完成';
-    const latestState = latestTool ? getToolState(latestTool.status) : 'completed';
-    const latestDescription = latestTool ? `${getToolVerb(latestTool, latestState)} ${latestTool.title}` : summary;
-
-    return <section className="my-5">
-        <button type="button" onClick={() => setExpanded((value) => !value)} className={`flex w-full items-center gap-3 rounded-xl border px-3 py-2.5 text-left transition ${expanded ? 'border-slate-200 bg-white shadow-sm' : isRunning ? 'border-blue-100 bg-blue-50/50 hover:border-blue-200' : failed ? 'border-red-100 bg-red-50/50 hover:border-red-200' : 'border-slate-100 bg-slate-50/70 hover:border-slate-200 hover:bg-white'}`} aria-expanded={expanded}>
-            <span className={`flex h-8 w-8 shrink-0 items-center justify-center rounded-lg ${isRunning ? 'bg-blue-100 text-blue-600' : failed ? 'bg-red-100 text-red-600' : 'bg-white text-slate-500 shadow-sm ring-1 ring-slate-100'}`}>{isRunning ? <LoaderCircle size={16} className="animate-spin" /> : failed ? <AlertCircle size={16} /> : <SquareTerminal size={16} />}</span>
-            <span className="min-w-0 flex-1"><span className="flex items-center gap-2"><strong className={`text-[13px] ${failed ? 'text-red-700' : isRunning ? 'text-blue-700' : 'text-slate-700'}`}>{summary}</strong><span className="text-[11px] text-slate-400">{tools.length} 步</span></span><span className="mt-0.5 block truncate text-[12px] text-slate-500">{latestDescription}</span></span>
-            <span className="flex shrink-0 items-center gap-1 text-[11px] font-medium text-slate-400">{expanded ? '收起' : '查看步骤'}<ChevronDown size={14} className={`transition-transform ${expanded ? '' : '-rotate-90'}`} /></span>
-        </button>
-        {expanded && <div className="mt-3 max-h-96 space-y-1 overflow-y-auto pr-1">{tools.map((tool, index) => <ToolActivityItem key={tool.id} tool={tool} isLast={index === tools.length - 1} />)}{!isRunning && !failed && <div className="pl-8 pt-1 text-[11px] text-slate-400">已完成 {completed} 个工具步骤</div>}</div>}
-    </section>;
-};
-
 const TaskMessage: React.FC<{ message: ArkDesktopTask['messages'][number]; scrollTarget?: React.RefObject<HTMLDivElement> }> = ({ message, scrollTarget }) => {
     const [copied, setCopied] = useState(false);
     const copy = async () => {
@@ -648,7 +571,7 @@ const TaskComposer: React.FC<{ task?: ArkDesktopTask; runtime: ReturnType<typeof
     </div>;
 };
 
-const TaskView: React.FC<{ task?: ArkDesktopTask; runtime: ReturnType<typeof useArkDesktopRuntime>; followUp: string; setFollowUp: (value: string) => void; locateLatestMessage: boolean; newTask?: NewTaskConfig }> = ({ task, runtime, followUp, setFollowUp, locateLatestMessage, newTask }) => {
+const TaskView: React.FC<{ task?: ArkDesktopTask; runtime: ReturnType<typeof useArkDesktopRuntime>; scrollContainerRef: React.RefObject<HTMLDivElement | null>; followUp: string; setFollowUp: (value: string) => void; locateLatestMessage: boolean; newTask?: NewTaskConfig }> = ({ task, runtime, scrollContainerRef, followUp, setFollowUp, locateLatestMessage, newTask }) => {
     const [sending, setSending] = useState(false);
     const [authorizing, setAuthorizing] = useState(false);
     const lastMessageRef = useRef<HTMLDivElement>(null);
@@ -683,6 +606,7 @@ const TaskView: React.FC<{ task?: ArkDesktopTask; runtime: ReturnType<typeof use
         }
     };
     const waitingForReply = task?.status === 'running' && task.messages[task.messages.length - 1]?.role === 'user';
+    const followOutputRef = useRef(true);
     const turns = useMemo(() => {
         const result: Array<{ user?: ArkDesktopTask['messages'][number]; replies: ArkDesktopTask['messages']; tools: ArkDesktopTask['tools'] }> = [];
         if (!task) return result;
@@ -706,14 +630,36 @@ const TaskView: React.FC<{ task?: ArkDesktopTask; runtime: ReturnType<typeof use
         return result;
     }, [task]);
 
+    const latestMessage = task?.messages[task.messages.length - 1];
+    const latestTool = task?.tools[task.tools.length - 1];
+
     useEffect(() => {
-        if (!locateLatestMessage || !task?.messages.length) return undefined;
-        const frame = window.requestAnimationFrame(() => lastMessageRef.current?.scrollIntoView({ block: 'start' }));
+        const container = scrollContainerRef.current;
+        if (!container) return undefined;
+        const updateFollowState = () => {
+            followOutputRef.current = container.scrollHeight - container.scrollTop - container.clientHeight < 48;
+        };
+        container.addEventListener('scroll', updateFollowState, { passive: true });
+        updateFollowState();
+        return () => container.removeEventListener('scroll', updateFollowState);
+    }, [scrollContainerRef, task?.id]);
+
+    useEffect(() => {
+        if (!task || (!locateLatestMessage && !followOutputRef.current)) return undefined;
+        const container = scrollContainerRef.current;
+        const frame = window.requestAnimationFrame(() => {
+            if (container) {
+                container.scrollTop = container.scrollHeight;
+                followOutputRef.current = true;
+            } else {
+                lastMessageRef.current?.scrollIntoView({ block: 'end' });
+            }
+        });
         return () => window.cancelAnimationFrame(frame);
-    }, [locateLatestMessage, task?.id]);
+    }, [locateLatestMessage, scrollContainerRef, task?.id, latestMessage?.content, latestMessage?.createdAt, latestTool?.id, latestTool?.updatedAt]);
 
     return <div className="mx-auto flex min-h-full w-full max-w-[870px] flex-col px-5 py-6 font-sans sm:px-6 lg:px-0">
-        <div className="flex-1">{isNewTask ? <div className="flex min-h-[300px] flex-col items-center justify-center py-8 text-center"><img src="/ark/ark-agents-robot-cropped.png" alt="URGS 智能任务中心" className="mb-3 h-20 w-20 object-contain mix-blend-multiply" /><h2 className="text-2xl font-semibold tracking-[-0.035em] text-[#303136]">让智能体把想法变成现实</h2><p className="mt-2 text-sm text-slate-500">输入第一条消息，即可在当前会话中开始执行</p><div className="mt-5 flex w-full flex-wrap justify-center gap-2">{taskTags.map((tag) => { const Icon = tag.icon; const active = newTask?.selectedSkillIds.includes(tag.skillId); return <button key={tag.label} type="button" onClick={() => { setFollowUp(tag.prompt); newTask?.setSelectedSkillIds((current) => active ? current.filter((id) => id !== tag.skillId) : [...current, tag.skillId]); }} className={`flex items-center gap-2 rounded-full px-4 py-2.5 text-sm font-medium transition hover:-translate-y-0.5 ${active ? 'bg-slate-900 text-white' : 'bg-[#e9e9eb] text-[#494a4f] hover:bg-[#dedee1]'}`}><Icon size={17} />{tag.label}{active && <Check size={14} />}</button>; })}</div></div> : <>{turns.map((turn, index) => <div key={`${task!.id}-${turn.user?.id || `turn-${index}`}`} className="border-b border-slate-100 py-2 last:border-b-0">{turn.user && <TaskMessage message={turn.user} scrollTarget={turn.user.id === task!.messages[task!.messages.length - 1]?.id ? lastMessageRef : undefined} />}{turn.replies.map((message) => <TaskMessage key={message.id} message={message} scrollTarget={message.id === task!.messages[task!.messages.length - 1]?.id ? lastMessageRef : undefined} />)}{turn.tools.length > 0 && <TaskActivityTimeline tools={turn.tools} taskStatus={task!.status} />}</div>)}{task?.modelKeyAuthorization && <div className="my-5 flex flex-wrap items-center gap-3 rounded-xl border border-amber-200 bg-amber-50 px-4 py-3 text-sm text-amber-900"><span className="flex h-8 w-8 shrink-0 items-center justify-center rounded-lg bg-white text-amber-700 shadow-sm"><KeyRound size={16} /></span><div className="min-w-0 flex-1"><div className="font-medium">当前模型密钥需要授权</div><div className="mt-0.5 text-xs leading-5 text-amber-700">URGS 不会自动打开系统窗口。点击授权后将继续当前任务。</div></div><div className="flex items-center gap-2"><button type="button" disabled={authorizing} onClick={() => void runtime.cancelTask(task.id)} className="h-8 rounded-lg px-2.5 text-xs font-medium text-amber-800 hover:bg-amber-100 disabled:opacity-60">取消任务</button><button type="button" disabled={authorizing} onClick={() => void authorizeModelKey()} className="flex h-8 items-center gap-1.5 rounded-lg bg-amber-700 px-3 text-xs font-medium text-white hover:bg-amber-800 disabled:opacity-60">{authorizing ? <LoaderCircle size={14} className="animate-spin" /> : <KeyRound size={14} />}授权读取</button></div></div>}{task?.error && <div className="my-5 flex gap-2 rounded-xl border border-red-200 bg-red-50 px-4 py-3 text-sm leading-6 text-red-700"><AlertCircle size={16} className="mt-0.5 shrink-0" /><span className="flex-1">{task.error}</span><button type="button" onClick={() => runtime.dismissTaskError(task.id)} className="shrink-0 text-red-500 hover:text-red-700" title="关闭提示" aria-label="关闭提示"><X size={16} /></button></div>}{waitingForReply && <div className="flex items-center gap-2 py-4 text-sm text-slate-400"><LoaderCircle size={16} className="animate-spin" />Grok 正在分析并调用必要工具…</div>}</>}</div>
+        <div className="flex-1">{isNewTask ? <div className="flex min-h-[300px] flex-col items-center justify-center py-8 text-center"><img src="/ark/ark-agents-robot-cropped.png" alt="URGS 智能任务中心" className="mb-3 h-20 w-20 object-contain mix-blend-multiply" /><h2 className="text-2xl font-semibold tracking-[-0.035em] text-[#303136]">让智能体把想法变成现实</h2><p className="mt-2 text-sm text-slate-500">输入第一条消息，即可在当前会话中开始执行</p><div className="mt-5 flex w-full flex-wrap justify-center gap-2">{taskTags.map((tag) => { const Icon = tag.icon; const active = newTask?.selectedSkillIds.includes(tag.skillId); return <button key={tag.label} type="button" onClick={() => { setFollowUp(tag.prompt); newTask?.setSelectedSkillIds((current) => active ? current.filter((id) => id !== tag.skillId) : [...current, tag.skillId]); }} className={`flex items-center gap-2 rounded-full px-4 py-2.5 text-sm font-medium transition hover:-translate-y-0.5 ${active ? 'bg-slate-900 text-white' : 'bg-[#e9e9eb] text-[#494a4f] hover:bg-[#dedee1]'}`}><Icon size={17} />{tag.label}{active && <Check size={14} />}</button>; })}</div></div> : <>{turns.map((turn, index) => <div key={`${task!.id}-${turn.user?.id || `turn-${index}`}`} className="border-b border-slate-100 py-2 last:border-b-0">{turn.user && <TaskMessage message={turn.user} scrollTarget={turn.user.id === task!.messages[task!.messages.length - 1]?.id ? lastMessageRef : undefined} />}{turn.replies.map((message) => <TaskMessage key={message.id} message={message} scrollTarget={message.id === task!.messages[task!.messages.length - 1]?.id ? lastMessageRef : undefined} />)}{turn.tools.length > 0 && <TaskActivityTimeline tools={turn.tools} />}</div>)}{task?.modelKeyAuthorization && <div className="my-5 flex flex-wrap items-center gap-3 rounded-xl border border-amber-200 bg-amber-50 px-4 py-3 text-sm text-amber-900"><span className="flex h-8 w-8 shrink-0 items-center justify-center rounded-lg bg-white text-amber-700 shadow-sm"><KeyRound size={16} /></span><div className="min-w-0 flex-1"><div className="font-medium">当前模型密钥需要授权</div><div className="mt-0.5 text-xs leading-5 text-amber-700">URGS 不会自动打开系统窗口。点击授权后将继续当前任务。</div></div><div className="flex items-center gap-2"><button type="button" disabled={authorizing} onClick={() => void runtime.cancelTask(task.id)} className="h-8 rounded-lg px-2.5 text-xs font-medium text-amber-800 hover:bg-amber-100 disabled:opacity-60">取消任务</button><button type="button" disabled={authorizing} onClick={() => void authorizeModelKey()} className="flex h-8 items-center gap-1.5 rounded-lg bg-amber-700 px-3 text-xs font-medium text-white hover:bg-amber-800 disabled:opacity-60">{authorizing ? <LoaderCircle size={14} className="animate-spin" /> : <KeyRound size={14} />}授权读取</button></div></div>}{task?.error && <div className="my-5 flex gap-2 rounded-xl border border-red-200 bg-red-50 px-4 py-3 text-sm leading-6 text-red-700"><AlertCircle size={16} className="mt-0.5 shrink-0" /><span className="flex-1">{task.error}</span><button type="button" onClick={() => runtime.dismissTaskError(task.id)} className="shrink-0 text-red-500 hover:text-red-700" title="关闭提示" aria-label="关闭提示"><X size={16} /></button></div>}{waitingForReply && <div className="flex items-center gap-2 py-4 text-sm text-slate-400"><LoaderCircle size={16} className="animate-spin" />Grok 正在分析并调用必要工具…</div>}</>}</div>
         <TaskComposer task={task} runtime={runtime} value={followUp} onChange={setFollowUp} onSubmit={submit} onCancel={task ? () => runtime.cancelTask(task.id) : undefined} sending={isNewTask ? newTask?.actionPending || false : sending} newTask={newTask} />
     </div>;
 };
