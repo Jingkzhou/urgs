@@ -18,6 +18,7 @@ import GrokExecutionSettingsPanel from './GrokExecutionSettingsPanel';
 import { ArkDesktopSidebarToggle, ArkDesktopTitleContent } from './ArkDesktopTitleBar';
 import { ConversationPromptInput } from './SlashCommandMenu';
 import TaskActivityTimeline from './TaskActivityTimeline';
+import TaskPlanPanel from './TaskPlanPanel';
 import PlanApprovalDialog from './PlanApprovalDialog';
 import UserQuestionDialog from './UserQuestionDialog';
 import type {
@@ -261,7 +262,14 @@ const ArkDesktopPage: React.FC = () => {
             <header className="absolute inset-x-0 top-0 z-10 flex h-[52px] items-center border-b border-[#e9e9ea] bg-white/95">
                 <div data-tauri-drag-region className={`${isSidebarCollapsed ? 'w-[126px]' : 'w-[270px]'} h-full shrink-0 transition-[width] duration-200`} />
                 <ArkDesktopSidebarToggle collapsed={isSidebarCollapsed} onToggle={() => setIsSidebarCollapsed((current) => !current)} />
-                <ArkDesktopTitleContent title={headerTitle} settingsActive={section === 'settings' && !runtime.activeTask} onOpenSettings={openSettings} />
+                <ArkDesktopTitleContent
+                    title={headerTitle}
+                    settingsActive={section === 'settings' && !runtime.activeTask}
+                    onOpenSettings={openSettings}
+                    planControl={runtime.activeTask?.plan?.length
+                        ? <TaskPlanPanel plan={runtime.activeTask.plan} taskStatus={runtime.activeTask.status} />
+                        : undefined}
+                />
             </header>
             <aside className={`${isSidebarCollapsed ? 'hidden' : 'hidden w-[270px] shrink-0 flex-col border-r border-[#e5e5e7] bg-[#f8f8f9] px-3 py-4 lg:flex'}`}>
                 <div className="mb-4 flex h-10 items-center justify-between px-2">
@@ -346,8 +354,6 @@ interface NewTaskConfig {
     chooseWorkspace: () => Promise<void>;
     actionPending: boolean;
 }
-
-const formatTime = (value: number) => new Intl.DateTimeFormat('zh-CN', { hour: '2-digit', minute: '2-digit' }).format(value);
 
 const ToolCopyButton: React.FC<{ value: string; label?: string }> = ({ value, label = '复制' }) => {
     const [copied, setCopied] = useState(false);
@@ -511,18 +517,8 @@ const TaskModelPicker: React.FC<{ task: ArkDesktopTask; runtime: ReturnType<type
 };
 
 const TaskMessage: React.FC<{ message: ArkDesktopTask['messages'][number]; scrollTarget?: React.RefObject<HTMLDivElement> }> = ({ message, scrollTarget }) => {
-    const [copied, setCopied] = useState(false);
-    const copy = async () => {
-        try {
-            if (!await copyToClipboard(message.content)) return;
-            setCopied(true);
-            window.setTimeout(() => setCopied(false), 1600);
-        } catch {
-            // Clipboard access can be unavailable in a restricted webview; the response remains selectable.
-        }
-    };
     if (message.role === 'user') return <div ref={scrollTarget} className="flex scroll-mt-6 justify-end py-2.5"><div className="max-w-[min(86%,680px)] rounded-[20px] rounded-br-md bg-[#f0f1f3] px-4 py-2.5 text-[14px] leading-7 text-slate-800"><span className="whitespace-pre-wrap">{message.content}</span></div></div>;
-    return <div ref={scrollTarget} className="group scroll-mt-6 py-2"><MarkdownContent content={message.content} /><div className="flex max-h-0 items-center gap-2 overflow-hidden opacity-0 transition-[max-height,margin,opacity] duration-150 group-hover:mt-1 group-hover:max-h-7 group-hover:opacity-100 group-focus-within:mt-1 group-focus-within:max-h-7 group-focus-within:opacity-100"><button type="button" onClick={() => void copy()} className="inline-flex items-center gap-1 rounded-md px-1.5 py-1 text-[11px] text-slate-400 transition hover:bg-slate-100 hover:text-slate-700" title="复制回复">{copied ? <Check size={13} className="text-emerald-600" /> : <Copy size={13} />}{copied ? '已复制' : '复制'}</button><span className="text-[11px] text-slate-300">{formatTime(message.createdAt)}</span></div></div>;
+    return <div ref={scrollTarget} className="scroll-mt-6 py-2"><MarkdownContent content={message.content} /></div>;
 };
 
 const TaskComposer: React.FC<{ task?: ArkDesktopTask; runtime: ReturnType<typeof useArkDesktopRuntime>; value: string; onChange: (value: string) => void; onSubmit: () => Promise<void>; onCancel?: () => Promise<void>; sending: boolean; newTask?: NewTaskConfig }> = ({ task, runtime, value, onChange, onSubmit, onCancel, sending, newTask }) => {

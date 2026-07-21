@@ -36,6 +36,7 @@ import type {
     ArkDesktopAgent,
     ArkDesktopAutomation,
     ArkDesktopPermissionRequest,
+    ArkDesktopPlanStep,
     ArkDesktopPlanApprovalRequest,
     ArkDesktopUserQuestionRequest,
     ArkDesktopSkill,
@@ -97,6 +98,24 @@ const statusLabel = (status?: string) => {
     }
 };
 
+const parsePlanSteps = (entries: unknown): ArkDesktopPlanStep[] => Array.isArray(entries)
+    ? entries.map((entry: any) => {
+        const rawStatus = String(entry?.status || 'pending').toLowerCase();
+        const status: ArkDesktopPlanStep['status'] = rawStatus === 'in_progress' || rawStatus === 'completed' || rawStatus === 'cancelled'
+            ? rawStatus
+            : 'pending';
+        const rawPriority = String(entry?.priority || '').toLowerCase();
+        const priority: ArkDesktopPlanStep['priority'] = rawPriority === 'high' || rawPriority === 'medium' || rawPriority === 'low'
+            ? rawPriority
+            : undefined;
+        return {
+            content: String(entry?.content || '').trim(),
+            status: entry?.meta?.cancelled ? 'cancelled' : status,
+            ...(priority ? { priority } : {}),
+        };
+    }).filter((step: ArkDesktopPlanStep) => step.content)
+    : [];
+
 const selectAgentId = (snapshot: ArkDesktopSnapshot, requestedAgentId?: string, skillIds: string[] = []) => {
     if (requestedAgentId && snapshot.agents.some((agent) => agent.id === requestedAgentId && agent.enabled)) {
         return requestedAgentId;
@@ -112,6 +131,7 @@ const buildSessionRules = (agent: ArkDesktopAgent, skills: ArkDesktopSkill[]) =>
     agent.systemPrompt,
     ...skills.map((skill) => `技能【${skill.name}】：${skill.instruction}`),
     '当需要用户在预设方向、方案或偏好中选择时，必须调用 AskUserQuestion 工具并提供结构化选项。不要在普通消息里列出题目、选项或要求用户用文字回答；调用前最多用一句话说明需要确认方向，随后等待用户在界面卡片中选择。',
+    '多阶段任务必须使用计划工具维护 3 至 7 个可执行阶段；开始、完成或跳过每个阶段时立即更新状态，不要只在普通消息中口头描述进度。',
     '执行要求：先理解目标，再使用必要工具完成实际工作；涉及修改或命令时等待 ARK Desktop 的用户授权；结束时总结产物、修改文件和验证结果。',
 ].filter(Boolean).join('\n\n');
 
@@ -296,6 +316,11 @@ export const useArkDesktopRuntime = () => {
                     }
                     return { ...task, messages, updatedAt: Date.now() };
                 });
+                return;
+            }
+            if (updateType === 'plan') {
+                const plan = parsePlanSteps(update.entries);
+                updateTask(taskId, (task) => ({ ...task, plan, updatedAt: Date.now() }));
                 return;
             }
             if (updateType === 'tool_call' || updateType === 'tool_call_update') {

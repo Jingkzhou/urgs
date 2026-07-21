@@ -48,6 +48,12 @@ export interface ArkDesktopToolActivity {
     updatedAt: number;
 }
 
+export interface ArkDesktopPlanStep {
+    content: string;
+    status: 'pending' | 'in_progress' | 'completed' | 'cancelled';
+    priority?: 'high' | 'medium' | 'low';
+}
+
 export interface ArkDesktopMessage {
     id: string;
     role: 'user' | 'assistant';
@@ -87,6 +93,7 @@ export interface ArkDesktopTask {
     status: ArkDesktopTaskStatus;
     messages: ArkDesktopMessage[];
     tools: ArkDesktopToolActivity[];
+    plan?: ArkDesktopPlanStep[];
     availableCommands?: ArkDesktopSlashCommand[];
     error?: string;
     modelKeyAuthorization?: ArkDesktopModelKeyAuthorization;
