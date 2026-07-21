@@ -83,6 +83,7 @@ final result: passed
 
 - 来源视觉：`/var/folders/34/nv2447mj5ns38jjkskrqbb680000gn/T/codex-clipboard-b4124038-cc94-408a-9b0d-5f3bf2af32e7.png`
 - 修改前实现：`/var/folders/34/nv2447mj5ns38jjkskrqbb680000gn/T/codex-clipboard-8da990f7-31c6-4939-ba18-4d5d38457a0b.png`
+- 最新局部对比：当前实现 `/var/folders/34/nv2447mj5ns38jjkskrqbb680000gn/T/codex-clipboard-34509f07-22d3-41af-b72d-7e26a4a73c97.png`；GPT 参考 `/var/folders/34/nv2447mj5ns38jjkskrqbb680000gn/T/codex-clipboard-6c51f342-b045-42b8-afa2-752fa74e3431.png`。
 - 修改后实现截图：未取得；桌面控制误连到旧 release 安装包，随后 macOS 被锁定，无法继续捕捉最新 `target/debug/urgs-desktop` 窗口。
 - 状态：浅色主题、侧栏展开、新建任务。
 
@@ -101,6 +102,7 @@ final result: passed
 
 - [P1] 修改前侧栏和顶栏标题起点明显偏右。已将侧栏宽度、按钮位置和标题内边距按原始截图实测比例收紧。
 - [P2] 修改前标题文件夹图标偏大。已由 19px 调整为 16px。
+- [P2] 最新局部截图中，折叠图标中心比三个窗口控制点约高 3–4 个物理像素，且横向约偏右 6–7 个物理像素。按 Retina 比例将独立定位由 `left: 84px / top: 14px` 校准为 `left: 80px / top: 16px`。
 - [P1] 缺少修改后真实桌面截图，无法证明最新开发实例已经达到参考图比例。
 
 **实施清单**
@@ -109,6 +111,8 @@ final result: passed
 - [x] 侧栏按钮移动到 84px。
 - [x] 标题栏内容内边距调整为 16px。
 - [x] 标题文件夹图标调整为 16px。
+- [x] 根据 `/var/folders/34/nv2447mj5ns38jjkskrqbb680000gn/T/codex-clipboard-a7b52271-7521-4149-92a7-21c0b571cf09.png` 发现按钮仍受 52px 内容栏垂直居中影响；已拆成 `ArkDesktopSidebarToggle` 与 `ArkDesktopTitleContent` 两个组件。
+- [x] 折叠按钮使用独立定位，不再跟随内容栏的 `items-center`；根据最新局部截图将中心坐标校准为 `left: 80px / top: 16px`。
 - [ ] 解锁 macOS 后捕捉最新 debug 实例，并与参考图同状态复核。
 
 final result: blocked

@@ -8,13 +8,14 @@ import {
     AlertCircle, Bot, BriefcaseBusiness, Check, CheckCircle2, CheckSquare,
     ChevronDown, ChevronRight, CircleStop, Clock3, Code2, Copy, Cpu, FileText, Folder,
     Hand, KeyRound, Lightbulb, LoaderCircle, Paperclip, Pencil, Play, Plus,
-    PanelLeft, Search, Send, Settings, ShieldAlert, Sparkles, SquareTerminal, Trash2, WandSparkles, Wrench, X,
+    Search, Send, Settings, ShieldAlert, Sparkles, SquareTerminal, Trash2, WandSparkles, Wrench, X,
 } from 'lucide-react';
 import { copyToClipboard } from '@/utils/clipboard';
 import { useArkDesktopRuntime } from './useArkDesktopRuntime';
 import GrokCliCenter from './GrokCliCenter';
 import GrokConfigEditor from './GrokConfigEditor';
 import GrokExecutionSettingsPanel from './GrokExecutionSettingsPanel';
+import { ArkDesktopSidebarToggle, ArkDesktopTitleContent } from './ArkDesktopTitleBar';
 import { ConversationPromptInput } from './SlashCommandMenu';
 import type {
     ArkDesktopAgent, ArkDesktopAutomation, ArkDesktopSection, ArkDesktopSkill,
@@ -256,11 +257,8 @@ const ArkDesktopPage: React.FC = () => {
         <div className="relative flex h-screen min-h-[680px] overflow-hidden bg-white pt-[52px] text-[#292a2e]">
             <header className="absolute inset-x-0 top-0 z-10 flex h-[52px] items-center border-b border-[#e9e9ea] bg-white/95">
                 <div data-tauri-drag-region className={`${isSidebarCollapsed ? 'w-[126px]' : 'w-[270px]'} h-full shrink-0 transition-[width] duration-200`} />
-                <button type="button" onClick={() => setIsSidebarCollapsed((current) => !current)} className="absolute left-[84px] top-1/2 flex h-7 w-7 -translate-y-1/2 items-center justify-center rounded-md text-[#8b8e92] transition hover:bg-slate-100 hover:text-slate-700" title={isSidebarCollapsed ? '展开左侧工具栏' : '折叠左侧工具栏'} aria-label={isSidebarCollapsed ? '展开左侧工具栏' : '折叠左侧工具栏'}><PanelLeft className="h-4 w-4" strokeWidth={1.6} /></button>
-                <div className="flex min-w-0 flex-1 items-center justify-between gap-4 px-4">
-                    <div data-tauri-drag-region className="flex min-w-0 items-center gap-2.5"><Folder size={16} strokeWidth={1.8} className="shrink-0 text-[#44454a]" /><div className="truncate text-[16px] font-semibold tracking-[-0.02em] text-[#303136]">{headerTitle}</div></div>
-                    <button type="button" onClick={openSettings} className={`shrink-0 rounded-md p-1 text-slate-500 transition hover:bg-slate-100 hover:text-slate-800 ${section === 'settings' && !runtime.activeTask ? 'bg-slate-100 text-slate-900' : ''}`} title="设置" aria-label="设置"><Settings size={17} strokeWidth={1.8} /></button>
-                </div>
+                <ArkDesktopSidebarToggle collapsed={isSidebarCollapsed} onToggle={() => setIsSidebarCollapsed((current) => !current)} />
+                <ArkDesktopTitleContent title={headerTitle} settingsActive={section === 'settings' && !runtime.activeTask} onOpenSettings={openSettings} />
             </header>
             <aside className={`${isSidebarCollapsed ? 'hidden' : 'hidden w-[270px] shrink-0 flex-col border-r border-[#e5e5e7] bg-[#f8f8f9] px-3 py-4 lg:flex'}`}>
                 <div className="mb-4 flex h-10 items-center justify-between px-2">
