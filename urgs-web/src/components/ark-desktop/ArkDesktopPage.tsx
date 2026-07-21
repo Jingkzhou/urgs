@@ -255,14 +255,14 @@ const ArkDesktopPage: React.FC = () => {
     return (
         <div className="relative flex h-screen min-h-[680px] overflow-hidden bg-white pt-[52px] text-[#292a2e]">
             <header className="absolute inset-x-0 top-0 z-10 flex h-[52px] items-center border-b border-[#e9e9ea] bg-white/95">
-                <div data-tauri-drag-region className={`${isSidebarCollapsed ? 'w-[154px]' : 'w-[320px]'} h-full shrink-0 transition-[width] duration-200`} />
-                <button type="button" onClick={() => setIsSidebarCollapsed((current) => !current)} className="absolute left-[116px] top-1/2 flex h-7 w-7 -translate-y-1/2 items-center justify-center rounded-md text-[#8b8e92] transition hover:bg-slate-100 hover:text-slate-700" title={isSidebarCollapsed ? '展开左侧工具栏' : '折叠左侧工具栏'} aria-label={isSidebarCollapsed ? '展开左侧工具栏' : '折叠左侧工具栏'}><PanelLeft className="h-4 w-4" strokeWidth={1.6} /></button>
-                <div className="flex min-w-0 flex-1 items-center justify-between gap-4 px-5 lg:px-7">
-                    <div data-tauri-drag-region className="flex min-w-0 items-center gap-2.5"><Folder size={19} strokeWidth={1.8} className="shrink-0 text-[#44454a]" /><div className="truncate text-[16px] font-semibold tracking-[-0.02em] text-[#303136]">{headerTitle}</div></div>
+                <div data-tauri-drag-region className={`${isSidebarCollapsed ? 'w-[126px]' : 'w-[270px]'} h-full shrink-0 transition-[width] duration-200`} />
+                <button type="button" onClick={() => setIsSidebarCollapsed((current) => !current)} className="absolute left-[84px] top-1/2 flex h-7 w-7 -translate-y-1/2 items-center justify-center rounded-md text-[#8b8e92] transition hover:bg-slate-100 hover:text-slate-700" title={isSidebarCollapsed ? '展开左侧工具栏' : '折叠左侧工具栏'} aria-label={isSidebarCollapsed ? '展开左侧工具栏' : '折叠左侧工具栏'}><PanelLeft className="h-4 w-4" strokeWidth={1.6} /></button>
+                <div className="flex min-w-0 flex-1 items-center justify-between gap-4 px-4">
+                    <div data-tauri-drag-region className="flex min-w-0 items-center gap-2.5"><Folder size={16} strokeWidth={1.8} className="shrink-0 text-[#44454a]" /><div className="truncate text-[16px] font-semibold tracking-[-0.02em] text-[#303136]">{headerTitle}</div></div>
                     <button type="button" onClick={openSettings} className={`shrink-0 rounded-md p-1 text-slate-500 transition hover:bg-slate-100 hover:text-slate-800 ${section === 'settings' && !runtime.activeTask ? 'bg-slate-100 text-slate-900' : ''}`} title="设置" aria-label="设置"><Settings size={17} strokeWidth={1.8} /></button>
                 </div>
             </header>
-            <aside className={`${isSidebarCollapsed ? 'hidden' : 'hidden w-[320px] shrink-0 flex-col border-r border-[#e5e5e7] bg-[#f8f8f9] px-3 py-4 lg:flex'}`}>
+            <aside className={`${isSidebarCollapsed ? 'hidden' : 'hidden w-[270px] shrink-0 flex-col border-r border-[#e5e5e7] bg-[#f8f8f9] px-3 py-4 lg:flex'}`}>
                 <div className="mb-4 flex h-10 items-center justify-between px-2">
                     <button type="button" className="flex items-center gap-1.5 rounded-lg py-1 text-[18px] font-semibold tracking-[-0.03em] text-[#303136] hover:text-black" title="URGS 智能任务中心">URGS<ChevronDown size={15} className="text-slate-400" /></button>
                     <label className="flex h-8 w-8 cursor-text items-center justify-center rounded-lg text-slate-400 transition hover:bg-[#eeeeef] focus-within:w-44 focus-within:justify-start focus-within:px-2 focus-within:ring-1 focus-within:ring-slate-200">
