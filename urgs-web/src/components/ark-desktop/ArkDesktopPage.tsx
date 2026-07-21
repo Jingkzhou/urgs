@@ -8,7 +8,7 @@ import {
     AlertCircle, Bot, BriefcaseBusiness, Check, CheckCircle2, CheckSquare,
     ChevronDown, CircleStop, Clock3, Code2, Copy, Cpu, FileText, Folder,
     Hand, KeyRound, Lightbulb, LoaderCircle, Paperclip, Pencil, Play, Plus,
-    Search, Send, Settings, ShieldAlert, Sparkles, Trash2, WandSparkles, Wrench, X,
+    Search, Send, ShieldAlert, Sparkles, Trash2, WandSparkles, Wrench, X,
 } from 'lucide-react';
 import { copyToClipboard } from '@/utils/clipboard';
 import { useArkDesktopRuntime } from './useArkDesktopRuntime';
@@ -126,10 +126,9 @@ const ArkDesktopPage: React.FC = () => {
     const [draft, setDraft] = useState('');
     const [followUpDrafts, setFollowUpDrafts] = useState<Record<string, string>>({});
     const [searchValue, setSearchValue] = useState('');
-    const [selectedAgentId, setSelectedAgentId] = useState(runtime.snapshot.settings.defaultAgentId);
+    const [selectedAgentId, setSelectedAgentId] = useState('');
     const [selectedSkillIds, setSelectedSkillIds] = useState<string[]>(runtime.snapshot.settings.defaultSkillIds);
     const [attachments, setAttachments] = useState<string[]>([]);
-    const [agentMenuOpen, setAgentMenuOpen] = useState(false);
     const [collapsedWorkspaceKeys, setCollapsedWorkspaceKeys] = useState<Set<string>>(() => new Set());
     const [latestMessageTaskId, setLatestMessageTaskId] = useState<string | null>(null);
     const [isSidebarCollapsed, setIsSidebarCollapsed] = useState(false);
@@ -175,7 +174,6 @@ const ArkDesktopPage: React.FC = () => {
         return () => window.clearInterval(timer);
     }, [runtime.setSnapshot, runtime.snapshot.automations, runtime.snapshot.tasks, runtime.startTask, runtime.setRuntimeError]);
 
-    const selectedAgent = runtime.snapshot.agents.find((agent) => agent.id === selectedAgentId);
     const query = searchValue.trim().toLowerCase();
     const filteredAgents = runtime.snapshot.agents.filter((agent) => !query || `${agent.name} ${agent.description}`.toLowerCase().includes(query));
     const filteredTasks = runtime.snapshot.tasks.filter((task) => !query || `${task.title} ${task.prompt} ${task.workspace}`.toLowerCase().includes(query));
@@ -221,6 +219,7 @@ const ArkDesktopPage: React.FC = () => {
             });
             setDraft('');
             setAttachments([]);
+            setSelectedAgentId('');
         } catch (error) {
             runtime.setRuntimeError(error instanceof Error ? error.message : String(error));
         } finally {
@@ -307,19 +306,13 @@ const ArkDesktopPage: React.FC = () => {
                         setFollowUp={runtime.activeTask ? (value) => setFollowUpDrafts((current) => ({ ...current, [runtime.activeTask!.id]: value })) : setDraft}
                         locateLatestMessage={latestMessageTaskId === runtime.activeTask?.id}
                         newTask={!runtime.activeTask ? {
-                            selectedAgentId,
-                            setSelectedAgentId,
                             selectedSkillIds,
                             setSelectedSkillIds,
-                            selectedAgent,
                             attachments,
                             setAttachments,
-                            agentMenuOpen,
-                            setAgentMenuOpen,
                             runTask,
                             chooseAttachments,
                             chooseWorkspace,
-                            openExecutionSettings: openSettings,
                             actionPending,
                         } : undefined}
                     /> : section === 'agents' ? (
@@ -342,19 +335,13 @@ const ArkDesktopPage: React.FC = () => {
 };
 
 interface NewTaskConfig {
-    selectedAgentId: string;
-    setSelectedAgentId: (id: string) => void;
     selectedSkillIds: string[];
     setSelectedSkillIds: React.Dispatch<React.SetStateAction<string[]>>;
-    selectedAgent?: ArkDesktopAgent;
     attachments: string[];
     setAttachments: React.Dispatch<React.SetStateAction<string[]>>;
-    agentMenuOpen: boolean;
-    setAgentMenuOpen: React.Dispatch<React.SetStateAction<boolean>>;
     runTask: () => Promise<void>;
     chooseAttachments: () => Promise<void>;
     chooseWorkspace: () => Promise<void>;
-    openExecutionSettings: () => void;
     actionPending: boolean;
 }
 
@@ -533,7 +520,7 @@ const TaskMessage: React.FC<{ message: ArkDesktopTask['messages'][number]; scrol
         }
     };
     if (message.role === 'user') return <div ref={scrollTarget} className="flex scroll-mt-6 justify-end py-2.5"><div className="max-w-[min(86%,680px)] rounded-[20px] rounded-br-md bg-[#f0f1f3] px-4 py-2.5 text-[14px] leading-7 text-slate-800"><span className="whitespace-pre-wrap">{message.content}</span></div></div>;
-    return <div ref={scrollTarget} className="group scroll-mt-6 py-4"><MarkdownContent content={message.content} /><div className="mt-2 flex h-7 items-center gap-2"><button type="button" onClick={() => void copy()} className="inline-flex items-center gap-1 rounded-md px-1.5 py-1 text-[11px] text-slate-400 opacity-0 transition hover:bg-slate-100 hover:text-slate-700 focus:opacity-100 group-hover:opacity-100" title="复制回复">{copied ? <Check size={13} className="text-emerald-600" /> : <Copy size={13} />}{copied ? '已复制' : '复制'}</button><span className="text-[11px] text-slate-300 opacity-0 transition group-hover:opacity-100">{formatTime(message.createdAt)}</span></div></div>;
+    return <div ref={scrollTarget} className="group scroll-mt-6 py-2"><MarkdownContent content={message.content} /><div className="flex max-h-0 items-center gap-2 overflow-hidden opacity-0 transition-[max-height,margin,opacity] duration-150 group-hover:mt-1 group-hover:max-h-7 group-hover:opacity-100 group-focus-within:mt-1 group-focus-within:max-h-7 group-focus-within:opacity-100"><button type="button" onClick={() => void copy()} className="inline-flex items-center gap-1 rounded-md px-1.5 py-1 text-[11px] text-slate-400 transition hover:bg-slate-100 hover:text-slate-700" title="复制回复">{copied ? <Check size={13} className="text-emerald-600" /> : <Copy size={13} />}{copied ? '已复制' : '复制'}</button><span className="text-[11px] text-slate-300">{formatTime(message.createdAt)}</span></div></div>;
 };
 
 const TaskComposer: React.FC<{ task?: ArkDesktopTask; runtime: ReturnType<typeof useArkDesktopRuntime>; value: string; onChange: (value: string) => void; onSubmit: () => Promise<void>; onCancel?: () => Promise<void>; sending: boolean; newTask?: NewTaskConfig }> = ({ task, runtime, value, onChange, onSubmit, onCancel, sending, newTask }) => {
@@ -542,6 +529,8 @@ const TaskComposer: React.FC<{ task?: ArkDesktopTask; runtime: ReturnType<typeof
     const isRunning = task?.status === 'running';
     const isWaitingAuthorization = task?.status === 'waiting_authorization';
     const execution = runtime.snapshot.settings.execution;
+    const workspace = runtime.snapshot.settings.workspace;
+    const workspaceLabel = workspace.split(/[\\/]/).filter(Boolean).pop() || '选择工作空间';
     const canSubmit = isNewTask
         ? !sending && (!!value.trim() || (execution.engine === 'headless' && execution.promptMode !== 'text'))
         : !isWaitingAuthorization && !sending && !!value.trim();
@@ -554,11 +543,9 @@ const TaskComposer: React.FC<{ task?: ArkDesktopTask; runtime: ReturnType<typeof
             <div className={`flex flex-wrap items-center justify-between gap-2 px-1 ${isNewTask ? 'pt-1' : 'pb-1'}`}>
                 <div className="relative flex min-w-0 flex-wrap items-center gap-1">
                     {isNewTask && newTask ? <>
-                        <button type="button" onClick={() => newTask.setAgentMenuOpen((open) => !open)} className="flex items-center gap-1.5 rounded-lg px-2.5 py-2 text-xs font-medium text-slate-500 hover:bg-slate-100"><Bot size={15} /><span className="max-w-36 truncate">{newTask.selectedAgent?.name || '自动选择 Agent'}</span><ChevronDown size={14} /></button>
-                        {newTask.agentMenuOpen && <div className="absolute bottom-11 left-0 z-20 max-h-64 w-72 overflow-y-auto rounded-xl border border-slate-200 bg-white p-1.5 shadow-xl"><button type="button" onClick={() => { newTask.setSelectedAgentId(''); newTask.setAgentMenuOpen(false); }} className="w-full rounded-lg px-3 py-2 text-left text-sm text-slate-600 hover:bg-slate-100">自动选择 Agent</button>{runtime.snapshot.agents.filter((agent) => agent.enabled).map((agent) => <button key={agent.id} type="button" onClick={() => { newTask.setSelectedAgentId(agent.id); newTask.setAgentMenuOpen(false); }} className="w-full truncate rounded-lg px-3 py-2 text-left text-sm text-slate-700 hover:bg-slate-100">{agent.name}</button>)}</div>}
+                        <button type="button" onClick={() => void newTask.chooseWorkspace()} className="flex max-w-52 items-center gap-1.5 rounded-lg px-2.5 py-2 text-xs font-medium text-slate-500 hover:bg-slate-100" title={workspace || '选择任务工作空间'}><Folder size={15} /><span className="truncate">{workspaceLabel}</span></button>
                         <PermissionModePicker value={execution.alwaysApprove ? 'bypassPermissions' : execution.permissionMode} onChange={(permissionMode) => runtime.setSnapshot((current) => ({ ...current, settings: { ...current.settings, execution: { ...current.settings.execution, permissionMode, alwaysApprove: false } } }))} />
                         <DefaultModelPicker runtime={runtime} />
-                        <button type="button" onClick={newTask.openExecutionSettings} className="flex items-center gap-1.5 rounded-lg px-2.5 py-2 text-xs font-medium text-slate-500 hover:bg-slate-100" title="配置任务执行方式"><Settings size={15} />{execution.engine === 'acp' ? '交互执行' : '后台执行'}</button>
                     </> : task ? <>
                         <PermissionModePicker value={task.alwaysApprove ? 'bypassPermissions' : task.permissionMode || execution.permissionMode} disabled={isRunning || isWaitingAuthorization} onChange={(permissionMode) => runtime.setTaskPermissionMode(task.id, permissionMode)} />
                         <TaskModelPicker task={task} runtime={runtime} />
@@ -608,11 +595,11 @@ const TaskView: React.FC<{ task?: ArkDesktopTask; runtime: ReturnType<typeof use
     const waitingForReply = task?.status === 'running' && task.messages[task.messages.length - 1]?.role === 'user';
     const followOutputRef = useRef(true);
     const turns = useMemo(() => {
-        const result: Array<{ user?: ArkDesktopTask['messages'][number]; replies: ArkDesktopTask['messages']; tools: ArkDesktopTask['tools'] }> = [];
+        const result: Array<{ user?: ArkDesktopTask['messages'][number]; stages: Array<{ message?: ArkDesktopTask['messages'][number]; tools: ArkDesktopTask['tools'] }> }> = [];
         if (!task) return result;
         task.messages.forEach((message) => {
-            if (message.role === 'user' || result.length === 0) result.push({ ...(message.role === 'user' ? { user: message } : {}), replies: message.role === 'assistant' ? [message] : [], tools: [] });
-            else result[result.length - 1].replies.push(message);
+            if (message.role === 'user' || result.length === 0) result.push({ ...(message.role === 'user' ? { user: message } : {}), stages: message.role === 'assistant' ? [{ message, tools: [] }] : [] });
+            else result[result.length - 1].stages.push({ message, tools: [] });
         });
         task.tools.forEach((tool) => {
             const toolTime = tool.startedAt || tool.updatedAt;
@@ -624,8 +611,21 @@ const TaskView: React.FC<{ task?: ArkDesktopTask; runtime: ReturnType<typeof use
                     break;
                 }
             }
-            if (turnIndex < 0) result.push({ replies: [], tools: [tool] });
-            else result[turnIndex].tools.push(tool);
+            if (turnIndex < 0) {
+                result.push({ stages: [{ tools: [tool] }] });
+                return;
+            }
+            const stages = result[turnIndex].stages;
+            let stage = stages[0];
+            for (const candidate of stages) {
+                if (candidate.message && candidate.message.createdAt <= toolTime) stage = candidate;
+                else if (candidate.message && candidate.message.createdAt > toolTime) break;
+            }
+            if (!stage || (stage.message && stage.message.createdAt > toolTime)) {
+                stage = { tools: [] };
+                stages.unshift(stage);
+            }
+            stage.tools.push(tool);
         });
         return result;
     }, [task]);
@@ -659,7 +659,7 @@ const TaskView: React.FC<{ task?: ArkDesktopTask; runtime: ReturnType<typeof use
     }, [locateLatestMessage, scrollContainerRef, task?.id, latestMessage?.content, latestMessage?.createdAt, latestTool?.id, latestTool?.updatedAt]);
 
     return <div className="mx-auto flex min-h-full w-full max-w-[870px] flex-col px-5 py-6 font-sans sm:px-6 lg:px-0">
-        <div className="flex-1">{isNewTask ? <div className="flex min-h-[300px] flex-col items-center justify-center py-8 text-center"><img src="/ark/ark-agents-robot-cropped.png" alt="URGS 智能任务中心" className="mb-3 h-20 w-20 object-contain mix-blend-multiply" /><h2 className="text-2xl font-semibold tracking-[-0.035em] text-[#303136]">让智能体把想法变成现实</h2><p className="mt-2 text-sm text-slate-500">输入第一条消息，即可在当前会话中开始执行</p><div className="mt-5 flex w-full flex-wrap justify-center gap-2">{taskTags.map((tag) => { const Icon = tag.icon; const active = newTask?.selectedSkillIds.includes(tag.skillId); return <button key={tag.label} type="button" onClick={() => { setFollowUp(tag.prompt); newTask?.setSelectedSkillIds((current) => active ? current.filter((id) => id !== tag.skillId) : [...current, tag.skillId]); }} className={`flex items-center gap-2 rounded-full px-4 py-2.5 text-sm font-medium transition hover:-translate-y-0.5 ${active ? 'bg-slate-900 text-white' : 'bg-[#e9e9eb] text-[#494a4f] hover:bg-[#dedee1]'}`}><Icon size={17} />{tag.label}{active && <Check size={14} />}</button>; })}</div></div> : <>{turns.map((turn, index) => <div key={`${task!.id}-${turn.user?.id || `turn-${index}`}`} className="border-b border-slate-100 py-2 last:border-b-0">{turn.user && <TaskMessage message={turn.user} scrollTarget={turn.user.id === task!.messages[task!.messages.length - 1]?.id ? lastMessageRef : undefined} />}{turn.replies.map((message) => <TaskMessage key={message.id} message={message} scrollTarget={message.id === task!.messages[task!.messages.length - 1]?.id ? lastMessageRef : undefined} />)}{turn.tools.length > 0 && <TaskActivityTimeline tools={turn.tools} />}</div>)}{task?.modelKeyAuthorization && <div className="my-5 flex flex-wrap items-center gap-3 rounded-xl border border-amber-200 bg-amber-50 px-4 py-3 text-sm text-amber-900"><span className="flex h-8 w-8 shrink-0 items-center justify-center rounded-lg bg-white text-amber-700 shadow-sm"><KeyRound size={16} /></span><div className="min-w-0 flex-1"><div className="font-medium">当前模型密钥需要授权</div><div className="mt-0.5 text-xs leading-5 text-amber-700">URGS 不会自动打开系统窗口。点击授权后将继续当前任务。</div></div><div className="flex items-center gap-2"><button type="button" disabled={authorizing} onClick={() => void runtime.cancelTask(task.id)} className="h-8 rounded-lg px-2.5 text-xs font-medium text-amber-800 hover:bg-amber-100 disabled:opacity-60">取消任务</button><button type="button" disabled={authorizing} onClick={() => void authorizeModelKey()} className="flex h-8 items-center gap-1.5 rounded-lg bg-amber-700 px-3 text-xs font-medium text-white hover:bg-amber-800 disabled:opacity-60">{authorizing ? <LoaderCircle size={14} className="animate-spin" /> : <KeyRound size={14} />}授权读取</button></div></div>}{task?.error && <div className="my-5 flex gap-2 rounded-xl border border-red-200 bg-red-50 px-4 py-3 text-sm leading-6 text-red-700"><AlertCircle size={16} className="mt-0.5 shrink-0" /><span className="flex-1">{task.error}</span><button type="button" onClick={() => runtime.dismissTaskError(task.id)} className="shrink-0 text-red-500 hover:text-red-700" title="关闭提示" aria-label="关闭提示"><X size={16} /></button></div>}{waitingForReply && <div className="flex items-center gap-2 py-4 text-sm text-slate-400"><LoaderCircle size={16} className="animate-spin" />Grok 正在分析并调用必要工具…</div>}</>}</div>
+        <div className="flex-1">{isNewTask ? <div className="flex min-h-[300px] flex-col items-center justify-center py-8 text-center"><img src="/ark/ark-agents-robot-cropped.png" alt="URGS 智能任务中心" className="mb-3 h-20 w-20 object-contain mix-blend-multiply" /><h2 className="text-2xl font-semibold tracking-[-0.035em] text-[#303136]">让智能体把想法变成现实</h2><p className="mt-2 text-sm text-slate-500">输入第一条消息，即可在当前会话中开始执行</p><div className="mt-5 flex w-full flex-wrap justify-center gap-2">{taskTags.map((tag) => { const Icon = tag.icon; const active = newTask?.selectedSkillIds.includes(tag.skillId); return <button key={tag.label} type="button" onClick={() => { setFollowUp(tag.prompt); newTask?.setSelectedSkillIds((current) => active ? current.filter((id) => id !== tag.skillId) : [...current, tag.skillId]); }} className={`flex items-center gap-2 rounded-full px-4 py-2.5 text-sm font-medium transition hover:-translate-y-0.5 ${active ? 'bg-slate-900 text-white' : 'bg-[#e9e9eb] text-[#494a4f] hover:bg-[#dedee1]'}`}><Icon size={17} />{tag.label}{active && <Check size={14} />}</button>; })}</div></div> : <>{turns.map((turn, index) => <div key={`${task!.id}-${turn.user?.id || `turn-${index}`}`} className="border-b border-slate-100 py-2 last:border-b-0">{turn.user && <TaskMessage message={turn.user} scrollTarget={turn.user.id === task!.messages[task!.messages.length - 1]?.id ? lastMessageRef : undefined} />}{turn.stages.map((stage, stageIndex) => <React.Fragment key={stage.message?.id || `${task!.id}-stage-${index}-${stageIndex}`} >{stage.message && <TaskMessage message={stage.message} scrollTarget={stage.message.id === task!.messages[task!.messages.length - 1]?.id ? lastMessageRef : undefined} />}{stage.tools.length > 0 && <TaskActivityTimeline tools={stage.tools} />}</React.Fragment>)}</div>)}{task?.modelKeyAuthorization && <div className="my-5 flex flex-wrap items-center gap-3 rounded-xl border border-amber-200 bg-amber-50 px-4 py-3 text-sm text-amber-900"><span className="flex h-8 w-8 shrink-0 items-center justify-center rounded-lg bg-white text-amber-700 shadow-sm"><KeyRound size={16} /></span><div className="min-w-0 flex-1"><div className="font-medium">当前模型密钥需要授权</div><div className="mt-0.5 text-xs leading-5 text-amber-700">URGS 不会自动打开系统窗口。点击授权后将继续当前任务。</div></div><div className="flex items-center gap-2"><button type="button" disabled={authorizing} onClick={() => void runtime.cancelTask(task.id)} className="h-8 rounded-lg px-2.5 text-xs font-medium text-amber-800 hover:bg-amber-100 disabled:opacity-60">取消任务</button><button type="button" disabled={authorizing} onClick={() => void authorizeModelKey()} className="flex h-8 items-center gap-1.5 rounded-lg bg-amber-700 px-3 text-xs font-medium text-white hover:bg-amber-800 disabled:opacity-60">{authorizing ? <LoaderCircle size={14} className="animate-spin" /> : <KeyRound size={14} />}授权读取</button></div></div>}{task?.error && <div className="my-5 flex gap-2 rounded-xl border border-red-200 bg-red-50 px-4 py-3 text-sm leading-6 text-red-700"><AlertCircle size={16} className="mt-0.5 shrink-0" /><span className="flex-1">{task.error}</span><button type="button" onClick={() => runtime.dismissTaskError(task.id)} className="shrink-0 text-red-500 hover:text-red-700" title="关闭提示" aria-label="关闭提示"><X size={16} /></button></div>}{waitingForReply && <div className="flex items-center gap-2 py-4 text-sm text-slate-400"><LoaderCircle size={16} className="animate-spin" />Grok 正在分析并调用必要工具…</div>}</>}</div>
         <TaskComposer task={task} runtime={runtime} value={followUp} onChange={setFollowUp} onSubmit={submit} onCancel={task ? () => runtime.cancelTask(task.id) : undefined} sending={isNewTask ? newTask?.actionPending || false : sending} newTask={newTask} />
     </div>;
 };

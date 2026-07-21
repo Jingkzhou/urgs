@@ -1197,7 +1197,9 @@ fn emit_process_event(
 fn user_question_params(message: &Value) -> Option<&Value> {
     let method = message.get("method")?.as_str()?;
     let params = message.get("params")?;
-    if method == "x.ai/ask_user_question" {
+    if matches!(method, "x.ai/ask_user_question" | "_x.ai/ask_user_question")
+        && params.get("sessionId").is_some()
+    {
         return Some(params);
     }
     (method == "_x.ai/ask_user_question"
@@ -2340,6 +2342,17 @@ mod tests {
                 .and_then(|params| params.get("sessionId"))
                 .and_then(|value| value.as_str()),
             Some("session-wrapped")
+        );
+
+        let private_direct = json!({
+            "method": "_x.ai/ask_user_question",
+            "params": { "sessionId": "session-private-direct", "questions": [] }
+        });
+        assert_eq!(
+            user_question_params(&private_direct)
+                .and_then(|params| params.get("sessionId"))
+                .and_then(|value| value.as_str()),
+            Some("session-private-direct")
         );
     }
 

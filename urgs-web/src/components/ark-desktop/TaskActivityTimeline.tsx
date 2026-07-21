@@ -1,6 +1,6 @@
 import React, { useState } from 'react';
 import {
-    AlertCircle, ChevronRight, Circle, Eye, FileText, LoaderCircle, Search, SquareTerminal, Wrench,
+    AlertCircle, ChevronDown, ChevronRight, Circle, Eye, FileText, LoaderCircle, Search, SquareTerminal, Wrench,
 } from 'lucide-react';
 import type { ArkDesktopTask } from './types';
 
@@ -75,10 +75,24 @@ const ToolActivityItem: React.FC<{ tool: Tool }> = ({ tool }) => {
     );
 };
 
-const TaskActivityTimeline: React.FC<{ tools: ArkDesktopTask['tools'] }> = ({ tools }) => (
-    <section className="my-3 space-y-0.5" aria-label="工具调用记录">
-        {tools.map((tool) => <ToolActivityItem key={tool.id} tool={tool} />)}
-    </section>
-);
+const TaskActivityTimeline: React.FC<{ tools: ArkDesktopTask['tools'] }> = ({ tools }) => {
+    const [expanded, setExpanded] = useState(false);
+    const latestTool = tools[tools.length - 1];
+    const hasFailure = tools.some((tool) => getToolState(tool.status) === 'failed');
+    const isRunning = tools.some((tool) => ['running', 'pending'].includes(getToolState(tool.status)));
+    const summary = hasFailure ? '工具调用存在失败' : isRunning ? '正在调用工具' : `已调用 ${tools.length} 个工具`;
+
+    return (
+        <section className="my-1.5" aria-label="工具调用记录">
+            <button type="button" onClick={() => setExpanded((value) => !value)} className={`group flex w-full min-w-0 items-center gap-2 rounded-md px-1.5 py-1.5 text-left transition hover:bg-slate-50 ${hasFailure ? 'text-red-600' : 'text-slate-600'}`} aria-expanded={expanded}>
+                {hasFailure ? <AlertCircle size={17} /> : isRunning ? <LoaderCircle size={17} className="animate-spin text-blue-500" /> : <Wrench size={17} className="text-slate-400" />}
+                <span className="shrink-0 text-[14px] font-medium">{summary}</span>
+                {latestTool && <span className="min-w-0 flex-1 truncate text-[13px] text-slate-400">{latestTool.title}</span>}
+                <ChevronDown size={15} className={`shrink-0 text-slate-300 transition-transform group-hover:text-slate-500 ${expanded ? '' : '-rotate-90'}`} />
+            </button>
+            {expanded && <div className="mt-1.5 space-y-0.5 border-l border-slate-200 pl-3">{tools.map((tool) => <ToolActivityItem key={tool.id} tool={tool} />)}</div>}
+        </section>
+    );
+};
 
 export default TaskActivityTimeline;

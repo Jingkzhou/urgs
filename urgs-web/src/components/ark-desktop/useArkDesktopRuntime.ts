@@ -109,6 +109,7 @@ const buildSessionRules = (agent: ArkDesktopAgent, skills: ArkDesktopSkill[]) =>
     '你运行在 URGS ARK Desktop 智能任务中心中。你可以操作用户明确选择的本地工作区。',
     agent.systemPrompt,
     ...skills.map((skill) => `技能【${skill.name}】：${skill.instruction}`),
+    '当需要用户在预设方向、方案或偏好中选择时，必须调用 AskUserQuestion 工具并提供结构化选项。不要在普通消息里列出题目、选项或要求用户用文字回答；调用前最多用一句话说明需要确认方向，随后等待用户在界面卡片中选择。',
     '执行要求：先理解目标，再使用必要工具完成实际工作；涉及修改或命令时等待 ARK Desktop 的用户授权；结束时总结产物、修改文件和验证结果。',
 ].filter(Boolean).join('\n\n');
 
@@ -284,7 +285,8 @@ export const useArkDesktopRuntime = () => {
                 updateTask(taskId, (task) => {
                     const messages = task.messages.slice();
                     const last = messages[messages.length - 1];
-                    if (last?.role === 'assistant') {
+                    const latestToolStartedAt = task.tools.reduce((latest, tool) => Math.max(latest, tool.startedAt || tool.updatedAt), 0);
+                    if (last?.role === 'assistant' && latestToolStartedAt < last.createdAt) {
                         messages[messages.length - 1] = { ...last, content: `${last.content}${chunk}` };
                     } else {
                         messages.push({ id: createId('message'), role: 'assistant', content: chunk, createdAt: Date.now() });
@@ -378,7 +380,7 @@ export const useArkDesktopRuntime = () => {
                     })).filter((option: ArkDesktopUserQuestionRequest['questions'][number]['options'][number]) => option.label) : [],
                 })).filter((question: ArkDesktopUserQuestionRequest['questions'][number]) => question.question && question.options.length > 0) : [],
             };
-            if (!request.requestId || request.questions.length === 0) {
+            if (request.requestId === undefined || request.requestId === null || request.questions.length === 0) {
                 updateTask(taskId, (task) => ({ ...task, error: '收到的用户问卷格式无效', updatedAt: Date.now() }));
                 return;
             }
