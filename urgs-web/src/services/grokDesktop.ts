@@ -160,6 +160,9 @@ export const respondGrokPermission = (sessionId: string, requestId: unknown, opt
 export const respondGrokUserQuestion = (sessionId: string, requestId: unknown, response: Record<string, unknown>) =>
     invokeGrok<void>('grok_respond_user_question', { sessionId, requestId, response });
 
+export const respondGrokPlanApproval = (sessionId: string, requestId: unknown, response: Record<string, unknown>) =>
+    invokeGrok<void>('grok_respond_plan_approval', { sessionId, requestId, response });
+
 export const startGrokLogin = (method: 'browser' | 'oauth' | 'device' = 'browser') =>
     invokeGrok<void>('grok_start_login', { method });
 

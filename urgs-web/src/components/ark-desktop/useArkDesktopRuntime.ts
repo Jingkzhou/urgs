@@ -14,6 +14,7 @@ import {
     listGrokCliServices,
     listGrokModelProviders,
     runGrokCli,
+    respondGrokPlanApproval,
     respondGrokUserQuestion,
     respondGrokPermission,
     prepareGrokRuntime,
@@ -35,6 +36,7 @@ import type {
     ArkDesktopAgent,
     ArkDesktopAutomation,
     ArkDesktopPermissionRequest,
+    ArkDesktopPlanApprovalRequest,
     ArkDesktopUserQuestionRequest,
     ArkDesktopSkill,
     ArkDesktopSnapshot,
@@ -179,6 +181,7 @@ export const useArkDesktopRuntime = () => {
     const [activeTaskId, setActiveTaskId] = useState<string | null>(null);
     const [permissions, setPermissions] = useState<ArkDesktopPermissionRequest[]>([]);
     const [userQuestions, setUserQuestions] = useState<ArkDesktopUserQuestionRequest[]>([]);
+    const [planApprovals, setPlanApprovals] = useState<ArkDesktopPlanApprovalRequest[]>([]);
     const [runtimeError, setRuntimeError] = useState('');
     const cancelledTaskIdsRef = useRef(new Set<string>());
     const taskByProcessIdRef = useRef(new Map<string, string>());
@@ -392,6 +395,26 @@ export const useArkDesktopRuntime = () => {
             return;
         }
 
+        if (event.eventType === 'plan_approval_request' && taskId && sessionId) {
+            const request: ArkDesktopPlanApprovalRequest = {
+                taskId,
+                sessionId,
+                requestId: event.payload?.requestId,
+                toolCallId: typeof event.payload?.toolCallId === 'string' ? event.payload.toolCallId : undefined,
+                planContent: typeof event.payload?.planContent === 'string' ? event.payload.planContent : undefined,
+            };
+            if (request.requestId === undefined || request.requestId === null) {
+                updateTask(taskId, (task) => ({ ...task, error: '收到的计划审批格式无效', updatedAt: Date.now() }));
+                return;
+            }
+            const requestKey = JSON.stringify(request.requestId);
+            setPlanApprovals((current) => [
+                ...current.filter((item) => item.sessionId !== sessionId || JSON.stringify(item.requestId) !== requestKey),
+                request,
+            ]);
+            return;
+        }
+
         if (event.eventType === 'runtime_error') {
             const message = redactRuntimeText(event.payload?.message || '本地智能运行时发生错误');
             if (taskId) {
@@ -407,6 +430,7 @@ export const useArkDesktopRuntime = () => {
             taskByProcessIdRef.current.delete(processId);
             setPermissions((current) => current.filter((item) => item.taskId !== taskId));
             setUserQuestions((current) => current.filter((item) => item.taskId !== taskId));
+            setPlanApprovals((current) => current.filter((item) => item.taskId !== taskId));
             updateTask(taskId, (task) => task.runtimeProcessId === processId && task.status === 'running'
                 ? { ...task, status: 'failed', error: '本地任务进程已退出', updatedAt: Date.now() }
                 : task);
@@ -782,6 +806,7 @@ export const useArkDesktopRuntime = () => {
         }));
         setPermissions((current) => current.filter((item) => item.taskId !== taskId));
         setUserQuestions((current) => current.filter((item) => item.taskId !== taskId));
+        setPlanApprovals((current) => current.filter((item) => item.taskId !== taskId));
     }, [updateTask]);
 
     const permission = useMemo(
@@ -792,6 +817,11 @@ export const useArkDesktopRuntime = () => {
     const userQuestion = useMemo(
         () => userQuestions.find((item) => item.taskId === activeTaskId) || userQuestions[0] || null,
         [activeTaskId, userQuestions],
+    );
+
+    const planApproval = useMemo(
+        () => planApprovals.find((item) => item.taskId === activeTaskId) || planApprovals[0] || null,
+        [activeTaskId, planApprovals],
     );
 
     const answerPermission = useCallback(async (optionId?: string) => {
@@ -821,6 +851,20 @@ export const useArkDesktopRuntime = () => {
             updateTask(userQuestion.taskId, (task) => ({ ...task, error: message, updatedAt: Date.now() }));
         }
     }, [updateTask, userQuestion]);
+
+    const answerPlanApproval = useCallback(async (response: Record<string, unknown>) => {
+        if (!planApproval) return;
+        try {
+            await respondGrokPlanApproval(planApproval.sessionId, planApproval.requestId, response);
+            const requestKey = JSON.stringify(planApproval.requestId);
+            setPlanApprovals((current) => current.filter((item) => (
+                item.sessionId !== planApproval.sessionId || JSON.stringify(item.requestId) !== requestKey
+            )));
+        } catch (error) {
+            const message = redactRuntimeText(error instanceof Error ? error.message : String(error));
+            updateTask(planApproval.taskId, (task) => ({ ...task, error: message, updatedAt: Date.now() }));
+        }
+    }, [planApproval, updateTask]);
 
     const addModel = useCallback(async (model: string) => {
         const modelId = model.trim();
@@ -953,6 +997,7 @@ export const useArkDesktopRuntime = () => {
         setActiveTaskId(null);
         setPermissions([]);
         setUserQuestions([]);
+        setPlanApprovals([]);
         taskByProcessIdRef.current.clear();
         taskBySessionIdRef.current.clear();
         setRuntimeError('');
@@ -981,6 +1026,8 @@ export const useArkDesktopRuntime = () => {
         answerPermission,
         userQuestion,
         answerUserQuestion,
+        planApproval,
+        answerPlanApproval,
         addModel,
         selectModel,
         saveModelProvider,

@@ -18,6 +18,7 @@ import GrokExecutionSettingsPanel from './GrokExecutionSettingsPanel';
 import { ArkDesktopSidebarToggle, ArkDesktopTitleContent } from './ArkDesktopTitleBar';
 import { ConversationPromptInput } from './SlashCommandMenu';
 import TaskActivityTimeline from './TaskActivityTimeline';
+import PlanApprovalDialog from './PlanApprovalDialog';
 import UserQuestionDialog from './UserQuestionDialog';
 import type {
     ArkDesktopAgent, ArkDesktopAutomation, ArkDesktopSection, ArkDesktopSkill,
@@ -330,6 +331,7 @@ const ArkDesktopPage: React.FC = () => {
             {editor?.type === 'automation' && <AutomationEditor id={editor.id} runtime={runtime} onClose={() => setEditor(null)} />}
             {runtime.permission && <Modal title={`允许“${runtime.permission.taskTitle}”执行本地操作？`} onClose={() => void runtime.answerPermission()}><p className="mb-5 text-sm leading-6 text-slate-600">{runtime.permission.title}</p><div className="flex flex-wrap justify-end gap-2"><button type="button" onClick={() => void runtime.answerPermission()} className="rounded-lg border border-slate-200 px-4 py-2 text-sm text-slate-600">拒绝</button>{runtime.permission.options.map((option) => <button key={option.optionId} type="button" onClick={() => void runtime.answerPermission(option.optionId)} className="rounded-lg bg-slate-900 px-4 py-2 text-sm text-white">{option.name}</button>)}</div></Modal>}
             {runtime.userQuestion && <UserQuestionDialog request={runtime.userQuestion} onAnswer={runtime.answerUserQuestion} />}
+            {runtime.planApproval && <PlanApprovalDialog request={runtime.planApproval} onAnswer={runtime.answerPlanApproval} />}
         </div>
     );
 };

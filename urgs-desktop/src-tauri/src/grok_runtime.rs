@@ -175,6 +175,12 @@ struct PendingUserQuestion {
     request_id: Value,
 }
 
+#[derive(Clone)]
+struct PendingPlanApproval {
+    session_id: String,
+    request_id: Value,
+}
+
 pub struct GrokRuntimeState {
     prepared_process: Mutex<Option<Arc<GrokProcess>>>,
     session_processes: Mutex<HashMap<String, Arc<GrokProcess>>>,
@@ -269,6 +275,7 @@ struct GrokProcess {
     pending_requests: Mutex<HashMap<u64, oneshot::Sender<Result<Value, String>>>>,
     pending_permissions: Mutex<Vec<PendingPermission>>,
     pending_user_questions: Mutex<Vec<PendingUserQuestion>>,
+    pending_plan_approvals: Mutex<Vec<PendingPlanApproval>>,
     available_commands: Mutex<Vec<GrokAvailableCommand>>,
     request_sequence: AtomicU64,
     initialized: AsyncMutex<bool>,
@@ -289,6 +296,7 @@ impl GrokProcess {
             pending_requests: Mutex::new(HashMap::new()),
             pending_permissions: Mutex::new(Vec::new()),
             pending_user_questions: Mutex::new(Vec::new()),
+            pending_plan_approvals: Mutex::new(Vec::new()),
             available_commands: Mutex::new(Vec::new()),
             request_sequence: AtomicU64::new(1),
             initialized: AsyncMutex::new(false),
@@ -561,6 +569,38 @@ impl GrokProcess {
         pending.retain(|question| {
             if question.session_id == session_id {
                 cancelled.push(question.request_id.clone());
+                false
+            } else {
+                true
+            }
+        });
+        cancelled
+    }
+
+    fn remember_plan_approval(&self, session_id: String, request_id: Value) {
+        if let Ok(mut pending) = self.pending_plan_approvals.lock() {
+            pending.retain(|approval| approval.request_id != request_id);
+            pending.push(PendingPlanApproval {
+                session_id,
+                request_id,
+            });
+        }
+    }
+
+    fn clear_plan_approval(&self, request_id: &Value) {
+        if let Ok(mut pending) = self.pending_plan_approvals.lock() {
+            pending.retain(|approval| approval.request_id != *request_id);
+        }
+    }
+
+    fn cancel_plan_approvals(&self, session_id: &str) -> Vec<Value> {
+        let Ok(mut pending) = self.pending_plan_approvals.lock() else {
+            return Vec::new();
+        };
+        let mut cancelled = Vec::new();
+        pending.retain(|approval| {
+            if approval.session_id == session_id {
+                cancelled.push(approval.request_id.clone());
                 false
             } else {
                 true
@@ -1208,6 +1248,20 @@ fn user_question_params(message: &Value) -> Option<&Value> {
     .flatten()
 }
 
+fn plan_approval_params(message: &Value) -> Option<&Value> {
+    let method = message.get("method")?.as_str()?;
+    let params = message.get("params")?;
+    if matches!(method, "x.ai/exit_plan_mode" | "_x.ai/exit_plan_mode")
+        && params.get("sessionId").is_some()
+    {
+        return Some(params);
+    }
+    (method == "_x.ai/exit_plan_mode"
+        && params.get("method").and_then(Value::as_str) == Some("x.ai/exit_plan_mode"))
+    .then(|| params.get("params"))
+    .flatten()
+}
+
 fn handle_stdout(app: &AppHandle, process: &Arc<GrokProcess>, line: Vec<u8>) {
     let line = String::from_utf8_lossy(&line).trim().to_string();
     if line.is_empty() {
@@ -1287,6 +1341,37 @@ fn handle_stdout(app: &AppHandle, process: &Arc<GrokProcess>, line: Vec<u8>) {
                         "toolCallId": params.get("toolCallId"),
                         "questions": params.get("questions").cloned().unwrap_or_else(|| json!([])),
                         "mode": params.get("mode").and_then(Value::as_str).unwrap_or("default"),
+                    }),
+                );
+            }
+        }
+        "x.ai/exit_plan_mode" | "_x.ai/exit_plan_mode" => {
+            let request_id = message.get("id").cloned();
+            let params = plan_approval_params(&message);
+            let session_id = params
+                .and_then(|params| params.get("sessionId"))
+                .and_then(Value::as_str)
+                .unwrap_or_default()
+                .to_string();
+            if let (Some(request_id), Some(params)) = (request_id, params) {
+                if session_id.is_empty() {
+                    let _ = process.write_json(json!({
+                        "jsonrpc": "2.0",
+                        "id": request_id,
+                        "error": { "code": -32602, "message": "ExitPlanMode 缺少 sessionId" }
+                    }));
+                    return;
+                }
+                process.remember_plan_approval(session_id.clone(), request_id.clone());
+                emit_process_event(
+                    app,
+                    process,
+                    "plan_approval_request",
+                    json!({
+                        "requestId": request_id,
+                        "sessionId": session_id,
+                        "toolCallId": params.get("toolCallId"),
+                        "planContent": params.get("planContent"),
                     }),
                 );
             }
@@ -2191,6 +2276,13 @@ pub fn grok_cancel(state: State<'_, GrokRuntimeState>, session_id: String) -> Re
             "result": { "outcome": "cancelled" }
         }))?;
     }
+    for request_id in process.cancel_plan_approvals(&session_id) {
+        process.write_json(json!({
+            "jsonrpc": "2.0",
+            "id": request_id,
+            "result": { "outcome": "abandoned" }
+        }))?;
+    }
     Ok(())
 }
 
@@ -2239,6 +2331,30 @@ pub fn grok_respond_user_question(
         "result": response
     }))?;
     process.clear_user_question(&request_id);
+    Ok(())
+}
+
+#[tauri::command]
+pub fn grok_respond_plan_approval(
+    state: State<'_, GrokRuntimeState>,
+    session_id: String,
+    request_id: Value,
+    response: Value,
+) -> Result<(), String> {
+    let process = session_process(&state, &session_id)?;
+    let outcome = response
+        .get("outcome")
+        .and_then(Value::as_str)
+        .unwrap_or_default();
+    if !matches!(outcome, "approved" | "cancelled" | "abandoned") {
+        return Err("无效的计划审批响应结果".to_string());
+    }
+    process.write_json(json!({
+        "jsonrpc": "2.0",
+        "id": request_id,
+        "result": response
+    }))?;
+    process.clear_plan_approval(&request_id);
     Ok(())
 }
 
@@ -2308,10 +2424,11 @@ mod tests {
         available_commands_from_initialize, available_commands_from_list,
         available_commands_from_session_update, cache_provider_api_key,
         forget_cached_provider_api_key, format_rpc_error, grok_agent_arguments, model_key_env_name,
-        normalize_model_id, normalize_model_provider, parse_grok_toml, process_launch_key,
-        read_provider_api_key, request_timeout, select_auth_method, serialize_grok_toml,
-        user_question_params, validate_cli_arguments, validate_service_arguments, GrokAcpOptions,
-        GrokCliService, GrokModelProviderInput, INITIALIZE_TIMEOUT, REQUEST_TIMEOUT,
+        normalize_model_id, normalize_model_provider, parse_grok_toml, plan_approval_params,
+        process_launch_key, read_provider_api_key, request_timeout, select_auth_method,
+        serialize_grok_toml, user_question_params, validate_cli_arguments,
+        validate_service_arguments, GrokAcpOptions, GrokCliService, GrokModelProviderInput,
+        INITIALIZE_TIMEOUT, REQUEST_TIMEOUT,
     };
     use serde_json::json;
     use std::path::Path;
@@ -2350,6 +2467,45 @@ mod tests {
         });
         assert_eq!(
             user_question_params(&private_direct)
+                .and_then(|params| params.get("sessionId"))
+                .and_then(|value| value.as_str()),
+            Some("session-private-direct")
+        );
+    }
+
+    #[test]
+    fn extracts_direct_and_wrapped_plan_approval_requests() {
+        let direct = json!({
+            "method": "x.ai/exit_plan_mode",
+            "params": { "sessionId": "session-direct", "toolCallId": "tool-direct" }
+        });
+        assert_eq!(
+            plan_approval_params(&direct)
+                .and_then(|params| params.get("sessionId"))
+                .and_then(|value| value.as_str()),
+            Some("session-direct")
+        );
+
+        let wrapped = json!({
+            "method": "_x.ai/exit_plan_mode",
+            "params": {
+                "method": "x.ai/exit_plan_mode",
+                "params": { "sessionId": "session-wrapped", "toolCallId": "tool-wrapped" }
+            }
+        });
+        assert_eq!(
+            plan_approval_params(&wrapped)
+                .and_then(|params| params.get("sessionId"))
+                .and_then(|value| value.as_str()),
+            Some("session-wrapped")
+        );
+
+        let private_direct = json!({
+            "method": "_x.ai/exit_plan_mode",
+            "params": { "sessionId": "session-private-direct", "toolCallId": "tool-private-direct" }
+        });
+        assert_eq!(
+            plan_approval_params(&private_direct)
                 .and_then(|params| params.get("sessionId"))
                 .and_then(|value| value.as_str()),
             Some("session-private-direct")

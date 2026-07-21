@@ -201,3 +201,11 @@ export interface ArkDesktopUserQuestionRequest {
         }>;
     }>;
 }
+
+export interface ArkDesktopPlanApprovalRequest {
+    taskId: string;
+    sessionId: string;
+    requestId: unknown;
+    toolCallId?: string;
+    planContent?: string;
+}
