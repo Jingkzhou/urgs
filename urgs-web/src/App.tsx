@@ -17,10 +17,11 @@ import ArkPage from './components/ark/ArkPage';
 import KnowledgeCenter from './components/knowledge/KnowledgeCenter';
 import MarketplacePage from './components/marketplace/MarketplacePage';
 import ToolsPage from './components/tools/ToolsPage';
+import DesktopAutostartSetting from './components/desktop/DesktopAutostartSetting';
 import { DashboardViewDefinition, DashboardViewKey, dashboardViewDefinitions } from './components/home/dashboardViews';
 import { getMarketplaceTodos } from './api/marketplace';
 import { LOGO_URL } from './constants';
-import { resolveServiceUrl } from './config';
+import { isDesktopRuntime, resolveServiceUrl } from './config';
 
 const NAV_ITEMS = [
     { id: 'dashboard', label: '工作台', icon: LayoutDashboard, permission: 'dashboard' },
@@ -302,6 +303,8 @@ const App: React.FC = () => {
             </div>
 
             <div className="h-px bg-slate-100/80 my-1 mx-2"></div>
+
+            {isDesktopRuntime() && <DesktopAutostartSetting className="mx-2 mb-2" />}
 
             {hasPermission('profile') && <button
                 onClick={() => { setActiveTab('basic_info'); window.location.hash = '#/basic_info'; setShowUserMenu(false); }}

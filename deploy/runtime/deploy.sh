@@ -207,6 +207,48 @@ copy_dir_replace_with_backup() {
     copy_dir_replace "$src" "$dst"
 }
 
+merge_cors_origins_from_package() {
+    local source_env_file="$1"
+    local target_env_file="$2"
+    local package_cors_origins
+    package_cors_origins="$(grep -m1 '^URGS_CORS_ALLOWED_ORIGINS=' "$source_env_file" | cut -d= -f2- || true)"
+    [ -n "$package_cors_origins" ] || return 0
+
+    local existing_cors_origins merged_cors_origins
+    existing_cors_origins="$(grep -m1 '^URGS_CORS_ALLOWED_ORIGINS=' "$target_env_file" | cut -d= -f2- || true)"
+    merged_cors_origins="$(printf '%s\n%s\n' "$package_cors_origins" "$existing_cors_origins" \
+        | tr ',' '\n' \
+        | awk '{$1=$1; if (NF && !seen[$0]++) print}' \
+        | paste -sd, -)"
+    [ -n "$merged_cors_origins" ] || return 0
+
+    local temp_env_file
+    temp_env_file="$(mktemp "${target_env_file}.tmp.XXXXXX")"
+    awk -v origins="$merged_cors_origins" '
+        /^URGS_CORS_ALLOWED_ORIGINS=/ {
+            if (!updated) {
+                print "URGS_CORS_ALLOWED_ORIGINS=" origins
+                updated = 1
+            }
+            next
+        }
+        { print }
+        END {
+            if (!updated) {
+                print "URGS_CORS_ALLOWED_ORIGINS=" origins
+            }
+        }
+    ' "$target_env_file" > "$temp_env_file"
+
+    if stat -f '%Lp' "$target_env_file" >/dev/null 2>&1; then
+        chmod "$(stat -f '%Lp' "$target_env_file")" "$temp_env_file"
+    else
+        chmod "$(stat -c '%a' "$target_env_file")" "$temp_env_file"
+    fi
+    mv -f "$temp_env_file" "$target_env_file"
+    log "Merged URGS_CORS_ALLOWED_ORIGINS from package and existing deploy environment."
+}
+
 install_package_to_deploy_home() {
     [ -n "$DEPLOY_HOME" ] || return 0
     [ "$PACKAGE_DIR" != "$ROOT_DIR" ] || return 0
@@ -234,6 +276,7 @@ install_package_to_deploy_home() {
 
     if [ "$deploy_env_keep" = "1" ] && [ -f "${ROOT_DIR}/config/deploy.env" ]; then
         cp "${PACKAGE_DIR}/config/deploy.env" "${ROOT_DIR}/config/deploy.env.package"
+        merge_cors_origins_from_package "${PACKAGE_DIR}/config/deploy.env" "${ROOT_DIR}/config/deploy.env"
     else
         backup_existing_path "${ROOT_DIR}/config/deploy.env" "$backup_dir" "config/deploy.env"
         cp "${PACKAGE_DIR}/config/deploy.env" "${ROOT_DIR}/config/deploy.env"

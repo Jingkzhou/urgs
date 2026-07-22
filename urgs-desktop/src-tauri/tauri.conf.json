@@ -13,7 +13,7 @@
     "windows": [
       {
         "label": "main",
-        "title": "URGS 统一监管治理平台",
+        "title": "监管报送一体化系统",
         "width": 1440,
         "height": 900,
         "minWidth": 1100,
@@ -43,8 +43,8 @@
     "targets": ["msi", "nsis"],
     "createUpdaterArtifacts": true,
     "category": "Business",
-    "shortDescription": "统一监管治理平台 Windows 客户端",
-    "longDescription": "URGS 统一监管治理平台 Windows 桌面客户端",
+    "shortDescription": "监管报送一体化系统 Windows 客户端",
+    "longDescription": "监管报送一体化系统 Windows 桌面客户端",
     "icon": [
       "icons/32x32.png",
       "icons/128x128.png",

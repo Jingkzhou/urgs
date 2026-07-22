@@ -567,6 +567,7 @@ ${attentionItems}
                     <div className="p-3">
                         <ConfigProvider locale={zhCN}>
                             <Calendar
+                                className="work-statistics-calendar"
                                 fullscreen={false}
                                 value={calendarDate}
                                 onSelect={setCalendarDate}
@@ -574,8 +575,8 @@ ${attentionItems}
                                 dateCellRender={date => {
                                     const requirementCount = calendarWorksByDate[date.format('YYYY-MM-DD')]?.length || 0;
                                     return requirementCount > 0 ? (
-                                        <div className="mt-0.5 truncate rounded bg-rose-50 px-1 text-center text-[10px] font-bold leading-4 text-rose-600">
-                                            {requirementCount}
+                                        <div className="work-statistics-calendar-count">
+                                            {requirementCount} 个需求
                                         </div>
                                     ) : null;
                                 }}

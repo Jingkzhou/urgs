@@ -526,3 +526,187 @@
 .online-docs-table .ant-table-column-sorter-down.active {
   color: #1677FF;
 }
+
+/* =========================================
+   WorkStatistics - Calendar desktop fallback
+   Ant Design's runtime CSS can fail to inject in WebView2. Keep this
+   scoped fallback in the static bundle so the calendar stays usable.
+   ========================================= */
+
+.work-statistics-calendar.ant-picker-calendar {
+  color: #334155;
+  font-size: 13px;
+}
+
+.work-statistics-calendar .ant-picker-calendar-header {
+  display: flex !important;
+  flex-wrap: wrap;
+  align-items: center;
+  justify-content: space-between;
+  gap: 8px;
+  padding: 0 0 12px !important;
+}
+
+.work-statistics-calendar .ant-picker-calendar-header > * {
+  display: inline-flex;
+  align-items: center;
+}
+
+.work-statistics-calendar .ant-picker-calendar-year-select,
+.work-statistics-calendar .ant-picker-calendar-month-select {
+  min-width: 92px;
+}
+
+.work-statistics-calendar .ant-picker-calendar-header .ant-select {
+  position: relative;
+  display: inline-flex;
+  width: 100%;
+}
+
+.work-statistics-calendar .ant-picker-calendar-header .ant-select-selector {
+  display: flex !important;
+  width: 100%;
+  min-height: 32px;
+  align-items: center;
+  border: 1px solid #dbeafe !important;
+  border-radius: 7px;
+  background: #ffffff;
+  padding: 3px 28px 3px 10px !important;
+}
+
+.work-statistics-calendar .ant-picker-calendar-header .ant-select-selection-item {
+  overflow: hidden;
+  color: #334155;
+  font-weight: 600;
+  line-height: 24px;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.work-statistics-calendar .ant-picker-calendar-header .ant-select-arrow {
+  position: absolute;
+  top: 50%;
+  right: 9px;
+  display: flex;
+  transform: translateY(-50%);
+  color: #64748b;
+}
+
+.work-statistics-calendar .ant-picker-calendar-mode-switch {
+  display: inline-flex !important;
+  overflow: hidden;
+  border: 1px solid #dbeafe;
+  border-radius: 7px;
+  background: #ffffff;
+}
+
+.work-statistics-calendar .ant-radio-button-wrapper {
+  position: relative;
+  display: inline-flex !important;
+  min-height: 30px;
+  align-items: center;
+  justify-content: center;
+  padding: 0 10px;
+  color: #64748b;
+  cursor: pointer;
+}
+
+.work-statistics-calendar .ant-radio-button-wrapper + .ant-radio-button-wrapper {
+  border-left: 1px solid #dbeafe;
+}
+
+.work-statistics-calendar .ant-radio-button-wrapper-checked {
+  background: #eff6ff;
+  color: #2563eb;
+  font-weight: 700;
+}
+
+.work-statistics-calendar .ant-radio-button-wrapper input {
+  position: absolute;
+  opacity: 0;
+  pointer-events: none;
+}
+
+.work-statistics-calendar .ant-picker-panel,
+.work-statistics-calendar .ant-picker-body,
+.work-statistics-calendar .ant-picker-content {
+  width: 100%;
+}
+
+.work-statistics-calendar .ant-picker-content {
+  table-layout: fixed;
+  border-collapse: separate;
+  border-spacing: 2px;
+}
+
+.work-statistics-calendar .ant-picker-content th {
+  height: 28px;
+  color: #64748b;
+  font-size: 12px;
+  font-weight: 700;
+  text-align: center;
+}
+
+.work-statistics-calendar .ant-picker-cell {
+  height: 54px;
+  padding: 0;
+  vertical-align: top;
+  cursor: pointer;
+}
+
+.work-statistics-calendar .ant-picker-cell-inner,
+.work-statistics-calendar .ant-picker-calendar-date {
+  display: flex !important;
+  min-height: 52px;
+  flex-direction: column;
+  align-items: stretch;
+  border: 1px solid transparent;
+  border-radius: 7px;
+  padding: 4px 5px;
+  color: #334155;
+  transition: background-color 0.15s ease, border-color 0.15s ease;
+}
+
+.work-statistics-calendar .ant-picker-cell-inner:hover,
+.work-statistics-calendar .ant-picker-calendar-date:hover {
+  border-color: #bfdbfe;
+  background: #f8fbff;
+}
+
+.work-statistics-calendar .ant-picker-cell-in-view.ant-picker-cell-selected .ant-picker-cell-inner,
+.work-statistics-calendar .ant-picker-cell-selected .ant-picker-calendar-date {
+  border-color: #93c5fd;
+  background: #eff6ff;
+  color: #1d4ed8;
+}
+
+.work-statistics-calendar .ant-picker-cell-today .ant-picker-cell-inner,
+.work-statistics-calendar .ant-picker-cell-today .ant-picker-calendar-date {
+  border-color: #60a5fa;
+  color: #2563eb;
+  font-weight: 700;
+}
+
+.work-statistics-calendar .ant-picker-cell-out-view .ant-picker-cell-inner,
+.work-statistics-calendar .ant-picker-cell-out-view .ant-picker-calendar-date {
+  color: #cbd5e1;
+}
+
+.work-statistics-calendar .ant-picker-calendar-date-value {
+  text-align: right;
+}
+
+.work-statistics-calendar-count {
+  margin-top: 3px;
+  overflow: hidden;
+  border-radius: 4px;
+  background: #fff1f2;
+  padding: 1px 4px;
+  color: #e11d48;
+  font-size: 10px;
+  font-weight: 700;
+  line-height: 15px;
+  text-align: center;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}

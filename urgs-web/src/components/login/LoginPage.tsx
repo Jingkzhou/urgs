@@ -182,7 +182,7 @@ const LoginPage: React.FC<LoginProps> = ({ onLogin }) => {
   };
 
   return (
-    <div className="min-h-screen max-h-screen overflow-hidden grid lg:grid-cols-2 bg-slate-50 relative">
+    <div className="relative grid min-h-[100dvh] w-full overflow-hidden bg-slate-50 xl:grid-cols-[minmax(0,1fr)_minmax(560px,1.1fr)]">
       {isDesktopRuntime() && (
         <button
           type="button"
@@ -197,26 +197,26 @@ const LoginPage: React.FC<LoginProps> = ({ onLogin }) => {
         </button>
       )}
       {/* Soft transition gradient to blend dark and light sides */}
-      <div className="absolute inset-0 pointer-events-none hidden lg:block z-10"
+      <div className="absolute inset-0 z-10 hidden pointer-events-none xl:block"
            style={{ background: 'linear-gradient(90deg, rgba(2,6,23,1) 0%, rgba(248,250,252,0.8) 10%, rgba(248,250,252,0) 30%, rgba(248,250,252,0) 70%, rgba(248,250,252,0.8) 90%, rgba(2,6,23,1) 100%)', opacity: 0.15 }} />
 
       {/* ── Global keyframes (injected once) ─────────────────────── */}
       <style>{`
         @keyframes particle-float {
-          0%, 100% { transform: translateY(0) translateX(0); opacity: var(--p-opa); }
-          25%      { transform: translateY(-18px) translateX(6px); opacity: calc(var(--p-opa) + 0.15); }
-          50%      { transform: translateY(-8px) translateX(-4px); opacity: var(--p-opa); }
-          75%      { transform: translateY(-24px) translateX(8px); opacity: calc(var(--p-opa) + 0.1); }
+          0%, 100% { transform: translate3d(0, 0, 0); opacity: var(--p-opa); }
+          25%      { transform: translate3d(6px, -18px, 0); opacity: calc(var(--p-opa) + 0.15); }
+          50%      { transform: translate3d(-4px, -8px, 0); opacity: var(--p-opa); }
+          75%      { transform: translate3d(8px, -24px, 0); opacity: calc(var(--p-opa) + 0.1); }
         }
         @keyframes data-stream {
-          0%   { transform: translateY(100vh); opacity: 0; }
+          0%   { transform: translate3d(0, 115vh, 0); opacity: 0; }
           5%   { opacity: var(--s-opa); }
           90%  { opacity: var(--s-opa); }
-          100% { transform: translateY(-120px); opacity: 0; }
+          100% { transform: translate3d(0, -120px, 0); opacity: 0; }
         }
         @keyframes pulse-glow {
-          0%, 100% { opacity: 0.12; transform: scale(1); }
-          50%      { opacity: 0.22; transform: scale(1.08); }
+          0%, 100% { opacity: 0.12; transform: scale3d(1, 1, 1); }
+          50%      { opacity: 0.22; transform: scale3d(1.08, 1.08, 1); }
         }
         @keyframes border-shimmer {
           0%   { background-position: -200% center; }
@@ -227,8 +227,13 @@ const LoginPage: React.FC<LoginProps> = ({ onLogin }) => {
           50%      { box-shadow: 0 0 12px 2px rgba(239,68,68,0.15); }
         }
         @keyframes solar-orbit {
-          from { transform: rotate(0deg); }
-          to   { transform: rotate(360deg); }
+          from { transform: rotate3d(0, 0, 1, 0deg); }
+          to   { transform: rotate3d(0, 0, 1, 360deg); }
+        }
+        .login-motion {
+          animation-play-state: running;
+          backface-visibility: hidden;
+          will-change: transform, opacity;
         }
         .solar-sun {
           background:
@@ -266,7 +271,7 @@ const LoginPage: React.FC<LoginProps> = ({ onLogin }) => {
       `}</style>
 
       {/* ── Left Content Section - Professional Dark Theme ──────── */}
-      <div className="relative hidden lg:flex flex-col justify-between bg-slate-950 p-16 text-white overflow-hidden">
+      <div className="relative hidden overflow-hidden bg-slate-950 p-10 text-white xl:flex xl:flex-col xl:justify-between 2xl:p-16">
         {/* Background Decorations */}
         <div
           className="absolute inset-0 opacity-[0.03]"
@@ -280,7 +285,7 @@ const LoginPage: React.FC<LoginProps> = ({ onLogin }) => {
         {PARTICLES.map((p) => (
           <div
             key={p.id}
-            className="absolute rounded-full bg-blue-400"
+            className="login-motion absolute rounded-full bg-blue-400"
             style={{
               left: `${p.x}%`,
               top: `${p.y}%`,
@@ -298,7 +303,7 @@ const LoginPage: React.FC<LoginProps> = ({ onLogin }) => {
         {STREAMS.map((s) => (
           <div
             key={s.id}
-            className="absolute rounded-full"
+            className="login-motion absolute rounded-full"
             style={{
               left: `${s.left}%`,
               bottom: 0,
@@ -313,55 +318,55 @@ const LoginPage: React.FC<LoginProps> = ({ onLogin }) => {
         ))}
 
         {/* ── Ambient glow blobs (animated) ───────────────────── */}
-        <div className="absolute top-[-10%] left-[-10%] w-[50%] h-[50%] rounded-full bg-blue-600/20 blur-[120px]"
+        <div className="login-motion absolute top-[-10%] left-[-10%] h-[50%] w-[50%] rounded-full bg-blue-600/20 blur-[120px]"
              style={{ animation: 'pulse-glow 8s ease-in-out infinite' }} />
-        <div className="absolute bottom-[-10%] right-[-10%] w-[40%] h-[40%] rounded-full bg-red-600/10 blur-[100px]"
+        <div className="login-motion absolute bottom-[-10%] right-[-10%] h-[40%] w-[40%] rounded-full bg-red-600/10 blur-[100px]"
              style={{ animation: 'pulse-glow 12s ease-in-out infinite 2s' }} />
 
-        <div className="pointer-events-none absolute right-12 top-1/2 z-0 h-[300px] w-[300px] -translate-y-1/2 opacity-65">
+        <div className="pointer-events-none absolute right-6 top-1/2 z-0 h-[270px] w-[270px] -translate-y-1/2 opacity-65 2xl:right-12 2xl:h-[300px] 2xl:w-[300px]">
           <div className="solar-sun absolute left-1/2 top-1/2 h-12 w-12 -translate-x-1/2 -translate-y-1/2 rounded-full shadow-[0_0_54px_rgba(251,191,36,0.95),0_0_110px_rgba(249,115,22,0.28)]" />
-          <div className="absolute inset-[88px] rounded-full border border-slate-500/35"
+          <div className="login-motion absolute inset-[80px] rounded-full border border-slate-500/35 2xl:inset-[88px]"
                style={{ animation: 'solar-orbit 9s linear infinite' }}>
             <div className="planet-mars absolute left-1/2 top-[-7px] h-3.5 w-3.5 -translate-x-1/2 rounded-full shadow-[inset_-3px_-3px_5px_rgba(15,23,42,0.55),0_0_13px_rgba(239,68,68,0.72)]" />
           </div>
-          <div className="absolute inset-[56px] rounded-full border border-slate-500/35"
+          <div className="login-motion absolute inset-[50px] rounded-full border border-slate-500/35 2xl:inset-[56px]"
                style={{ animation: 'solar-orbit 15s linear infinite reverse' }}>
             <div className="planet-earth absolute left-1/2 top-[-10px] h-5 w-5 -translate-x-1/2 rounded-full shadow-[inset_-5px_-4px_7px_rgba(15,23,42,0.62),0_0_18px_rgba(96,165,250,0.75)]">
               <div className="absolute left-1/2 top-1/2 h-11 w-11 -translate-x-1/2 -translate-y-1/2">
-                <div className="relative h-full w-full"
+                <div className="login-motion relative h-full w-full"
                      style={{ animation: 'solar-orbit 3.2s linear infinite' }}>
                   <div className="planet-moon absolute left-1/2 top-[-4px] h-2 w-2 -translate-x-1/2 rounded-full shadow-[inset_-1px_-1px_2px_rgba(15,23,42,0.45),0_0_6px_rgba(226,232,240,0.65)]" />
                 </div>
               </div>
             </div>
           </div>
-          <div className="absolute inset-[20px] rounded-full border border-slate-500/30"
+          <div className="login-motion absolute inset-[18px] rounded-full border border-slate-500/30 2xl:inset-[20px]"
                style={{ animation: 'solar-orbit 24s linear infinite' }}>
             <div className="planet-saturn absolute left-1/2 top-[-12px] h-6 w-6 -translate-x-1/2 rounded-full shadow-[inset_-5px_-5px_8px_rgba(15,23,42,0.58),0_0_18px_rgba(251,191,36,0.45)]" />
           </div>
         </div>
 
         <div className="relative z-10 flex items-center">
-          <div className="bg-transparent p-0 animate-in zoom-in duration-700 relative overflow-hidden">
+          <div className="relative overflow-hidden bg-transparent p-0">
             {/* shimmer overlay */}
             <div className="absolute inset-0 opacity-100"
                  style={{ background: 'linear-gradient(105deg, transparent 40%, rgba(59,130,246,0.18) 45%, rgba(239,68,68,0.16) 50%, transparent 55%)', backgroundSize: '200% 100%', animation: 'border-shimmer 3s linear infinite' }} />
-            <img src={LOGIN_DARK_LOGO_URL} alt="监管报送一体化系统" className="w-[360px] max-w-full h-auto relative z-10" />
+            <img src={LOGIN_DARK_LOGO_URL} alt="监管报送一体化系统" className="relative z-10 h-auto w-full max-w-[360px]" />
           </div>
         </div>
 
-        <div className="relative z-10 max-w-lg animate-in fade-in slide-in-from-left-8 duration-1000 ease-out">
-          <h2 className="text-4xl font-bold leading-tight mb-6 text-slate-100">
+        <div className="relative z-10 max-w-lg">
+          <h2 className="mb-5 text-3xl font-bold leading-tight text-slate-100 2xl:mb-6 2xl:text-4xl">
             数据驱动监管，<br />
             合规护航金融安全。
           </h2>
-          <div className="flex items-center gap-4 text-slate-400 animate-in fade-in slide-in-from-left-12 duration-1000 delay-300 ease-out">
+          <div className="flex items-center gap-4 text-slate-400">
             <div className="h-[1px] w-8 bg-red-600" />
             <span className="text-sm font-medium uppercase tracking-widest">Security & Compliance First</span>
           </div>
         </div>
 
-        <div className="relative z-10 flex items-center justify-between text-xs text-slate-500 border-t border-slate-800/50 pt-8">
+        <div className="relative z-10 flex items-center justify-between border-t border-slate-800/50 pt-6 text-xs text-slate-500 2xl:pt-8">
           <div className="flex items-center gap-6">
             <div className="flex items-center gap-2">
               <Activity size={14} className="text-red-500" />
@@ -377,10 +382,10 @@ const LoginPage: React.FC<LoginProps> = ({ onLogin }) => {
       </div>
 
       {/* Right Login Section - Clean Professional White */}
-      <div className="relative flex items-center justify-center p-8 bg-white overflow-hidden">
+      <div className="relative flex min-w-0 items-center justify-center overflow-hidden bg-white p-6 sm:p-10 xl:p-14 2xl:p-16">
         <div className="relative z-10 w-full max-w-[400px]">
           {/* Mobile Logo */}
-          <div className="lg:hidden flex items-center justify-center mb-12">
+          <div className="mb-8 flex items-center justify-center xl:hidden sm:mb-12">
             <div className="relative overflow-hidden">
               <div className="absolute inset-0 opacity-100 pointer-events-none"
                    style={{ background: 'linear-gradient(105deg, transparent 40%, rgba(59,130,246,0.18) 45%, rgba(239,68,68,0.16) 50%, transparent 55%)', backgroundSize: '200% 100%', animation: 'border-shimmer 3s linear infinite' }} />

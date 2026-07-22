@@ -1,4 +1,4 @@
-import React, { useEffect, useMemo, useState } from 'react';
+import React, { useMemo, useState } from 'react';
 import {
     deriveWebSocketUrl,
     getApiBaseUrl,
@@ -6,10 +6,7 @@ import {
     type RuntimeConfig,
 } from '@/config';
 import { saveDesktopRuntimeConfig } from '@/utils/desktopRuntime';
-import {
-    getDesktopAutostartEnabled,
-    setDesktopAutostartEnabled,
-} from '@/utils/desktopAutostart';
+import DesktopAutostartSetting from './DesktopAutostartSetting';
 
 const validateUrl = (value: string, protocols: string[], fieldName: string) => {
     let parsed: URL;
@@ -27,9 +24,6 @@ const validateUrl = (value: string, protocols: string[], fieldName: string) => {
 const DesktopConnectionSetup: React.FC = () => {
     const [apiUrl, setApiUrl] = useState(() => getApiBaseUrl() || 'http://localhost:8080');
     const [wsUrl, setWsUrl] = useState(() => WS_URL || 'ws://localhost:8080/ws/im');
-    const [autoStartEnabled, setAutoStartEnabled] = useState(true);
-    const [autoStartReady, setAutoStartReady] = useState(false);
-    const [autoStartSaving, setAutoStartSaving] = useState(false);
     const [saving, setSaving] = useState(false);
     const [error, setError] = useState('');
 
@@ -41,45 +35,9 @@ const DesktopConnectionSetup: React.FC = () => {
         }
     }, [apiUrl]);
 
-    useEffect(() => {
-        let active = true;
-
-        void getDesktopAutostartEnabled()
-            .then((enabled) => {
-                if (active) {
-                    setAutoStartEnabled(enabled);
-                }
-            })
-            .catch((loadError) => {
-                console.error('读取开机自启动状态失败', loadError);
-            })
-            .finally(() => {
-                if (active) {
-                    setAutoStartReady(true);
-                }
-            });
-
-        return () => {
-            active = false;
-        };
-    }, []);
-
     const handleApiUrlBlur = () => {
         if (!wsUrl.trim() || wsUrl === 'ws://localhost:8080/ws/im') {
             setWsUrl(suggestedWsUrl);
-        }
-    };
-
-    const handleAutoStartChange = async () => {
-        setError('');
-        setAutoStartSaving(true);
-        try {
-            const enabled = await setDesktopAutostartEnabled(!autoStartEnabled);
-            setAutoStartEnabled(enabled);
-        } catch (autoStartError) {
-            setError(autoStartError instanceof Error ? autoStartError.message : '更新开机自启动设置失败');
-        } finally {
-            setAutoStartSaving(false);
         }
     };
 
@@ -113,7 +71,7 @@ const DesktopConnectionSetup: React.FC = () => {
                     <div>
                         <p className="text-xs font-bold uppercase tracking-[0.24em] text-blue-600">URGS Desktop</p>
                         <h1 className="mt-1 text-2xl font-black text-slate-900">连接服务器</h1>
-                        <p className="mt-1 text-sm text-slate-500">首次启动需要配置统一监管治理平台的服务地址。</p>
+                        <p className="mt-1 text-sm text-slate-500">首次启动需要配置监管报送一体化系统的服务地址。</p>
                     </div>
                 </div>
 
@@ -141,25 +99,7 @@ const DesktopConnectionSetup: React.FC = () => {
                         />
                     </label>
 
-                    <div className="flex items-center justify-between rounded-xl border border-slate-200 px-4 py-3">
-                        <div>
-                            <p className="text-sm font-bold text-slate-700">开机自动启动</p>
-                            <p className="mt-1 text-xs text-slate-500">登录 Windows 后自动启动 URGS 客户端，默认开启。</p>
-                        </div>
-                        <button
-                            type="button"
-                            role="switch"
-                            aria-checked={autoStartEnabled}
-                            aria-label="开机自动启动"
-                            disabled={!autoStartReady || autoStartSaving}
-                            onClick={handleAutoStartChange}
-                            className={`relative h-7 w-12 rounded-full transition ${autoStartEnabled ? 'bg-blue-600' : 'bg-slate-300'} disabled:cursor-not-allowed disabled:opacity-60`}
-                        >
-                            <span
-                                className={`absolute top-1 h-5 w-5 rounded-full bg-white shadow transition ${autoStartEnabled ? 'left-6' : 'left-1'}`}
-                            />
-                        </button>
-                    </div>
+                    <DesktopAutostartSetting />
 
                     {error && (
                         <div className="rounded-xl border border-red-200 bg-red-50 px-4 py-3 text-sm text-red-700">
