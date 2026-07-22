@@ -5,6 +5,8 @@ import { spawnSync } from 'node:child_process';
 import { fileURLToPath } from 'node:url';
 
 const scriptDirectory = dirname(fileURLToPath(import.meta.url));
+const desktopRoot = resolve(scriptDirectory, '..');
+const tauriCliPath = resolve(desktopRoot, 'node_modules/@tauri-apps/cli/tauri.js');
 
 const endpoint = process.env.TAURI_UPDATER_ENDPOINT;
 if (!endpoint) {
@@ -27,9 +29,8 @@ await writeFile(configPath, `${JSON.stringify({
 }, null, 2)}\n`, 'utf8');
 
 try {
-    const command = process.platform === 'win32' ? 'pnpm.cmd' : 'pnpm';
-    const result = spawnSync(command, ['tauri', 'build', '--config', configPath], {
-        cwd: resolve(scriptDirectory, '..'),
+    const result = spawnSync(process.execPath, [tauriCliPath, 'build', '--config', configPath], {
+        cwd: desktopRoot,
         env: process.env,
         stdio: 'inherit',
     });
