@@ -76,6 +76,7 @@ urgs-agent/wiki/
 .claude/
 .codex/
 dist-packages/
+deploy/artifacts/windows-updater/
 deploy/components-cache/onlyoffice-documentserver_9.4.0_arm64.deb
 backups/
 .hermes/

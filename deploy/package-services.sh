@@ -30,7 +30,7 @@ Services:
   executor     Build and package urgs-executor Spring Boot service.
   agent        Package urgs-agent LangGraph runtime source and lock file.
   lineage      Package sql-lineage-engine source and requirements.
-  desktop      Package signed Windows updater artifacts for the intranet Nginx endpoint.
+  desktop      Build/download signed Windows updater artifacts from GitHub, then package them for intranet Nginx.
 
 Components:
   nginx        Package nginx deployment config and NGINX_TARBALL, or latest cached ARM64 package.
@@ -47,6 +47,7 @@ Examples:
   deploy/package-services.sh --env pre full
   deploy/package-services.sh --env sit api web nginx redis
   deploy/package-services.sh api web
+  DEPLOY_ENV=sit deploy/package-services.sh api web executor nginx desktop
   DEPLOY_ENV=sit DESKTOP_UPDATER_SOURCE_DIR=/tmp/urgs-windows deploy/package-services.sh api web executor nginx desktop
   deploy/package-services.sh full
   REDIS_TARBALL=/tmp/redis.tar.gz deploy/package-services.sh api web redis
@@ -236,7 +237,7 @@ web_node_bin_dir() {
 
     for candidate in "${candidates[@]}"; do
         [ -x "$candidate" ] || continue
-        if ! node_modules_present || (cd "${ROOT_DIR}/urgs-web" && "$candidate" -e "require('rollup')" >/dev/null 2>&1); then
+        if "$candidate" --version >/dev/null 2>&1; then
             dirname "$candidate"
             return 0
         fi
@@ -259,13 +260,22 @@ node_modules_present() {
 install_web_dependencies() {
     local node_bin_dir
     node_bin_dir="$(web_node_bin_dir)" || die "No usable node runtime found for urgs-web dependencies."
-    require_command npm
     if [ -n "${NPM_REGISTRY:-}" ]; then
         export npm_config_registry="$NPM_REGISTRY"
     fi
-    if [ -f "${ROOT_DIR}/urgs-web/package-lock.json" ]; then
+    if [ -f "${ROOT_DIR}/urgs-web/pnpm-lock.yaml" ]; then
+        if command -v pnpm >/dev/null 2>&1; then
+            (cd "${ROOT_DIR}/urgs-web" && PATH="${node_bin_dir}:$PATH" pnpm install --frozen-lockfile)
+        elif command -v corepack >/dev/null 2>&1; then
+            (cd "${ROOT_DIR}/urgs-web" && PATH="${node_bin_dir}:$PATH" corepack pnpm install --frozen-lockfile)
+        else
+            die "urgs-web uses pnpm-lock.yaml, but pnpm/corepack is not available. Install Node.js with Corepack enabled."
+        fi
+    elif [ -f "${ROOT_DIR}/urgs-web/package-lock.json" ]; then
+        require_command npm
         (cd "${ROOT_DIR}/urgs-web" && PATH="${node_bin_dir}:$PATH" npm ci --prefer-offline --no-audit --progress=false)
     else
+        require_command npm
         (cd "${ROOT_DIR}/urgs-web" && PATH="${node_bin_dir}:$PATH" npm install --prefer-offline --no-audit --progress=false)
     fi
 }
@@ -352,15 +362,147 @@ desktop_version() {
     node -e 'const fs = require("fs"); console.log(JSON.parse(fs.readFileSync("urgs-desktop/src-tauri/tauri.conf.json", "utf8")).version);'
 }
 
+github_api_request() {
+    local method="$1"
+    local endpoint="$2"
+    local token="$3"
+    local data="${4:-}"
+    local args=(
+        --fail --silent --show-error --location
+        --request "$method"
+        --header "Accept: application/vnd.github+json"
+        --header "Authorization: Bearer ${token}"
+        --header "X-GitHub-Api-Version: 2022-11-28"
+    )
+    [ -n "$data" ] && args+=(--header "Content-Type: application/json" --data "$data")
+    curl "${args[@]}" "https://api.github.com${endpoint}"
+}
+
+github_repository() {
+    local remote_url
+    local repository="${DESKTOP_UPDATER_GITHUB_REPOSITORY:-}"
+    if [ -n "$repository" ]; then
+        printf '%s\n' "${repository%.git}"
+        return 0
+    fi
+    remote_url="$(git -C "$ROOT_DIR" remote get-url origin 2>/dev/null || true)"
+    case "$remote_url" in
+        git@github.com:*) repository="${remote_url#git@github.com:}" ;;
+        https://github.com/*) repository="${remote_url#https://github.com/}" ;;
+        ssh://git@github.com/*) repository="${remote_url#ssh://git@github.com/}" ;;
+        *) die "Cannot determine the GitHub repository from origin. Set DESKTOP_UPDATER_GITHUB_REPOSITORY=owner/repository." ;;
+    esac
+    printf '%s\n' "${repository%.git}"
+}
+
+ensure_github_ref_is_pushed() {
+    local ref="${DESKTOP_UPDATER_GITHUB_REF:-}"
+    local local_commit
+    local remote_commit
+    if [ -z "$ref" ]; then
+        ref="$(git -C "$ROOT_DIR" branch --show-current)"
+    fi
+    [ -n "$ref" ] || die "Cannot build the desktop updater from a detached HEAD. Set DESKTOP_UPDATER_GITHUB_REF to a pushed branch."
+    git -C "$ROOT_DIR" diff --quiet || die "Desktop updater GitHub build only sees pushed code. Commit and push tracked changes first, then rerun this command."
+    git -C "$ROOT_DIR" diff --cached --quiet || die "Desktop updater GitHub build only sees pushed code. Commit and push staged changes first, then rerun this command."
+    local_commit="$(git -C "$ROOT_DIR" rev-parse "$ref")"
+    remote_commit="$(git -C "$ROOT_DIR" ls-remote --heads origin "refs/heads/${ref}" | awk 'NR == 1 { print $1 }')"
+    [ -n "$remote_commit" ] || die "The branch ${ref} does not exist on origin. Push it before requesting the GitHub updater build."
+    [ "$local_commit" = "$remote_commit" ] || die "Local ${ref} is not fully pushed to origin. Push it before requesting the GitHub updater build."
+    DESKTOP_UPDATER_GITHUB_REF_RESOLVED="$ref"
+}
+
+json_value() {
+    local expression="$1"
+    shift
+    node -e "$expression" "$@"
+}
+
+fetch_desktop_updater_from_github() {
+    local environment="$1"
+    local token="${DESKTOP_UPDATER_GITHUB_TOKEN:-${GITHUB_TOKEN:-}}"
+    local repository
+    local request_id
+    local workflow_file="urgs-desktop-release.yml"
+    local payload
+    local runs_json
+    local run_id=""
+    local run_json
+    local run_status
+    local run_conclusion
+    local artifacts_json
+    local artifact_url
+    local artifact_dir
+    local artifact_zip
+    local attempt
+
+    [ -n "$token" ] || die "desktop was selected without DESKTOP_UPDATER_SOURCE_DIR. Set DESKTOP_UPDATER_GITHUB_TOKEN (or GITHUB_TOKEN) once so the script can trigger and download GitHub Actions artifacts."
+    require_command curl
+    require_command unzip
+    require_command node
+    ensure_github_ref_is_pushed
+    repository="$(github_repository)"
+    request_id="urgs-${environment}-$(date +%Y%m%d%H%M%S)-$$"
+    payload="$(node -e 'console.log(JSON.stringify({ref: process.argv[1], inputs: {deploy_env: process.argv[2], request_id: process.argv[3]}}))' "$DESKTOP_UPDATER_GITHUB_REF_RESOLVED" "$environment" "$request_id")"
+
+    log "Requesting GitHub Actions signed Windows updater build (${environment}, ${DESKTOP_UPDATER_GITHUB_REF_RESOLVED})."
+    github_api_request POST "/repos/${repository}/actions/workflows/${workflow_file}/dispatches" "$token" "$payload" >/dev/null
+
+    for attempt in $(seq 1 24); do
+        sleep 5
+        runs_json="$(github_api_request GET "/repos/${repository}/actions/workflows/${workflow_file}/runs?event=workflow_dispatch&branch=${DESKTOP_UPDATER_GITHUB_REF_RESOLVED}&per_page=20" "$token")"
+        run_id="$(printf '%s' "$runs_json" | json_value 'const fs = require("fs"); const requestId = process.argv[1]; const data = JSON.parse(fs.readFileSync(0, "utf8")); const run = (data.workflow_runs || []).find((item) => item.display_title && item.display_title.includes(requestId)); if (run) process.stdout.write(String(run.id));' "$request_id")"
+        [ -n "$run_id" ] && break
+    done
+    [ -n "$run_id" ] || die "GitHub Actions did not create the updater build within two minutes. Check the Actions page and retry."
+
+    log "Waiting for GitHub Actions run ${run_id}."
+    for attempt in $(seq 1 240); do
+        run_json="$(github_api_request GET "/repos/${repository}/actions/runs/${run_id}" "$token")"
+        run_status="$(printf '%s' "$run_json" | json_value 'const fs = require("fs"); process.stdout.write(JSON.parse(fs.readFileSync(0, "utf8")).status || "");')"
+        if [ "$run_status" = "completed" ]; then
+            run_conclusion="$(printf '%s' "$run_json" | json_value 'const fs = require("fs"); process.stdout.write(JSON.parse(fs.readFileSync(0, "utf8")).conclusion || "");')"
+            [ "$run_conclusion" = "success" ] || die "GitHub Actions updater build ${run_id} ended with ${run_conclusion}."
+            break
+        fi
+        sleep 15
+    done
+    [ "${run_status:-}" = "completed" ] || die "GitHub Actions updater build ${run_id} timed out after one hour."
+
+    artifacts_json="$(github_api_request GET "/repos/${repository}/actions/runs/${run_id}/artifacts" "$token")"
+    artifact_url="$(printf '%s' "$artifacts_json" | json_value 'const fs = require("fs"); const name = process.argv[1]; const data = JSON.parse(fs.readFileSync(0, "utf8")); const artifact = (data.artifacts || []).find((item) => item.name === name && !item.expired); if (artifact) process.stdout.write(artifact.archive_download_url);' "urgs-windows-updater-${environment}-${request_id}")"
+    [ -n "$artifact_url" ] || die "GitHub Actions succeeded but the signed updater artifact was not found."
+
+    artifact_dir="${DESKTOP_UPDATER_ARTIFACT_DIR:-${ROOT_DIR}/deploy/artifacts/windows-updater/${environment}/${request_id}}"
+    artifact_zip="${artifact_dir}/github-actions-artifact.zip"
+    mkdir -p "$artifact_dir"
+    log "Downloading signed Windows updater artifact to ${artifact_dir}."
+    curl --fail --silent --show-error --location \
+        --header "Authorization: Bearer ${token}" \
+        --output "$artifact_zip" \
+        "$artifact_url"
+    unzip -q -o "$artifact_zip" -d "$artifact_dir"
+    DESKTOP_UPDATER_DOWNLOADED_SOURCE_DIR="$artifact_dir"
+}
+
 package_desktop() {
     local source_dir="${DESKTOP_UPDATER_SOURCE_DIR:-}"
     local deploy_env_file
+    local environment
     local updater_base_url
     local version
 
-    [ -n "$source_dir" ] || die "desktop was selected but DESKTOP_UPDATER_SOURCE_DIR was not provided. It must contain the signed MSI, setup.exe, and their .sig files."
-    [ -d "$source_dir" ] || die "DESKTOP_UPDATER_SOURCE_DIR does not exist: ${source_dir}"
     require_command node
+    environment="$(normalize_deploy_env "$DEPLOY_ENV")" || die "desktop requires DEPLOY_ENV=sit, pre, or prod."
+    case "$environment" in
+        sit | prod) ;;
+        *) die "desktop only supports DEPLOY_ENV=sit or DEPLOY_ENV=prod because GitHub Actions only builds those intranet updater endpoints." ;;
+    esac
+    if [ -z "$source_dir" ]; then
+        fetch_desktop_updater_from_github "$environment"
+        source_dir="$DESKTOP_UPDATER_DOWNLOADED_SOURCE_DIR"
+    fi
+    [ -d "$source_dir" ] || die "DESKTOP_UPDATER_SOURCE_DIR does not exist: ${source_dir}"
     deploy_env_file="$(resolve_deploy_env_template)"
     updater_base_url="$(deploy_env_value "$deploy_env_file" "DESKTOP_UPDATER_BASE_URL")"
     [ -n "$updater_base_url" ] || die "desktop was selected but DESKTOP_UPDATER_BASE_URL is missing from ${deploy_env_file}"

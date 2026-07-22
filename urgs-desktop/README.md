@@ -61,7 +61,7 @@ DESKTOP_UPDATER_SOURCE_DIR=/path/to/windows-bundle \
 deploy/package-services.sh api web executor nginx desktop
 ```
 
-也可以在 GitHub Actions 手工运行“构建 URGS 内网 Windows 更新包”，选择 `sit` 或 `prod`。它只输出签名工件，不创建 GitHub Release；下载工件后仍按上面的部署命令发布到对应内网环境。
+也可以直接执行 `DEPLOY_ENV=sit deploy/package-services.sh api web executor nginx desktop`。当没有设置 `DESKTOP_UPDATER_SOURCE_DIR` 时，该脚本会调用 GitHub Actions、等待签名构建结束，并把工件下载到项目的 `deploy/artifacts/windows-updater/` 固定目录；首次使用前需要设置一次有 Actions 读写权限的 `DESKTOP_UPDATER_GITHUB_TOKEN`，且当前分支必须已提交并推送。它不会创建 GitHub Release。
 
 该命令会生成内网 `latest.json`，并在服务器执行 `bin/deploy.sh up` 后由 Nginx 发布为：
 
