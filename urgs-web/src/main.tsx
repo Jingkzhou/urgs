@@ -1,5 +1,7 @@
 import React from 'react';
 import ReactDOM from 'react-dom/client';
+import { ConfigProvider } from 'antd';
+import 'antd/dist/antd.css';
 import dayjs from 'dayjs';
 import weekday from 'dayjs/plugin/weekday';
 import localeData from 'dayjs/plugin/localeData';
@@ -42,8 +44,10 @@ const startApplication = async () => {
 
   root.render(
     <React.StrictMode>
-      {isDesktopRuntime() && (!getApiBaseUrl() || editDesktopConnection) ? <DesktopConnectionSetup /> : <App />}
-      <DesktopAutoUpdater />
+      <ConfigProvider theme={{ zeroRuntime: true }}>
+        {isDesktopRuntime() && (!getApiBaseUrl() || editDesktopConnection) ? <DesktopConnectionSetup /> : <App />}
+        <DesktopAutoUpdater />
+      </ConfigProvider>
     </React.StrictMode>
   );
 };

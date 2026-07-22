@@ -1,11 +1,25 @@
 use serde::{Deserialize, Serialize};
 use std::fs;
 use std::path::PathBuf;
-use tauri::{AppHandle, Manager};
+use tauri::{
+    menu::{Menu, MenuItem},
+    tray::{MouseButton, MouseButtonState, TrayIconBuilder, TrayIconEvent},
+    AppHandle, Manager, WindowEvent,
+};
 use url::Url;
 
 const CONFIG_FILE_NAME: &str = "desktop-config.json";
 const PREFERENCES_FILE_NAME: &str = "desktop-preferences.json";
+const SHOW_MAIN_WINDOW_MENU_ID: &str = "show-main-window";
+const QUIT_APPLICATION_MENU_ID: &str = "quit-application";
+
+fn show_main_window(app: &AppHandle) {
+    if let Some(window) = app.get_webview_window("main") {
+        let _ = window.unminimize();
+        let _ = window.show();
+        let _ = window.set_focus();
+    }
+}
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
 #[serde(rename_all = "SCREAMING_SNAKE_CASE")]
@@ -148,6 +162,61 @@ pub fn run() {
             load_desktop_auto_start_enabled,
             save_desktop_auto_start_enabled
         ])
+        .setup(|app| {
+            let show_main_window_item = MenuItem::with_id(
+                app,
+                SHOW_MAIN_WINDOW_MENU_ID,
+                "显示主窗口",
+                true,
+                None::<&str>,
+            )?;
+            let quit_application = MenuItem::with_id(
+                app,
+                QUIT_APPLICATION_MENU_ID,
+                "退出",
+                true,
+                None::<&str>,
+            )?;
+            let tray_menu = Menu::with_items(app, &[&show_main_window_item, &quit_application])?;
+            let tray_icon = app
+                .default_window_icon()
+                .cloned()
+                .ok_or_else(|| "未找到应用图标，无法创建系统托盘".to_string())?;
+
+            TrayIconBuilder::with_id("urgs-tray")
+                .icon(tray_icon)
+                .tooltip("监管报送一体化系统")
+                .menu(&tray_menu)
+                .show_menu_on_left_click(false)
+                .on_menu_event(|app, event| match event.id.as_ref() {
+                    SHOW_MAIN_WINDOW_MENU_ID => show_main_window(app),
+                    QUIT_APPLICATION_MENU_ID => app.exit(0),
+                    _ => {}
+                })
+                .on_tray_icon_event(|tray, event| match event {
+                    TrayIconEvent::Click {
+                        button: MouseButton::Left,
+                        button_state: MouseButtonState::Up,
+                        ..
+                    }
+                    | TrayIconEvent::DoubleClick {
+                        button: MouseButton::Left,
+                        ..
+                    } => show_main_window(tray.app_handle()),
+                    _ => {}
+                })
+                .build(app)?;
+
+            Ok(())
+        })
+        .on_window_event(|window, event| {
+            if window.label() == "main" {
+                if let WindowEvent::CloseRequested { api, .. } = event {
+                    api.prevent_close();
+                    let _ = window.hide();
+                }
+            }
+        })
         .run(tauri::generate_context!())
         .expect("error while running URGS desktop application");
 }
