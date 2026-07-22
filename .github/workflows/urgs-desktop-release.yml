@@ -1,16 +1,23 @@
-name: 发布 URGS Windows 客户端
+name: 构建 URGS 内网 Windows 更新包
 
 on:
-  push:
-    tags:
-      - "desktop-v*"
+  workflow_dispatch:
+    inputs:
+      deploy_env:
+        description: 选择写入客户端的内网更新环境
+        required: true
+        default: sit
+        type: choice
+        options:
+          - sit
+          - prod
 
 permissions:
-  contents: write
+  contents: read
 
 jobs:
-  release-windows:
-    name: 签名并发布 Windows 自动更新
+  build-intranet-updater:
+    name: 构建签名的 Windows 内网更新包
     runs-on: windows-latest
     timeout-minutes: 60
 
@@ -38,14 +45,16 @@ jobs:
         shell: pwsh
         run: pnpm --dir urgs-desktop install --frozen-lockfile
 
-      - name: 验证版本标签
+      - name: 设置内网更新地址
+        id: updater
         shell: pwsh
         run: |
-          $version = (Get-Content urgs-desktop/src-tauri/tauri.conf.json | ConvertFrom-Json).version
-          $expectedTag = "desktop-v$version"
-          if ($env:GITHUB_REF_NAME -ne $expectedTag) {
-            throw "发布标签 $env:GITHUB_REF_NAME 与客户端版本 $version 不一致，应使用 $expectedTag"
+          if ("${{ inputs.deploy_env }}" -eq "sit") {
+            $endpoint = "http://25.18.17.210:18080/desktop/latest.json"
+          } else {
+            $endpoint = "http://214.129.29.66:18080/desktop/latest.json"
           }
+          "endpoint=$endpoint" >> $env:GITHUB_OUTPUT
 
       - name: 验证更新签名 Secret
         shell: pwsh
@@ -72,45 +81,28 @@ jobs:
         shell: pwsh
         run: pnpm --dir urgs-desktop test
 
-      - name: 构建并发布自动更新
-        uses: tauri-apps/tauri-action@v1
+      - name: 构建签名的内网更新包
+        shell: pwsh
         env:
-          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+          TAURI_UPDATER_ENDPOINT: ${{ steps.updater.outputs.endpoint }}
           TAURI_SIGNING_PRIVATE_KEY: ${{ secrets.TAURI_SIGNING_PRIVATE_KEY }}
           TAURI_SIGNING_PRIVATE_KEY_PASSWORD: ${{ secrets.TAURI_SIGNING_PRIVATE_KEY_PASSWORD }}
-        with:
-          projectPath: urgs-desktop
-          tauriScript: pnpm tauri
-          tagName: ${{ github.ref_name }}
-          releaseName: "URGS Desktop v__VERSION__"
-          releaseBody: "URGS Windows 客户端自动更新版本。"
-          generateReleaseNotes: true
-          releaseDraft: false
-          prerelease: false
-          uploadUpdaterJson: true
-          updaterJsonPreferNsis: true
-          uploadUpdaterSignatures: true
+        run: pnpm --dir urgs-desktop build:updater
 
-      - name: 验证线上自动更新清单
+      - name: 验收 Windows 安装包并生成 SHA-256 清单
         shell: pwsh
-        run: |
-          $manifestUrl = "https://github.com/Jingkzhou/urgs/releases/latest/download/latest.json"
-          $version = (Get-Content urgs-desktop/src-tauri/tauri.conf.json | ConvertFrom-Json).version
-          $manifest = $null
-          for ($attempt = 1; $attempt -le 6; $attempt++) {
-            try {
-              $manifest = Invoke-RestMethod -Uri $manifestUrl -Headers @{ "Cache-Control" = "no-cache" }
-              break
-            } catch {
-              if ($attempt -eq 6) { throw }
-              Start-Sleep -Seconds 10
-            }
-          }
-          if ($manifest.version -ne $version) {
-            throw "latest.json 版本 $($manifest.version) 与发布版本 $version 不一致"
-          }
-          $windows = $manifest.platforms.'windows-x86_64'
-          if ([string]::IsNullOrWhiteSpace($windows.url) -or [string]::IsNullOrWhiteSpace($windows.signature)) {
-            throw "latest.json 缺少 windows-x86_64 下载地址或签名"
-          }
-          Write-Host "自动更新清单验证通过：$manifestUrl"
+        run: pnpm --dir urgs-desktop verify:windows
+
+      - name: 上传签名的内网更新工件
+        uses: actions/upload-artifact@v4
+        with:
+          name: urgs-windows-updater-${{ inputs.deploy_env }}-${{ github.run_id }}
+          if-no-files-found: error
+          retention-days: 14
+          path: |
+            urgs-desktop/src-tauri/target/release/bundle/msi/*.msi
+            urgs-desktop/src-tauri/target/release/bundle/msi/*.sig
+            urgs-desktop/src-tauri/target/release/bundle/nsis/*-setup.exe
+            urgs-desktop/src-tauri/target/release/bundle/nsis/*.sig
+            urgs-desktop/src-tauri/target/release/bundle/windows-build-manifest.json
+            urgs-desktop/src-tauri/target/release/bundle/SHA256SUMS.txt

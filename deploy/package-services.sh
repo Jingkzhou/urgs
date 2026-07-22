@@ -30,6 +30,7 @@ Services:
   executor     Build and package urgs-executor Spring Boot service.
   agent        Package urgs-agent LangGraph runtime source and lock file.
   lineage      Package sql-lineage-engine source and requirements.
+  desktop      Package signed Windows updater artifacts for the intranet Nginx endpoint.
 
 Components:
   nginx        Package nginx deployment config and NGINX_TARBALL, or latest cached ARM64 package.
@@ -46,6 +47,7 @@ Examples:
   deploy/package-services.sh --env pre full
   deploy/package-services.sh --env sit api web nginx redis
   deploy/package-services.sh api web
+  DEPLOY_ENV=sit DESKTOP_UPDATER_SOURCE_DIR=/tmp/urgs-windows deploy/package-services.sh api web executor nginx desktop
   deploy/package-services.sh full
   REDIS_TARBALL=/tmp/redis.tar.gz deploy/package-services.sh api web redis
   NGINX_TARBALL=/tmp/nginx.tar.gz REDIS_TARBALL=/tmp/redis.tar.gz deploy/package-services.sh full
@@ -87,6 +89,7 @@ normalize_service() {
         executor | urgs-executor) echo "executor" ;;
         agent | urgs-agent) echo "agent" ;;
         lineage | sql-lineage-engine) echo "lineage" ;;
+        desktop | desktop-updater | windows-app) echo "desktop" ;;
         nginx) echo "nginx" ;;
         redis) echo "redis" ;;
         onlyoffice | onlyoffice-docs | documentserver) echo "onlyoffice" ;;
@@ -339,6 +342,38 @@ package_lineage() {
     chmod +x "${WORK_DIR}/services/lineage/run.sh" 2>/dev/null || true
 }
 
+deploy_env_value() {
+    local env_file="$1"
+    local key="$2"
+    sed -n -E "s/^[[:space:]]*${key}[[:space:]]*=[[:space:]]*//p" "$env_file" | tail -1
+}
+
+desktop_version() {
+    node -e 'const fs = require("fs"); console.log(JSON.parse(fs.readFileSync("urgs-desktop/src-tauri/tauri.conf.json", "utf8")).version);'
+}
+
+package_desktop() {
+    local source_dir="${DESKTOP_UPDATER_SOURCE_DIR:-}"
+    local deploy_env_file
+    local updater_base_url
+    local version
+
+    [ -n "$source_dir" ] || die "desktop was selected but DESKTOP_UPDATER_SOURCE_DIR was not provided. It must contain the signed MSI, setup.exe, and their .sig files."
+    [ -d "$source_dir" ] || die "DESKTOP_UPDATER_SOURCE_DIR does not exist: ${source_dir}"
+    require_command node
+    deploy_env_file="$(resolve_deploy_env_template)"
+    updater_base_url="$(deploy_env_value "$deploy_env_file" "DESKTOP_UPDATER_BASE_URL")"
+    [ -n "$updater_base_url" ] || die "desktop was selected but DESKTOP_UPDATER_BASE_URL is missing from ${deploy_env_file}"
+    version="$(cd "$ROOT_DIR" && desktop_version)"
+
+    log "Packaging signed Windows updater artifacts for ${updater_base_url}."
+    node "${ROOT_DIR}/deploy/prepare-desktop-updater.mjs" \
+        --source "$source_dir" \
+        --output "${WORK_DIR}/services/desktop-updater" \
+        --base-url "$updater_base_url" \
+        --version "$version"
+}
+
 package_component() {
     local component="$1"
     local tarball_var
@@ -486,6 +521,7 @@ for service in "${SERVICES[@]}"; do
         executor) build_executor ;;
         agent) package_agent ;;
         lineage) package_lineage ;;
+        desktop) package_desktop ;;
         nginx | redis | onlyoffice) package_component "$service" ;;
         *) die "Unhandled service: ${service}" ;;
     esac

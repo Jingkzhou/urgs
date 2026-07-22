@@ -49,6 +49,7 @@ apply_runtime_defaults() {
     NGINX_USE_SYSTEM="${NGINX_USE_SYSTEM:-0}"
     NGINX_CONF_DIR="${NGINX_CONF_DIR:-/etc/nginx/conf.d}"
     NGINX_LOCAL_CONF="${NGINX_LOCAL_CONF:-${ROOT_DIR}/config/nginx.local.conf}"
+    DESKTOP_UPDATER_DIR="${DESKTOP_UPDATER_DIR:-${ROOT_DIR}/desktop-updater}"
     START_WEB_STATIC="${START_WEB_STATIC:-0}"
     WEB_STATIC_PORT="${WEB_STATIC_PORT:-3000}"
     REDIS_PORT="${REDIS_PORT:-6379}"
@@ -250,12 +251,31 @@ install_package_to_deploy_home() {
             api | web | executor | agent | lineage)
                 copy_dir_replace_with_backup "${PACKAGE_DIR}/services/${service}" "${ROOT_DIR}/services/${service}" "$backup_dir" "services/${service}"
                 ;;
+            desktop)
+                copy_dir_replace_with_backup "${PACKAGE_DIR}/services/desktop-updater" "${ROOT_DIR}/services/desktop-updater" "$backup_dir" "services/desktop-updater"
+                ;;
             nginx | redis | onlyoffice)
                 copy_dir_replace_with_backup "${PACKAGE_DIR}/components/${service}" "${ROOT_DIR}/components/${service}" "$backup_dir" "components/${service}"
                 rm -rf "${ROOT_DIR}/components/${service}/runtime"
                 ;;
         esac
     done < "${PACKAGE_DIR}/config/services.list"
+}
+
+install_desktop_updater() {
+    local source_dir="$1"
+    local backup_dir="$2"
+    local manifest_temp
+    [ -d "$source_dir" ] || die "Missing signed desktop updater artifacts: ${source_dir}"
+    [ -f "${source_dir}/latest.json" ] || die "Missing desktop updater manifest: ${source_dir}/latest.json"
+
+    backup_existing_path "$DESKTOP_UPDATER_DIR" "$backup_dir" "desktop-updater"
+    mkdir -p "$DESKTOP_UPDATER_DIR"
+    find "$source_dir" -maxdepth 1 -type f ! -name 'latest.json' -exec cp -f {} "$DESKTOP_UPDATER_DIR/" \;
+    manifest_temp="${DESKTOP_UPDATER_DIR}/.latest.json.next"
+    cp "${source_dir}/latest.json" "$manifest_temp"
+    mv -f "$manifest_temp" "${DESKTOP_UPDATER_DIR}/latest.json"
+    log "Published desktop updater manifest: ${DESKTOP_UPDATER_DIR}/latest.json"
 }
 
 service_enabled() {
@@ -746,6 +766,7 @@ render_nginx_config() {
         line="${line//__WEB_LISTEN_PORT__/$WEB_LISTEN_PORT}"
         line="${line//__WEB_SERVER_NAME__/$WEB_SERVER_NAME}"
         line="${line//__WEB_ROOT__/$web_root}"
+        line="${line//__DESKTOP_UPDATER_DIR__/$DESKTOP_UPDATER_DIR}"
         line="${line//__API_PROXY_TARGET__/$api_proxy_target}"
         line="${line//__IM_API_TARGET__/$IM_API_TARGET}"
         line="${line//__ONLYOFFICE_TARGET__/$ONLYOFFICE_TARGET}"
@@ -793,7 +814,9 @@ EOF
 }
 
 install_nginx_config() {
-    service_enabled web || return 0
+    if ! service_enabled web && ! service_enabled desktop; then
+        return 0
+    fi
     [ "$NGINX_ENABLED" = "1" ] || return 0
     render_runtime_config
     if [ "$NGINX_USE_SYSTEM" = "1" ] && [ -d "$NGINX_CONF_DIR" ]; then
@@ -815,7 +838,9 @@ install_nginx_config() {
 }
 
 start_nginx() {
-    service_enabled web || return 0
+    if ! service_enabled web && ! service_enabled desktop; then
+        return 0
+    fi
     service_enabled nginx || return 0
     [ "$NGINX_ENABLED" = "1" ] || return 0
     extract_component_tarballs nginx
@@ -854,6 +879,7 @@ stop_nginx() {
 }
 
 install_all() {
+    local backup_dir="${BACKUP_ROOT}/${BACKUP_NAME}"
     export_common_env
     mkdir -p "$LOG_DIR" "$PID_DIR" "$DATA_ROOT" "$URGS_PROFILE" "$IM_UPLOAD_PATH" "$ISSUE_ATTACHMENT_PATH" \
         "$DEPLOY_TOOL_WORKDIR" "$LINEAGE_ENGINE_SHARED_DIR"
@@ -862,6 +888,7 @@ install_all() {
     service_enabled onlyoffice && install_onlyoffice
     service_enabled agent && ensure_venv agent
     service_enabled lineage && ensure_venv lineage
+    service_enabled desktop && install_desktop_updater "${ROOT_DIR}/services/desktop-updater" "$backup_dir"
     install_nginx_config
     log "Install step completed."
 }
@@ -949,6 +976,7 @@ status_all() {
     service_enabled nginx && status_service nginx
     service_enabled web && status_service web-static
     service_enabled lineage && printf '%-12s PACKAGED cli-only\n' "lineage"
+    service_enabled desktop && printf '%-12s PUBLISHED %s\n' "desktop" "${DESKTOP_UPDATER_DIR}/latest.json"
     true
 }
 

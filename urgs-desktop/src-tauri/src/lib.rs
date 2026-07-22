@@ -5,6 +5,7 @@ use tauri::{AppHandle, Manager};
 use url::Url;
 
 const CONFIG_FILE_NAME: &str = "desktop-config.json";
+const PREFERENCES_FILE_NAME: &str = "desktop-preferences.json";
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
 #[serde(rename_all = "SCREAMING_SNAKE_CASE")]
@@ -13,11 +14,24 @@ struct DesktopRuntimeConfig {
     vite_ws_url: String,
 }
 
+#[derive(Debug, Default, Serialize, Deserialize)]
+#[serde(rename_all = "SCREAMING_SNAKE_CASE")]
+struct DesktopPreferences {
+    auto_start_enabled: Option<bool>,
+}
+
 fn config_path(app: &AppHandle) -> Result<PathBuf, String> {
     app.path()
         .app_config_dir()
         .map(|directory| directory.join(CONFIG_FILE_NAME))
         .map_err(|error| format!("无法定位客户端配置目录: {error}"))
+}
+
+fn preferences_path(app: &AppHandle) -> Result<PathBuf, String> {
+    app.path()
+        .app_config_dir()
+        .map(|directory| directory.join(PREFERENCES_FILE_NAME))
+        .map_err(|error| format!("无法定位客户端偏好目录: {error}"))
 }
 
 fn validate_url(value: &str, allowed_schemes: &[&str], field_name: &str) -> Result<String, String> {
@@ -77,6 +91,45 @@ fn save_desktop_runtime_config(
     Ok(config)
 }
 
+fn load_desktop_preferences(app: &AppHandle) -> Result<DesktopPreferences, String> {
+    let path = preferences_path(app)?;
+    if !path.exists() {
+        return Ok(DesktopPreferences::default());
+    }
+
+    let content =
+        fs::read_to_string(path).map_err(|error| format!("读取客户端偏好失败: {error}"))?;
+    serde_json::from_str(&content).map_err(|error| format!("解析客户端偏好失败: {error}"))
+}
+
+fn save_desktop_preferences(
+    app: &AppHandle,
+    preferences: &DesktopPreferences,
+) -> Result<(), String> {
+    let path = preferences_path(app)?;
+    let directory = path
+        .parent()
+        .ok_or_else(|| "客户端偏好目录无效".to_string())?;
+
+    fs::create_dir_all(directory).map_err(|error| format!("创建客户端偏好目录失败: {error}"))?;
+    let content = serde_json::to_string_pretty(preferences)
+        .map_err(|error| format!("序列化客户端偏好失败: {error}"))?;
+    fs::write(path, content).map_err(|error| format!("保存客户端偏好失败: {error}"))
+}
+
+#[tauri::command]
+fn load_desktop_auto_start_enabled(app: AppHandle) -> Result<Option<bool>, String> {
+    Ok(load_desktop_preferences(&app)?.auto_start_enabled)
+}
+
+#[tauri::command]
+fn save_desktop_auto_start_enabled(app: AppHandle, enabled: bool) -> Result<bool, String> {
+    let mut preferences = load_desktop_preferences(&app)?;
+    preferences.auto_start_enabled = Some(enabled);
+    save_desktop_preferences(&app, &preferences)?;
+    Ok(enabled)
+}
+
 #[cfg_attr(mobile, tauri::mobile_entry_point)]
 pub fn run() {
     tauri::Builder::default()
@@ -85,9 +138,15 @@ pub fn run() {
         .plugin(tauri_plugin_opener::init())
         .plugin(tauri_plugin_process::init())
         .plugin(tauri_plugin_updater::Builder::new().build())
+        .plugin(tauri_plugin_autostart::init(
+            tauri_plugin_autostart::MacosLauncher::LaunchAgent,
+            None,
+        ))
         .invoke_handler(tauri::generate_handler![
             load_desktop_runtime_config,
-            save_desktop_runtime_config
+            save_desktop_runtime_config,
+            load_desktop_auto_start_enabled,
+            save_desktop_auto_start_enabled
         ])
         .run(tauri::generate_context!())
         .expect("error while running URGS desktop application");
@@ -118,11 +177,9 @@ mod tests {
 
     #[test]
     fn rejects_unsupported_or_incomplete_urls() {
-        assert!(validate_config(config(
-            "file:///tmp/urgs",
-            "wss://urgs.example.com/ws/im",
-        ))
-        .is_err());
+        assert!(
+            validate_config(config("file:///tmp/urgs", "wss://urgs.example.com/ws/im",)).is_err()
+        );
         assert!(validate_config(config(
             "https://urgs.example.com",
             "https://urgs.example.com/ws/im",

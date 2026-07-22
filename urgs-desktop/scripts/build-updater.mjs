@@ -1,0 +1,44 @@
+import { mkdtemp, rm, writeFile } from 'node:fs/promises';
+import { tmpdir } from 'node:os';
+import { dirname, resolve } from 'node:path';
+import { spawnSync } from 'node:child_process';
+import { fileURLToPath } from 'node:url';
+
+const scriptDirectory = dirname(fileURLToPath(import.meta.url));
+
+const endpoint = process.env.TAURI_UPDATER_ENDPOINT;
+if (!endpoint) {
+    throw new Error('缺少 TAURI_UPDATER_ENDPOINT，例如 http://25.18.17.210:18080/desktop/latest.json');
+}
+
+const url = new URL(endpoint);
+if (!['http:', 'https:'].includes(url.protocol) || ['github.com', 'api.github.com'].includes(url.hostname)) {
+    throw new Error('TAURI_UPDATER_ENDPOINT 必须是 SIT 或生产内网的 http(s) 更新地址，不能使用 GitHub');
+}
+
+const configDir = await mkdtemp(resolve(tmpdir(), 'urgs-tauri-updater-'));
+const configPath = resolve(configDir, 'tauri.updater.override.json');
+await writeFile(configPath, `${JSON.stringify({
+    plugins: {
+        updater: {
+            endpoints: [endpoint],
+        },
+    },
+}, null, 2)}\n`, 'utf8');
+
+try {
+    const command = process.platform === 'win32' ? 'pnpm.cmd' : 'pnpm';
+    const result = spawnSync(command, ['tauri', 'build', '--config', configPath], {
+        cwd: resolve(scriptDirectory, '..'),
+        env: process.env,
+        stdio: 'inherit',
+    });
+    if (result.error) {
+        throw result.error;
+    }
+    if (result.status !== 0) {
+        process.exitCode = result.status ?? 1;
+    }
+} finally {
+    await rm(configDir, { recursive: true, force: true });
+}
