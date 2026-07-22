@@ -78,6 +78,18 @@
 - 数据库迁移：`urgs-api/src/main/resources/db/migration/`
 - 工作流文档：`.agent/workflows/`
 
+### 8.1 Windows 客户端版本与内网自动升级
+
+Windows 客户端基于 Tauri，自动升级以已安装客户端版本与内网 `latest.json` 中的版本进行 SemVer 比较，**不比较代码或安装包文件内容**。
+
+- 每次需要让已安装客户端自动升级时，新安装包版本必须严格大于已安装版本；重新发布相同版本号不会触发升级。
+- 版本号必须在以下两个文件中保持完全一致：
+  - `urgs-desktop/src-tauri/tauri.conf.json` 的 `version`；该版本用于更新清单和部署包。
+  - `urgs-desktop/src-tauri/Cargo.toml` 的 `package.version`；该版本用于 Rust/Tauri 包元数据。
+- 版本规则遵循 SemVer：修复和小范围体验调整升补丁版本（如 `0.1.0 → 0.1.1`）；一批可感知的新功能升次版本（如 `0.1.x → 0.2.0`）；存在不兼容升级或重大正式发布时才升主版本。
+- 禁止在每次日常代码修改或本地构建时自动升版本。仅在用户明确要求“发 Windows 升级包”“打安装包并部署 SIT/PRO”或等价发布动作，并且待发布代码已确认后，统一修改版本号。
+- 发布 Windows 升级包时，Agent 应同步更新上述两个版本号，完成提交和推送后触发 Windows 签名构建；再将签名工件打入部署包，由部署脚本发布内网 `latest.json`。不得将未提交或未推送的工作区代码作为正式升级包发布。
+
 ### 9. CodeGraph 使用策略
 
 **当仓库根目录存在 `.codegraph/` 时，分析代码结构、调用链、影响面、符号位置前，必须优先使用 CodeGraph 做第一轮定位，以减少无效文件读取和 token 消耗。**
