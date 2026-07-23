@@ -1,6 +1,8 @@
 use serde::{Deserialize, Serialize};
 use std::fs;
+use std::io::Write;
 use std::path::PathBuf;
+use std::time::{SystemTime, UNIX_EPOCH};
 use tauri::{
     menu::{Menu, MenuItem},
     tray::{MouseButton, MouseButtonState, TrayIconBuilder, TrayIconEvent},
@@ -12,6 +14,31 @@ const CONFIG_FILE_NAME: &str = "desktop-config.json";
 const PREFERENCES_FILE_NAME: &str = "desktop-preferences.json";
 const SHOW_MAIN_WINDOW_MENU_ID: &str = "show-main-window";
 const QUIT_APPLICATION_MENU_ID: &str = "quit-application";
+const STARTUP_LOG_FILE_NAME: &str = "startup.log";
+
+fn write_startup_log(message: &str) {
+    let Ok(local_app_data) = std::env::var("LOCALAPPDATA") else {
+        return;
+    };
+    let path = PathBuf::from(local_app_data)
+        .join("URGS")
+        .join("logs")
+        .join(STARTUP_LOG_FILE_NAME);
+    let Some(parent) = path.parent() else {
+        return;
+    };
+    if fs::create_dir_all(parent).is_err() {
+        return;
+    }
+
+    let timestamp = SystemTime::now()
+        .duration_since(UNIX_EPOCH)
+        .map(|duration| duration.as_secs())
+        .unwrap_or_default();
+    if let Ok(mut file) = fs::OpenOptions::new().create(true).append(true).open(path) {
+        let _ = writeln!(file, "[{timestamp}] {message}");
+    }
+}
 
 fn show_main_window(app: &AppHandle) {
     if let Some(window) = app.get_webview_window("main") {
@@ -19,6 +46,49 @@ fn show_main_window(app: &AppHandle) {
         let _ = window.show();
         let _ = window.set_focus();
     }
+}
+
+fn initialize_system_tray(app: &tauri::App) -> Result<(), Box<dyn std::error::Error>> {
+    let show_main_window_item = MenuItem::with_id(
+        app,
+        SHOW_MAIN_WINDOW_MENU_ID,
+        "显示主窗口",
+        true,
+        None::<&str>,
+    )?;
+    let quit_application =
+        MenuItem::with_id(app, QUIT_APPLICATION_MENU_ID, "退出", true, None::<&str>)?;
+    let tray_menu = Menu::with_items(app, &[&show_main_window_item, &quit_application])?;
+    let tray_icon = app
+        .default_window_icon()
+        .cloned()
+        .ok_or_else(|| "未找到应用图标，无法创建系统托盘".to_string())?;
+
+    TrayIconBuilder::with_id("urgs-tray")
+        .icon(tray_icon)
+        .tooltip("监管报送一体化系统")
+        .menu(&tray_menu)
+        .show_menu_on_left_click(false)
+        .on_menu_event(|app, event| match event.id.as_ref() {
+            SHOW_MAIN_WINDOW_MENU_ID => show_main_window(app),
+            QUIT_APPLICATION_MENU_ID => app.exit(0),
+            _ => {}
+        })
+        .on_tray_icon_event(|tray, event| match event {
+            TrayIconEvent::Click {
+                button: MouseButton::Left,
+                button_state: MouseButtonState::Up,
+                ..
+            }
+            | TrayIconEvent::DoubleClick {
+                button: MouseButton::Left,
+                ..
+            } => show_main_window(tray.app_handle()),
+            _ => {}
+        })
+        .build(app)?;
+
+    Ok(())
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
@@ -146,7 +216,12 @@ fn save_desktop_auto_start_enabled(app: AppHandle, enabled: bool) -> Result<bool
 
 #[cfg_attr(mobile, tauri::mobile_entry_point)]
 pub fn run() {
-    tauri::Builder::default()
+    std::panic::set_hook(Box::new(|panic_info| {
+        write_startup_log(&format!("Rust panic: {panic_info}"));
+    }));
+    write_startup_log("URGS desktop process started.");
+
+    let run_result = tauri::Builder::default()
         .plugin(tauri_plugin_dialog::init())
         .plugin(tauri_plugin_fs::init())
         .plugin(tauri_plugin_opener::init())
@@ -163,50 +238,12 @@ pub fn run() {
             save_desktop_auto_start_enabled
         ])
         .setup(|app| {
-            let show_main_window_item = MenuItem::with_id(
-                app,
-                SHOW_MAIN_WINDOW_MENU_ID,
-                "显示主窗口",
-                true,
-                None::<&str>,
-            )?;
-            let quit_application = MenuItem::with_id(
-                app,
-                QUIT_APPLICATION_MENU_ID,
-                "退出",
-                true,
-                None::<&str>,
-            )?;
-            let tray_menu = Menu::with_items(app, &[&show_main_window_item, &quit_application])?;
-            let tray_icon = app
-                .default_window_icon()
-                .cloned()
-                .ok_or_else(|| "未找到应用图标，无法创建系统托盘".to_string())?;
-
-            TrayIconBuilder::with_id("urgs-tray")
-                .icon(tray_icon)
-                .tooltip("监管报送一体化系统")
-                .menu(&tray_menu)
-                .show_menu_on_left_click(false)
-                .on_menu_event(|app, event| match event.id.as_ref() {
-                    SHOW_MAIN_WINDOW_MENU_ID => show_main_window(app),
-                    QUIT_APPLICATION_MENU_ID => app.exit(0),
-                    _ => {}
-                })
-                .on_tray_icon_event(|tray, event| match event {
-                    TrayIconEvent::Click {
-                        button: MouseButton::Left,
-                        button_state: MouseButtonState::Up,
-                        ..
-                    }
-                    | TrayIconEvent::DoubleClick {
-                        button: MouseButton::Left,
-                        ..
-                    } => show_main_window(tray.app_handle()),
-                    _ => {}
-                })
-                .build(app)?;
-
+            write_startup_log("Tauri setup started.");
+            if let Err(error) = initialize_system_tray(app) {
+                write_startup_log(&format!("System tray disabled: {error}"));
+            } else {
+                write_startup_log("System tray initialized.");
+            }
             Ok(())
         })
         .on_window_event(|window, event| {
@@ -217,8 +254,11 @@ pub fn run() {
                 }
             }
         })
-        .run(tauri::generate_context!())
-        .expect("error while running URGS desktop application");
+        .run(tauri::generate_context!());
+
+    if let Err(error) = run_result {
+        write_startup_log(&format!("Tauri runtime exited with an error: {error}"));
+    }
 }
 
 #[cfg(test)]
