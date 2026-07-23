@@ -436,7 +436,10 @@ fetch_desktop_updater_from_github() {
     local artifact_zip
     local attempt
 
-    [ -n "$token" ] || die "desktop was selected without DESKTOP_UPDATER_SOURCE_DIR. Set DESKTOP_UPDATER_GITHUB_TOKEN (or GITHUB_TOKEN) once so the script can trigger and download GitHub Actions artifacts."
+    if [ -z "$token" ] && command -v gh >/dev/null 2>&1; then
+        token="$(gh auth token 2>/dev/null || true)"
+    fi
+    [ -n "$token" ] || die "desktop was selected without DESKTOP_UPDATER_SOURCE_DIR. Set DESKTOP_UPDATER_GITHUB_TOKEN (or GITHUB_TOKEN), or run gh auth login once so the script can trigger and download GitHub Actions artifacts."
     require_command curl
     require_command unzip
     require_command node
