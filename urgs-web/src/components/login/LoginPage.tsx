@@ -3,6 +3,7 @@ import { LOGIN_DARK_LOGO_URL, LOGO_URL } from "../../constants";
 import { Lock, User, Eye, EyeOff, ShieldCheck, ChevronRight, Landmark, Activity, ServerCog } from "lucide-react";
 import { isDesktopRuntime } from "../../config";
 import { openExternalUrl } from "../../utils/desktopRuntime";
+import DesktopInstallerDownload from "../desktop/DesktopInstallerDownload";
 
 /* ── Particle type ─────────────────────────────────────────────── */
 interface Particle {
@@ -490,6 +491,8 @@ const LoginPage: React.FC<LoginProps> = ({ onLogin }) => {
               )}
             </button>
           </form>
+
+          <DesktopInstallerDownload />
 
           {/* Footer */}
           <div className="mt-12 flex items-center justify-center gap-2 text-slate-400">

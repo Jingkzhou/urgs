@@ -30,7 +30,7 @@ await writeFile(configPath, `${JSON.stringify({
 }, null, 2)}\n`, 'utf8');
 
 try {
-    const result = spawnSync(process.execPath, [tauriCliPath, 'build', '--config', configPath], {
+    const result = spawnSync(process.execPath, [tauriCliPath, 'build', '--config', configPath, '--verbose'], {
         cwd: desktopRoot,
         env: process.env,
         stdio: 'inherit',
