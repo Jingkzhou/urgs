@@ -367,8 +367,17 @@ github_api_request() {
     local endpoint="$2"
     local token="$3"
     local data="${4:-}"
+    if command -v gh >/dev/null 2>&1 && gh auth status --hostname github.com >/dev/null 2>&1; then
+        if [ -n "$data" ]; then
+            printf '%s' "$data" | gh api --method "$method" "$endpoint" --input -
+        else
+            gh api --method "$method" "$endpoint"
+        fi
+        return
+    fi
+
     local args=(
-        --fail --silent --show-error --location
+        --fail --silent --show-error --location --retry 4 --retry-all-errors
         --request "$method"
         --header "Accept: application/vnd.github+json"
         --header "Authorization: Bearer ${token}"
