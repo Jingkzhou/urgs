@@ -7,17 +7,23 @@ import { isDesktopRuntime } from '@/config';
 
 type UpdatePhase = 'idle' | 'downloading' | 'ready' | 'installing' | 'error';
 
-let startupUpdateCheckStarted = false;
+const UPDATE_CHECK_INTERVAL_MS = 60_000;
 
 const DesktopAutoUpdater: React.FC = () => {
     const updateRef = useRef<Update | null>(null);
+    const checkingRef = useRef(false);
     const [phase, setPhase] = useState<UpdatePhase>('idle');
     const [visible, setVisible] = useState(false);
     const [version, setVersion] = useState('');
     const [notes, setNotes] = useState('');
     const [errorMessage, setErrorMessage] = useState('');
 
-    const checkAndDownload = useCallback(async () => {
+    const checkAndDownload = useCallback(async (forceRetry = false) => {
+        if (checkingRef.current || (updateRef.current && !forceRetry)) {
+            return;
+        }
+
+        checkingRef.current = true;
         setErrorMessage('');
         try {
             if (updateRef.current) {
@@ -47,19 +53,34 @@ const DesktopAutoUpdater: React.FC = () => {
                 setPhase('error');
                 setVisible(true);
             }
+        } finally {
+            checkingRef.current = false;
         }
     }, []);
 
     useEffect(() => {
-        if (!isDesktopRuntime() || startupUpdateCheckStarted) {
+        if (!isDesktopRuntime()) {
             return;
         }
+
         const timer = window.setTimeout(() => {
-            if (startupUpdateCheckStarted) return;
-            startupUpdateCheckStarted = true;
             void checkAndDownload();
         }, 1_500);
-        return () => window.clearTimeout(timer);
+        const interval = window.setInterval(() => {
+            void checkAndDownload();
+        }, UPDATE_CHECK_INTERVAL_MS);
+        const checkWhenVisible = () => {
+            if (!document.hidden) {
+                void checkAndDownload();
+            }
+        };
+
+        document.addEventListener('visibilitychange', checkWhenVisible);
+        return () => {
+            window.clearTimeout(timer);
+            window.clearInterval(interval);
+            document.removeEventListener('visibilitychange', checkWhenVisible);
+        };
     }, [checkAndDownload]);
 
     const installAndRestart = async () => {
@@ -96,7 +117,7 @@ const DesktopAutoUpdater: React.FC = () => {
 
             <Modal
                 open={visible}
-                title={phase === 'ready' ? `URGS ${version} 已下载` : 'URGS 自动更新'}
+                title={phase === 'ready' ? `监管一体化系统 ${version} 已下载` : '监管一体化系统自动更新'}
                 closable={false}
                 maskClosable={false}
                 keyboard={false}
@@ -111,7 +132,7 @@ const DesktopAutoUpdater: React.FC = () => {
                     <Button key="later" onClick={() => setVisible(false)}>
                         稍后处理
                     </Button>,
-                    <Button key="retry" type="primary" icon={<Download size={15} />} onClick={checkAndDownload}>
+                    <Button key="retry" type="primary" icon={<Download size={15} />} onClick={() => void checkAndDownload(true)}>
                         重新下载
                     </Button>,
                 ] : null}
