@@ -1,0 +1,197 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+  <title>监管一体化系统</title>
+  <style>
+    :root {
+      color-scheme: dark;
+      font-family: "Microsoft YaHei", "Segoe UI", system-ui, sans-serif;
+    }
+
+    * {
+      box-sizing: border-box;
+    }
+
+    body {
+      margin: 0;
+      min-height: 100vh;
+      overflow: hidden;
+      color: #f8fbff;
+      background:
+        radial-gradient(circle at 18% 8%, rgba(39, 116, 255, 0.44), transparent 38%),
+        radial-gradient(circle at 90% 100%, rgba(45, 212, 191, 0.24), transparent 42%),
+        linear-gradient(135deg, #07172e 0%, #102c57 52%, #0b1e3d 100%);
+    }
+
+    .startup-shell {
+      position: relative;
+      display: flex;
+      min-height: 100vh;
+      flex-direction: column;
+      justify-content: space-between;
+      padding: 38px 42px 30px;
+      overflow: hidden;
+    }
+
+    .startup-shell::before,
+    .startup-shell::after {
+      position: absolute;
+      width: 280px;
+      height: 280px;
+      border: 1px solid rgba(255, 255, 255, 0.09);
+      border-radius: 50%;
+      content: "";
+      pointer-events: none;
+    }
+
+    .startup-shell::before {
+      top: -154px;
+      right: -80px;
+    }
+
+    .startup-shell::after {
+      bottom: -210px;
+      left: -90px;
+      width: 390px;
+      height: 390px;
+    }
+
+    .brand,
+    .progress-area,
+    .footer {
+      position: relative;
+      z-index: 1;
+    }
+
+    .brand {
+      display: flex;
+      align-items: center;
+      gap: 16px;
+    }
+
+    .brand-icon {
+      width: 54px;
+      height: 54px;
+      border-radius: 15px;
+      box-shadow: 0 12px 34px rgba(5, 12, 28, 0.38);
+    }
+
+    .brand-title {
+      margin: 0;
+      font-size: 23px;
+      font-weight: 700;
+      letter-spacing: 0.02em;
+    }
+
+    .brand-subtitle {
+      margin: 5px 0 0;
+      color: rgba(216, 231, 255, 0.72);
+      font-size: 12px;
+      letter-spacing: 0.12em;
+    }
+
+    .progress-area {
+      display: flex;
+      align-items: center;
+      gap: 16px;
+      margin-top: auto;
+      margin-bottom: 18px;
+    }
+
+    .spinner {
+      width: 28px;
+      height: 28px;
+      flex: 0 0 auto;
+      border: 3px solid rgba(255, 255, 255, 0.2);
+      border-top-color: #72b7ff;
+      border-radius: 50%;
+      animation: spin 0.9s linear infinite;
+    }
+
+    .loading-title {
+      margin: 0;
+      font-size: 15px;
+      font-weight: 600;
+    }
+
+    .loading-detail {
+      margin: 5px 0 0;
+      color: rgba(216, 231, 255, 0.68);
+      font-size: 12px;
+    }
+
+    .footer {
+      display: flex;
+      align-items: center;
+      justify-content: space-between;
+      color: rgba(216, 231, 255, 0.45);
+      font-size: 11px;
+      letter-spacing: 0.08em;
+    }
+
+    .footer-line {
+      width: 116px;
+      height: 2px;
+      overflow: hidden;
+      border-radius: 999px;
+      background: rgba(255, 255, 255, 0.13);
+    }
+
+    .footer-line::before {
+      display: block;
+      width: 46%;
+      height: 100%;
+      border-radius: inherit;
+      background: linear-gradient(90deg, #62a8ff, #69e5d1);
+      content: "";
+      animation: progress 1.6s ease-in-out infinite;
+    }
+
+    @keyframes spin {
+      to {
+        transform: rotate(360deg);
+      }
+    }
+
+    @keyframes progress {
+      0%,
+      100% {
+        transform: translateX(-25%);
+      }
+
+      50% {
+        transform: translateX(125%);
+      }
+    }
+  </style>
+</head>
+
+<body>
+  <main class="startup-shell" aria-label="监管一体化系统正在启动">
+    <section class="brand">
+      <img class="brand-icon" src="./urgs-app-icon.png" alt="监管一体化系统" />
+      <div>
+        <h1 class="brand-title">监管一体化系统</h1>
+        <p class="brand-subtitle">REGULATORY INTEGRATION SYSTEM</p>
+      </div>
+    </section>
+
+    <section class="progress-area" aria-live="polite">
+      <div class="spinner" aria-hidden="true"></div>
+      <div>
+        <p class="loading-title">正在启动系统</p>
+        <p class="loading-detail">正在加载安全服务与工作台，请稍候…</p>
+      </div>
+    </section>
+
+    <footer class="footer">
+      <span>吉林银行 · 监管报送</span>
+      <span class="footer-line" aria-hidden="true"></span>
+    </footer>
+  </main>
+</body>
+
+</html>

@@ -6,7 +6,7 @@ use std::time::{SystemTime, UNIX_EPOCH};
 use tauri::{
     menu::{Menu, MenuItem},
     tray::{MouseButton, MouseButtonState, TrayIconBuilder, TrayIconEvent},
-    AppHandle, Manager, WindowEvent,
+    AppHandle, Manager, WebviewUrl, WebviewWindowBuilder, WindowEvent,
 };
 use url::Url;
 
@@ -15,6 +15,7 @@ const PREFERENCES_FILE_NAME: &str = "desktop-preferences.json";
 const SHOW_MAIN_WINDOW_MENU_ID: &str = "show-main-window";
 const QUIT_APPLICATION_MENU_ID: &str = "quit-application";
 const STARTUP_LOG_FILE_NAME: &str = "startup.log";
+const SPLASH_WINDOW_LABEL: &str = "startup-splash";
 
 fn write_startup_log(message: &str) {
     let Ok(local_app_data) = std::env::var("LOCALAPPDATA") else {
@@ -66,7 +67,7 @@ fn initialize_system_tray(app: &tauri::App) -> Result<(), Box<dyn std::error::Er
 
     TrayIconBuilder::with_id("urgs-tray")
         .icon(tray_icon)
-        .tooltip("监管报送一体化系统")
+        .tooltip("监管一体化系统")
         .menu(&tray_menu)
         .show_menu_on_left_click(false)
         .on_menu_event(|app, event| match event.id.as_ref() {
@@ -202,6 +203,25 @@ fn save_desktop_preferences(
 }
 
 #[tauri::command]
+fn complete_desktop_startup(app: AppHandle) -> Result<(), String> {
+    if let Some(splash) = app.get_webview_window(SPLASH_WINDOW_LABEL) {
+        splash
+            .close()
+            .map_err(|error| format!("关闭启动页失败: {error}"))?;
+    }
+
+    let main_window = app
+        .get_webview_window("main")
+        .ok_or_else(|| "未找到主窗口".to_string())?;
+    main_window
+        .show()
+        .map_err(|error| format!("显示主窗口失败: {error}"))?;
+    main_window
+        .set_focus()
+        .map_err(|error| format!("聚焦主窗口失败: {error}"))
+}
+
+#[tauri::command]
 fn load_desktop_auto_start_enabled(app: AppHandle) -> Result<Option<bool>, String> {
     Ok(load_desktop_preferences(&app)?.auto_start_enabled)
 }
@@ -235,10 +255,26 @@ pub fn run() {
             load_desktop_runtime_config,
             save_desktop_runtime_config,
             load_desktop_auto_start_enabled,
-            save_desktop_auto_start_enabled
+            save_desktop_auto_start_enabled,
+            complete_desktop_startup
         ])
         .setup(|app| {
             write_startup_log("Tauri setup started.");
+            WebviewWindowBuilder::new(
+                app,
+                SPLASH_WINDOW_LABEL,
+                WebviewUrl::App("splashscreen.html".into()),
+            )
+            .title("监管一体化系统")
+            .inner_size(540.0, 340.0)
+            .min_inner_size(540.0, 340.0)
+            .max_inner_size(540.0, 340.0)
+            .center()
+            .resizable(false)
+            .decorations(false)
+            .always_on_top(true)
+            .build()
+            .map_err(|error| format!("创建启动页失败: {error}"))?;
             if let Err(error) = initialize_system_tray(app) {
                 write_startup_log(&format!("System tray disabled: {error}"));
             } else {

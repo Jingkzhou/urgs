@@ -35,6 +35,19 @@ if (!rootElement) {
 
 const root = ReactDOM.createRoot(rootElement);
 
+const revealDesktopMainWindow = async () => {
+  if (!isDesktopRuntime()) {
+    return;
+  }
+
+  try {
+    const { invoke } = await import('@tauri-apps/api/core');
+    await invoke('complete_desktop_startup');
+  } catch (error) {
+    console.error('显示桌面客户端主窗口失败', error);
+  }
+};
+
 const startApplication = async () => {
   await initializeDesktopRuntimeConfig();
   await initializeDesktopAutostart();
@@ -44,12 +57,18 @@ const startApplication = async () => {
 
   root.render(
     <React.StrictMode>
-      <ConfigProvider theme={{ zeroRuntime: true }}>
+      <ConfigProvider theme={{ zeroRuntime: true, cssVar: { key: 'urgs' } }}>
         {isDesktopRuntime() && (!getApiBaseUrl() || editDesktopConnection) ? <DesktopConnectionSetup /> : <App />}
         <DesktopAutoUpdater />
       </ConfigProvider>
     </React.StrictMode>
   );
+
+  requestAnimationFrame(() => {
+    requestAnimationFrame(() => {
+      void revealDesktopMainWindow();
+    });
+  });
 };
 
 void startApplication();
