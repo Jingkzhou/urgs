@@ -63,6 +63,10 @@
         "installMode": "currentUser",
         "displayLanguageSelector": false,
         "languages": ["SimpChinese"]
+      },
+      "wix": {
+        "language": "zh-CN",
+        "upgradeCode": "c0a0b49e-e1fd-5e44-bc3e-f246c0c74aea"
       }
     }
   }
