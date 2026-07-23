@@ -24,6 +24,7 @@ await writeFile(configPath, `${JSON.stringify({
     plugins: {
         updater: {
             endpoints: [endpoint],
+            dangerousInsecureTransportProtocol: url.protocol === 'http:',
         },
     },
 }, null, 2)}\n`, 'utf8');
