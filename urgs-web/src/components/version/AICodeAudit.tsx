@@ -427,7 +427,7 @@ const AICodeAudit: React.FC<Props> = ({ repoId }) => {
     };
 
     return (
-        <div className="flex h-[calc(100vh-140px)] flex-col gap-4 overflow-hidden rounded-2xl border border-slate-200 bg-slate-50 p-4">
+        <div className="flex h-full min-h-[520px] min-w-0 flex-col gap-4 overflow-hidden rounded-2xl border border-slate-200 bg-slate-50 p-4">
             <div className="grid flex-none grid-cols-1 gap-3 md:grid-cols-4">
                 {[
                     { label: '平均分', value: stats.averageScore || '-', icon: Shield, tone: 'text-emerald-700 bg-emerald-50 border-emerald-200' },

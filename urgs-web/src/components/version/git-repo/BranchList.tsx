@@ -185,7 +185,7 @@ const BranchList: React.FC<Props> = ({ repoId, currentRef, platform, onRefChange
     );
 
     return (
-        <div className="bg-white min-h-screen">
+        <div className="min-h-full bg-white">
             {/* Header */}
             <div className="border-b px-6 py-4 flex items-center justify-between sticky top-0 bg-white z-10 mb-4">
                 <div className="flex items-center gap-3">

@@ -4,6 +4,7 @@ import com.example.executor.datasource.ResolvedDataSourceConfig;
 import com.example.executor.quartz.domain.entity.QuartzTaskEntity;
 import com.jcraft.jsch.ChannelExec;
 import com.jcraft.jsch.JSch;
+import com.jcraft.jsch.JSchException;
 import com.jcraft.jsch.Session;
 import lombok.extern.slf4j.Slf4j;
 
@@ -34,6 +35,11 @@ import java.util.function.Consumer;
  */
 @Slf4j
 public class ShellScriptExecutor implements TaskExecutor {
+
+    private static final String LEGACY_KEY_EXCHANGE_ALGORITHMS =
+            "diffie-hellman-group-exchange-sha1,diffie-hellman-group14-sha1,diffie-hellman-group1-sha1";
+    private static final String LEGACY_SERVER_HOST_KEY_ALGORITHMS =
+            "ecdsa-sha2-nistp256,ecdsa-sha2-nistp384,ecdsa-sha2-nistp521,ssh-rsa,ssh-dss";
 
     private final ResolvedDataSourceConfig dataSourceConfig;
 
@@ -173,6 +179,19 @@ public class ShellScriptExecutor implements TaskExecutor {
     }
 
     private Session connectSsh(QuartzTaskEntity task) throws Exception {
+        try {
+            return connectSsh(task, false);
+        } catch (JSchException e) {
+            if (!isAlgorithmNegotiationFailure(e)) {
+                throw e;
+            }
+            log.warn("SSH default algorithm negotiation failed for taskId={}, retrying with legacy SSH algorithms",
+                    task.getId());
+            return connectSsh(task, true);
+        }
+    }
+
+    private Session connectSsh(QuartzTaskEntity task, boolean useLegacyAlgorithms) throws Exception {
         if (dataSourceConfig == null || dataSourceConfig.getHost() == null || dataSourceConfig.getUsername() == null) {
             throw new IllegalArgumentException("Shell 任务缺少可用的数据源连接配置");
         }
@@ -183,9 +202,30 @@ public class ShellScriptExecutor implements TaskExecutor {
         session.setTimeout(6_000_000);
         Properties config = new Properties();
         config.put("StrictHostKeyChecking", "no");
+        if (useLegacyAlgorithms) {
+            config.put("kex", LEGACY_KEY_EXCHANGE_ALGORITHMS);
+            config.put("server_host_key", LEGACY_SERVER_HOST_KEY_ALGORITHMS);
+        }
         session.setConfig(config);
-        session.connect();
-        return session;
+        try {
+            session.connect();
+            return session;
+        } catch (Exception e) {
+            session.disconnect();
+            throw e;
+        }
+    }
+
+    private boolean isAlgorithmNegotiationFailure(JSchException exception) {
+        Throwable current = exception;
+        while (current != null) {
+            String message = current.getMessage();
+            if (message != null && message.toLowerCase().contains("algorithm negotiation fail")) {
+                return true;
+            }
+            current = current.getCause();
+        }
+        return false;
     }
 
     /**

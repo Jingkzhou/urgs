@@ -12,7 +12,7 @@ interface Props {
 const CommitDetail: React.FC<Props> = ({ commit, onBack }) => {
 
     return (
-        <div className="bg-white min-h-screen">
+        <div className="min-h-full bg-white">
             {/* Header */}
             <div className="border-b px-6 py-4 flex items-center justify-between sticky top-0 bg-white z-10">
                 <div className="flex items-center gap-3">
@@ -37,7 +37,7 @@ const CommitDetail: React.FC<Props> = ({ commit, onBack }) => {
             </div>
 
             {/* Diff Content */}
-            <div className="p-6 bg-slate-50 min-h-[calc(100vh-80px)]">
+            <div className="min-h-full bg-slate-50 p-6">
                 <div className="max-w-5xl mx-auto space-y-4">
                     <div className="flex items-center justify-between mb-4">
                         <h3 className="text-lg font-bold m-0">{commit.diffs?.length || 0} 个文件发生变化</h3>

@@ -190,7 +190,7 @@ const TagList: React.FC<Props> = ({ repoId, onBack, openCreateOnMount = false, i
     );
 
     return (
-        <div className="bg-white min-h-screen">
+        <div className="min-h-full bg-white">
             {/* Header - Advanced HUD style */}
             <div className="border-b px-8 py-5 flex items-center justify-between sticky top-0 bg-white/80 backdrop-blur-md z-10 mb-6">
                 <div className="flex items-center gap-4">

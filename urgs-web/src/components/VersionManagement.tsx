@@ -73,7 +73,7 @@ const VersionManagementContent: React.FC = () => {
     }, [activeTab, setBreadcrumbs]);
 
     return (
-        <div className="flex h-[calc(100vh-120px)] bg-slate-50 rounded-2xl overflow-hidden border border-slate-200 shadow-xl shadow-slate-200/50 font-sans">
+        <div className="flex h-full min-h-[560px] min-w-0 bg-slate-50 rounded-2xl overflow-hidden border border-slate-200 shadow-xl shadow-slate-200/50 font-sans">
             {/* Control Rail (Sidebar) - Light Theme "Lab" Style */}
             <aside className="w-64 bg-white flex flex-col z-20 shadow-[4px_0_24px_rgba(0,0,0,0.02)] border-r border-slate-200 relative overflow-hidden">
                 {/* Decorative Grid Line */}

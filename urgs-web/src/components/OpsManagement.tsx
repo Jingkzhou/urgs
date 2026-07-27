@@ -33,7 +33,7 @@ const OpsManagement: React.FC = () => {
     ];
 
     return (
-        <div className="space-y-3 animate-fade-in">
+        <div className="flex h-full min-h-[620px] min-w-0 flex-col gap-3 animate-fade-in">
             {/* Header & Navigation */}
             <div className="flex flex-col gap-3 rounded-lg border border-slate-200 bg-white px-3 py-2 shadow-sm sm:flex-row sm:items-center sm:justify-between">
                 <div className="flex items-center gap-2">
@@ -70,7 +70,7 @@ const OpsManagement: React.FC = () => {
             </div>
 
             {/* Module Content */}
-            <div className="min-h-[500px]">
+            <div className="min-h-0 min-w-0 flex-1">
                 {activeModule === 'infra' && (
                     <Auth code="ops:infra:view">
                         <InfrastructureManagement />

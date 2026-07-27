@@ -38,7 +38,7 @@ const MetadataManagement: React.FC = () => {
     ];
 
     return (
-        <div className="space-y-6 animate-fade-in px-2 max-w-[1600px] mx-auto">
+        <div className="flex h-full min-h-[720px] min-w-0 max-w-[1600px] mx-auto animate-fade-in flex-col gap-6 px-2">
             {/* Header & Navigation */}
             <div className="flex flex-col md:flex-row justify-between items-end gap-6 pb-6 border-b border-slate-200/60">
                 <div>
@@ -76,10 +76,10 @@ const MetadataManagement: React.FC = () => {
             </div>
 
             {/* Content Area */}
-            <div className="bg-white rounded-2xl border border-slate-200/60 shadow-sm min-h-[600px] relative overflow-hidden p-6">
+            <div className="relative min-h-0 min-w-0 flex-1 overflow-hidden rounded-2xl border border-slate-200/60 bg-white p-6 shadow-sm">
                 {tabs.map(tab => (
                     activeTab === tab.id && (
-                        <div key={tab.id} className="animate-in fade-in zoom-in-95 duration-200 h-full">
+                        <div key={tab.id} className="h-full min-h-0 min-w-0 animate-in fade-in zoom-in-95 duration-200">
                             <Auth code={tab.code}>
                                 {tab.component}
                             </Auth>

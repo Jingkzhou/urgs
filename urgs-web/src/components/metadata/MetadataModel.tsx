@@ -365,7 +365,7 @@ const MetadataModel: React.FC = () => {
     }, [selectedField?.domain, domainPage, domainSize]);
 
     return (
-        <div className="flex h-[calc(100vh-140px)] w-full overflow-hidden rounded-3xl border border-slate-200 bg-[#F9FAFB] shadow-2xl transition-all duration-500"
+        <div className="flex h-full min-h-0 w-full min-w-0 overflow-hidden rounded-3xl border border-slate-200 bg-[#F9FAFB] shadow-2xl transition-all duration-500"
             style={{ fontFamily: '"Inter", "Outfit", sans-serif' }}>
 
             {/* --- Sidebar (Navigator) --- */}

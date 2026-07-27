@@ -113,7 +113,7 @@ const PullRequestList: React.FC<PullRequestListProps> = ({ repoId, onBack, onCre
     );
 
     return (
-        <div className="bg-slate-50 min-h-screen -m-6 p-6">
+        <div className="-m-6 min-h-full bg-slate-50 p-6">
             {/* Header */}
 
 

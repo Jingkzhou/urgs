@@ -335,7 +335,7 @@ const App: React.FC = () => {
     );
 
     return (
-        <div className={`flex h-screen bg-slate-50 ${layoutMode === 'topbar' ? 'flex-col' : 'flex-row'}`}>
+        <div className={`app-shell flex min-h-0 min-w-0 bg-slate-50 ${layoutMode === 'topbar' ? 'flex-col' : 'flex-row'}`}>
             {layoutMode === 'sidebar' && (
                 <aside
                     className="m-4 mr-0 flex w-[72px] shrink-0 flex-col rounded-[1.5rem] border border-slate-200/70 bg-white/85 text-slate-800 shadow-[0_24px_70px_-38px_rgba(15,23,42,0.45)] backdrop-blur-2xl z-[120] relative overflow-visible"
@@ -586,8 +586,8 @@ const App: React.FC = () => {
                             </header>
                         )}
 
-                        <main className="flex-1 overflow-y-auto p-4 lg:p-8 scroll-smooth bg-slate-50/50">
-                            <div className="max-w-[98%] mx-auto h-full">
+                        <main className="app-main flex-1 min-h-0 min-w-0 overflow-y-auto overflow-x-hidden p-4 lg:p-8 scroll-smooth bg-slate-50/50">
+                            <div className="app-page-host mx-auto h-full min-h-0 min-w-0 max-w-[98%]">
                                 {activeTab === 'dashboard' && <Dashboard />}
                                 {activeTab === 'ark' && <ArkPage />}
                                 {activeTab === 'announcement' && <AnnouncementManagement />}

@@ -147,7 +147,7 @@ const RegulationBatchManagement: React.FC = () => {
     };
 
     return (
-        <div className="h-[calc(100vh-112px)] w-full bg-slate-50 rounded-lg shadow-sm border border-slate-200 overflow-hidden flex flex-col relative animate-fade-in">
+        <div className="relative flex h-full min-h-[500px] min-w-0 w-full flex-col overflow-hidden rounded-lg border border-slate-200 bg-slate-50 shadow-sm animate-fade-in">
             <div className="flex-1 overflow-auto p-3">
                 {renderContent()}
             </div>

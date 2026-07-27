@@ -304,7 +304,7 @@ const PullRequestDetail: React.FC<PullRequestDetailProps> = ({ repoId, prId, onB
     if (state === 'merged') status = 'merged';
 
     return (
-        <div className="bg-white min-h-screen">
+        <div className="min-h-full bg-white">
             {/* Header */}
             <div className="border-b border-slate-200 bg-slate-50/50 z-10 backdrop-blur-sm">
                 <div className="max-w-7xl mx-auto px-6 py-4">

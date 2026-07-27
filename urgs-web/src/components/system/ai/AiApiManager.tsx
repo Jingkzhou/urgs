@@ -374,7 +374,7 @@ const AiApiManager: React.FC = () => {
     const currentProvider = providers.find(p => p.code === selectedProvider);
 
     return (
-        <div className="p-6 bg-slate-50 min-h-screen">
+        <div className="min-h-full bg-slate-50 p-6">
             <Card variant="borderless" className="shadow-sm">
                 <div className="flex justify-between items-center mb-4">
                     <h2 className="text-lg font-bold flex items-center gap-2">

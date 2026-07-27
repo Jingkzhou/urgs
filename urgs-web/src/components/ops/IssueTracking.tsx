@@ -547,7 +547,7 @@ const IssueTracking: React.FC<IssueTrackingProps> = ({ initialData }) => {
 
 
     return (
-        <div className="min-h-screen bg-[#f8fafc] animate-fade-in">
+        <div className="min-h-full bg-[#f8fafc] animate-fade-in">
             <div className="flex w-full flex-col">
                 <div className="overflow-hidden rounded-lg border border-slate-200 bg-white shadow-sm">
                     {/* Header Section */}

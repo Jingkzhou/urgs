@@ -53,22 +53,20 @@ const startApplication = async () => {
   await initializeDesktopAutostart();
   installServiceRequestAdapters();
   installDesktopDownloadAdapter();
+  const desktopRuntime = isDesktopRuntime();
+  document.documentElement.classList.toggle('desktop-runtime', desktopRuntime);
   const editDesktopConnection = localStorage.getItem('urgs_desktop_edit_connection') === '1';
 
   root.render(
     <React.StrictMode>
       <ConfigProvider theme={{ zeroRuntime: true, cssVar: { key: 'urgs' } }}>
-        {isDesktopRuntime() && (!getApiBaseUrl() || editDesktopConnection) ? <DesktopConnectionSetup /> : <App />}
+        {desktopRuntime && (!getApiBaseUrl() || editDesktopConnection) ? <DesktopConnectionSetup /> : <App />}
         <DesktopAutoUpdater />
       </ConfigProvider>
     </React.StrictMode>
   );
 
-  requestAnimationFrame(() => {
-    requestAnimationFrame(() => {
-      void revealDesktopMainWindow();
-    });
-  });
+  void revealDesktopMainWindow();
 };
 
 void startApplication();
