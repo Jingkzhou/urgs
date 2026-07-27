@@ -1,11 +1,9 @@
 import path from 'path';
-import { createReadStream, readFileSync } from 'node:fs';
 import { defineConfig, loadEnv } from 'vite';
 import react from '@vitejs/plugin-react';
 
 export default defineConfig(({ mode }) => {
   const env = loadEnv(mode, '.', '');
-  const antdCssPath = path.resolve(__dirname, 'node_modules/antd/dist/antd.css');
   return {
     server: {
       port: 3000,
@@ -26,29 +24,7 @@ export default defineConfig(({ mode }) => {
         },
       },
     },
-    plugins: [
-      react(),
-      {
-        name: 'antd-static-css',
-        configureServer(server) {
-          server.middlewares.use('/antd.css', (request, response, next) => {
-            if (request.url?.split('?')[0] !== '/') {
-              next();
-              return;
-            }
-            response.setHeader('Content-Type', 'text/css; charset=utf-8');
-            createReadStream(antdCssPath).pipe(response);
-          });
-        },
-        generateBundle() {
-          this.emitFile({
-            type: 'asset',
-            fileName: 'antd.css',
-            source: readFileSync(antdCssPath),
-          });
-        },
-      },
-    ],
+    plugins: [react()],
     esbuild: {
       drop: mode === 'production' ? ['console', 'debugger'] : [],
     },

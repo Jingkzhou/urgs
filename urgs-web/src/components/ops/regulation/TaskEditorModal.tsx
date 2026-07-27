@@ -104,20 +104,6 @@ const TaskEditorModal: React.FC<TaskEditorModalProps> = ({
     }, [open, editingTask?.id]);
 
     useEffect(() => {
-        if (!open || scriptEditorReady) {
-            return;
-        }
-
-        const timer = window.setTimeout(() => {
-            setScriptEditorReady(true);
-        }, 60);
-
-        return () => {
-            window.clearTimeout(timer);
-        };
-    }, [open, scriptEditorReady]);
-
-    useEffect(() => {
         let mounted = true;
 
         const loadDependencyTasks = async () => {
@@ -263,6 +249,7 @@ const TaskEditorModal: React.FC<TaskEditorModalProps> = ({
             onOk={onSubmit}
             onCancel={onCancel}
             destroyOnHidden
+            afterOpenChange={visible => setScriptEditorReady(visible)}
             styles={{
                 body: { maxHeight: 'calc(100vh - 150px)', overflowY: 'auto', padding: 0 },
                 footer: { padding: '16px 24px', borderTop: '1px solid #e2e8f0' },
@@ -640,6 +627,8 @@ const TaskEditorModal: React.FC<TaskEditorModalProps> = ({
                                                                 scrollBeyondLastLine: false,
                                                                 automaticLayout: true,
                                                                 fontSize: 13,
+                                                                lineHeight: 20,
+                                                                fontFamily: 'Consolas, "Courier New", monospace',
                                                                 wordWrap: 'on',
                                                                 tabSize: 2,
                                                                 padding: { top: 12, bottom: 12 },

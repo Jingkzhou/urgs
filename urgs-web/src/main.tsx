@@ -8,6 +8,7 @@ import weekOfYear from 'dayjs/plugin/weekOfYear';
 import weekYear from 'dayjs/plugin/weekYear';
 import advancedFormat from 'dayjs/plugin/advancedFormat';
 import customParseFormat from 'dayjs/plugin/customParseFormat';
+import 'antd/dist/antd.css';
 import 'dayjs/locale/zh-cn';
 
 dayjs.extend(customParseFormat);
