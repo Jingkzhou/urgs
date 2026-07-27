@@ -16,6 +16,7 @@ interface AssetObjectDetailLinkProps {
     record: AssetMaintenanceRecord;
     children: React.ReactNode;
     className?: string;
+    target?: 'AUTO' | 'TABLE' | 'ELEMENT';
 }
 
 type RegulatoryAssetDetail = {
@@ -136,6 +137,7 @@ const AssetObjectDetailLink: React.FC<AssetObjectDetailLinkProps> = ({
     record,
     children,
     className = '',
+    target = 'AUTO',
 }) => {
     const [open, setOpen] = useState(false);
     const [loading, setLoading] = useState(false);
@@ -144,7 +146,7 @@ const AssetObjectDetailLink: React.FC<AssetObjectDetailLinkProps> = ({
     const [modelDetail, setModelDetail] = useState<ModelAssetDetail | null>(null);
 
     const loadDetail = async () => {
-        const hasField = isFieldAsset(record);
+        const shouldLoadElement = target === 'ELEMENT' || (target === 'AUTO' && isFieldAsset(record));
         setLoading(true);
         setError('');
         setRegulatoryDetail(null);
@@ -155,13 +157,13 @@ const AssetObjectDetailLink: React.FC<AssetObjectDetailLinkProps> = ({
             const regTable = await findMatchedRegTable(record);
             if (regTable?.id) {
                 const tableDetail = await getRegAssetTable(regTable.id) as RegTable;
-                if (hasField) {
+                if (shouldLoadElement) {
                     const element = await findMatchedRegElement(tableDetail.id!, record);
                     if (element) {
                         setRegulatoryDetail({ type: 'ELEMENT', data: element });
                         return;
                     }
-                    fallbackRegTable = tableDetail;
+                    if (target === 'AUTO') fallbackRegTable = tableDetail;
                 } else {
                     setRegulatoryDetail({ type: 'TABLE', data: tableDetail });
                     return;
@@ -170,14 +172,22 @@ const AssetObjectDetailLink: React.FC<AssetObjectDetailLinkProps> = ({
 
             const modelTable = await findMatchedModelTable(record);
             if (modelTable) {
-                if (hasField) {
+                if (shouldLoadElement) {
                     const field = await findMatchedModelField(modelTable.id, record);
-                    setModelDetail({ table: modelTable, field: field || undefined });
-                    if (!field) setError('未找到对应字段资产，已显示所属表资产信息');
+                    if (field) {
+                        setModelDetail({ table: modelTable, field });
+                        return;
+                    }
+                    if (target === 'AUTO') {
+                        setModelDetail({ table: modelTable });
+                        setError('未找到对应字段资产，已显示所属表资产信息');
+                        return;
+                    }
+                }
+                if (!shouldLoadElement) {
+                    setModelDetail({ table: modelTable });
                     return;
                 }
-                setModelDetail({ table: modelTable });
-                return;
             }
 
             if (fallbackRegTable) {
@@ -186,7 +196,7 @@ const AssetObjectDetailLink: React.FC<AssetObjectDetailLinkProps> = ({
                 return;
             }
 
-            setError('未找到对应的资产信息');
+            setError(shouldLoadElement ? '未找到对应字段或指标资产信息' : '未找到对应的表资产信息');
         } catch (loadError) {
             console.error('Failed to load asset object detail', loadError);
             setError('资产信息加载失败');

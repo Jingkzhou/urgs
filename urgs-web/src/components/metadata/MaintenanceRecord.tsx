@@ -5,6 +5,7 @@ import AddMaintenanceModal from './AddMaintenanceModal';
 import MaintenanceDetailPanel, { MaintenanceRecordItem } from './MaintenanceDetailPanel';
 import MaintenanceStats from './MaintenanceStats';
 import Auth from '../Auth';
+import AssetObjectDetailLink from '../marketplace/AssetObjectDetailLink';
 import dayjs from 'dayjs';
 import { systemService, SsoConfig } from '../../services/systemService';
 
@@ -525,12 +526,18 @@ const MaintenanceRecord: React.FC = () => {
                                                     }`}></div>
                                             </td>
                                             <td className="px-4 py-4 min-w-[200px]">
-                                                <div className="font-medium text-slate-900 font-mono">{record.tableName}</div>
-                                                <div className="text-xs text-slate-500">{record.tableCnName}</div>
+                                                <AssetObjectDetailLink record={record} target="TABLE" className="hover:bg-blue-50/60">
+                                                    <div className="font-medium text-slate-900 font-mono">{record.tableName}</div>
+                                                    <div className="text-xs text-slate-500">{record.tableCnName}</div>
+                                                </AssetObjectDetailLink>
                                             </td>
                                             <td className="px-4 py-4 min-w-[150px]">
-                                                <div className="font-mono text-slate-700">{record.fieldName || '-'}</div>
-                                                <div className="text-xs text-slate-500">{record.fieldCnName}</div>
+                                                {record.fieldName || record.fieldCnName ? (
+                                                    <AssetObjectDetailLink record={record} target="ELEMENT" className="hover:bg-blue-50/60">
+                                                        <div className="font-mono text-slate-700">{record.fieldName || '-'}</div>
+                                                        <div className="text-xs text-slate-500">{record.fieldCnName}</div>
+                                                    </AssetObjectDetailLink>
+                                                ) : '-'}
                                             </td>
                                             <td className="px-4 py-4 whitespace-nowrap">
                                                 <span className={`px-2 py-1 rounded-md text-xs font-semibold border ${getModTypeColor(record.modType)}`}>
@@ -645,8 +652,10 @@ const MaintenanceRecord: React.FC = () => {
                                                             {record.modType}
                                                         </span>
                                                         <div>
-                                                            <h4 className="font-bold text-slate-800 text-base group-hover/card:text-indigo-600 transition-colors uppercase font-mono">{record.tableName}</h4>
-                                                            <div className="text-xs text-slate-400 font-medium">{record.tableCnName}</div>
+                                                            <AssetObjectDetailLink record={record} target="TABLE" className="hover:bg-blue-50/60">
+                                                                <h4 className="font-bold text-slate-800 text-base group-hover/card:text-indigo-600 transition-colors uppercase font-mono">{record.tableName}</h4>
+                                                                <div className="text-xs text-slate-400 font-medium">{record.tableCnName}</div>
+                                                            </AssetObjectDetailLink>
                                                         </div>
                                                     </div>
                                                     <div className="flex items-center gap-2 bg-slate-50 px-2 py-1 rounded-full border border-slate-100">
@@ -660,16 +669,18 @@ const MaintenanceRecord: React.FC = () => {
                                                 <p className="text-sm text-slate-600 mb-4 leading-relaxed font-medium">{record.description}</p>
 
                                                 <div className="flex flex-wrap gap-3 items-end">
-                                                    {record.fieldName && (
-                                                        <div className="flex-1 min-w-[200px] text-xs bg-slate-50 p-2.5 rounded-xl border border-slate-100 font-mono text-slate-500">
-                                                            <div className="flex items-center gap-2 opacity-70 mb-1">
-                                                                <Database size={10} />
-                                                                <span className="font-bold tracking-widest uppercase">Target Field</span>
+                                                    {(record.fieldName || record.fieldCnName) && (
+                                                        <AssetObjectDetailLink record={record} target="ELEMENT" className="flex-1 min-w-[200px] hover:bg-blue-50/60">
+                                                            <div className="text-xs bg-slate-50 p-2.5 rounded-xl border border-slate-100 font-mono text-slate-500">
+                                                                <div className="flex items-center gap-2 opacity-70 mb-1">
+                                                                    <Database size={10} />
+                                                                    <span className="font-bold tracking-widest uppercase">Target Field</span>
+                                                                </div>
+                                                                <div className="text-slate-700 font-bold">
+                                                                    {record.fieldName || record.fieldCnName} {record.fieldName && record.fieldCnName && <span className="text-slate-400 font-medium italic ml-1">({record.fieldCnName})</span>}
+                                                                </div>
                                                             </div>
-                                                            <div className="text-slate-700 font-bold">
-                                                                {record.fieldName} {record.fieldCnName && <span className="text-slate-400 font-medium italic ml-1">({record.fieldCnName})</span>}
-                                                            </div>
-                                                        </div>
+                                                        </AssetObjectDetailLink>
                                                     )}
 
                                                     {record.reqId && (
