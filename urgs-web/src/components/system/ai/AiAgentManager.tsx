@@ -120,7 +120,7 @@ const AiAgentManager: React.FC = () => {
                     RAG: { label: 'RAG', color: 'cyan' },
                     AGENT_APP: { label: 'Agent App', color: 'purple' },
                     DEEPAGENTS: { label: 'DeepAgents', color: 'geekblue' }
-                }[mode];
+                }[mode] ?? { label: mode || '未知方式', color: 'default' };
                 return <Tag color={modeMeta.color}>{modeMeta.label}</Tag>;
             }
         },
