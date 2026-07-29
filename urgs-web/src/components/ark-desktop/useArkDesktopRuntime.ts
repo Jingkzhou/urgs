@@ -22,7 +22,6 @@ import {
     sendGrokPrompt,
     setGrokSessionModel,
     saveGrokModelProvider,
-    startGrokLogin,
     subscribeGrokEvents,
     type GrokBridgeEvent,
     type GrokAcpOptions,
@@ -281,15 +280,16 @@ export const useArkDesktopRuntime = () => {
     const refreshModelProviders = useCallback(async () => {
         if (!isDesktopRuntime()) return;
         const modelProviders = await listGrokModelProviders();
+        const enabledModelIds = modelProviders.filter((provider) => provider.enabled).map((provider) => provider.id);
         setSnapshot((current) => ({
             ...current,
             settings: {
                 ...current.settings,
                 modelProviders,
-                modelOptions: Array.from(new Set([
-                    ...current.settings.modelOptions,
-                    ...modelProviders.map((provider) => provider.id),
-                ])),
+                grokModel: enabledModelIds.includes(current.settings.grokModel)
+                    ? current.settings.grokModel
+                    : enabledModelIds[0] || '',
+                modelOptions: enabledModelIds,
             },
         }));
     }, []);
@@ -687,11 +687,6 @@ export const useArkDesktopRuntime = () => {
     }, []);
 
     const selectAttachments = useCallback(async () => chooseGrokAttachments(), []);
-
-    const startLogin = useCallback(async (method: 'browser' | 'oauth' | 'device' = 'browser') => {
-        setRuntimeError('');
-        await startGrokLogin(method);
-    }, []);
 
     const startTask = useCallback(async ({
         prompt,
@@ -1110,13 +1105,15 @@ export const useArkDesktopRuntime = () => {
 
     const selectModel = useCallback(async (model: string) => {
         const modelId = model.trim();
+        const provider = snapshotRef.current.settings.modelProviders.find((item) => item.id === modelId && item.enabled);
+        if (!provider) throw new Error('该内网模型连接已不存在或已停用');
         await applyGrokModel(modelId);
         setSnapshot((current) => ({
             ...current,
             settings: {
                 ...current.settings,
                 grokModel: modelId,
-                modelOptions: Array.from(new Set([...current.settings.modelOptions, modelId])),
+                modelOptions: current.settings.modelProviders.filter((item) => item.enabled).map((item) => item.id),
             },
         }));
     }, []);
@@ -1243,7 +1240,6 @@ export const useArkDesktopRuntime = () => {
         runtimeError,
         setRuntimeError: (message: string) => setRuntimeError(redactRuntimeText(message)),
         refreshRuntimeStatus,
-        startLogin,
         selectWorkspace,
         selectAttachments,
         startTask,

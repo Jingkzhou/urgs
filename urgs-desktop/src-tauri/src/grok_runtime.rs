@@ -20,6 +20,7 @@ const SESSION_START_TIMEOUT: Duration = Duration::from_secs(120);
 const MODEL_PROVIDER_FILE: &str = "model-providers.json";
 const MODEL_CREDENTIAL_SERVICE: &str = "com.urgs.desktop.grok-model";
 const MODEL_KEY_AUTHORIZATION_REQUIRED: &str = "MODEL_KEY_AUTHORIZATION_REQUIRED:";
+const OFFLINE_AUTH_FILE: &str = "urgs-offline-auth.json";
 static PROCESS_SEQUENCE: AtomicU64 = AtomicU64::new(1);
 static MODEL_API_KEY_CACHE: OnceLock<Mutex<HashMap<String, String>>> = OnceLock::new();
 #[cfg(target_os = "macos")]
@@ -894,6 +895,111 @@ fn serialize_grok_toml(config: &toml::Value) -> Result<String, String> {
     toml::to_string(config).map_err(|error| format!("序列化本地智能引擎配置失败: {error}"))
 }
 
+fn apply_offline_config(config: &mut toml::Value) -> Result<(), String> {
+    let root = config
+        .as_table_mut()
+        .ok_or_else(|| "本地智能引擎配置根节点必须是对象".to_string())?;
+    root.remove("grok_com_config");
+
+    let mut auth = toml::map::Map::new();
+    auth.insert(
+        "preferred_method".to_string(),
+        toml::Value::String("api_key".to_string()),
+    );
+    root.insert("auth".to_string(), toml::Value::Table(auth));
+
+    let cli = root
+        .entry("cli".to_string())
+        .or_insert_with(|| toml::Value::Table(toml::map::Map::new()))
+        .as_table_mut()
+        .ok_or_else(|| "本地智能引擎配置中的 cli 必须是对象".to_string())?;
+    cli.insert("auto_update".to_string(), toml::Value::Boolean(false));
+
+    let features = root
+        .entry("features".to_string())
+        .or_insert_with(|| toml::Value::Table(toml::map::Map::new()))
+        .as_table_mut()
+        .ok_or_else(|| "本地智能引擎配置中的 features 必须是对象".to_string())?;
+    features.insert("remote_fetch".to_string(), toml::Value::Boolean(false));
+    features.insert("telemetry".to_string(), toml::Value::Boolean(false));
+    features.insert("feedback".to_string(), toml::Value::Boolean(false));
+
+    let mut marketplace = toml::map::Map::new();
+    marketplace.insert(
+        "official_marketplace_auto_installed".to_string(),
+        toml::Value::Boolean(true),
+    );
+    marketplace.insert(
+        "default_skills_installs_purged".to_string(),
+        toml::Value::Boolean(true),
+    );
+    root.insert("marketplace".to_string(), toml::Value::Table(marketplace));
+    Ok(())
+}
+
+fn enforce_offline_config(app: &AppHandle) -> Result<(), String> {
+    let path = grok_config_path(app, "user", "config", None)?;
+    let content = if path.is_file() {
+        fs::read_to_string(&path).map_err(|error| format!("读取本地智能引擎配置失败: {error}"))?
+    } else {
+        String::new()
+    };
+    let mut config = parse_grok_toml(&content)?;
+    apply_offline_config(&mut config)?;
+    let next = serialize_grok_toml(&config)?;
+    if next != content {
+        if let Some(parent) = path.parent() {
+            fs::create_dir_all(parent)
+                .map_err(|error| format!("创建本地智能引擎配置目录失败: {error}"))?;
+        }
+        fs::write(path, next).map_err(|error| format!("保存内网运行配置失败: {error}"))?;
+    }
+    Ok(())
+}
+
+fn offline_runtime_envs(home: &Path) -> Vec<(String, String)> {
+    let mut envs = std::env::vars()
+        .filter(|(key, _)| {
+            !key.starts_with("XAI_")
+                && !matches!(
+                    key.as_str(),
+                    "GROK_AUTH"
+                        | "GROK_AUTH_PATH"
+                        | "GROK_AUTH_PROVIDER_COMMAND"
+                        | "GROK_AUTH_PROVIDER_LABEL"
+                        | "GROK_AUTH_TOKEN_TTL"
+                        | "GROK_CODE_XAI_API_KEY"
+                        | "GROK_OIDC_ISSUER"
+                        | "GROK_OIDC_CLIENT_ID"
+                        | "GROK_CLI_CHAT_PROXY_BASE_URL"
+                )
+        })
+        .collect::<Vec<_>>();
+    envs.extend([
+        (
+            "GROK_AUTH_PATH".to_string(),
+            home.join(OFFLINE_AUTH_FILE).to_string_lossy().to_string(),
+        ),
+        ("GROK_OAUTH_ENABLED".to_string(), "false".to_string()),
+        (
+            "GROK_OFFICIAL_MARKETPLACE_AUTO_REGISTER".to_string(),
+            "false".to_string(),
+        ),
+        ("GROK_TELEMETRY_ENABLED".to_string(), "false".to_string()),
+        (
+            "GROK_TELEMETRY_TRACE_UPLOAD".to_string(),
+            "false".to_string(),
+        ),
+        ("GROK_BACKEND_SEARCH".to_string(), "false".to_string()),
+        ("GROK_WEB_FETCH".to_string(), "false".to_string()),
+        ("GROK_IMAGE_GEN".to_string(), "false".to_string()),
+        ("GROK_IMAGE_EDIT".to_string(), "false".to_string()),
+        ("GROK_VIDEO_GEN".to_string(), "false".to_string()),
+        ("GROK_VOICE_MODE".to_string(), "false".to_string()),
+    ]);
+    envs
+}
+
 fn sync_provider_to_grok_config(
     app: &AppHandle,
     provider: &GrokModelProvider,
@@ -1076,11 +1182,14 @@ fn ensure_model_provider_ready(app: &AppHandle, model: Option<&str>) -> Result<(
     let Some(model) = model.map(str::trim).filter(|model| !model.is_empty()) else {
         return Ok(());
     };
+    enforce_offline_config(app)?;
     let Some(provider) = read_model_providers(app)?
         .into_iter()
         .find(|provider| provider.id == model)
     else {
-        return Ok(());
+        return Err(format!(
+            "模型连接“{model}”不存在；内网模式禁止回退到 xAI，请选择已配置的内网模型"
+        ));
     };
     if !provider.enabled {
         return Err(format!(
@@ -1144,16 +1253,11 @@ fn validate_cli_arguments(arguments: &[String]) -> Result<(), String> {
         "help",
         "inspect",
         "leader",
-        "login",
-        "logout",
         "mcp",
         "memory",
-        "models",
         "plugin",
         "sessions",
-        "setup",
         "trace",
-        "update",
         "version",
         "worktree",
         "wrap",
@@ -1509,16 +1613,6 @@ fn grok_agent_arguments(
         "--grok-ws-url",
         options.grok_ws_url.as_ref(),
     );
-    push_optional_argument(
-        &mut arguments,
-        "--cli-chat-proxy-base-url",
-        options.cli_chat_proxy_url.as_ref(),
-    );
-    push_optional_argument(
-        &mut arguments,
-        "--xai-api-base-url",
-        options.xai_api_base_url.as_ref(),
-    );
     if options.debug.unwrap_or(false) {
         arguments.push("--debug".to_string());
     }
@@ -1539,6 +1633,13 @@ fn spawn_grok_process(
     options: &GrokAcpOptions,
     rules: Option<&str>,
 ) -> Result<Arc<GrokProcess>, String> {
+    if model
+        .map(str::trim)
+        .filter(|value| !value.is_empty())
+        .is_none()
+    {
+        return Err("内网模式必须选择已配置的模型连接".to_string());
+    }
     ensure_model_provider_ready(app, model)?;
     let home = grok_home(app)?;
     let model_envs = model_provider_envs(app, model)?;
@@ -1553,17 +1654,10 @@ fn spawn_grok_process(
 }
 
 fn spawn_grok_discovery_process(
-    app: &AppHandle,
-    workspace: &Path,
+    _app: &AppHandle,
+    _workspace: &Path,
 ) -> Result<Arc<GrokProcess>, String> {
-    spawn_grok_process_with_env(
-        app,
-        workspace,
-        grok_agent_arguments(None, &GrokAcpOptions::default(), false)?,
-        Vec::new(),
-        grok_home(app)?,
-        format!("command-discovery:{}", workspace.to_string_lossy()),
-    )
+    Err("内网模式不启动未绑定模型的命令发现进程".to_string())
 }
 
 fn spawn_grok_process_with_env(
@@ -1575,14 +1669,17 @@ fn spawn_grok_process_with_env(
     launch_key: String,
 ) -> Result<Arc<GrokProcess>, String> {
     let uses_custom_model = !model_envs.is_empty();
+    let mut process_envs = offline_runtime_envs(&home);
+    process_envs.extend(model_envs);
     let (mut receiver, child) = app
         .shell()
         .sidecar("grok")
         .map_err(|error| format!("无法定位内置 Grok Build: {error}"))?
         .args(arguments)
         .current_dir(workspace)
+        .env_clear()
         .env("GROK_HOME", &home)
-        .envs(model_envs)
+        .envs(process_envs)
         .spawn()
         .map_err(|error| format!("启动本地 Grok Build 失败: {error}"))?;
     let process = Arc::new(GrokProcess::new(child, launch_key, uses_custom_model));
@@ -1718,11 +1815,14 @@ fn live_process_for_launch_key(
 #[tauri::command]
 pub async fn grok_runtime_status(app: AppHandle) -> Result<GrokRuntimeStatus, String> {
     let home = grok_home(&app)?;
+    enforce_offline_config(&app)?;
     let output = app
         .shell()
         .sidecar("grok")
         .map_err(|error| format!("无法定位内置 Grok Build: {error}"))?
         .args(["--no-auto-update", "--version"])
+        .env_clear()
+        .envs(offline_runtime_envs(&home))
         .output()
         .await
         .map_err(|error| format!("检测 Grok Build 失败: {error}"))?;
@@ -1731,10 +1831,14 @@ pub async fn grok_runtime_status(app: AppHandle) -> Result<GrokRuntimeStatus, St
 
     Ok(GrokRuntimeStatus {
         available,
-        authenticated: home.join("auth.json").is_file(),
+        authenticated: false,
         version: (!version.is_empty()).then_some(version),
         grok_home: home.to_string_lossy().to_string(),
-        message: (!available).then(|| String::from_utf8_lossy(&output.stderr).trim().to_string()),
+        message: if available {
+            Some("内网隔离模式已启用".to_string())
+        } else {
+            Some(String::from_utf8_lossy(&output.stderr).trim().to_string())
+        },
     })
 }
 
@@ -1813,6 +1917,7 @@ pub async fn grok_cli_run(
     timeout_seconds: Option<u64>,
 ) -> Result<GrokCliResult, String> {
     validate_cli_arguments(&arguments)?;
+    enforce_offline_config(&app)?;
     let model = model_from_arguments(&arguments);
     ensure_model_provider_ready(&app, model)?;
     let current_dir = match workspace.filter(|value| !value.trim().is_empty()) {
@@ -1821,14 +1926,18 @@ pub async fn grok_cli_run(
     };
     let mut command_arguments = vec!["--no-auto-update".to_string()];
     command_arguments.extend(arguments.iter().cloned());
+    let home = grok_home(&app)?;
+    let mut process_envs = offline_runtime_envs(&home);
+    process_envs.extend(model_provider_envs(&app, model)?);
     let command = app
         .shell()
         .sidecar("grok")
         .map_err(|error| format!("无法定位内置 Grok Build: {error}"))?
         .args(command_arguments)
         .current_dir(current_dir)
-        .env("GROK_HOME", grok_home(&app)?)
-        .envs(model_provider_envs(&app, model)?);
+        .env_clear()
+        .env("GROK_HOME", &home)
+        .envs(process_envs);
     let timeout = Duration::from_secs(timeout_seconds.unwrap_or(120).clamp(5, 600));
     let output = tokio::time::timeout(timeout, command.output())
         .await
@@ -1894,6 +2003,7 @@ pub fn grok_config_save(
         for provider in read_model_providers(&app)? {
             sync_provider_to_grok_config(&app, &provider)?;
         }
+        enforce_offline_config(&app)?;
         fs::read_to_string(&path).map_err(|error| format!("读取已保存配置失败: {error}"))?
     } else {
         content
@@ -1921,6 +2031,7 @@ fn normalize_model_id(model: &str) -> Result<String, String> {
 #[tauri::command]
 pub fn grok_model_apply(app: AppHandle, model: String) -> Result<(), String> {
     let model = normalize_model_id(&model)?;
+    ensure_model_provider_ready(&app, Some(&model))?;
     let path = grok_config_path(&app, "user", "config", None)?;
     let content = if path.is_file() {
         fs::read_to_string(&path).map_err(|error| format!("读取 Grok 配置失败: {error}"))?
@@ -1928,6 +2039,7 @@ pub fn grok_model_apply(app: AppHandle, model: String) -> Result<(), String> {
         String::new()
     };
     let mut config = parse_grok_toml(&content)?;
+    apply_offline_config(&mut config)?;
     let root = config
         .as_table_mut()
         .ok_or_else(|| "Grok 配置根节点必须是对象".to_string())?;
@@ -2046,6 +2158,7 @@ pub fn grok_cli_service_start(
     arguments: Vec<String>,
 ) -> Result<GrokCliServiceInfo, String> {
     validate_service_arguments(&arguments)?;
+    enforce_offline_config(&app)?;
     let model = model_from_arguments(&arguments);
     ensure_model_provider_ready(&app, model)?;
     let current_dir = match workspace.filter(|value| !value.trim().is_empty()) {
@@ -2054,15 +2167,18 @@ pub fn grok_cli_service_start(
     };
     let mut command_arguments = vec!["--no-auto-update".to_string()];
     command_arguments.extend(arguments.iter().cloned());
-    let model_envs = model_provider_envs(&app, model)?;
+    let home = grok_home(&app)?;
+    let mut process_envs = offline_runtime_envs(&home);
+    process_envs.extend(model_provider_envs(&app, model)?);
     let (mut receiver, child) = app
         .shell()
         .sidecar("grok")
         .map_err(|error| format!("无法定位内置 Grok Build: {error}"))?
         .args(command_arguments)
         .current_dir(current_dir)
-        .env("GROK_HOME", grok_home(&app)?)
-        .envs(model_envs)
+        .env_clear()
+        .env("GROK_HOME", &home)
+        .envs(process_envs)
         .spawn()
         .map_err(|error| format!("启动 Grok CLI 服务失败: {error}"))?;
     let pid = child.pid();
@@ -2513,52 +2629,17 @@ pub fn grok_shutdown(state: State<'_, GrokRuntimeState>) -> Result<(), String> {
 
 #[tauri::command]
 pub fn grok_start_login(
-    app: AppHandle,
-    state: State<'_, GrokRuntimeState>,
-    method: Option<String>,
+    _app: AppHandle,
+    _state: State<'_, GrokRuntimeState>,
+    _method: Option<String>,
 ) -> Result<(), String> {
-    grok_shutdown(state)?;
-    let home = grok_home(&app)?;
-    let mut arguments = vec!["--no-auto-update".to_string(), "login".to_string()];
-    match method.as_deref().unwrap_or("browser") {
-        "browser" => {}
-        "oauth" => arguments.push("--oauth".to_string()),
-        "device" => arguments.push("--device-auth".to_string()),
-        _ => return Err("不支持的 Grok 登录方式".to_string()),
-    }
-    let (mut receiver, _child) = app
-        .shell()
-        .sidecar("grok")
-        .map_err(|error| format!("无法定位内置 Grok Build: {error}"))?
-        .args(arguments)
-        .env("GROK_HOME", &home)
-        .spawn()
-        .map_err(|error| format!("启动 Grok 登录失败: {error}"))?;
-    tauri::async_runtime::spawn(async move {
-        while let Some(event) = receiver.recv().await {
-            match event {
-                CommandEvent::Stdout(line) | CommandEvent::Stderr(line) => emit_event(
-                    &app,
-                    "login_output",
-                    json!({ "message": String::from_utf8_lossy(&line).trim() }),
-                ),
-                CommandEvent::Error(error) => {
-                    emit_event(&app, "runtime_error", json!({ "message": error }))
-                }
-                CommandEvent::Terminated(status) => {
-                    emit_event(&app, "login_completed", json!({ "code": status.code }))
-                }
-                _ => {}
-            }
-        }
-    });
-    Ok(())
+    Err("URGS 已启用内网隔离模式，不支持 xAI 登录".to_string())
 }
 
 #[cfg(test)]
 mod tests {
     use super::{
-        available_commands_from_initialize, available_commands_from_list,
+        apply_offline_config, available_commands_from_initialize, available_commands_from_list,
         available_commands_from_session_update, cache_provider_api_key,
         forget_cached_provider_api_key, format_rpc_error, grok_agent_arguments, model_key_env_name,
         normalize_model_id, normalize_model_provider, normalized_session_update_message,
@@ -2856,7 +2937,9 @@ mod tests {
 
     #[test]
     fn validates_cli_command_allowlist_and_limits() {
-        assert!(validate_cli_arguments(&["models".to_string()]).is_ok());
+        assert!(validate_cli_arguments(&["models".to_string()]).is_err());
+        assert!(validate_cli_arguments(&["login".to_string()]).is_err());
+        assert!(validate_cli_arguments(&["update".to_string()]).is_err());
         assert!(validate_cli_arguments(&["doctor".to_string(), "--json".to_string()]).is_ok());
         assert!(validate_cli_arguments(&["mcp".to_string(), "list".to_string()]).is_ok());
         assert!(validate_cli_arguments(&[
@@ -2930,6 +3013,43 @@ mod tests {
         let rewritten = serialize_grok_toml(&config).unwrap();
         assert!(!rewritten.trim_start().starts_with('{'));
         assert!(rewritten.parse::<toml::Value>().is_ok());
+    }
+
+    #[test]
+    fn offline_config_removes_xai_sources_and_disables_remote_features() {
+        let mut config = parse_grok_toml(
+            r#"
+[auth]
+auth_provider_command = "online"
+
+[grok_com_config.oidc]
+issuer = "https://auth.x.ai"
+client_id = "client"
+
+[features]
+remote_fetch = true
+telemetry = true
+
+[marketplace]
+official_marketplace_auto_installed = true
+
+[[marketplace.sources]]
+git = "https://github.com/xai-org/plugin-marketplace.git"
+name = "xAI Official"
+"#,
+        )
+        .unwrap();
+        apply_offline_config(&mut config).unwrap();
+        assert_eq!(
+            config["auth"]["preferred_method"].as_str(),
+            Some("api_key")
+        );
+        assert!(config["auth"].get("auth_provider_command").is_none());
+        assert!(config.get("grok_com_config").is_none());
+        assert_eq!(config["features"]["remote_fetch"].as_bool(), Some(false));
+        assert_eq!(config["features"]["telemetry"].as_bool(), Some(false));
+        assert!(config["marketplace"].get("sources").is_none());
+        assert_eq!(config["cli"]["auto_update"].as_bool(), Some(false));
     }
 
     #[test]

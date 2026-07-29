@@ -45,28 +45,19 @@ const bool = (key: string, label: string, flag: string, defaultValue = false): G
 const agentServiceFields: GrokCliField[] = [
     text('model', '模型', { flag: '--model', beforeSubcommand: true }),
     text('reasoningEffort', 'Reasoning Effort', { flag: '--reasoning-effort', beforeSubcommand: true }),
-    { key: 'reauth', label: '启动前重新认证', type: 'boolean', flag: '--reauth', defaultValue: false, beforeSubcommand: true },
     { key: 'alwaysApprove', label: '自动批准工具', type: 'boolean', flag: '--always-approve', defaultValue: false, beforeSubcommand: true },
     text('agentProfile', 'Agent Profile 文件', { flag: '--agent-profile', beforeSubcommand: true }),
     { key: 'pluginDirs', label: '临时插件目录', type: 'multiline', flag: '--plugin-dir', repeatLines: true, beforeSubcommand: true, placeholder: '每行一个目录' },
     { key: 'leaderMode', label: 'Leader 连接模式', type: 'select', defaultValue: '', beforeSubcommand: true, options: [{ label: '使用配置默认值', value: '' }, { label: '连接共享 Leader', value: '--leader' }, { label: '独立 Agent', value: '--no-leader' }] },
     text('grokWsOrigin', '任务服务 WS Origin', { flag: '--grok-ws-origin', beforeSubcommand: true }),
     text('grokWsUrl', '任务服务 WS URL', { flag: '--grok-ws-url', beforeSubcommand: true }),
-    text('cliProxyUrl', 'CLI Chat Proxy URL', { flag: '--cli-chat-proxy-base-url', beforeSubcommand: true }),
-    text('xaiApiUrl', '服务 API URL', { flag: '--xai-api-base-url', beforeSubcommand: true }),
 ];
 
 export const GROK_CLI_ACTIONS: GrokCliAction[] = [
     { id: 'version', category: 'runtime', title: '版本详情', description: '读取内置运行组件的结构化版本信息。', baseArguments: ['version', '--json'] },
-    { id: 'models', category: 'runtime', title: '可用模型', description: '读取当前账号和运行时可使用的模型列表。', baseArguments: ['models'], timeoutSeconds: 180 },
     { id: 'inspect', category: 'runtime', title: '检查生效配置', description: '检查当前工作区发现的规则、配置、插件和 MCP。', baseArguments: ['inspect', '--json'] },
     { id: 'doctor', category: 'runtime', title: '运行环境诊断', description: '检查终端、剪贴板、颜色和输入支持并输出结构化报告。', baseArguments: ['doctor', '--json'] },
     { id: 'doctor-fix', category: 'runtime', title: '修复运行环境', description: '执行内置诊断建议的自动修复。', baseArguments: ['doctor', 'fix'], confirmation: '这会修改本地运行环境配置，确认执行自动修复？' },
-    { id: 'setup-preview', category: 'runtime', title: '预览托管配置', description: '从任务服务获取托管配置但不写入本机。', baseArguments: ['setup', '--json'], timeoutSeconds: 180 },
-    { id: 'setup-install', category: 'runtime', title: '安装托管配置', description: '获取并安装账号下发的运行配置。', baseArguments: ['setup'], confirmation: '这会写入本地运行配置，确认继续？', timeoutSeconds: 180 },
-    { id: 'update-check', category: 'runtime', title: '检查组件更新', description: '只检查内置命令组件新版本；安装包升级仍由 URGS 更新器完成。', baseArguments: ['update', '--check', '--json'], timeoutSeconds: 180 },
-    { id: 'update-install', category: 'runtime', title: '执行组件自更新', description: '调用内置命令组件自更新；安装包环境可能受签名或只读目录限制，正式发布仍建议随 URGS 升级。', baseArguments: ['update'], fields: [{ key: 'channel', label: '发布通道', type: 'select', defaultValue: '--stable', options: [{ label: '稳定版', value: '--stable' }, { label: 'Alpha', value: '--alpha' }] }, text('version', '指定版本', { flag: '--version', placeholder: '留空安装通道最新版' }), bool('force', '强制重新安装', '--force-reinstall')], confirmation: '组件自更新可能使内置版本与 URGS 安装包锁定版本不一致，确认继续？', timeoutSeconds: 600 },
-    { id: 'logout', category: 'runtime', title: '退出服务登录', description: '清除本地服务凭据。', baseArguments: ['logout'], confirmation: '确认退出服务登录并清除本地凭据？' },
 
     { id: 'session-list', category: 'sessions', title: '最近会话', description: '列出本地会话。', baseArguments: ['sessions', 'list'], fields: [{ key: 'limit', label: '数量', type: 'number', flag: '--limit', defaultValue: '20' }] },
     { id: 'session-search', category: 'sessions', title: '搜索会话', description: '按摘要和首条提示搜索会话。', baseArguments: ['sessions', 'search'], fields: [text('query', '关键词', { positional: true, required: true }), { key: 'limit', label: '数量', type: 'number', flag: '--limit', defaultValue: '20' }] },

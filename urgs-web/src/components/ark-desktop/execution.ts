@@ -41,7 +41,6 @@ export const buildGrokHeadlessArguments = (
     if (settings.memoryMode === 'experimental') arguments_.push('--experimental-memory');
     if (settings.verbatim) arguments_.push('--verbatim');
     if (settings.permissionMode === 'bypassPermissions') arguments_.push('--always-approve');
-    if (settings.oauth) arguments_.push('--oauth');
     if (settings.debug) arguments_.push('--debug');
 
     if (settings.sessionMode === 'continue') arguments_.push('--continue');

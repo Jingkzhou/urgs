@@ -125,16 +125,16 @@ export const loadArkDesktopSnapshot = (): ArkDesktopSnapshot => {
                 runtimeProcessId: undefined,
             };
         }) : [];
-        const configuredModel = stored.settings?.grokModel?.trim() || '';
         const modelProviders = Array.isArray(stored.settings?.modelProviders)
             ? stored.settings.modelProviders
             : [];
-        const modelOptions = Array.from(new Set([
-            ...(Array.isArray(stored.settings?.modelOptions) ? stored.settings!.modelOptions : []),
-            configuredModel,
-            ...modelProviders.map((provider) => provider.id || ''),
-            ...tasks.map((task) => task.model || ''),
-        ].map((model) => model.trim()).filter(Boolean)));
+        const enabledModelIds = modelProviders
+            .filter((provider) => provider.enabled)
+            .map((provider) => provider.id.trim())
+            .filter(Boolean);
+        const storedModel = stored.settings?.grokModel?.trim() || '';
+        const configuredModel = enabledModelIds.includes(storedModel) ? storedModel : enabledModelIds[0] || '';
+        const modelOptions = Array.from(new Set(enabledModelIds));
         const snapshot: ArkDesktopSnapshot = {
             agents,
             skills,
