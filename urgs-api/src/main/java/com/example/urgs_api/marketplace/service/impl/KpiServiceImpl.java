@@ -89,6 +89,7 @@ public class KpiServiceImpl implements KpiService {
                 .count()));
         dto.setOverdueTasks(Math.toIntExact(workTaskService.lambdaQuery()
                 .ne(WorkTask::getStatus, TaskStatus.COMPLETED.name())
+                .ne(WorkTask::getStatus, TaskStatus.PAUSED.name())
                 .lt(WorkTask::getDeadline, LocalDateTime.now())
                 .count()));
         dto.setTotalPointPool(workService.list().stream().mapToInt(work -> defaultInt(work.getTotalPoints())).sum());
