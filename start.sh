@@ -96,6 +96,30 @@ ensure_npm_dependency() {
   fi
 }
 
+ensure_pnpm_dependencies() {
+  local package_dir="$1"
+  local pnpm_bin
+  local -a pnpm_cmd
+
+  pnpm_bin="$(command -v pnpm || true)"
+  if [ -n "$pnpm_bin" ]; then
+    pnpm_cmd=("$pnpm_bin")
+  else
+    echo "pnpm not found; using pnpm 10 through npm."
+    pnpm_cmd=("$NPM_BIN" exec --yes --package=pnpm@10 -- pnpm)
+  fi
+
+  echo "Synchronizing frontend dependencies from pnpm-lock.yaml..."
+  CI=true "${pnpm_cmd[@]}" --dir "$package_dir" install --frozen-lockfile
+
+  # 分支切换会替换 node_modules 中的依赖版本；清除可再生的 Vite 预构建缓存，
+  # 避免它继续引用已删除的旧依赖路径。
+  if [ -d "$package_dir/node_modules/.vite" ]; then
+    echo "Clearing stale Vite dependency cache..."
+    rm -rf "$package_dir/node_modules/.vite"
+  fi
+}
+
 kill_port_if_exists() {
   local port="$1"
   if command -v lsof >/dev/null 2>&1; then
@@ -245,7 +269,7 @@ start_frontend() {
   cd "$WEB_DIR"
   kill_port_if_exists 3000
   kill_port_if_exists 3001
-  ensure_npm_dependency "$WEB_DIR" vite
+  ensure_pnpm_dependencies "$WEB_DIR"
 
   if [ "$ENVIRONMENT" = "local" ] || [ "$ENVIRONMENT" = "dev" ]; then
     "$NPM_BIN" run dev -- --host &
@@ -261,22 +285,19 @@ start_desktop() {
   kill_port_if_exists 3000
   kill_port_if_exists 3001
 
+  if ! command -v cargo >/dev/null 2>&1; then
+    echo "Rust/Cargo not found. Install the Rust toolchain before starting urgs-desktop."
+    exit 1
+  fi
+  ensure_pnpm_dependencies "$WEB_DIR"
+
   local pnpm_bin
   local -a pnpm_cmd
   pnpm_bin="$(command -v pnpm || true)"
   if [ -n "$pnpm_bin" ]; then
     pnpm_cmd=("$pnpm_bin")
   else
-    echo "pnpm not found; using pnpm 10 through npm."
     pnpm_cmd=("$NPM_BIN" exec --yes --package=pnpm@10 -- pnpm)
-  fi
-  if ! command -v cargo >/dev/null 2>&1; then
-    echo "Rust/Cargo not found. Install the Rust toolchain before starting urgs-desktop."
-    exit 1
-  fi
-  if [ ! -x "$WEB_DIR/node_modules/.bin/vite" ]; then
-    echo "Installing frontend dependencies in $WEB_DIR..."
-    CI=true "${pnpm_cmd[@]}" --dir "$WEB_DIR" install --frozen-lockfile
   fi
   if [ ! -x "node_modules/.bin/tauri" ]; then
     echo "Installing desktop dependencies in $DESKTOP_DIR..."
