@@ -15,6 +15,8 @@ use tokio::sync::{oneshot, Mutex as AsyncMutex};
 const GROK_EVENT_NAME: &str = "grok-event";
 const REQUEST_TIMEOUT: Duration = Duration::from_secs(30);
 const INITIALIZE_TIMEOUT: Duration = Duration::from_secs(90);
+const AUTHENTICATE_TIMEOUT: Duration = Duration::from_secs(180);
+const SESSION_START_TIMEOUT: Duration = Duration::from_secs(120);
 const MODEL_PROVIDER_FILE: &str = "model-providers.json";
 const MODEL_CREDENTIAL_SERVICE: &str = "com.urgs.desktop.grok-model";
 const MODEL_KEY_AUTHORIZATION_REQUIRED: &str = "MODEL_KEY_AUTHORIZATION_REQUIRED:";
@@ -27,6 +29,8 @@ fn request_timeout(method: &str) -> Duration {
     match method {
         "session/prompt" => Duration::from_secs(60 * 60),
         "initialize" => INITIALIZE_TIMEOUT,
+        "authenticate" => AUTHENTICATE_TIMEOUT,
+        "session/new" | "session/load" => SESSION_START_TIMEOUT,
         _ => REQUEST_TIMEOUT,
     }
 }
@@ -182,6 +186,7 @@ struct PendingPlanApproval {
 }
 
 pub struct GrokRuntimeState {
+    startup: AsyncMutex<()>,
     prepared_process: Mutex<Option<Arc<GrokProcess>>>,
     session_processes: Mutex<HashMap<String, Arc<GrokProcess>>>,
     cli_services: Mutex<HashMap<String, Arc<GrokCliService>>>,
@@ -191,6 +196,7 @@ pub struct GrokRuntimeState {
 impl Default for GrokRuntimeState {
     fn default() -> Self {
         Self {
+            startup: AsyncMutex::new(()),
             prepared_process: Mutex::new(None),
             session_processes: Mutex::new(HashMap::new()),
             cli_services: Mutex::new(HashMap::new()),
@@ -279,12 +285,13 @@ struct GrokProcess {
     available_commands: Mutex<Vec<GrokAvailableCommand>>,
     request_sequence: AtomicU64,
     initialized: AsyncMutex<bool>,
+    uses_custom_model: bool,
     replaying_session: AtomicBool,
     alive: AtomicBool,
 }
 
 impl GrokProcess {
-    fn new(child: CommandChild, launch_key: String) -> Self {
+    fn new(child: CommandChild, launch_key: String, uses_custom_model: bool) -> Self {
         Self {
             process_id: format!(
                 "runtime-{}",
@@ -300,6 +307,7 @@ impl GrokProcess {
             available_commands: Mutex::new(Vec::new()),
             request_sequence: AtomicU64::new(1),
             initialized: AsyncMutex::new(false),
+            uses_custom_model,
             replaying_session: AtomicBool::new(false),
             alive: AtomicBool::new(true),
         }
@@ -385,17 +393,18 @@ impl GrokProcess {
             )
             .await?;
         self.replace_available_commands(available_commands_from_initialize(&response));
-        let method_id = select_auth_method(&response)?;
-
-        self.request(
-            "authenticate",
-            json!({
-                "methodId": method_id,
-                "_meta": { "headless": false }
-            }),
-        )
-        .await
-        .map_err(|error| format!("Grok 登录不可用，请先点击“登录 Grok”：{error}"))?;
+        if !self.uses_custom_model {
+            let method_id = select_auth_method(&response)?;
+            self.request(
+                "authenticate",
+                json!({
+                    "methodId": method_id,
+                    "_meta": { "headless": false }
+                }),
+            )
+            .await
+            .map_err(|error| format!("Grok 登录不可用，请先点击“登录 Grok”：{error}"))?;
+        }
 
         *initialized = true;
         Ok(())
@@ -930,10 +939,6 @@ fn sync_provider_to_grok_config(
         toml::Value::String(provider.api_backend.clone()),
     );
     entry.insert(
-        "auth_scheme".to_string(),
-        toml::Value::String(provider.auth_scheme.clone()),
-    );
-    entry.insert(
         "context_window".to_string(),
         toml::Value::Integer(provider.context_window as i64),
     );
@@ -943,6 +948,7 @@ fn sync_provider_to_grok_config(
     );
     entry.insert("supported_in_api".to_string(), toml::Value::Boolean(true));
     entry.remove("api_key");
+    entry.remove("auth_scheme");
     let parent = path
         .parent()
         .ok_or_else(|| "本地智能引擎配置目录无效".to_string())?;
@@ -982,6 +988,7 @@ fn provider_is_registered_in_grok_config(
                 == Some(model_key_env_name(&provider.id).as_str())
             && entry.get("api_backend").and_then(toml::Value::as_str)
                 == Some(provider.api_backend.as_str())
+            && !entry.contains_key("auth_scheme")
     }))
 }
 
@@ -1045,6 +1052,24 @@ fn model_provider_envs(
         write_model_providers(app, &providers)?;
     }
     Ok(vec![(env_name, api_key)])
+}
+
+fn effective_acp_options(
+    app: &AppHandle,
+    model: Option<&str>,
+    options: &GrokAcpOptions,
+) -> Result<GrokAcpOptions, String> {
+    let Some(model) = model.map(str::trim).filter(|model| !model.is_empty()) else {
+        return Ok(options.clone());
+    };
+    let uses_custom_model = read_model_providers(app)?
+        .iter()
+        .any(|provider| provider.id == model);
+    let mut effective = options.clone();
+    if uses_custom_model {
+        effective.reauth = None;
+    }
+    Ok(effective)
 }
 
 fn ensure_model_provider_ready(app: &AppHandle, model: Option<&str>) -> Result<(), String> {
@@ -1114,6 +1139,7 @@ fn validate_cli_arguments(arguments: &[String]) -> Result<(), String> {
         "agent",
         "completions",
         "dashboard",
+        "doctor",
         "export",
         "help",
         "inspect",
@@ -1262,6 +1288,27 @@ fn plan_approval_params(message: &Value) -> Option<&Value> {
     .flatten()
 }
 
+fn normalized_session_update_message(message: &Value) -> Option<Value> {
+    let method = message.get("method")?.as_str()?;
+    let params = message.get("params")?;
+    let normalized_params = match method {
+        "session/update" | "sessionUpdate" | "x.ai/session_notification" => params,
+        "_x.ai/session/update" => params.get("params").unwrap_or(params),
+        "_x.ai/session_notification"
+            if params.get("method").and_then(Value::as_str)
+                == Some("x.ai/session_notification") =>
+        {
+            params.get("params")?
+        }
+        _ => return None,
+    };
+    Some(json!({
+        "jsonrpc": "2.0",
+        "method": "session/update",
+        "params": normalized_params,
+    }))
+}
+
 fn handle_stdout(app: &AppHandle, process: &Arc<GrokProcess>, line: Vec<u8>) {
     let line = String::from_utf8_lossy(&line).trim().to_string();
     if line.is_empty() {
@@ -1291,15 +1338,16 @@ fn handle_stdout(app: &AppHandle, process: &Arc<GrokProcess>, line: Vec<u8>) {
         .get("method")
         .and_then(Value::as_str)
         .unwrap_or_default();
-    match method {
-        "session/update" | "sessionUpdate" => {
-            if let Some(commands) = available_commands_from_session_update(&message) {
-                process.replace_available_commands(commands);
-            }
-            if !process.replaying_session.load(Ordering::Relaxed) {
-                emit_process_event(app, process, "session_update", message);
-            }
+    if let Some(session_update) = normalized_session_update_message(&message) {
+        if let Some(commands) = available_commands_from_session_update(&session_update) {
+            process.replace_available_commands(commands);
         }
+        if !process.replaying_session.load(Ordering::Relaxed) {
+            emit_process_event(app, process, "session_update", session_update);
+        }
+        return;
+    }
+    match method {
         "session/request_permission" => {
             let request_id = message.get("id").cloned();
             let session_id = message
@@ -1414,6 +1462,7 @@ fn process_launch_key(
 fn grok_agent_arguments(
     model: Option<&str>,
     options: &GrokAcpOptions,
+    uses_custom_model: bool,
 ) -> Result<Vec<String>, String> {
     let mut arguments = vec!["--no-auto-update".to_string(), "agent".to_string()];
     if let Some(model) = model.filter(|value| !value.trim().is_empty()) {
@@ -1430,7 +1479,7 @@ fn grok_agent_arguments(
     {
         arguments.push("--always-approve".to_string());
     }
-    if options.reauth.unwrap_or(false) {
+    if options.reauth.unwrap_or(false) && !uses_custom_model {
         arguments.push("--reauth".to_string());
     }
     push_optional_argument(
@@ -1491,10 +1540,15 @@ fn spawn_grok_process(
     rules: Option<&str>,
 ) -> Result<Arc<GrokProcess>, String> {
     ensure_model_provider_ready(app, model)?;
-    let launch_key = process_launch_key(workspace, model, options, rules)?;
     let home = grok_home(app)?;
-    let arguments = grok_agent_arguments(model, options)?;
     let model_envs = model_provider_envs(app, model)?;
+    let uses_custom_model = !model_envs.is_empty();
+    let mut effective_options = options.clone();
+    if uses_custom_model {
+        effective_options.reauth = None;
+    }
+    let launch_key = process_launch_key(workspace, model, &effective_options, rules)?;
+    let arguments = grok_agent_arguments(model, &effective_options, uses_custom_model)?;
     spawn_grok_process_with_env(app, workspace, arguments, model_envs, home, launch_key)
 }
 
@@ -1505,7 +1559,7 @@ fn spawn_grok_discovery_process(
     spawn_grok_process_with_env(
         app,
         workspace,
-        grok_agent_arguments(None, &GrokAcpOptions::default())?,
+        grok_agent_arguments(None, &GrokAcpOptions::default(), false)?,
         Vec::new(),
         grok_home(app)?,
         format!("command-discovery:{}", workspace.to_string_lossy()),
@@ -1520,6 +1574,7 @@ fn spawn_grok_process_with_env(
     home: PathBuf,
     launch_key: String,
 ) -> Result<Arc<GrokProcess>, String> {
+    let uses_custom_model = !model_envs.is_empty();
     let (mut receiver, child) = app
         .shell()
         .sidecar("grok")
@@ -1530,7 +1585,7 @@ fn spawn_grok_process_with_env(
         .envs(model_envs)
         .spawn()
         .map_err(|error| format!("启动本地 Grok Build 失败: {error}"))?;
-    let process = Arc::new(GrokProcess::new(child, launch_key));
+    let process = Arc::new(GrokProcess::new(child, launch_key, uses_custom_model));
     let reader_process = Arc::clone(&process);
     let reader_app = app.clone();
     tauri::async_runtime::spawn(async move {
@@ -1622,6 +1677,44 @@ fn stop_prepared_process(state: &GrokRuntimeState) -> Result<(), String> {
     Ok(())
 }
 
+fn take_prepared_process(
+    state: &GrokRuntimeState,
+    launch_key: &str,
+) -> Result<Option<Arc<GrokProcess>>, String> {
+    let prepared = state
+        .prepared_process
+        .lock()
+        .map_err(|_| "Grok 运行时锁不可用".to_string())?
+        .take();
+    match prepared {
+        Some(process)
+            if process.alive.load(Ordering::Relaxed) && process.launch_key == launch_key =>
+        {
+            Ok(Some(process))
+        }
+        Some(process) => {
+            process.stop();
+            Ok(None)
+        }
+        None => Ok(None),
+    }
+}
+
+fn live_process_for_launch_key(
+    state: &GrokRuntimeState,
+    launch_key: &str,
+) -> Result<Option<Arc<GrokProcess>>, String> {
+    let mut processes = state
+        .session_processes
+        .lock()
+        .map_err(|_| "Grok 会话进程池锁不可用".to_string())?;
+    processes.retain(|_, process| process.alive.load(Ordering::Relaxed));
+    Ok(processes
+        .values()
+        .find(|process| process.launch_key == launch_key)
+        .cloned())
+}
+
 #[tauri::command]
 pub async fn grok_runtime_status(app: AppHandle) -> Result<GrokRuntimeStatus, String> {
     let home = grok_home(&app)?;
@@ -1664,9 +1757,19 @@ pub async fn grok_runtime_prepare(
     workspace: String,
     model: String,
     options: Option<GrokAcpOptions>,
+    rules: Option<String>,
 ) -> Result<(), String> {
     let workspace = validate_workspace(&workspace)?;
     let model = normalize_model_id(&model)?;
+    let options = options.unwrap_or_default();
+    let effective_options = effective_acp_options(&app, Some(&model), &options)?;
+    let launch_key = process_launch_key(
+        &workspace,
+        Some(&model),
+        &effective_options,
+        rules.as_deref(),
+    )?;
+    let _startup = state.startup.lock().await;
     let has_live_session = state
         .session_processes
         .lock()
@@ -1676,23 +1779,22 @@ pub async fn grok_runtime_prepare(
     if has_live_session {
         return Ok(());
     }
-    if state
-        .prepared_process
-        .lock()
-        .map_err(|_| "Grok 运行时锁不可用".to_string())?
-        .as_ref()
-        .is_some_and(|process| process.alive.load(Ordering::Relaxed))
     {
-        return Ok(());
+        let mut prepared = state
+            .prepared_process
+            .lock()
+            .map_err(|_| "Grok 运行时锁不可用".to_string())?;
+        if prepared.as_ref().is_some_and(|process| {
+            process.alive.load(Ordering::Relaxed) && process.launch_key == launch_key
+        }) {
+            return Ok(());
+        }
+        if let Some(process) = prepared.take() {
+            process.stop();
+        }
     }
-    let process = spawn_grok_process(
-        &app,
-        &workspace,
-        Some(&model),
-        &options.unwrap_or_default(),
-        None,
-    )?;
-    if let Err(error) = process.initialize(None).await {
+    let process = spawn_grok_process(&app, &workspace, Some(&model), &options, rules.as_deref())?;
+    if let Err(error) = process.initialize(rules.as_deref()).await {
         process.stop();
         return Err(error);
     }
@@ -2086,18 +2188,34 @@ pub async fn grok_create_session(
     options: Option<GrokAcpOptions>,
 ) -> Result<GrokSession, String> {
     let workspace = validate_workspace(&workspace)?;
-    stop_prepared_process(&state)?;
-    let process = spawn_grok_process(
-        &app,
+    let options = options.unwrap_or_default();
+    let effective_options = effective_acp_options(&app, model.as_deref(), &options)?;
+    let launch_key = process_launch_key(
         &workspace,
         model.as_deref(),
-        &options.unwrap_or_default(),
+        &effective_options,
         rules.as_deref(),
     )?;
-    if let Err(error) = process.initialize(rules.as_deref()).await {
-        process.stop();
-        return Err(error);
-    }
+    let _startup = state.startup.lock().await;
+    let (process, exclusive_process) =
+        if let Some(process) = take_prepared_process(&state, &launch_key)? {
+            (process, true)
+        } else if let Some(process) = live_process_for_launch_key(&state, &launch_key)? {
+            (process, false)
+        } else {
+            let process = spawn_grok_process(
+                &app,
+                &workspace,
+                model.as_deref(),
+                &options,
+                rules.as_deref(),
+            )?;
+            if let Err(error) = process.initialize(rules.as_deref()).await {
+                process.stop();
+                return Err(error);
+            }
+            (process, true)
+        };
     let response = match process
         .request(
             "session/new",
@@ -2110,19 +2228,25 @@ pub async fn grok_create_session(
     {
         Ok(response) => response,
         Err(error) => {
-            process.stop();
+            if exclusive_process {
+                process.stop();
+            }
             return Err(error);
         }
     };
     let session_id = match response.get("sessionId").and_then(Value::as_str) {
         Some(session_id) => session_id.to_string(),
         None => {
-            process.stop();
+            if exclusive_process {
+                process.stop();
+            }
             return Err("Grok 未返回会话标识".to_string());
         }
     };
     if let Err(error) = register_session_process(&state, &session_id, Arc::clone(&process)) {
-        process.stop();
+        if exclusive_process {
+            process.stop();
+        }
         return Err(error);
     }
     Ok(GrokSession {
@@ -2149,8 +2273,14 @@ pub async fn grok_load_session(
     }
     let workspace = validate_workspace(&workspace)?;
     let options = options.unwrap_or_default();
-    let launch_key = process_launch_key(&workspace, model.as_deref(), &options, rules.as_deref())?;
-    let existing = {
+    let effective_options = effective_acp_options(&app, model.as_deref(), &options)?;
+    let launch_key = process_launch_key(
+        &workspace,
+        model.as_deref(),
+        &effective_options,
+        rules.as_deref(),
+    )?;
+    let (existing, existing_is_shared) = {
         let mut processes = state
             .session_processes
             .lock()
@@ -2168,11 +2298,18 @@ pub async fn grok_load_session(
                 available_commands: process.available_commands(),
             });
         }
-        processes.remove(&session_id)
+        let existing = processes.remove(&session_id);
+        let shared = existing.as_ref().is_some_and(|existing| {
+            processes
+                .values()
+                .any(|process| process.process_id == existing.process_id)
+        });
+        (existing, shared)
     };
-    if let Some(existing) = existing {
+    if let Some(existing) = existing.filter(|_| !existing_is_shared) {
         existing.stop();
     }
+    let _startup = state.startup.lock().await;
     stop_prepared_process(&state)?;
     let process = spawn_grok_process(
         &app,
@@ -2424,11 +2561,12 @@ mod tests {
         available_commands_from_initialize, available_commands_from_list,
         available_commands_from_session_update, cache_provider_api_key,
         forget_cached_provider_api_key, format_rpc_error, grok_agent_arguments, model_key_env_name,
-        normalize_model_id, normalize_model_provider, parse_grok_toml, plan_approval_params,
-        process_launch_key, read_provider_api_key, request_timeout, select_auth_method,
-        serialize_grok_toml, user_question_params, validate_cli_arguments,
-        validate_service_arguments, GrokAcpOptions, GrokCliService, GrokModelProviderInput,
-        INITIALIZE_TIMEOUT, REQUEST_TIMEOUT,
+        normalize_model_id, normalize_model_provider, normalized_session_update_message,
+        parse_grok_toml, plan_approval_params, process_launch_key, read_provider_api_key,
+        request_timeout, select_auth_method, serialize_grok_toml, user_question_params,
+        validate_cli_arguments, validate_service_arguments, GrokAcpOptions, GrokCliService,
+        GrokModelProviderInput, AUTHENTICATE_TIMEOUT, INITIALIZE_TIMEOUT, REQUEST_TIMEOUT,
+        SESSION_START_TIMEOUT,
     };
     use serde_json::json;
     use std::path::Path;
@@ -2598,6 +2736,54 @@ mod tests {
     }
 
     #[test]
+    fn normalizes_standard_and_xai_session_updates_for_the_desktop_event_stream() {
+        for method in [
+            "session/update",
+            "x.ai/session_notification",
+            "_x.ai/session/update",
+        ] {
+            let normalized = normalized_session_update_message(&json!({
+                "jsonrpc": "2.0",
+                "method": method,
+                "params": {
+                    "sessionId": "session-1",
+                    "update": { "sessionUpdate": "task_backgrounded", "task_id": "task-1" }
+                }
+            }))
+            .unwrap();
+            assert_eq!(normalized["method"], "session/update");
+            assert_eq!(normalized["params"]["sessionId"], "session-1");
+            assert_eq!(
+                normalized["params"]["update"]["sessionUpdate"],
+                "task_backgrounded"
+            );
+        }
+
+        let nested = normalized_session_update_message(&json!({
+            "jsonrpc": "2.0",
+            "method": "_x.ai/session_notification",
+            "params": {
+                "method": "x.ai/session_notification",
+                "params": {
+                    "sessionId": "session-2",
+                    "update": { "sessionUpdate": "subagent_spawned", "subagent_id": "child-1" }
+                }
+            }
+        }))
+        .unwrap();
+        assert_eq!(nested["params"]["sessionId"], "session-2");
+        assert_eq!(
+            nested["params"]["update"]["sessionUpdate"],
+            "subagent_spawned"
+        );
+        assert!(normalized_session_update_message(&json!({
+            "method": "session/request_permission",
+            "params": { "sessionId": "session-1" }
+        }))
+        .is_none());
+    }
+
+    #[test]
     fn session_launch_key_changes_only_when_runtime_configuration_changes() {
         let workspace = Path::new("/tmp/urgs");
         let base = GrokAcpOptions {
@@ -2621,10 +2807,14 @@ mod tests {
     }
 
     #[test]
-    fn initialize_has_a_longer_timeout_than_regular_acp_requests() {
+    fn startup_requests_have_network_tolerant_timeouts() {
         assert_eq!(request_timeout("initialize"), INITIALIZE_TIMEOUT);
-        assert_eq!(request_timeout("session/load"), REQUEST_TIMEOUT);
-        assert!(request_timeout("initialize") > request_timeout("session/load"));
+        assert_eq!(request_timeout("authenticate"), AUTHENTICATE_TIMEOUT);
+        assert_eq!(request_timeout("session/new"), SESSION_START_TIMEOUT);
+        assert_eq!(request_timeout("session/load"), SESSION_START_TIMEOUT);
+        assert_eq!(request_timeout("_x.ai/commands/list"), REQUEST_TIMEOUT);
+        assert!(request_timeout("authenticate") > request_timeout("session/new"));
+        assert!(request_timeout("session/new") > request_timeout("_x.ai/commands/list"));
     }
 
     #[test]
@@ -2634,7 +2824,7 @@ mod tests {
             sandbox_profile: Some("workspace-write".into()),
             ..Default::default()
         };
-        let interactive_args = grok_agent_arguments(Some("model-a"), &interactive).unwrap();
+        let interactive_args = grok_agent_arguments(Some("model-a"), &interactive, false).unwrap();
         assert!(!interactive_args
             .iter()
             .any(|arg| arg == "--permission-mode"));
@@ -2645,15 +2835,29 @@ mod tests {
             permission_mode: Some("bypassPermissions".into()),
             ..Default::default()
         };
-        assert!(grok_agent_arguments(Some("model-a"), &unrestricted)
+        assert!(grok_agent_arguments(Some("model-a"), &unrestricted, false)
             .unwrap()
             .iter()
             .any(|arg| arg == "--always-approve"));
+
+        let reauth = GrokAcpOptions {
+            reauth: Some(true),
+            ..Default::default()
+        };
+        assert!(grok_agent_arguments(Some("model-a"), &reauth, false)
+            .unwrap()
+            .iter()
+            .any(|arg| arg == "--reauth"));
+        assert!(!grok_agent_arguments(Some("model-a"), &reauth, true)
+            .unwrap()
+            .iter()
+            .any(|arg| arg == "--reauth"));
     }
 
     #[test]
     fn validates_cli_command_allowlist_and_limits() {
         assert!(validate_cli_arguments(&["models".to_string()]).is_ok());
+        assert!(validate_cli_arguments(&["doctor".to_string(), "--json".to_string()]).is_ok());
         assert!(validate_cli_arguments(&["mcp".to_string(), "list".to_string()]).is_ok());
         assert!(validate_cli_arguments(&[
             "--model".into(),

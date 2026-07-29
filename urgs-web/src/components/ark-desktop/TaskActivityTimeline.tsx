@@ -7,9 +7,9 @@ import type { ArkDesktopTask } from './types';
 type Tool = ArkDesktopTask['tools'][number];
 
 const getToolState = (status: string) => {
-    if (status === '已完成') return 'completed';
-    if (status === '失败') return 'failed';
-    if (status === '等待中') return 'pending';
+    if (/已完成|完成|成功|取消|completed|success|cancelled|canceled|done/i.test(status)) return 'completed';
+    if (/失败|错误|退出码|failed|error/i.test(status)) return 'failed';
+    if (/等待|pending/i.test(status)) return 'pending';
     return 'running';
 };
 

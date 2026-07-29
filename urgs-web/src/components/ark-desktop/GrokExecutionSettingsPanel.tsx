@@ -13,7 +13,8 @@ const Toggle: React.FC<{ checked: boolean; label: string; onChange: (checked: bo
 
 const GrokExecutionSettingsPanel: React.FC<GrokExecutionSettingsPanelProps> = ({ value, onChange }) => {
     const set = <K extends keyof GrokExecutionSettings>(key: K, next: GrokExecutionSettings[K]) => onChange({ ...value, [key]: next });
-    const dangerous = value.alwaysApprove || value.permissionMode === 'bypassPermissions';
+    const dangerous = value.permissionMode === 'bypassPermissions';
+    const isHeadless = value.engine === 'headless';
 
     return <div className="space-y-4">
         <div className="rounded-2xl border border-slate-200 p-5">
@@ -21,23 +22,19 @@ const GrokExecutionSettingsPanel: React.FC<GrokExecutionSettingsPanelProps> = ({
             <div className="grid gap-4 sm:grid-cols-2">
                 <Field label="执行模式" hint="ACP 支持流式步骤与逐次授权；Headless 开放完整 CLI 参数。"><select className={inputClass} value={value.engine} onChange={(event) => set('engine', event.target.value as GrokExecutionSettings['engine'])}><option value="acp">ACP 交互模式</option><option value="headless">CLI Headless 模式</option></select></Field>
                 <Field label="Reasoning Effort"><input className={inputClass} value={value.reasoningEffort} onChange={(event) => set('reasoningEffort', event.target.value)} placeholder="留空使用模型默认值" /></Field>
-                <Field label="输出格式"><select className={inputClass} value={value.outputFormat} onChange={(event) => set('outputFormat', event.target.value as GrokExecutionSettings['outputFormat'])}><option value="json">JSON</option><option value="plain">纯文本</option><option value="streaming-json">Streaming JSON</option></select></Field>
-                <Field label="权限模式"><select className={inputClass} value={value.permissionMode} onChange={(event) => set('permissionMode', event.target.value as GrokExecutionSettings['permissionMode'])}>{['default', 'acceptEdits', 'auto', 'dontAsk', 'bypassPermissions', 'plan'].map((option) => <option key={option} value={option}>{option}</option>)}</select></Field>
+                <Field label="权限模式" hint="其他持久化权限策略请在运行配置中设置。"><select className={inputClass} value={value.permissionMode} onChange={(event) => set('permissionMode', event.target.value as GrokExecutionSettings['permissionMode'])}><option value="default">请求批准（default）</option><option value="bypassPermissions">完全访问权限（bypassPermissions）</option></select></Field>
                 <Field label="Sandbox Profile"><input className={inputClass} value={value.sandboxProfile} onChange={(event) => set('sandboxProfile', event.target.value)} placeholder="留空使用默认沙箱" /></Field>
-                <Field label="最大轮数"><input type="number" min={0} className={inputClass} value={value.maxTurns} onChange={(event) => set('maxTurns', Number(event.target.value))} /></Field>
-                <Field label="Best of N"><input type="number" min={1} className={inputClass} value={value.bestOfN} onChange={(event) => set('bestOfN', Math.max(1, Number(event.target.value)))} /></Field>
+                {isHeadless && <><Field label="输出格式"><select className={inputClass} value={value.outputFormat} onChange={(event) => set('outputFormat', event.target.value as GrokExecutionSettings['outputFormat'])}><option value="json">JSON</option><option value="plain">纯文本</option><option value="streaming-json">Streaming JSON</option></select></Field><Field label="最大轮数"><input type="number" min={0} className={inputClass} value={value.maxTurns} onChange={(event) => set('maxTurns', Number(event.target.value))} /></Field></>}
             </div>
             {dangerous && <div className="mt-4 flex items-start gap-2 rounded-xl border border-red-200 bg-red-50 px-3 py-2.5 text-xs leading-5 text-red-700"><AlertTriangle size={15} className="mt-0.5 shrink-0" />当前配置允许智能体无需逐次确认执行本地操作，发起任务时会再次确认。</div>}
         </div>
 
-        <details className="rounded-2xl border border-slate-200 p-5" open>
+        {isHeadless && <><details className="rounded-2xl border border-slate-200 p-5" open>
             <summary className="cursor-pointer text-sm font-semibold text-slate-900">工具、权限与记忆</summary>
             <div className="mt-4 grid gap-4 sm:grid-cols-2">
-                <Toggle checked={value.check} label="完成后自检 (--check)" onChange={(checked) => set('check', checked)} />
                 <Toggle checked={value.noPlan} label="禁用计划模式 (--no-plan)" onChange={(checked) => set('noPlan', checked)} />
                 <Toggle checked={value.noSubagents} label="禁用子 Agent (--no-subagents)" onChange={(checked) => set('noSubagents', checked)} />
                 <Toggle checked={value.disableWebSearch} label="禁用 Web 搜索" onChange={(checked) => set('disableWebSearch', checked)} />
-                <Toggle checked={value.alwaysApprove} label="自动批准全部工具" onChange={(checked) => set('alwaysApprove', checked)} />
                 <Toggle checked={value.verbatim} label="原样发送 Prompt" onChange={(checked) => set('verbatim', checked)} />
                 <Field label="记忆模式"><select className={inputClass} value={value.memoryMode} onChange={(event) => set('memoryMode', event.target.value as GrokExecutionSettings['memoryMode'])}><option value="default">默认</option><option value="disabled">禁用</option><option value="experimental">实验性跨会话记忆</option></select></Field>
                 <Field label="允许的工具"><input className={inputClass} value={value.allowedTools} onChange={(event) => set('allowedTools', event.target.value)} placeholder="逗号分隔" /></Field>
@@ -72,27 +69,20 @@ const GrokExecutionSettingsPanel: React.FC<GrokExecutionSettingsPanelProps> = ({
                 <Toggle checked={value.useWorktree} label="在新 Worktree 中执行" onChange={(checked) => set('useWorktree', checked)} />
                 {value.useWorktree && <><Field label="Worktree 名称"><input className={inputClass} value={value.worktreeName} onChange={(event) => set('worktreeName', event.target.value)} /></Field><Field label="Worktree 基准"><input className={inputClass} value={value.worktreeRef} onChange={(event) => set('worktreeRef', event.target.value)} /></Field></>}
             </div>
-        </details>
+        </details></>}
 
-        <details className="rounded-2xl border border-slate-200 p-5">
-            <summary className="cursor-pointer text-sm font-semibold text-slate-900">认证与调试</summary>
+        <details className="rounded-2xl border border-slate-200 p-5" open={!isHeadless}>
+            <summary className="cursor-pointer text-sm font-semibold text-slate-900">{isHeadless ? '认证与调试' : 'ACP 进程与诊断'}</summary>
             <div className="mt-4 grid gap-4 sm:grid-cols-2">
-                <Toggle checked={value.oauth} label="使用 OAuth" onChange={(checked) => set('oauth', checked)} />
-                <Toggle checked={value.reauth} label="ACP 启动前重新认证" onChange={(checked) => set('reauth', checked)} />
+                {isHeadless ? <Toggle checked={value.oauth} label="使用 OAuth" onChange={(checked) => set('oauth', checked)} /> : <Toggle checked={value.reauth} label="启动前重新认证" onChange={(checked) => set('reauth', checked)} />}
                 <Toggle checked={value.debug} label="启用 Debug" onChange={(checked) => set('debug', checked)} />
-                <Field label="ACP Agent Profile"><input className={inputClass} value={value.agentProfile} onChange={(event) => set('agentProfile', event.target.value)} /></Field>
-                <Field label="临时插件目录" hint="每行一个目录，仅对本次 ACP 进程生效。"><textarea className={inputClass} rows={4} value={value.pluginDirs} onChange={(event) => set('pluginDirs', event.target.value)} /></Field>
-                <Field label="Leader 连接模式"><select className={inputClass} value={value.leaderMode} onChange={(event) => set('leaderMode', event.target.value as GrokExecutionSettings['leaderMode'])}><option value="default">配置默认值</option><option value="leader">连接共享 Leader</option><option value="standalone">独立进程</option></select></Field>
-                <Field label="任务服务 WS Origin"><input className={inputClass} value={value.grokWsOrigin} onChange={(event) => set('grokWsOrigin', event.target.value)} /></Field>
-                <Field label="任务服务 WS URL"><input className={inputClass} value={value.grokWsUrl} onChange={(event) => set('grokWsUrl', event.target.value)} /></Field>
-                <Field label="CLI Chat Proxy URL"><input className={inputClass} value={value.cliChatProxyUrl} onChange={(event) => set('cliChatProxyUrl', event.target.value)} /></Field>
-                <Field label="服务 API Base URL"><input className={inputClass} value={value.xaiApiBaseUrl} onChange={(event) => set('xaiApiBaseUrl', event.target.value)} /></Field>
+                {!isHeadless && <><Field label="ACP Agent Profile"><input className={inputClass} value={value.agentProfile} onChange={(event) => set('agentProfile', event.target.value)} /></Field><Field label="临时插件目录" hint="每行一个目录，仅对本次 ACP 进程生效。"><textarea className={inputClass} rows={4} value={value.pluginDirs} onChange={(event) => set('pluginDirs', event.target.value)} /></Field><Field label="Leader 连接模式"><select className={inputClass} value={value.leaderMode} onChange={(event) => set('leaderMode', event.target.value as GrokExecutionSettings['leaderMode'])}><option value="default">配置默认值</option><option value="leader">连接共享 Leader</option><option value="standalone">独立进程</option></select></Field><Field label="任务服务 WS Origin"><input className={inputClass} value={value.grokWsOrigin} onChange={(event) => set('grokWsOrigin', event.target.value)} /></Field><Field label="任务服务 WS URL"><input className={inputClass} value={value.grokWsUrl} onChange={(event) => set('grokWsUrl', event.target.value)} /></Field><Field label="CLI Chat Proxy URL"><input className={inputClass} value={value.cliChatProxyUrl} onChange={(event) => set('cliChatProxyUrl', event.target.value)} /></Field><Field label="服务 API Base URL"><input className={inputClass} value={value.xaiApiBaseUrl} onChange={(event) => set('xaiApiBaseUrl', event.target.value)} /></Field></>}
                 <Field label="Debug 文件"><input className={inputClass} value={value.debugFile} onChange={(event) => set('debugFile', event.target.value)} /></Field>
                 <Field label="Leader Socket"><input className={inputClass} value={value.leaderSocket} onChange={(event) => set('leaderSocket', event.target.value)} /></Field>
             </div>
         </details>
 
-        <div className="flex items-start gap-2 rounded-xl border border-blue-200 bg-blue-50 px-3 py-2.5 text-xs leading-5 text-blue-700"><ShieldCheck size={15} className="mt-0.5 shrink-0" />ACP 模式只应用模型、Agent/技能规则并保留前台授权；其余 CLI 专属参数在 Headless 模式下生效。</div>
+        <div className="flex items-start gap-2 rounded-xl border border-blue-200 bg-blue-50 px-3 py-2.5 text-xs leading-5 text-blue-700"><ShieldCheck size={15} className="mt-0.5 shrink-0" />{isHeadless ? 'Headless 适合自动化和结构化输出，不提供 ACP 的实时工具时间线与逐次授权界面。' : '当前只显示 ACP 会实际应用的选项；流式步骤、工具调用和权限请求会在会话中实时呈现。'}</div>
     </div>;
 };
 

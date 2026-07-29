@@ -72,7 +72,7 @@ const GrokCliCenter: React.FC<GrokCliCenterProps> = ({ workspace, onError }) => 
     const [leaderSocket, setLeaderSocket] = useState('');
     const [services, setServices] = useState<GrokCliServiceInfo[]>([]);
 
-    const categoryActions = useMemo(() => GROK_CLI_ACTIONS.filter((action) => action.category === category && action.id !== 'logout'), [category]);
+    const categoryActions = useMemo(() => GROK_CLI_ACTIONS.filter((action) => action.category === category), [category]);
     const action = GROK_CLI_ACTIONS.find((item) => item.id === actionId) || categoryActions[0];
 
     const refreshServices = async () => {
@@ -114,7 +114,7 @@ const GrokCliCenter: React.FC<GrokCliCenterProps> = ({ workspace, onError }) => 
 
     const executeArguments = async (arguments_: string[], timeoutSeconds = 120, confirmation?: string) => {
         if (confirmation && !window.confirm(confirmation)) return;
-        if (!workspace && !['version', 'models', 'update', 'setup', 'completions', 'help'].includes(arguments_[0])) {
+        if (!workspace && !['version', 'models', 'doctor', 'update', 'setup', 'logout', 'completions', 'help'].includes(arguments_[0])) {
             onError('该 CLI 功能需要工作区，请先在设置中选择本地目录');
             return;
         }

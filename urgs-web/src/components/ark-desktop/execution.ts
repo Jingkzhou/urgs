@@ -22,7 +22,6 @@ export const buildGrokHeadlessArguments = (
     appendValue(arguments_, '--permission-mode', settings.permissionMode);
     appendValue(arguments_, '--sandbox', settings.sandboxProfile);
     appendValue(arguments_, '--max-turns', settings.maxTurns);
-    if (settings.bestOfN > 1) appendValue(arguments_, '--best-of-n', settings.bestOfN);
     appendValue(arguments_, '--agent', settings.agentName);
     appendValue(arguments_, '--agents', settings.inlineAgentsJson);
     appendLines(arguments_, '--allow', settings.allowRules);
@@ -35,14 +34,13 @@ export const buildGrokHeadlessArguments = (
     appendValue(arguments_, '--output-format', settings.outputFormat);
     appendValue(arguments_, '--debug-file', settings.debugFile);
     appendValue(arguments_, '--leader-socket', settings.leaderSocket);
-    if (settings.check) arguments_.push('--check');
     if (settings.noPlan) arguments_.push('--no-plan');
     if (settings.noSubagents) arguments_.push('--no-subagents');
     if (settings.disableWebSearch) arguments_.push('--disable-web-search');
     if (settings.memoryMode === 'disabled') arguments_.push('--no-memory');
     if (settings.memoryMode === 'experimental') arguments_.push('--experimental-memory');
     if (settings.verbatim) arguments_.push('--verbatim');
-    if (settings.alwaysApprove) arguments_.push('--always-approve');
+    if (settings.permissionMode === 'bypassPermissions') arguments_.push('--always-approve');
     if (settings.oauth) arguments_.push('--oauth');
     if (settings.debug) arguments_.push('--debug');
 

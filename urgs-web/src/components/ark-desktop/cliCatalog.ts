@@ -60,6 +60,8 @@ export const GROK_CLI_ACTIONS: GrokCliAction[] = [
     { id: 'version', category: 'runtime', title: '版本详情', description: '读取内置运行组件的结构化版本信息。', baseArguments: ['version', '--json'] },
     { id: 'models', category: 'runtime', title: '可用模型', description: '读取当前账号和运行时可使用的模型列表。', baseArguments: ['models'], timeoutSeconds: 180 },
     { id: 'inspect', category: 'runtime', title: '检查生效配置', description: '检查当前工作区发现的规则、配置、插件和 MCP。', baseArguments: ['inspect', '--json'] },
+    { id: 'doctor', category: 'runtime', title: '运行环境诊断', description: '检查终端、剪贴板、颜色和输入支持并输出结构化报告。', baseArguments: ['doctor', '--json'] },
+    { id: 'doctor-fix', category: 'runtime', title: '修复运行环境', description: '执行内置诊断建议的自动修复。', baseArguments: ['doctor', 'fix'], confirmation: '这会修改本地运行环境配置，确认执行自动修复？' },
     { id: 'setup-preview', category: 'runtime', title: '预览托管配置', description: '从任务服务获取托管配置但不写入本机。', baseArguments: ['setup', '--json'], timeoutSeconds: 180 },
     { id: 'setup-install', category: 'runtime', title: '安装托管配置', description: '获取并安装账号下发的运行配置。', baseArguments: ['setup'], confirmation: '这会写入本地运行配置，确认继续？', timeoutSeconds: 180 },
     { id: 'update-check', category: 'runtime', title: '检查组件更新', description: '只检查内置命令组件新版本；安装包升级仍由 URGS 更新器完成。', baseArguments: ['update', '--check', '--json'], timeoutSeconds: 180 },
@@ -87,7 +89,7 @@ export const GROK_CLI_ACTIONS: GrokCliAction[] = [
     { id: 'plugin-validate', category: 'plugins', title: '校验插件', description: '校验插件清单与目录结构。', baseArguments: ['plugin', 'validate'], fields: [text('path', '插件目录', { positional: true, placeholder: '默认当前工作区' })] },
     { id: 'plugin-tag', category: 'plugins', title: '创建插件版本标签', description: '根据插件清单版本创建 Git 标签。', baseArguments: ['plugin', 'tag'], fields: [text('path', '插件目录', { positional: true, placeholder: '默认当前工作区' }), bool('push', '推送标签', '--push'), bool('force', '强制执行', '--force'), bool('dryRun', '仅预览', '--dry-run', true)], confirmation: '关闭“仅预览”后会创建 Git 标签，确认执行？' },
     { id: 'market-list', category: 'plugins', title: '市场源列表', description: '列出插件市场源及其插件。', baseArguments: ['plugin', 'marketplace', 'list', '--json'] },
-    { id: 'market-add', category: 'plugins', title: '添加市场源', description: '添加 Git、GitHub 或本地插件市场源。', baseArguments: ['plugin', 'marketplace', 'add'], fields: [text('url', '来源', { positional: true, required: true })], confirmation: '确认添加该插件市场源？' },
+    { id: 'market-add', category: 'plugins', title: '添加市场源', description: '添加 Git、GitHub 或本地插件市场源。', baseArguments: ['plugin', 'marketplace', 'add'], fields: [text('url', '来源', { positional: true, required: true }), bool('force', '跳过连通性探测', '--force')], confirmation: '确认添加该插件市场源？' },
     { id: 'market-remove', category: 'plugins', title: '移除市场源', description: '移除市场源并卸载其插件。', baseArguments: ['plugin', 'marketplace', 'remove'], fields: [text('url', '来源', { positional: true, required: true })], confirmation: '这会移除市场源并卸载其插件，确认继续？' },
     { id: 'market-update', category: 'plugins', title: '刷新市场源', description: '刷新指定市场源；留空刷新全部。', baseArguments: ['plugin', 'marketplace', 'update'], fields: [text('name', '来源', { positional: true, placeholder: '留空刷新全部' })], timeoutSeconds: 300 },
 

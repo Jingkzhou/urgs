@@ -127,11 +127,9 @@ export interface ArkDesktopModelProvider {
 export interface GrokExecutionSettings {
     engine: 'acp' | 'headless';
     reasoningEffort: string;
-    permissionMode: 'default' | 'acceptEdits' | 'auto' | 'dontAsk' | 'bypassPermissions' | 'plan';
+    permissionMode: 'default' | 'bypassPermissions';
     sandboxProfile: string;
     maxTurns: number;
-    bestOfN: number;
-    check: boolean;
     noPlan: boolean;
     noSubagents: boolean;
     disableWebSearch: boolean;

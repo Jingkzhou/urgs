@@ -104,8 +104,8 @@ export const getGrokRuntimeStatus = () => invokeGrok<GrokRuntimeStatus>('grok_ru
 export const listGrokAvailableCommands = (workspace: string) =>
     invokeGrok<GrokAvailableCommand[]>('grok_available_commands', { workspace });
 
-export const prepareGrokRuntime = (workspace: string, model: string, options?: GrokAcpOptions) =>
-    invokeGrok<void>('grok_runtime_prepare', { workspace, model, options: options || null });
+export const prepareGrokRuntime = (workspace: string, model: string, options?: GrokAcpOptions, rules?: string) =>
+    invokeGrok<void>('grok_runtime_prepare', { workspace, model, options: options || null, rules: rules || null });
 
 export const runGrokCli = (arguments_: string[], workspace?: string, timeoutSeconds = 120) =>
     invokeGrok<GrokCliResult>('grok_cli_run', {

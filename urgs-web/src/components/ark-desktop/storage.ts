@@ -8,6 +8,7 @@ import type { ArkDesktopSnapshot } from './types';
 const STORAGE_KEY = 'urgs_ark_desktop_grok_snapshot_v3';
 const LEGACY_STORAGE_KEY = 'urgs_ark_desktop_grok_snapshot_v2';
 const MAX_TASK_HISTORY = 50;
+const settledActivityPattern = /已完成|完成|成功|失败|取消|退出码|completed|success|failed|cancelled|canceled|done/i;
 
 const clone = <T>(value: T): T => JSON.parse(JSON.stringify(value));
 
@@ -32,11 +33,9 @@ export const createDefaultArkDesktopSnapshot = (): ArkDesktopSnapshot => ({
         execution: {
             engine: 'acp',
             reasoningEffort: '',
-            permissionMode: 'dontAsk',
+            permissionMode: 'default',
             sandboxProfile: '',
             maxTurns: 0,
-            bestOfN: 1,
-            check: false,
             noPlan: false,
             noSubagents: false,
             disableWebSearch: false,
@@ -107,9 +106,22 @@ export const loadArkDesktopSnapshot = (): ArkDesktopSnapshot => {
             }));
         const tasks = Array.isArray(stored.tasks) ? stored.tasks.slice(0, MAX_TASK_HISTORY).map((task) => {
             const interrupted = task.status === 'running';
+            const taskStatus = interrupted ? 'failed' as const : task.status;
+            const taskIsTerminal = ['completed', 'failed', 'cancelled'].includes(taskStatus);
+            const bypassPermissions = task.alwaysApprove || task.permissionMode === 'bypassPermissions';
+            const terminalToolStatus = taskStatus === 'failed' ? '失败' : taskStatus === 'cancelled' ? '已取消' : '已完成';
             return {
                 ...task,
                 ...(interrupted ? { status: 'failed' as const, error: '桌面客户端已重新启动，本次执行已中断', updatedAt: Date.now() } : {}),
+                tools: (task.tools || []).map((tool) => taskIsTerminal
+                    && !settledActivityPattern.test(tool.status)
+                    && !['background_task', 'monitor', 'goal'].includes(tool.kind || '')
+                    ? { ...tool, status: terminalToolStatus, updatedAt: Date.now() }
+                    : tool),
+                permissionMode: bypassPermissions
+                    ? 'bypassPermissions' as const
+                    : 'default' as const,
+                alwaysApprove: false,
                 runtimeProcessId: undefined,
             };
         }) : [];
@@ -136,7 +148,14 @@ export const loadArkDesktopSnapshot = (): ArkDesktopSnapshot => {
                 modelProviders,
                 defaultAgentId: validAgentIds.has(stored.settings?.defaultAgentId || '') ? stored.settings!.defaultAgentId : defaults.settings.defaultAgentId,
                 defaultSkillIds: (stored.settings?.defaultSkillIds || []).filter((id) => validSkillIds.has(id)),
-                execution: { ...defaults.settings.execution, ...(stored.settings?.execution || {}) },
+                execution: {
+                    ...defaults.settings.execution,
+                    ...(stored.settings?.execution || {}),
+                    permissionMode: stored.settings?.execution?.alwaysApprove || stored.settings?.execution?.permissionMode === 'bypassPermissions'
+                        ? 'bypassPermissions'
+                        : defaults.settings.execution.permissionMode,
+                    alwaysApprove: false,
+                },
             },
         };
         if (isLegacy) localStorage.setItem(STORAGE_KEY, JSON.stringify(snapshot));

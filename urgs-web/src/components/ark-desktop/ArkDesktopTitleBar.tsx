@@ -1,5 +1,5 @@
 import React from 'react';
-import { Folder, PanelLeft, Settings } from 'lucide-react';
+import { PanelLeft, Settings } from 'lucide-react';
 
 export const ArkDesktopSidebarToggle: React.FC<{
     collapsed: boolean;
@@ -20,12 +20,15 @@ export const ArkDesktopTitleContent: React.FC<{
     title: string;
     settingsActive: boolean;
     onOpenSettings: () => void;
+    icon: React.ReactNode;
+    status?: React.ReactNode;
     planControl?: React.ReactNode;
-}> = ({ title, settingsActive, onOpenSettings, planControl }) => (
+}> = ({ title, settingsActive, onOpenSettings, icon, status, planControl }) => (
     <div className="flex min-w-0 flex-1 items-center justify-between gap-4 px-4">
         <div data-tauri-drag-region className="flex min-w-0 items-center gap-2.5">
-            <Folder size={16} strokeWidth={1.8} className="shrink-0 text-[#44454a]" />
+            <span className="shrink-0 text-[#44454a]">{icon}</span>
             <div className="truncate text-[16px] font-semibold tracking-[-0.02em] text-[#303136]">{title}</div>
+            {status}
         </div>
         <div className="flex shrink-0 items-center gap-1">
             {planControl}
