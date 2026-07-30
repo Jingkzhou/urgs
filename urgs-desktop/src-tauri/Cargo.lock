@@ -4472,6 +4472,7 @@ checksum = "8ecb6da28b8a351d773b68d5825ac39017e680750f980f3a1a85cd8dd28a47c1"
 name = "urgs-desktop"
 version = "0.1.0"
 dependencies = [
+ "base64 0.22.1",
  "keyring",
  "security-framework 3.7.0",
  "serde",
@@ -4487,6 +4488,7 @@ dependencies = [
  "tokio",
  "toml 0.8.2",
  "url",
+ "uuid",
 ]
 
 [[package]]

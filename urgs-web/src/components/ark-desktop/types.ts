@@ -83,6 +83,7 @@ export interface ArkDesktopTask {
     skillIds: string[];
     workspace: string;
     attachmentPaths: string[];
+    attachmentGrantIds?: string[];
     engine?: 'acp' | 'headless';
     model?: string;
     permissionMode?: GrokExecutionSettings['permissionMode'];

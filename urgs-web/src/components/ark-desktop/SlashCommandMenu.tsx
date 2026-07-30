@@ -9,6 +9,7 @@ import {
     FileSearch,
     GitPullRequest,
     Info,
+    Network,
     Repeat2,
     Search,
     ShieldCheck,
@@ -36,6 +37,8 @@ const commandDescriptions: Record<string, string> = {
     'session-info': '查看当前模型、轮次和上下文信息',
     feedback: '提交当前会话的反馈',
     goal: '设置、查看、暂停或恢复自主目标',
+    workflow: '启动或管理运行时工作流',
+    'deep-research': '并行检索、交叉验证并生成研究报告',
     loop: '按指定间隔重复执行提示词',
 };
 
@@ -48,6 +51,8 @@ const commandLabels: Record<string, string> = {
     context: '上下文',
     'session-info': '会话信息',
     goal: '目标',
+    workflow: '工作流',
+    'deep-research': '深度研究',
     'check-work': '检查工作',
     'code-review': '代码审查',
     'create-skill': '创建技能',
@@ -73,6 +78,8 @@ const commandIcon = (name: string) => {
     if (name === 'always-approve') return ShieldCheck;
     if (name === 'session-info') return Info;
     if (name === 'goal') return Target;
+    if (name === 'workflow') return Network;
+    if (name === 'deep-research') return FileSearch;
     if (name.includes('review')) return GitPullRequest;
     if (name.includes('check')) return FileSearch;
     if (name.includes('skill')) return WandSparkles;

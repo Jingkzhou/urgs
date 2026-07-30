@@ -53,6 +53,7 @@ interface StartTaskInput {
     agentId?: string;
     skillIds?: string[];
     attachmentPaths?: string[];
+    attachmentGrantIds?: string[];
     automationId?: string;
 }
 
@@ -693,6 +694,7 @@ export const useArkDesktopRuntime = () => {
         agentId,
         skillIds = [],
         attachmentPaths = [],
+        attachmentGrantIds = [],
         automationId,
     }: StartTaskInput) => {
         const current = snapshotRef.current;
@@ -725,6 +727,7 @@ export const useArkDesktopRuntime = () => {
             skillIds: resolvedSkillIds,
             workspace,
             attachmentPaths,
+            attachmentGrantIds,
             engine: current.settings.execution.engine,
             model: current.settings.grokModel || undefined,
             permissionMode: current.settings.execution.permissionMode,
@@ -805,7 +808,7 @@ export const useArkDesktopRuntime = () => {
                         await cancelGrokPrompt(session.sessionId).catch(() => undefined);
                         return;
                     }
-                    await sendGrokPrompt(session.sessionId, buildTaskPrompt(effectivePrompt, attachmentPaths));
+                    await sendGrokPrompt(session.sessionId, effectivePrompt, attachmentPaths, attachmentGrantIds);
                 }
                 updateTask(taskId, (value) => cancelledTaskIdsRef.current.has(taskId)
                     ? value
@@ -988,6 +991,7 @@ export const useArkDesktopRuntime = () => {
                     agentId: task.agentId,
                     skillIds: task.skillIds,
                     attachmentPaths: task.attachmentPaths,
+                    attachmentGrantIds: task.attachmentGrantIds,
                     automationId: task.automationId,
                 });
                 setSnapshot((current) => ({

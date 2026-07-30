@@ -146,8 +146,23 @@ export const createGrokSession = (workspace: string, rules?: string, model?: str
 export const loadGrokSession = (sessionId: string, workspace: string, rules?: string, model?: string, options?: GrokAcpOptions) =>
     invokeGrok<GrokSession>('grok_load_session', { sessionId, workspace, rules: rules || null, model: model || null, options: options || null });
 
-export const sendGrokPrompt = (sessionId: string, prompt: string) =>
-    invokeGrok<void>('grok_send_prompt', { sessionId, prompt });
+export const sendGrokPrompt = (
+    sessionId: string,
+    prompt: string,
+    attachments: string[] = [],
+    attachmentGrants: string[] = [],
+) =>
+    invokeGrok<void>('grok_send_prompt', {
+        sessionId,
+        prompt,
+        attachments: attachments.length > 0 ? attachments : null,
+        attachmentGrants: attachmentGrants.length > 0 ? attachmentGrants : null,
+    });
+
+export interface GrokPromptAttachmentSelection {
+    paths: string[];
+    grantId?: string;
+}
 
 export const setGrokSessionModel = (sessionId: string, model: string) =>
     invokeGrok<void>('grok_session_set_model', { sessionId, model });
@@ -181,14 +196,7 @@ export const chooseGrokWorkspace = async () => {
 
 export const chooseGrokAttachments = async () => {
     assertDesktopRuntime();
-    const { open } = await import('@tauri-apps/plugin-dialog');
-    const selected = await open({
-        directory: false,
-        multiple: true,
-        title: '选择任务附件',
-    });
-    if (!selected) return [];
-    return Array.isArray(selected) ? selected : [selected];
+    return invokeGrok<GrokPromptAttachmentSelection>('grok_pick_prompt_attachments');
 };
 
 export const subscribeGrokEvents = async (listener: (event: GrokBridgeEvent) => void) => {

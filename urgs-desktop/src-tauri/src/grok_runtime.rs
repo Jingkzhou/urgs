@@ -1,16 +1,19 @@
+use base64::{engine::general_purpose::STANDARD as BASE64_STANDARD, Engine as _};
 use keyring::Entry;
 use serde::{Deserialize, Serialize};
 use serde_json::{json, Value};
-use std::collections::HashMap;
+use std::collections::{HashMap, HashSet};
 use std::fs;
 use std::path::{Path, PathBuf};
 use std::sync::atomic::{AtomicBool, AtomicU64, Ordering};
 use std::sync::{Arc, Mutex, OnceLock};
 use std::time::{Duration, SystemTime, UNIX_EPOCH};
 use tauri::{AppHandle, Emitter, Manager, State};
+use tauri_plugin_dialog::DialogExt;
 use tauri_plugin_shell::process::{CommandChild, CommandEvent};
 use tauri_plugin_shell::ShellExt;
 use tokio::sync::{oneshot, Mutex as AsyncMutex};
+use uuid::Uuid;
 
 const GROK_EVENT_NAME: &str = "grok-event";
 const REQUEST_TIMEOUT: Duration = Duration::from_secs(30);
@@ -21,6 +24,11 @@ const MODEL_PROVIDER_FILE: &str = "model-providers.json";
 const MODEL_CREDENTIAL_SERVICE: &str = "com.urgs.desktop.grok-model";
 const MODEL_KEY_AUTHORIZATION_REQUIRED: &str = "MODEL_KEY_AUTHORIZATION_REQUIRED:";
 const OFFLINE_AUTH_FILE: &str = "urgs-offline-auth.json";
+const MAX_PROMPT_ATTACHMENTS: usize = 20;
+const MAX_PROMPT_ATTACHMENT_BYTES: u64 = 10 * 1024 * 1024;
+const MAX_PROMPT_ATTACHMENTS_TOTAL_BYTES: u64 = 25 * 1024 * 1024;
+const PROMPT_ATTACHMENT_GRANT_TTL_SECONDS: u64 = 60 * 60;
+const MAX_PROMPT_ATTACHMENT_GRANTS: usize = 64;
 static PROCESS_SEQUENCE: AtomicU64 = AtomicU64::new(1);
 static MODEL_API_KEY_CACHE: OnceLock<Mutex<HashMap<String, String>>> = OnceLock::new();
 #[cfg(target_os = "macos")]
@@ -186,11 +194,24 @@ struct PendingPlanApproval {
     request_id: Value,
 }
 
+struct PromptAttachmentGrant {
+    paths: Vec<PathBuf>,
+    created_at: u64,
+}
+
+#[derive(Debug, Serialize)]
+#[serde(rename_all = "camelCase")]
+pub struct GrokPromptAttachmentSelection {
+    paths: Vec<String>,
+    grant_id: Option<String>,
+}
+
 pub struct GrokRuntimeState {
     startup: AsyncMutex<()>,
     prepared_process: Mutex<Option<Arc<GrokProcess>>>,
     session_processes: Mutex<HashMap<String, Arc<GrokProcess>>>,
     cli_services: Mutex<HashMap<String, Arc<GrokCliService>>>,
+    prompt_attachment_grants: Mutex<HashMap<String, PromptAttachmentGrant>>,
     cli_service_sequence: AtomicU64,
 }
 
@@ -201,6 +222,7 @@ impl Default for GrokRuntimeState {
             prepared_process: Mutex::new(None),
             session_processes: Mutex::new(HashMap::new()),
             cli_services: Mutex::new(HashMap::new()),
+            prompt_attachment_grants: Mutex::new(HashMap::new()),
             cli_service_sequence: AtomicU64::new(1),
         }
     }
@@ -1222,6 +1244,143 @@ fn validate_workspace(workspace: &str) -> Result<PathBuf, String> {
         return Err("所选路径不是目录".to_string());
     }
     Ok(canonical)
+}
+
+fn current_unix_seconds() -> u64 {
+    SystemTime::now()
+        .duration_since(UNIX_EPOCH)
+        .unwrap_or_default()
+        .as_secs()
+}
+
+fn build_prompt_content(prompt: &str, attachments: Vec<PathBuf>) -> Result<Vec<Value>, String> {
+    let prompt = prompt.trim();
+    if prompt.is_empty() {
+        return Err("请输入要发送给智能体的内容".to_string());
+    }
+    if attachments.len() > MAX_PROMPT_ATTACHMENTS {
+        return Err(format!("单次最多添加 {MAX_PROMPT_ATTACHMENTS} 个本地文件"));
+    }
+
+    let mut content = vec![json!({ "type": "text", "text": prompt })];
+    let mut seen = HashSet::new();
+    let mut total_size = 0_u64;
+    for candidate in attachments {
+        if !candidate.is_absolute() {
+            return Err("附件必须是本地绝对路径".to_string());
+        }
+        let canonical = candidate
+            .canonicalize()
+            .map_err(|error| format!("无法访问附件 {}: {error}", candidate.display()))?;
+        if !canonical.is_file() {
+            return Err(format!("附件不是文件: {}", canonical.display()));
+        }
+        if !seen.insert(canonical.clone()) {
+            continue;
+        }
+        let size = fs::metadata(&canonical)
+            .map_err(|error| format!("无法读取附件信息 {}: {error}", canonical.display()))?
+            .len();
+        if size > MAX_PROMPT_ATTACHMENT_BYTES {
+            return Err(format!(
+                "附件超过单文件 10 MB 限制: {}",
+                canonical.display()
+            ));
+        }
+        total_size = total_size.saturating_add(size);
+        if total_size > MAX_PROMPT_ATTACHMENTS_TOTAL_BYTES {
+            return Err("附件总大小不能超过 25 MB".to_string());
+        }
+        let bytes = fs::read(&canonical)
+            .map_err(|error| format!("无法读取附件 {}: {error}", canonical.display()))?;
+        let uri = url::Url::from_file_path(&canonical)
+            .map_err(|_| format!("无法生成附件 URI: {}", canonical.display()))?
+            .to_string();
+        match String::from_utf8(bytes) {
+            Ok(text) => content.push(json!({
+                "type": "resource",
+                "resource": {
+                    "uri": uri,
+                    "mimeType": "text/plain",
+                    "text": text
+                }
+            })),
+            Err(error) => content.push(json!({
+                "type": "resource",
+                "resource": {
+                    "uri": uri,
+                    "mimeType": "application/octet-stream",
+                    "blob": BASE64_STANDARD.encode(error.into_bytes())
+                }
+            })),
+        }
+    }
+    Ok(content)
+}
+
+fn authorize_prompt_attachments(
+    state: &GrokRuntimeState,
+    attachments: Option<Vec<String>>,
+    attachment_grants: Option<Vec<String>>,
+) -> Result<Vec<PathBuf>, String> {
+    let requested = attachments.unwrap_or_default();
+    let grant_ids = attachment_grants.unwrap_or_default();
+    if requested.is_empty() {
+        return Ok(Vec::new());
+    }
+    if grant_ids.is_empty() {
+        return Err("附件授权已失效，请重新选择本地文件".to_string());
+    }
+
+    let now = current_unix_seconds();
+    let mut grants = state
+        .prompt_attachment_grants
+        .lock()
+        .map_err(|_| "附件授权列表锁不可用".to_string())?;
+    grants.retain(|_, grant| {
+        now.saturating_sub(grant.created_at) <= PROMPT_ATTACHMENT_GRANT_TTL_SECONDS
+    });
+
+    let mut allowed = HashSet::new();
+    for grant_id in &grant_ids {
+        if let Some(grant) = grants.get(grant_id) {
+            allowed.extend(grant.paths.iter().cloned());
+        }
+    }
+    if allowed.is_empty() {
+        return Err("附件授权已失效，请重新选择本地文件".to_string());
+    }
+
+    let mut authorized = Vec::new();
+    let mut seen = HashSet::new();
+    for requested_path in requested {
+        let candidate = PathBuf::from(requested_path.trim());
+        if requested_path.trim().is_empty() || !candidate.is_absolute() {
+            return Err("附件必须是本地绝对路径".to_string());
+        }
+        let canonical = candidate
+            .canonicalize()
+            .map_err(|error| format!("无法访问附件 {}: {error}", candidate.display()))?;
+        if !allowed.contains(&canonical) {
+            return Err(format!(
+                "附件未经过本次原生文件选择授权: {}",
+                canonical.display()
+            ));
+        }
+        if seen.insert(canonical.clone()) {
+            authorized.push(canonical);
+        }
+    }
+
+    Ok(authorized)
+}
+
+fn consume_prompt_attachment_grants(state: &GrokRuntimeState, grant_ids: &[String]) {
+    if let Ok(mut grants) = state.prompt_attachment_grants.lock() {
+        for grant_id in grant_ids {
+            grants.remove(grant_id);
+        }
+    }
 }
 
 fn grok_config_path(
@@ -2467,24 +2626,100 @@ pub async fn grok_load_session(
 }
 
 #[tauri::command]
+pub async fn grok_pick_prompt_attachments(
+    app: AppHandle,
+    state: State<'_, GrokRuntimeState>,
+) -> Result<GrokPromptAttachmentSelection, String> {
+    let selected = app
+        .dialog()
+        .file()
+        .set_title("选择任务附件")
+        .blocking_pick_files()
+        .unwrap_or_default();
+    if selected.len() > MAX_PROMPT_ATTACHMENTS {
+        return Err(format!("单次最多添加 {MAX_PROMPT_ATTACHMENTS} 个本地文件"));
+    }
+
+    let mut paths = Vec::new();
+    let mut seen = HashSet::new();
+    for selected_path in selected {
+        let candidate = selected_path
+            .into_path()
+            .map_err(|error| format!("无法读取所选附件路径: {error}"))?;
+        let canonical = candidate
+            .canonicalize()
+            .map_err(|error| format!("无法访问附件 {}: {error}", candidate.display()))?;
+        if !canonical.is_file() {
+            return Err(format!("附件不是文件: {}", canonical.display()));
+        }
+        if seen.insert(canonical.clone()) {
+            paths.push(canonical);
+        }
+    }
+    if paths.is_empty() {
+        return Ok(GrokPromptAttachmentSelection {
+            paths: Vec::new(),
+            grant_id: None,
+        });
+    }
+
+    let grant_id = Uuid::new_v4().to_string();
+    let now = current_unix_seconds();
+    let mut grants = state
+        .prompt_attachment_grants
+        .lock()
+        .map_err(|_| "附件授权列表锁不可用".to_string())?;
+    grants.retain(|_, grant| {
+        now.saturating_sub(grant.created_at) <= PROMPT_ATTACHMENT_GRANT_TTL_SECONDS
+    });
+    while grants.len() >= MAX_PROMPT_ATTACHMENT_GRANTS {
+        let Some(oldest_id) = grants
+            .iter()
+            .min_by_key(|(_, grant)| grant.created_at)
+            .map(|(id, _)| id.clone())
+        else {
+            break;
+        };
+        grants.remove(&oldest_id);
+    }
+    grants.insert(
+        grant_id.clone(),
+        PromptAttachmentGrant {
+            paths: paths.clone(),
+            created_at: now,
+        },
+    );
+    Ok(GrokPromptAttachmentSelection {
+        paths: paths
+            .into_iter()
+            .map(|path| path.to_string_lossy().to_string())
+            .collect(),
+        grant_id: Some(grant_id),
+    })
+}
+
+#[tauri::command]
 pub async fn grok_send_prompt(
     state: State<'_, GrokRuntimeState>,
     session_id: String,
     prompt: String,
+    attachments: Option<Vec<String>>,
+    attachment_grants: Option<Vec<String>>,
 ) -> Result<(), String> {
-    if prompt.trim().is_empty() {
-        return Err("请输入要发送给 Grok 的内容".to_string());
-    }
+    let grants_to_consume = attachment_grants.clone().unwrap_or_default();
+    let attachments = authorize_prompt_attachments(&state, attachments, attachment_grants)?;
+    let content = build_prompt_content(&prompt, attachments)?;
     let process = session_process(&state, &session_id)?;
     process
         .request(
             "session/prompt",
             json!({
                 "sessionId": session_id,
-                "prompt": [{ "type": "text", "text": prompt.trim() }]
+                "prompt": content
             }),
         )
         .await?;
+    consume_prompt_attachment_grants(&state, &grants_to_consume);
     Ok(())
 }
 
@@ -2639,18 +2874,20 @@ pub fn grok_start_login(
 #[cfg(test)]
 mod tests {
     use super::{
-        apply_offline_config, available_commands_from_initialize, available_commands_from_list,
-        available_commands_from_session_update, cache_provider_api_key,
-        forget_cached_provider_api_key, format_rpc_error, grok_agent_arguments, model_key_env_name,
-        normalize_model_id, normalize_model_provider, normalized_session_update_message,
-        parse_grok_toml, plan_approval_params, process_launch_key, read_provider_api_key,
-        request_timeout, select_auth_method, serialize_grok_toml, user_question_params,
-        validate_cli_arguments, validate_service_arguments, GrokAcpOptions, GrokCliService,
-        GrokModelProviderInput, AUTHENTICATE_TIMEOUT, INITIALIZE_TIMEOUT, REQUEST_TIMEOUT,
-        SESSION_START_TIMEOUT,
+        apply_offline_config, authorize_prompt_attachments, available_commands_from_initialize,
+        available_commands_from_list, available_commands_from_session_update, build_prompt_content,
+        cache_provider_api_key, consume_prompt_attachment_grants, forget_cached_provider_api_key,
+        format_rpc_error, grok_agent_arguments, model_key_env_name, normalize_model_id,
+        normalize_model_provider, normalized_session_update_message, parse_grok_toml,
+        plan_approval_params, process_launch_key, read_provider_api_key, request_timeout,
+        select_auth_method, serialize_grok_toml, user_question_params, validate_cli_arguments,
+        validate_service_arguments, GrokAcpOptions, GrokCliService, GrokModelProviderInput,
+        GrokRuntimeState, PromptAttachmentGrant, AUTHENTICATE_TIMEOUT, INITIALIZE_TIMEOUT,
+        MAX_PROMPT_ATTACHMENT_BYTES, REQUEST_TIMEOUT, SESSION_START_TIMEOUT,
     };
     use serde_json::json;
-    use std::path::Path;
+    use std::fs;
+    use std::path::{Path, PathBuf};
     use std::sync::Mutex;
 
     #[test]
@@ -2690,6 +2927,134 @@ mod tests {
                 .and_then(|value| value.as_str()),
             Some("session-private-direct")
         );
+    }
+
+    #[test]
+    fn builds_embedded_acp_resources_for_selected_attachments() {
+        let attachment = Path::new(env!("CARGO_MANIFEST_DIR")).join("Cargo.toml");
+        let content = build_prompt_content("分析这个文件", vec![attachment]).unwrap();
+
+        assert_eq!(content[0]["type"], "text");
+        assert_eq!(content[0]["text"], "分析这个文件");
+        assert_eq!(content[1]["type"], "resource");
+        assert_eq!(content[1]["resource"]["mimeType"], "text/plain");
+        assert!(content[1]["resource"]["text"]
+            .as_str()
+            .is_some_and(|text| text.contains("[package]")));
+        assert!(content[1]["resource"]["uri"]
+            .as_str()
+            .is_some_and(|uri| uri.starts_with("file://")));
+    }
+
+    #[test]
+    fn encodes_spaces_and_non_ascii_characters_in_attachment_uris() {
+        let test_directory = Path::new(env!("CARGO_MANIFEST_DIR"))
+            .join("target")
+            .join(format!("attachment-test-{}", std::process::id()));
+        fs::create_dir_all(&test_directory).unwrap();
+        let attachment = test_directory.join("本地 报告.txt");
+        fs::write(&attachment, "attachment test").unwrap();
+
+        let content = build_prompt_content("分析这个文件", vec![attachment.clone()]).unwrap();
+        let uri = content[1]["resource"]["uri"].as_str().unwrap();
+
+        assert!(uri.contains("%20"));
+        assert!(uri.contains("%E6%9C%AC%E5%9C%B0"));
+
+        fs::remove_file(&attachment).unwrap();
+        fs::remove_dir(&test_directory).unwrap();
+    }
+
+    #[test]
+    fn embeds_binary_attachments_as_base64_resources() {
+        let test_directory = Path::new(env!("CARGO_MANIFEST_DIR"))
+            .join("target")
+            .join(format!("binary-attachment-test-{}", std::process::id()));
+        fs::create_dir_all(&test_directory).unwrap();
+        let attachment = test_directory.join("sample.bin");
+        fs::write(&attachment, [0, 159, 146, 150]).unwrap();
+
+        let content = build_prompt_content("分析这个文件", vec![attachment.clone()]).unwrap();
+
+        assert_eq!(
+            content[1]["resource"]["mimeType"],
+            "application/octet-stream"
+        );
+        assert_eq!(content[1]["resource"]["blob"], "AJ+Slg==");
+
+        fs::remove_file(&attachment).unwrap();
+        fs::remove_dir(&test_directory).unwrap();
+    }
+
+    #[test]
+    fn rejects_oversized_prompt_attachments_before_reading_them() {
+        let test_directory = Path::new(env!("CARGO_MANIFEST_DIR"))
+            .join("target")
+            .join(format!("large-attachment-test-{}", std::process::id()));
+        fs::create_dir_all(&test_directory).unwrap();
+        let attachment = test_directory.join("large.bin");
+        let file = fs::File::create(&attachment).unwrap();
+        file.set_len(MAX_PROMPT_ATTACHMENT_BYTES + 1).unwrap();
+
+        let error = build_prompt_content("分析这个文件", vec![attachment.clone()]).unwrap_err();
+
+        assert!(error.contains("10 MB"));
+
+        fs::remove_file(&attachment).unwrap();
+        fs::remove_dir(&test_directory).unwrap();
+    }
+
+    #[test]
+    fn rejects_relative_prompt_attachments() {
+        let error = build_prompt_content("分析", vec![PathBuf::from("relative.txt")]).unwrap_err();
+        assert!(error.contains("绝对路径"));
+    }
+
+    #[test]
+    fn only_accepts_native_picker_granted_attachment_paths_once() {
+        let test_directory = Path::new(env!("CARGO_MANIFEST_DIR"))
+            .join("target")
+            .join(format!("attachment-grant-test-{}", std::process::id()));
+        fs::create_dir_all(&test_directory).unwrap();
+        let attachment = test_directory.join("allowed.txt");
+        fs::write(&attachment, "allowed").unwrap();
+        let canonical = attachment.canonicalize().unwrap();
+        let state = GrokRuntimeState::default();
+        state.prompt_attachment_grants.lock().unwrap().insert(
+            "grant-1".to_string(),
+            PromptAttachmentGrant {
+                paths: vec![canonical.clone()],
+                created_at: super::current_unix_seconds(),
+            },
+        );
+
+        let authorized = authorize_prompt_attachments(
+            &state,
+            Some(vec![attachment.to_string_lossy().to_string()]),
+            Some(vec!["stale-grant".to_string(), "grant-1".to_string()]),
+        )
+        .unwrap();
+        assert_eq!(authorized, vec![canonical]);
+
+        let authorized_retry = authorize_prompt_attachments(
+            &state,
+            Some(vec![attachment.to_string_lossy().to_string()]),
+            Some(vec!["grant-1".to_string()]),
+        )
+        .unwrap();
+        assert_eq!(authorized_retry, vec![attachment.canonicalize().unwrap()]);
+
+        consume_prompt_attachment_grants(&state, &["grant-1".to_string()]);
+        let replay_error = authorize_prompt_attachments(
+            &state,
+            Some(vec![attachment.to_string_lossy().to_string()]),
+            Some(vec!["grant-1".to_string()]),
+        )
+        .unwrap_err();
+        assert!(replay_error.contains("授权已失效"));
+
+        fs::remove_file(&attachment).unwrap();
+        fs::remove_dir(&test_directory).unwrap();
     }
 
     #[test]
@@ -3040,10 +3405,7 @@ name = "xAI Official"
         )
         .unwrap();
         apply_offline_config(&mut config).unwrap();
-        assert_eq!(
-            config["auth"]["preferred_method"].as_str(),
-            Some("api_key")
-        );
+        assert_eq!(config["auth"]["preferred_method"].as_str(), Some("api_key"));
         assert!(config["auth"].get("auth_provider_command").is_none());
         assert!(config.get("grok_com_config").is_none());
         assert_eq!(config["features"]["remote_fetch"].as_bool(), Some(false));
