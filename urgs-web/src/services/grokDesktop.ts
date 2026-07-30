@@ -52,6 +52,48 @@ export interface GrokCliResult {
     stderr: string;
 }
 
+export interface GrokDiscoveredPlugin {
+    id: string;
+    name: string;
+    version: string;
+    path: string;
+    source: string;
+    enabled: boolean;
+}
+
+export interface GrokPluginComponents {
+    skillDirectories: number;
+    commandDirectories: number;
+    agentDirectories: number;
+    hasHooks: boolean;
+    hasMcpServers: boolean;
+    hasLspServers: boolean;
+}
+
+export interface GrokInstalledPlugin {
+    id: string;
+    name: string;
+    repoKey: string;
+    version: string;
+    path: string;
+    source: string;
+    marketplace: string;
+    enabled: boolean;
+}
+
+export interface GrokPluginValidation {
+    name: string;
+    version: string;
+    description: string;
+    components: GrokPluginComponents;
+    output: string;
+}
+
+export interface GrokPluginDetails extends GrokPluginValidation {
+    path: string;
+    source: string;
+}
+
 export interface GrokCliServiceInfo {
     id: string;
     arguments: string[];
@@ -107,12 +149,196 @@ export const listGrokAvailableCommands = (workspace: string) =>
 export const prepareGrokRuntime = (workspace: string, model: string, options?: GrokAcpOptions, rules?: string) =>
     invokeGrok<void>('grok_runtime_prepare', { workspace, model, options: options || null, rules: rules || null });
 
+export const invalidatePreparedGrokRuntime = () => invokeGrok<void>('grok_runtime_invalidate_prepared');
+export const releaseGrokSession = (sessionId: string) =>
+    invokeGrok<void>('grok_release_session', { sessionId });
+
 export const runGrokCli = (arguments_: string[], workspace?: string, timeoutSeconds = 120) =>
     invokeGrok<GrokCliResult>('grok_cli_run', {
         arguments: arguments_,
         workspace: workspace || null,
         timeoutSeconds,
     });
+
+export const openGrokWorkspace = async (workspace: string) => {
+    assertDesktopRuntime();
+    const { openPath } = await import('@tauri-apps/plugin-opener');
+    await openPath(workspace);
+};
+
+const parseGrokPluginState = (content: string) => {
+    const section = content.match(/(?:^|\n)\[plugins\]\s*\n([\s\S]*?)(?=\n\[|$)/)?.[1] || '';
+    const readList = (key: string) => {
+        const body = section.match(new RegExp(`^\\s*${key}\\s*=\\s*\\[([\\s\\S]*?)\\]`, 'm'))?.[1] || '';
+        return new Set(Array.from(body.matchAll(/["']([^"']+)["']/g), (match) => match[1].trim()).filter(Boolean));
+    };
+    return { enabled: readList('enabled'), disabled: readList('disabled') };
+};
+
+const readGrokPluginState = async (workspace?: string) => {
+    const config = await invokeGrok<GrokConfigFile>('grok_config_read', {
+        scope: 'user',
+        kind: 'config',
+        workspace: workspace || null,
+    });
+    return parseGrokPluginState(config.content);
+};
+
+export const inspectGrokPlugins = async (workspace?: string): Promise<GrokDiscoveredPlugin[]> => {
+    const [result, pluginState] = await Promise.all([
+        runGrokCli(['inspect', '--json'], workspace, 30),
+        readGrokPluginState(workspace).catch(() => ({ enabled: new Set<string>(), disabled: new Set<string>() })),
+    ]);
+    if (!result.success) throw new Error(result.stderr.trim() || '无法读取 Grok 插件');
+    const payload = JSON.parse(result.stdout) as { plugins?: unknown };
+    if (!Array.isArray(payload.plugins)) return [];
+    return payload.plugins.flatMap((item) => {
+        if (!item || typeof item !== 'object') return [];
+        const plugin = item as Record<string, unknown>;
+        const id = typeof plugin.id === 'string' ? plugin.id.trim() : '';
+        const name = typeof plugin.name === 'string' ? plugin.name.trim() : '';
+        if (!id && !name) return [];
+        const identifiers = [id, name].filter(Boolean);
+        const explicitlyDisabled = identifiers.some((identifier) => pluginState.disabled.has(identifier));
+        const explicitlyEnabled = identifiers.some((identifier) => pluginState.enabled.has(identifier));
+        return [{
+            id: id || name,
+            name: name || id,
+            version: typeof plugin.version === 'string' ? plugin.version.trim() : '',
+            path: typeof plugin.path === 'string' ? plugin.path.trim() : '',
+            source: typeof plugin.source === 'string' ? plugin.source.trim() : '',
+            enabled: explicitlyDisabled
+                ? false
+                : explicitlyEnabled || plugin.enabled === true,
+        }];
+    });
+};
+
+const emptyPluginComponents = (): GrokPluginComponents => ({
+    skillDirectories: 0,
+    commandDirectories: 0,
+    agentDirectories: 0,
+    hasHooks: false,
+    hasMcpServers: false,
+    hasLspServers: false,
+});
+
+const parsePluginComponents = (output: string): GrokPluginComponents => {
+    const match = output.match(/components:\s*(\d+) skill dir\(s\),\s*(\d+) command dir\(s\),\s*(\d+) agent dir\(s\)([^\n]*)/i);
+    if (!match) return emptyPluginComponents();
+    const suffix = match[4].toLowerCase();
+    return {
+        skillDirectories: Number(match[1]),
+        commandDirectories: Number(match[2]),
+        agentDirectories: Number(match[3]),
+        hasHooks: suffix.includes('hooks'),
+        hasMcpServers: suffix.includes('mcp servers'),
+        hasLspServers: suffix.includes('lsp servers'),
+    };
+};
+
+const pluginOutputValue = (output: string, key: string) => {
+    const match = output.match(new RegExp(`^\\s*${key}:\\s*(.+)$`, 'im'));
+    return match?.[1]?.trim() || '';
+};
+
+const assertSuccessfulPluginCommand = (result: GrokCliResult, fallback: string) => {
+    if (!result.success) throw new Error(result.stderr.trim() || result.stdout.trim() || fallback);
+    return result;
+};
+
+const assertLocalPluginPath = (path: string) => {
+    const normalized = path.trim();
+    const absolute = normalized.startsWith('/') || /^[A-Za-z]:[\\/]/.test(normalized);
+    if (!absolute || normalized.includes('\0') || normalized.includes('://')) {
+        throw new Error('插件来源必须是通过目录选择器选取的本地绝对路径');
+    }
+    return normalized;
+};
+
+const assertPluginName = (name: string) => {
+    const normalized = name.trim();
+    if (normalized.length > 128 || !/^[a-z0-9](?:[a-z0-9-]*[a-z0-9])?$/.test(normalized)) {
+        throw new Error('插件名称不合法');
+    }
+    return normalized;
+};
+
+export const listGrokInstalledPlugins = async (workspace?: string): Promise<GrokInstalledPlugin[]> => {
+    const [listResult, discovered] = await Promise.all([
+        runGrokCli(['plugin', 'list', '--json'], workspace, 30),
+        inspectGrokPlugins(workspace).catch(() => []),
+    ]);
+    assertSuccessfulPluginCommand(listResult, '无法读取已安装插件');
+    const payload = JSON.parse(listResult.stdout) as unknown;
+    if (!Array.isArray(payload)) return [];
+    return payload.flatMap((item) => {
+        if (!item || typeof item !== 'object') return [];
+        const plugin = item as Record<string, unknown>;
+        if (plugin.status !== 'installed' || typeof plugin.name !== 'string') return [];
+        const name = plugin.name.trim();
+        if (!name) return [];
+        const inspected = discovered.find((candidate) => candidate.name === name);
+        const repoKey = typeof plugin.repo_key === 'string' ? plugin.repo_key.trim() : '';
+        return [{
+            id: `${repoKey || 'local'}:${name}`,
+            name,
+            repoKey,
+            version: typeof plugin.version === 'string' ? plugin.version.trim() : '',
+            path: typeof plugin.path === 'string' ? plugin.path.trim() : inspected?.path || '',
+            source: typeof plugin.source === 'string' ? plugin.source.trim() : inspected?.source || '',
+            marketplace: typeof plugin.marketplace === 'string' ? plugin.marketplace.trim() : '',
+            enabled: inspected?.enabled === true,
+        }];
+    });
+};
+
+export const validateGrokPluginDirectory = async (path: string, workspace?: string): Promise<GrokPluginValidation> => {
+    const localPath = assertLocalPluginPath(path);
+    const result = assertSuccessfulPluginCommand(
+        await runGrokCli(['plugin', 'validate', localPath], workspace, 30),
+        '插件校验失败',
+    );
+    return {
+        name: pluginOutputValue(result.stdout, 'name') || localPath.split(/[\\/]/).filter(Boolean).pop() || '本地插件',
+        version: pluginOutputValue(result.stdout, 'version'),
+        description: pluginOutputValue(result.stdout, 'description'),
+        components: parsePluginComponents(result.stdout),
+        output: result.stdout,
+    };
+};
+
+export const installTrustedLocalGrokPlugin = async (path: string, workspace?: string) => {
+    const localPath = assertLocalPluginPath(path);
+    return assertSuccessfulPluginCommand(
+        await runGrokCli(['plugin', 'install', localPath, '--trust'], workspace, 120),
+        '插件安装失败',
+    );
+};
+
+export const setGrokPluginEnabled = async (name: string, enabled: boolean, workspace?: string) => {
+    const pluginName = assertPluginName(name);
+    return assertSuccessfulPluginCommand(
+        await runGrokCli(['plugin', enabled ? 'enable' : 'disable', pluginName], workspace, 30),
+        enabled ? '插件启用失败' : '插件禁用失败',
+    );
+};
+
+export const getGrokPluginDetails = async (plugin: GrokInstalledPlugin, workspace?: string): Promise<GrokPluginDetails> => {
+    const result = assertSuccessfulPluginCommand(
+        await runGrokCli(['plugin', 'details', assertPluginName(plugin.name)], workspace, 30),
+        '无法读取插件详情',
+    );
+    return {
+        name: plugin.name,
+        version: plugin.version,
+        description: pluginOutputValue(result.stdout, 'description'),
+        components: parsePluginComponents(result.stdout),
+        path: pluginOutputValue(result.stdout, 'path') || plugin.path,
+        source: pluginOutputValue(result.stdout, 'kind') || plugin.source,
+        output: result.stdout,
+    };
+};
 
 export const startGrokCliService = (arguments_: string[], workspace?: string) =>
     invokeGrok<GrokCliServiceInfo>('grok_cli_service_start', { arguments: arguments_, workspace: workspace || null });
@@ -167,6 +393,9 @@ export interface GrokPromptAttachmentSelection {
 export const setGrokSessionModel = (sessionId: string, model: string) =>
     invokeGrok<void>('grok_session_set_model', { sessionId, model });
 
+export const deleteGrokScheduledTask = (sessionId: string, taskId: string) =>
+    invokeGrok<boolean>('grok_scheduled_task_delete', { sessionId, taskId });
+
 export const cancelGrokPrompt = (sessionId: string) => invokeGrok<void>('grok_cancel', { sessionId });
 
 export const respondGrokPermission = (sessionId: string, requestId: unknown, optionId?: string) =>
@@ -190,6 +419,17 @@ export const chooseGrokWorkspace = async () => {
         directory: true,
         multiple: false,
         title: '选择本地工作区',
+    });
+    return typeof selected === 'string' ? selected : null;
+};
+
+export const chooseGrokPluginDirectory = async () => {
+    assertDesktopRuntime();
+    const { open } = await import('@tauri-apps/plugin-dialog');
+    const selected = await open({
+        directory: true,
+        multiple: false,
+        title: '选择本地插件目录',
     });
     return typeof selected === 'string' ? selected : null;
 };

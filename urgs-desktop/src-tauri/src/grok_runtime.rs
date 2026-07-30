@@ -213,6 +213,7 @@ pub struct GrokRuntimeState {
     cli_services: Mutex<HashMap<String, Arc<GrokCliService>>>,
     prompt_attachment_grants: Mutex<HashMap<String, PromptAttachmentGrant>>,
     cli_service_sequence: AtomicU64,
+    runtime_generation: AtomicU64,
 }
 
 impl Default for GrokRuntimeState {
@@ -224,6 +225,7 @@ impl Default for GrokRuntimeState {
             cli_services: Mutex::new(HashMap::new()),
             prompt_attachment_grants: Mutex::new(HashMap::new()),
             cli_service_sequence: AtomicU64::new(1),
+            runtime_generation: AtomicU64::new(1),
         }
     }
 }
@@ -299,6 +301,7 @@ impl GrokCliService {
 struct GrokProcess {
     process_id: String,
     launch_key: String,
+    workspace: PathBuf,
     child: Mutex<Option<CommandChild>>,
     stderr: Mutex<String>,
     pending_requests: Mutex<HashMap<u64, oneshot::Sender<Result<Value, String>>>>,
@@ -314,13 +317,19 @@ struct GrokProcess {
 }
 
 impl GrokProcess {
-    fn new(child: CommandChild, launch_key: String, uses_custom_model: bool) -> Self {
+    fn new(
+        child: CommandChild,
+        launch_key: String,
+        workspace: PathBuf,
+        uses_custom_model: bool,
+    ) -> Self {
         Self {
             process_id: format!(
                 "runtime-{}",
                 PROCESS_SEQUENCE.fetch_add(1, Ordering::Relaxed)
             ),
             launch_key,
+            workspace,
             child: Mutex::new(Some(child)),
             stderr: Mutex::new(String::new()),
             pending_requests: Mutex::new(HashMap::new()),
@@ -431,38 +440,6 @@ impl GrokProcess {
 
         *initialized = true;
         Ok(())
-    }
-
-    async fn discover_available_commands(
-        &self,
-        workspace: &Path,
-    ) -> Result<Vec<GrokAvailableCommand>, String> {
-        let response = self
-            .request(
-                "initialize",
-                json!({
-                    "protocolVersion": 1,
-                    "clientCapabilities": {
-                        "fs": {},
-                        "terminal": false
-                    },
-                    "_meta": initialize_client_meta(None)
-                }),
-            )
-            .await?;
-        let initialize_commands = available_commands_from_initialize(&response);
-        let response = self
-            .request(
-                "_x.ai/commands/list",
-                json!({ "cwd": workspace.to_string_lossy() }),
-            )
-            .await?;
-        let discovered_commands = available_commands_from_list(&response);
-        Ok(if discovered_commands.is_empty() {
-            initialize_commands
-        } else {
-            discovered_commands
-        })
     }
 
     fn replace_available_commands(&self, commands: Vec<GrokAvailableCommand>) {
@@ -1555,7 +1532,12 @@ fn normalized_session_update_message(message: &Value) -> Option<Value> {
     let method = message.get("method")?.as_str()?;
     let params = message.get("params")?;
     let normalized_params = match method {
-        "session/update" | "sessionUpdate" | "x.ai/session_notification" => params,
+        "session/update"
+        | "sessionUpdate"
+        | "x.ai/session_notification"
+        | "x.ai/scheduled_task_created"
+        | "x.ai/scheduled_task_fired"
+        | "x.ai/scheduled_task_deleted" => params,
         "_x.ai/session/update" => params.get("params").unwrap_or(params),
         "_x.ai/session_notification"
             if params.get("method").and_then(Value::as_str)
@@ -1570,6 +1552,28 @@ fn normalized_session_update_message(message: &Value) -> Option<Value> {
         "method": "session/update",
         "params": normalized_params,
     }))
+}
+
+fn scheduled_prompt_injection(message: &Value) -> Option<(String, String, String)> {
+    let method = message.get("method")?.as_str()?;
+    let outer_params = message.get("params")?;
+    let params = match method {
+        "x.ai/scheduled_task_inject_prompt" => outer_params,
+        "_x.ai/scheduled_task_inject_prompt" => outer_params.get("params").unwrap_or(outer_params),
+        _ => return None,
+    };
+    let session_id = params.get("sessionId")?.as_str()?.trim().to_string();
+    let prompt = params.get("prompt")?.as_str()?.trim().to_string();
+    if session_id.is_empty() || prompt.is_empty() {
+        return None;
+    }
+    let task_id = params
+        .get("taskId")
+        .and_then(Value::as_str)
+        .unwrap_or_default()
+        .trim()
+        .to_string();
+    Some((session_id, prompt, task_id))
 }
 
 fn handle_stdout(app: &AppHandle, process: &Arc<GrokProcess>, line: Vec<u8>) {
@@ -1601,6 +1605,69 @@ fn handle_stdout(app: &AppHandle, process: &Arc<GrokProcess>, line: Vec<u8>) {
         .get("method")
         .and_then(Value::as_str)
         .unwrap_or_default();
+    if matches!(
+        method,
+        "x.ai/scheduled_task_inject_prompt" | "_x.ai/scheduled_task_inject_prompt"
+    ) {
+        let Some((session_id, prompt, task_id)) = scheduled_prompt_injection(&message) else {
+            emit_process_event(
+                app,
+                process,
+                "runtime_error",
+                json!({ "message": "Grok 定时任务注入事件缺少 sessionId 或 prompt" }),
+            );
+            return;
+        };
+        let app = app.clone();
+        let process = Arc::clone(process);
+        tauri::async_runtime::spawn(async move {
+            emit_process_event(
+                &app,
+                &process,
+                "scheduled_prompt",
+                json!({
+                    "sessionId": session_id,
+                    "taskId": task_id,
+                    "prompt": prompt,
+                    "phase": "started",
+                }),
+            );
+            let content = vec![json!({ "type": "text", "text": prompt })];
+            match process
+                .request(
+                    "session/prompt",
+                    json!({
+                        "sessionId": session_id,
+                        "prompt": content,
+                    }),
+                )
+                .await
+            {
+                Ok(_) => emit_process_event(
+                    &app,
+                    &process,
+                    "scheduled_prompt",
+                    json!({
+                        "sessionId": session_id,
+                        "taskId": task_id,
+                        "phase": "completed",
+                    }),
+                ),
+                Err(error) => emit_process_event(
+                    &app,
+                    &process,
+                    "scheduled_prompt",
+                    json!({
+                        "sessionId": session_id,
+                        "taskId": task_id,
+                        "phase": "failed",
+                        "message": error,
+                    }),
+                ),
+            }
+        });
+        return;
+    }
     if let Some(session_update) = normalized_session_update_message(&message) {
         if let Some(commands) = available_commands_from_session_update(&session_update) {
             process.replace_available_commands(commands);
@@ -1712,12 +1779,14 @@ fn process_launch_key(
     model: Option<&str>,
     options: &GrokAcpOptions,
     rules: Option<&str>,
+    runtime_generation: u64,
 ) -> Result<String, String> {
     serde_json::to_string(&json!({
         "workspace": workspace.to_string_lossy(),
         "model": model.unwrap_or_default().trim(),
         "options": options,
         "rules": rules.unwrap_or_default().trim(),
+        "runtimeGeneration": runtime_generation,
     }))
     .map_err(|error| format!("生成 Grok 会话启动配置失败: {error}"))
 }
@@ -1791,6 +1860,7 @@ fn spawn_grok_process(
     model: Option<&str>,
     options: &GrokAcpOptions,
     rules: Option<&str>,
+    runtime_generation: u64,
 ) -> Result<Arc<GrokProcess>, String> {
     if model
         .map(str::trim)
@@ -1807,16 +1877,15 @@ fn spawn_grok_process(
     if uses_custom_model {
         effective_options.reauth = None;
     }
-    let launch_key = process_launch_key(workspace, model, &effective_options, rules)?;
+    let launch_key = process_launch_key(
+        workspace,
+        model,
+        &effective_options,
+        rules,
+        runtime_generation,
+    )?;
     let arguments = grok_agent_arguments(model, &effective_options, uses_custom_model)?;
     spawn_grok_process_with_env(app, workspace, arguments, model_envs, home, launch_key)
-}
-
-fn spawn_grok_discovery_process(
-    _app: &AppHandle,
-    _workspace: &Path,
-) -> Result<Arc<GrokProcess>, String> {
-    Err("内网模式不启动未绑定模型的命令发现进程".to_string())
 }
 
 fn spawn_grok_process_with_env(
@@ -1841,7 +1910,12 @@ fn spawn_grok_process_with_env(
         .envs(process_envs)
         .spawn()
         .map_err(|error| format!("启动本地 Grok Build 失败: {error}"))?;
-    let process = Arc::new(GrokProcess::new(child, launch_key, uses_custom_model));
+    let process = Arc::new(GrokProcess::new(
+        child,
+        launch_key,
+        workspace.to_path_buf(),
+        uses_custom_model,
+    ));
     let reader_process = Arc::clone(&process);
     let reader_app = app.clone();
     tauri::async_runtime::spawn(async move {
@@ -2003,14 +2077,45 @@ pub async fn grok_runtime_status(app: AppHandle) -> Result<GrokRuntimeStatus, St
 
 #[tauri::command]
 pub async fn grok_available_commands(
-    app: AppHandle,
+    state: State<'_, GrokRuntimeState>,
     workspace: String,
 ) -> Result<Vec<GrokAvailableCommand>, String> {
     let workspace = validate_workspace(&workspace)?;
-    let process = spawn_grok_discovery_process(&app, &workspace)?;
-    let result = process.discover_available_commands(&workspace).await;
-    process.stop();
-    result
+    let prepared = state
+        .prepared_process
+        .lock()
+        .map_err(|_| "Grok 运行时锁不可用".to_string())?
+        .as_ref()
+        .filter(|process| process.alive.load(Ordering::Relaxed) && process.workspace == workspace)
+        .cloned();
+    let process = match prepared {
+        Some(process) => process,
+        None => {
+            let mut processes = state
+                .session_processes
+                .lock()
+                .map_err(|_| "Grok 会话进程池锁不可用".to_string())?;
+            processes.retain(|_, process| process.alive.load(Ordering::Relaxed));
+            processes
+                .values()
+                .find(|process| process.workspace == workspace)
+                .cloned()
+                .ok_or_else(|| "本地智能引擎正在准备会话能力".to_string())?
+        }
+    };
+    let cached = process.available_commands();
+    let response = process
+        .request(
+            "_x.ai/commands/list",
+            json!({ "cwd": workspace.to_string_lossy() }),
+        )
+        .await?;
+    let commands = available_commands_from_list(&response);
+    if commands.is_empty() {
+        return Ok(cached);
+    }
+    process.replace_available_commands(commands.clone());
+    Ok(commands)
 }
 
 #[tauri::command]
@@ -2026,20 +2131,22 @@ pub async fn grok_runtime_prepare(
     let model = normalize_model_id(&model)?;
     let options = options.unwrap_or_default();
     let effective_options = effective_acp_options(&app, Some(&model), &options)?;
+    let _startup = state.startup.lock().await;
+    let runtime_generation = state.runtime_generation.load(Ordering::Relaxed);
     let launch_key = process_launch_key(
         &workspace,
         Some(&model),
         &effective_options,
         rules.as_deref(),
+        runtime_generation,
     )?;
-    let _startup = state.startup.lock().await;
-    let has_live_session = state
+    let has_compatible_live_session = state
         .session_processes
         .lock()
         .map_err(|_| "Grok 会话进程池锁不可用".to_string())?
         .values()
-        .any(|process| process.alive.load(Ordering::Relaxed));
-    if has_live_session {
+        .any(|process| process.alive.load(Ordering::Relaxed) && process.launch_key == launch_key);
+    if has_compatible_live_session {
         return Ok(());
     }
     {
@@ -2056,7 +2163,14 @@ pub async fn grok_runtime_prepare(
             process.stop();
         }
     }
-    let process = spawn_grok_process(&app, &workspace, Some(&model), &options, rules.as_deref())?;
+    let process = spawn_grok_process(
+        &app,
+        &workspace,
+        Some(&model),
+        &options,
+        rules.as_deref(),
+        runtime_generation,
+    )?;
     if let Err(error) = process.initialize(rules.as_deref()).await {
         process.stop();
         return Err(error);
@@ -2465,13 +2579,15 @@ pub async fn grok_create_session(
     let workspace = validate_workspace(&workspace)?;
     let options = options.unwrap_or_default();
     let effective_options = effective_acp_options(&app, model.as_deref(), &options)?;
+    let _startup = state.startup.lock().await;
+    let runtime_generation = state.runtime_generation.load(Ordering::Relaxed);
     let launch_key = process_launch_key(
         &workspace,
         model.as_deref(),
         &effective_options,
         rules.as_deref(),
+        runtime_generation,
     )?;
-    let _startup = state.startup.lock().await;
     let (process, exclusive_process) =
         if let Some(process) = take_prepared_process(&state, &launch_key)? {
             (process, true)
@@ -2484,6 +2600,7 @@ pub async fn grok_create_session(
                 model.as_deref(),
                 &options,
                 rules.as_deref(),
+                runtime_generation,
             )?;
             if let Err(error) = process.initialize(rules.as_deref()).await {
                 process.stop();
@@ -2549,11 +2666,14 @@ pub async fn grok_load_session(
     let workspace = validate_workspace(&workspace)?;
     let options = options.unwrap_or_default();
     let effective_options = effective_acp_options(&app, model.as_deref(), &options)?;
+    let _startup = state.startup.lock().await;
+    let runtime_generation = state.runtime_generation.load(Ordering::Relaxed);
     let launch_key = process_launch_key(
         &workspace,
         model.as_deref(),
         &effective_options,
         rules.as_deref(),
+        runtime_generation,
     )?;
     let (existing, existing_is_shared) = {
         let mut processes = state
@@ -2584,7 +2704,6 @@ pub async fn grok_load_session(
     if let Some(existing) = existing.filter(|_| !existing_is_shared) {
         existing.stop();
     }
-    let _startup = state.startup.lock().await;
     stop_prepared_process(&state)?;
     let process = spawn_grok_process(
         &app,
@@ -2592,6 +2711,7 @@ pub async fn grok_load_session(
         model.as_deref(),
         &options,
         rules.as_deref(),
+        runtime_generation,
     )?;
     if let Err(error) = process.initialize(rules.as_deref()).await {
         process.stop();
@@ -2747,6 +2867,33 @@ pub async fn grok_session_set_model(
 }
 
 #[tauri::command]
+pub async fn grok_scheduled_task_delete(
+    state: State<'_, GrokRuntimeState>,
+    session_id: String,
+    task_id: String,
+) -> Result<bool, String> {
+    let session_id = session_id.trim();
+    let task_id = task_id.trim();
+    if session_id.is_empty() {
+        return Err("会话标识不能为空".to_string());
+    }
+    if task_id.is_empty() {
+        return Err("计划任务标识不能为空".to_string());
+    }
+    let process = session_process(&state, session_id)?;
+    let response = process
+        .request(
+            "x.ai/scheduler/delete",
+            json!({ "sessionId": session_id, "taskId": task_id }),
+        )
+        .await?;
+    Ok(response
+        .get("deleted")
+        .and_then(Value::as_bool)
+        .unwrap_or(false))
+}
+
+#[tauri::command]
 pub fn grok_cancel(state: State<'_, GrokRuntimeState>, session_id: String) -> Result<(), String> {
     let process = session_process(&state, &session_id)?;
     process.notify("session/cancel", json!({ "sessionId": session_id }))?;
@@ -2770,6 +2917,58 @@ pub fn grok_cancel(state: State<'_, GrokRuntimeState>, session_id: String) -> Re
             "id": request_id,
             "result": { "outcome": "abandoned" }
         }))?;
+    }
+    Ok(())
+}
+
+#[tauri::command]
+pub fn grok_release_session(
+    state: State<'_, GrokRuntimeState>,
+    session_id: String,
+) -> Result<(), String> {
+    let session_id = session_id.trim();
+    if session_id.is_empty() {
+        return Err("会话标识不能为空".to_string());
+    }
+    let (process, shared) = {
+        let mut processes = state
+            .session_processes
+            .lock()
+            .map_err(|_| "Grok 会话进程池锁不可用".to_string())?;
+        let process = processes.remove(session_id);
+        let shared = process.as_ref().is_some_and(|removed| {
+            processes
+                .values()
+                .any(|candidate| candidate.process_id == removed.process_id)
+        });
+        (process, shared)
+    };
+    if let Some(process) = process {
+        if shared {
+            for request_id in process.cancel_permissions(session_id) {
+                process.write_json(json!({
+                    "jsonrpc": "2.0",
+                    "id": request_id,
+                    "result": { "outcome": { "outcome": "cancelled" } }
+                }))?;
+            }
+            for request_id in process.cancel_user_questions(session_id) {
+                process.write_json(json!({
+                    "jsonrpc": "2.0",
+                    "id": request_id,
+                    "result": { "outcome": "cancelled" }
+                }))?;
+            }
+            for request_id in process.cancel_plan_approvals(session_id) {
+                process.write_json(json!({
+                    "jsonrpc": "2.0",
+                    "id": request_id,
+                    "result": { "outcome": "abandoned" }
+                }))?;
+            }
+        } else {
+            process.stop();
+        }
     }
     Ok(())
 }
@@ -2863,6 +3062,15 @@ pub fn grok_shutdown(state: State<'_, GrokRuntimeState>) -> Result<(), String> {
 }
 
 #[tauri::command]
+pub async fn grok_runtime_invalidate_prepared(
+    state: State<'_, GrokRuntimeState>,
+) -> Result<(), String> {
+    let _startup = state.startup.lock().await;
+    state.runtime_generation.fetch_add(1, Ordering::Relaxed);
+    stop_prepared_process(&state)
+}
+
+#[tauri::command]
 pub fn grok_start_login(
     _app: AppHandle,
     _state: State<'_, GrokRuntimeState>,
@@ -2880,10 +3088,10 @@ mod tests {
         format_rpc_error, grok_agent_arguments, model_key_env_name, normalize_model_id,
         normalize_model_provider, normalized_session_update_message, parse_grok_toml,
         plan_approval_params, process_launch_key, read_provider_api_key, request_timeout,
-        select_auth_method, serialize_grok_toml, user_question_params, validate_cli_arguments,
-        validate_service_arguments, GrokAcpOptions, GrokCliService, GrokModelProviderInput,
-        GrokRuntimeState, PromptAttachmentGrant, AUTHENTICATE_TIMEOUT, INITIALIZE_TIMEOUT,
-        MAX_PROMPT_ATTACHMENT_BYTES, REQUEST_TIMEOUT, SESSION_START_TIMEOUT,
+        scheduled_prompt_injection, select_auth_method, serialize_grok_toml, user_question_params,
+        validate_cli_arguments, validate_service_arguments, GrokAcpOptions, GrokCliService,
+        GrokModelProviderInput, GrokRuntimeState, PromptAttachmentGrant, AUTHENTICATE_TIMEOUT,
+        INITIALIZE_TIMEOUT, MAX_PROMPT_ATTACHMENT_BYTES, REQUEST_TIMEOUT, SESSION_START_TIMEOUT,
     };
     use serde_json::json;
     use std::fs;
@@ -3187,6 +3395,9 @@ mod tests {
             "session/update",
             "x.ai/session_notification",
             "_x.ai/session/update",
+            "x.ai/scheduled_task_created",
+            "x.ai/scheduled_task_fired",
+            "x.ai/scheduled_task_deleted",
         ] {
             let normalized = normalized_session_update_message(&json!({
                 "jsonrpc": "2.0",
@@ -3230,16 +3441,54 @@ mod tests {
     }
 
     #[test]
+    fn parses_scheduled_prompt_injection_for_direct_and_wrapped_notifications() {
+        for message in [
+            json!({
+                "method": "x.ai/scheduled_task_inject_prompt",
+                "params": {
+                    "sessionId": "session-1",
+                    "taskId": "loop-1",
+                    "prompt": "check deploy"
+                }
+            }),
+            json!({
+                "method": "_x.ai/scheduled_task_inject_prompt",
+                "params": {
+                    "params": {
+                        "sessionId": "session-1",
+                        "taskId": "loop-1",
+                        "prompt": "check deploy"
+                    }
+                }
+            }),
+        ] {
+            assert_eq!(
+                scheduled_prompt_injection(&message),
+                Some((
+                    "session-1".to_string(),
+                    "check deploy".to_string(),
+                    "loop-1".to_string()
+                ))
+            );
+        }
+        assert!(scheduled_prompt_injection(&json!({
+            "method": "x.ai/scheduled_task_inject_prompt",
+            "params": { "sessionId": "session-1", "prompt": " " }
+        }))
+        .is_none());
+    }
+
+    #[test]
     fn session_launch_key_changes_only_when_runtime_configuration_changes() {
         let workspace = Path::new("/tmp/urgs");
         let base = GrokAcpOptions {
             permission_mode: Some("dontAsk".into()),
             ..Default::default()
         };
-        let same = process_launch_key(workspace, Some("model-a"), &base, Some("rules")).unwrap();
+        let same = process_launch_key(workspace, Some("model-a"), &base, Some("rules"), 1).unwrap();
         assert_eq!(
             same,
-            process_launch_key(workspace, Some("model-a"), &base, Some("rules")).unwrap()
+            process_launch_key(workspace, Some("model-a"), &base, Some("rules"), 1).unwrap()
         );
 
         let changed = GrokAcpOptions {
@@ -3248,7 +3497,11 @@ mod tests {
         };
         assert_ne!(
             same,
-            process_launch_key(workspace, Some("model-a"), &changed, Some("rules")).unwrap()
+            process_launch_key(workspace, Some("model-a"), &changed, Some("rules"), 1).unwrap()
+        );
+        assert_ne!(
+            same,
+            process_launch_key(workspace, Some("model-a"), &base, Some("rules"), 2).unwrap()
         );
     }
 

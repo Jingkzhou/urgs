@@ -41,7 +41,10 @@
 
 - 后端改动：必须执行 `cd urgs-api && mvn clean compile -DskipTests`
 - 前端改动：默认不强制每次执行编译/类型检查
-- Desktop 改动：凡是修改 `urgs-desktop/`，或修改 `urgs-web/` 中由 Desktop/Tauri 使用的页面、服务、运行时桥接与样式，必须在交付前重新构建 macOS Debug App，确保 `urgs-desktop/src-tauri/target/debug/bundle/macos/URGS.app` 已更新为本轮代码；不得只运行 `tauri dev`、前端类型检查或普通 Web 构建后就交付。构建完成后必须核对 App 包更新时间，并从该 App 包启动一次真实桌面验收。
+- Desktop 改动：凡是修改 `urgs-desktop/`，或修改 `urgs-web/` 中由 Desktop/Tauri 使用的页面、服务、运行时桥接与样式，必须在交付前重新构建 macOS Debug App，确保 `urgs-desktop/src-tauri/target/debug/bundle/macos/URGS.app` 已更新为本轮代码；不得只运行 `tauri dev`、前端类型检查或普通 Web 构建后就交付。
+  - 构建成功后，必须将完整 App 发布或覆盖到 `/Applications/URGS.app`，不得只保留 `target` 目录中的构建产物。
+  - 发布后必须核对构建产物与 `/Applications/URGS.app/Contents/MacOS/urgs-desktop` 的 SHA-256 一致，并记录安装包更新时间。
+  - 必须从 `/Applications/URGS.app` 启动一次真实桌面验收；不得仅从 `target/debug` 目录启动验收。
 - 以下前端场景必须执行一次验证（`npx tsc --noEmit` 或 `npm run build`）：
   - 修改构建配置（如 `vite.config.ts`、`tsconfig*.json`）
   - 修改全局依赖、路由装配、公共类型定义、API 基础封装

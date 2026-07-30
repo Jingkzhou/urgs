@@ -1,0 +1,5 @@
+{
+  "name": "urgs-local-plugin-fixture",
+  "version": "1.0.0",
+  "description": "用于验证 URGS Desktop 本地插件安装、启停和详情展示。"
+}

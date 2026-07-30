@@ -27,6 +27,7 @@ export interface ArkDesktopAutomation {
     name: string;
     description: string;
     prompt: string;
+    workspace?: string;
     agentId: string;
     skillIds: string[];
     schedule: AutomationSchedule;
@@ -35,6 +36,16 @@ export interface ArkDesktopAutomation {
     enabled: boolean;
     lastRunAt?: number;
     nextRunAt?: number;
+}
+
+export interface ArkDesktopScheduledTask {
+    id: string;
+    prompt: string;
+    humanSchedule: string;
+    nextFireAt?: string;
+    createdAt: number;
+    lastFiredAt?: number;
+    firedCount: number;
 }
 
 export interface ArkDesktopToolActivity {
@@ -99,6 +110,9 @@ export interface ArkDesktopTask {
     error?: string;
     modelKeyAuthorization?: ArkDesktopModelKeyAuthorization;
     automationId?: string;
+    scheduledTasks?: ArkDesktopScheduledTask[];
+    pinnedAt?: number;
+    archivedAt?: number;
     createdAt: number;
     updatedAt: number;
 }

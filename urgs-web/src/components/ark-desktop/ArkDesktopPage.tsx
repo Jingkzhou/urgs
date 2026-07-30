@@ -6,15 +6,17 @@ import { Prism as SyntaxHighlighter } from 'react-syntax-highlighter';
 import { oneDark } from 'react-syntax-highlighter/dist/esm/styles/prism';
 import {
     AlertCircle, Bot, BriefcaseBusiness, Check, CheckCircle2, CheckSquare,
-    ChevronDown, CircleStop, Clock3, Code2, Copy, Cpu, FileText, Folder,
-    Hand, KeyRound, Lightbulb, LoaderCircle, Paperclip, Pencil, Play, Plus,
-    Search, Send, Settings, ShieldAlert, Trash2, WandSparkles, Wrench, X,
+    ChevronDown, CircleStop, Code2, Copy, Cpu, FileText, Folder, FolderOpen,
+    Hand, KeyRound, Lightbulb, LoaderCircle, Paperclip, Pencil, Plus,
+    Puzzle, Search, Send, Settings, ShieldAlert, Trash2, WandSparkles, Wrench, X,
 } from 'lucide-react';
 import { copyToClipboard } from '@/utils/clipboard';
 import { useArkDesktopRuntime } from './useArkDesktopRuntime';
 import GrokCliCenter from './GrokCliCenter';
+import GrokPluginManager from './GrokPluginManager';
 import GrokConfigEditor from './GrokConfigEditor';
 import GrokExecutionSettingsPanel from './GrokExecutionSettingsPanel';
+import AutomationCenter from './AutomationCenter';
 import { ArkDesktopSidebarToggle, ArkDesktopTitleContent } from './ArkDesktopTitleBar';
 import { ConversationPromptInput } from './SlashCommandMenu';
 import SessionCommandBar from './SessionCommandBar';
@@ -22,10 +24,12 @@ import TaskActivityTimeline from './TaskActivityTimeline';
 import TaskPlanPanel from './TaskPlanPanel';
 import PlanApprovalDialog from './PlanApprovalDialog';
 import UserQuestionDialog from './UserQuestionDialog';
+import WorkspaceSessionSidebar from './WorkspaceSessionSidebar';
 import type {
     ArkDesktopAgent, ArkDesktopAutomation, ArkDesktopSection, ArkDesktopSkill,
     ArkDesktopModelProvider, ArkDesktopTask, ArkDesktopTaskStatus, AutomationSchedule, GrokExecutionSettings,
 } from './types';
+import { nextAutomationRunAt } from './automationSchedule';
 
 const taskTags = [
     { label: '文档处理', icon: FileText, skillId: 'document-processing', prompt: '请读取我选择的文档，整理关键信息并输出可以直接使用的成果。' },
@@ -42,6 +46,8 @@ const sectionItems: Array<{ id: ArkDesktopSection; label: string; icon: React.El
     { id: 'skills', label: '技能', icon: WandSparkles },
     { id: 'automations', label: '自动化', icon: BriefcaseBusiness },
 ];
+
+type SettingsTab = 'general' | 'execution' | 'configuration' | 'plugins' | 'diagnostics';
 
 const taskStatus: Record<ArkDesktopTaskStatus, { label: string; className: string }> = {
     running: { label: '执行中', className: 'bg-blue-50 text-blue-600' },
@@ -69,25 +75,6 @@ const permissionModeOptions: Array<{
 ];
 
 const createLocalId = (prefix: string) => `${prefix}-${Date.now()}-${Math.random().toString(16).slice(2)}`;
-
-const formatDateTime = (value?: number) => value
-    ? new Intl.DateTimeFormat('zh-CN', { month: '2-digit', day: '2-digit', hour: '2-digit', minute: '2-digit' }).format(value)
-    : '尚未运行';
-
-const nextRunAt = (schedule: AutomationSchedule, scheduleTime: string, weekday = 1, from = Date.now()) => {
-    if (schedule === 'manual') return undefined;
-    const [hour = 9, minute = 0] = scheduleTime.split(':').map(Number);
-    const next = new Date(from);
-    next.setHours(hour, minute, 0, 0);
-    if (schedule === 'daily') {
-        if (next.getTime() <= from) next.setDate(next.getDate() + 1);
-        return next.getTime();
-    }
-    const distance = (weekday - next.getDay() + 7) % 7;
-    next.setDate(next.getDate() + distance);
-    if (next.getTime() <= from) next.setDate(next.getDate() + 7);
-    return next.getTime();
-};
 
 const Toggle: React.FC<{ checked: boolean; onChange: () => void; label: string }> = ({ checked, onChange, label }) => (
     <button
@@ -133,13 +120,15 @@ const ArkDesktopPage: React.FC = () => {
     const [selectedSkillIds, setSelectedSkillIds] = useState<string[]>(runtime.snapshot.settings.defaultSkillIds);
     const [attachments, setAttachments] = useState<string[]>([]);
     const [attachmentGrantIds, setAttachmentGrantIds] = useState<string[]>([]);
-    const [collapsedWorkspaceKeys, setCollapsedWorkspaceKeys] = useState<Set<string>>(() => new Set());
+    const [draftWorkspace, setDraftWorkspace] = useState(runtime.snapshot.settings.workspace);
     const [latestMessageTaskId, setLatestMessageTaskId] = useState<string | null>(null);
     const [isSidebarCollapsed, setIsSidebarCollapsed] = useState(false);
+    const [settingsTab, setSettingsTab] = useState<SettingsTab>('general');
 
     const [editor, setEditor] = useState<{ type: 'agent' | 'skill' | 'automation'; id?: string } | null>(null);
     const [actionPending, setActionPending] = useState(false);
     const schedulingRef = useRef(false);
+    const draftWorkspaceFollowsDefaultRef = useRef(true);
     const conversationScrollRef = useRef<HTMLDivElement>(null);
 
     useEffect(() => {
@@ -150,25 +139,36 @@ const ArkDesktopPage: React.FC = () => {
                 return {
                     ...current,
                     automations: current.automations.map((automation) => automation.enabled && automation.schedule !== 'manual' && !automation.nextRunAt
-                        ? { ...automation, nextRunAt: nextRunAt(automation.schedule, automation.scheduleTime, automation.scheduleWeekday) }
+                        ? { ...automation, nextRunAt: nextAutomationRunAt(automation.schedule, automation.scheduleTime, automation.scheduleWeekday) }
                         : automation),
                 };
             });
         };
         initializeSchedules();
         const timer = window.setInterval(async () => {
-            if (schedulingRef.current || runtime.snapshot.tasks.some((task) => task.status === 'running')) return;
-            const due = runtime.snapshot.automations.find((automation) => automation.enabled && automation.nextRunAt && automation.nextRunAt <= Date.now());
+            if (schedulingRef.current) return;
+            const due = runtime.snapshot.automations.find((automation) => (
+                automation.enabled
+                && automation.nextRunAt
+                && automation.nextRunAt <= Date.now()
+                && !runtime.snapshot.tasks.some((task) => task.automationId === automation.id && task.status === 'running')
+            ));
             if (!due) return;
             schedulingRef.current = true;
-            runtime.setSnapshot((current) => ({
-                ...current,
-                automations: current.automations.map((automation) => automation.id === due.id
-                    ? { ...automation, nextRunAt: nextRunAt(automation.schedule, automation.scheduleTime, automation.scheduleWeekday) }
-                    : automation),
-            }));
             try {
-                await runtime.startTask({ prompt: due.prompt, agentId: due.agentId, skillIds: due.skillIds, automationId: due.id });
+                await runtime.startTask({
+                    prompt: due.prompt,
+                    workspace: due.workspace,
+                    agentId: due.agentId,
+                    skillIds: due.skillIds,
+                    automationId: due.id,
+                });
+                runtime.setSnapshot((current) => ({
+                    ...current,
+                    automations: current.automations.map((automation) => automation.id === due.id
+                        ? { ...automation, nextRunAt: nextAutomationRunAt(automation.schedule, automation.scheduleTime, automation.scheduleWeekday) }
+                        : automation),
+                }));
             } catch (error) {
                 runtime.setRuntimeError(error instanceof Error ? error.message : String(error));
             } finally {
@@ -178,33 +178,32 @@ const ArkDesktopPage: React.FC = () => {
         return () => window.clearInterval(timer);
     }, [runtime.setSnapshot, runtime.snapshot.automations, runtime.snapshot.tasks, runtime.startTask, runtime.setRuntimeError]);
 
+    useEffect(() => {
+        if (draftWorkspace) void runtime.prepareEngine(draftWorkspace).catch(() => undefined);
+    }, [draftWorkspace, runtime.prepareEngine]);
+
+    useEffect(() => {
+        if (draftWorkspaceFollowsDefaultRef.current) {
+            setDraftWorkspace(runtime.snapshot.settings.workspace);
+        }
+    }, [runtime.snapshot.settings.workspace]);
+
     const query = searchValue.trim().toLowerCase();
     const filteredAgents = runtime.snapshot.agents.filter((agent) => !query || `${agent.name} ${agent.description}`.toLowerCase().includes(query));
-    const filteredTasks = runtime.snapshot.tasks.filter((task) => !query || `${task.title} ${task.prompt} ${task.workspace}`.toLowerCase().includes(query));
-    const workspaceTaskGroups = useMemo(() => {
-        const groups = new Map<string, ArkDesktopTask[]>();
-        filteredTasks.forEach((task) => {
-            const key = task.workspace || '__unassigned__';
-            groups.set(key, [...(groups.get(key) || []), task]);
-        });
-        return Array.from(groups.entries())
-            .map(([workspace, tasks]) => ({
-                workspace,
-                label: workspace === '__unassigned__' ? '未选择工作区' : workspace.split(/[\\/]/).filter(Boolean).pop() || workspace,
-                tasks: tasks.slice().sort((left, right) => right.updatedAt - left.updatedAt),
-            }))
-            .sort((left, right) => right.tasks[0].updatedAt - left.tasks[0].updatedAt);
-    }, [filteredTasks]);
 
-    const openNewTask = () => {
+    const openNewTask = (workspace?: string) => {
+        const nextWorkspace = workspace || runtime.snapshot.settings.workspace;
+        draftWorkspaceFollowsDefaultRef.current = !workspace;
         runtime.setActiveTaskId(null);
         setSection('new-task');
         setDraft('');
+        setDraftWorkspace(nextWorkspace);
         setAttachments([]);
         setAttachmentGrantIds([]);
     };
 
-    const openSettings = () => {
+    const openSettings = (tab: SettingsTab = 'general') => {
+        setSettingsTab(tab);
         runtime.setActiveTaskId(null);
         setSection('settings');
     };
@@ -218,6 +217,7 @@ const ArkDesktopPage: React.FC = () => {
         try {
             await runtime.startTask({
                 prompt: draft,
+                workspace: draftWorkspace,
                 agentId: selectedAgentId || undefined,
                 skillIds: selectedSkillIds,
                 attachmentPaths: attachments,
@@ -249,10 +249,39 @@ const ArkDesktopPage: React.FC = () => {
 
     const chooseWorkspace = async () => {
         try {
+            const selected = await runtime.pickWorkspace();
+            if (selected) {
+                draftWorkspaceFollowsDefaultRef.current = false;
+                setDraftWorkspace(selected);
+            }
+        } catch (error) {
+            runtime.setRuntimeError(error instanceof Error ? error.message : String(error));
+        }
+    };
+
+    const chooseDefaultWorkspace = async () => {
+        try {
             await runtime.selectWorkspace();
         } catch (error) {
             runtime.setRuntimeError(error instanceof Error ? error.message : String(error));
         }
+    };
+
+    const addWorkspace = async () => {
+        const selected = await runtime.pickWorkspace();
+        if (selected) openNewTask(selected);
+    };
+
+    const archiveSidebarTask = (taskId: string) => {
+        const wasActive = runtime.activeTaskId === taskId;
+        runtime.archiveTask(taskId);
+        if (wasActive) openNewTask();
+    };
+
+    const deleteSidebarTask = async (taskId: string) => {
+        const wasActive = runtime.activeTaskId === taskId;
+        await runtime.deleteTask(taskId);
+        if (wasActive) openNewTask();
     };
 
     const renderRuntimeBadge = () => {
@@ -271,6 +300,19 @@ const ArkDesktopPage: React.FC = () => {
             runtime.activeTask.engine === 'headless' ? '后台模式' : '实时会话',
         ].filter(Boolean).join(' · ')
         : undefined;
+    const workspaceOptions = useMemo(() => {
+        const latestByWorkspace = new Map<string, number>();
+        runtime.snapshot.tasks.forEach((task) => {
+            if (!task.workspace) return;
+            latestByWorkspace.set(task.workspace, Math.max(latestByWorkspace.get(task.workspace) || 0, task.updatedAt));
+        });
+        [runtime.snapshot.settings.workspace, draftWorkspace].filter(Boolean).forEach((workspace) => {
+            if (!latestByWorkspace.has(workspace)) latestByWorkspace.set(workspace, 0);
+        });
+        return Array.from(latestByWorkspace)
+            .sort((left, right) => right[1] - left[1])
+            .map(([workspace]) => workspace);
+    }, [draftWorkspace, runtime.snapshot.settings.workspace, runtime.snapshot.tasks]);
 
     useEffect(() => { document.title = headerTitle; }, [headerTitle]);
 
@@ -298,8 +340,8 @@ const ArkDesktopPage: React.FC = () => {
                 </div>
                 <label className="mb-3 flex h-9 w-full cursor-text items-center gap-2 rounded-lg border border-transparent bg-[#eeeeef] px-3 text-slate-400 transition focus-within:border-slate-200 focus-within:bg-white focus-within:ring-2 focus-within:ring-slate-100">
                     <Search size={16} className="shrink-0" />
-                    <span className="sr-only">搜索任务与智能体</span>
-                    <input value={searchValue} onChange={(event) => setSearchValue(event.target.value)} placeholder="搜索任务与智能体" className="min-w-0 flex-1 bg-transparent text-[13px] text-slate-700 outline-none placeholder:text-slate-400" />
+                    <span className="sr-only">搜索会话与智能体</span>
+                    <input value={searchValue} onChange={(event) => setSearchValue(event.target.value)} placeholder="搜索会话与智能体" className="min-w-0 flex-1 bg-transparent text-[13px] text-slate-700 outline-none placeholder:text-slate-400" />
                     {searchValue && <button type="button" onClick={() => setSearchValue('')} className="rounded p-0.5 text-slate-400 hover:bg-slate-200 hover:text-slate-600" title="清除搜索" aria-label="清除搜索"><X size={13} /></button>}
                 </label>
                 <nav className="space-y-0.5">
@@ -308,23 +350,23 @@ const ArkDesktopPage: React.FC = () => {
                         return <button key={item.id} type="button" onClick={() => item.id === 'new-task' ? openNewTask() : setSection(item.id)} className={`flex h-10 w-full items-center gap-3 rounded-lg px-3 text-left text-[14px] font-medium transition ${section === item.id && !runtime.activeTask ? 'bg-[#e9e9eb] text-[#25262b]' : 'text-[#55565c] hover:bg-[#eeeeef] hover:text-[#303136]'}`}><Icon size={18} strokeWidth={1.8} />{item.label}</button>;
                     })}
                 </nav>
-                <div className="mt-6 min-h-0 flex-1 overflow-y-auto pr-1">
-                    <div className="mb-2 flex items-center justify-between px-3 text-[11px] font-medium text-slate-400"><span>工作空间</span><Folder size={14} strokeWidth={1.8} /></div>
-                    <div className="space-y-4">
-                        {workspaceTaskGroups.map((group) => (
-                            <div key={group.workspace}>
-                                <button type="button" onClick={() => setCollapsedWorkspaceKeys((current) => { const next = new Set(current); if (next.has(group.workspace)) next.delete(group.workspace); else next.add(group.workspace); return next; })} className="flex w-full items-center gap-2 rounded-lg px-3 py-1.5 text-left text-[14px] font-medium text-[#47484e] hover:bg-[#eeeeef]" title={group.workspace === '__unassigned__' ? undefined : group.workspace} aria-expanded={!collapsedWorkspaceKeys.has(group.workspace)}><ChevronDown size={14} className={`shrink-0 text-slate-400 transition-transform ${collapsedWorkspaceKeys.has(group.workspace) ? '-rotate-90' : ''}`} /><Folder size={16} strokeWidth={1.7} className="shrink-0 text-slate-500" /><span className="min-w-0 flex-1 truncate">{group.label}</span><span className="shrink-0 text-[11px] text-slate-400">{group.tasks.length}</span></button>
-                                {!collapsedWorkspaceKeys.has(group.workspace) && <div className="mt-0.5 space-y-0.5">{group.tasks.map((task) => (
-                                    <button key={task.id} type="button" onClick={() => { setLatestMessageTaskId(task.id); runtime.setActiveTaskId(task.id); }} className={`w-full rounded-lg px-3 py-2 text-left transition ${runtime.activeTaskId === task.id ? 'bg-[#e8e8ea] text-[#25262b]' : 'text-[#55565c] hover:bg-[#eeeeef]'}`}>
-                                        <span className="block truncate text-[13px] font-medium">{task.title}</span>
-                                        <span className="mt-0.5 flex items-center justify-between text-[11px] text-slate-400"><span>{taskStatus[task.status].label}</span><span>{formatDateTime(task.updatedAt)}</span></span>
-                                    </button>
-                                ))}</div>}
-                            </div>
-                        ))}
-                        {workspaceTaskGroups.length === 0 && <div className="px-3 py-8 text-center text-xs text-slate-400">暂无本地会话</div>}
-                    </div>
-                </div>
+                <WorkspaceSessionSidebar
+                    tasks={runtime.snapshot.tasks}
+                    defaultWorkspace={runtime.snapshot.settings.workspace}
+                    searchValue={searchValue}
+                    activeTaskId={runtime.activeTaskId}
+                    onOpenTask={(taskId) => { setLatestMessageTaskId(taskId); setSection('new-task'); runtime.setActiveTaskId(taskId); }}
+                    onAddWorkspace={addWorkspace}
+                    onCreateInWorkspace={openNewTask}
+                    onSetDefaultWorkspace={runtime.setDefaultWorkspace}
+                    onRevealWorkspace={runtime.revealWorkspace}
+                    onRenameTask={runtime.renameTask}
+                    onToggleTaskPin={runtime.toggleTaskPin}
+                    onArchiveTask={archiveSidebarTask}
+                    onRestoreTask={runtime.restoreTask}
+                    onDeleteTask={deleteSidebarTask}
+                    onError={runtime.setRuntimeError}
+                />
                 <div className="mt-3 flex items-center justify-between border-t border-[#e5e5e7] px-2 pt-3 text-xs" title={runtime.runtimeStatus?.version || runtime.runtimeStatus?.message || '正在检测内置智能引擎'}><span className="flex items-center gap-2"><span className="flex h-7 w-7 items-center justify-center rounded-full bg-[#313238] text-[10px] font-medium text-white">U</span><span className="font-medium text-[#494a4f]">本地任务</span></span><span>{renderRuntimeBadge()}</span></div>
             </aside>
             <section className="relative flex min-w-0 flex-1 flex-col overflow-hidden">
@@ -341,20 +383,27 @@ const ArkDesktopPage: React.FC = () => {
                         newTask={!runtime.activeTask ? {
                             selectedSkillIds,
                             setSelectedSkillIds,
+                            workspace: draftWorkspace,
                             attachments,
                             setAttachments,
                             runTask,
                             chooseAttachments,
                             chooseWorkspace,
+                            workspaceOptions,
+                            selectWorkspace: (workspace) => {
+                                draftWorkspaceFollowsDefaultRef.current = false;
+                                setDraftWorkspace(workspace);
+                            },
                             actionPending,
+                            managePlugins: () => openSettings('plugins'),
                         } : undefined}
                     /> : section === 'agents' ? (
                         <AgentsView agents={filteredAgents} skills={runtime.snapshot.skills} runtime={runtime} onEdit={(id) => setEditor({ type: 'agent', id })} onCreate={() => setEditor({ type: 'agent' })} onUse={(id) => { setSelectedAgentId(id); openNewTask(); }} />
                     ) : section === 'skills' ? (
                         <SkillsView skills={runtime.snapshot.skills} runtime={runtime} onEdit={(id) => setEditor({ type: 'skill', id })} onCreate={() => setEditor({ type: 'skill' })} />
                     ) : section === 'automations' ? (
-                        <AutomationsView automations={runtime.snapshot.automations} runtime={runtime} onEdit={(id) => setEditor({ type: 'automation', id })} onCreate={() => setEditor({ type: 'automation' })} />
-                    ) : <SettingsView runtime={runtime} chooseWorkspace={chooseWorkspace} />}
+                        <AutomationCenter runtime={runtime} onEdit={(id) => setEditor({ type: 'automation', id })} />
+                    ) : <SettingsView runtime={runtime} chooseWorkspace={chooseDefaultWorkspace} initialTab={settingsTab} />}
                 </main>
             </section>
 
@@ -371,12 +420,16 @@ const ArkDesktopPage: React.FC = () => {
 interface NewTaskConfig {
     selectedSkillIds: string[];
     setSelectedSkillIds: React.Dispatch<React.SetStateAction<string[]>>;
+    workspace: string;
     attachments: string[];
     setAttachments: React.Dispatch<React.SetStateAction<string[]>>;
     runTask: () => Promise<void>;
     chooseAttachments: () => Promise<void>;
     chooseWorkspace: () => Promise<void>;
+    workspaceOptions: string[];
+    selectWorkspace: (workspace: string) => void;
     actionPending: boolean;
+    managePlugins: () => void;
 }
 
 const ToolCopyButton: React.FC<{ value: string; label?: string }> = ({ value, label = '复制' }) => {
@@ -545,29 +598,181 @@ const TaskMessage: React.FC<{ message: ArkDesktopTask['messages'][number]; attac
     return <div ref={scrollTarget} className="scroll-mt-6 py-2"><MarkdownContent content={message.content} /></div>;
 };
 
+const workspaceName = (workspace: string) => workspace.split(/[\\/]/).filter(Boolean).pop() || workspace;
+
+const WorkspacePicker: React.FC<{
+    workspace: string;
+    workspaces: string[];
+    disabled?: boolean;
+    onSelect: (workspace: string) => void;
+    onBrowse: () => Promise<void>;
+}> = ({ workspace, workspaces, disabled = false, onSelect, onBrowse }) => {
+    const [open, setOpen] = useState(false);
+    const [query, setQuery] = useState('');
+    const [activeIndex, setActiveIndex] = useState(0);
+    const menuRef = useRef<HTMLDivElement>(null);
+    const searchRef = useRef<HTMLInputElement>(null);
+    const label = workspaceName(workspace) || '选择工作空间';
+    const normalizedQuery = query.trim().toLowerCase();
+    const filteredWorkspaces = workspaces.filter((item) => !normalizedQuery
+        || `${workspaceName(item)} ${item}`.toLowerCase().includes(normalizedQuery));
+
+    useEffect(() => {
+        if (!open) return undefined;
+        const close = (event: MouseEvent) => {
+            if (!menuRef.current?.contains(event.target as Node)) setOpen(false);
+        };
+        const closeOnEscape = (event: KeyboardEvent) => {
+            if (event.key === 'Escape') setOpen(false);
+        };
+        const focusFrame = window.requestAnimationFrame(() => searchRef.current?.focus());
+        window.addEventListener('mousedown', close);
+        window.addEventListener('keydown', closeOnEscape);
+        return () => {
+            window.cancelAnimationFrame(focusFrame);
+            window.removeEventListener('mousedown', close);
+            window.removeEventListener('keydown', closeOnEscape);
+        };
+    }, [open]);
+
+    const select = (nextWorkspace: string) => {
+        onSelect(nextWorkspace);
+        setOpen(false);
+        setQuery('');
+    };
+
+    const openMenu = () => {
+        setQuery('');
+        setActiveIndex(0);
+        setOpen((current) => !current);
+    };
+
+    const handleSearchKeyDown = (event: React.KeyboardEvent<HTMLInputElement>) => {
+        if (event.key === 'ArrowDown') {
+            event.preventDefault();
+            setActiveIndex((current) => Math.max(0, Math.min(current + 1, filteredWorkspaces.length - 1)));
+        } else if (event.key === 'ArrowUp') {
+            event.preventDefault();
+            setActiveIndex((current) => Math.max(current - 1, 0));
+        } else if (event.key === 'Enter' && filteredWorkspaces[activeIndex]) {
+            event.preventDefault();
+            select(filteredWorkspaces[activeIndex]);
+        }
+    };
+
+    return <div ref={menuRef} className="relative">
+        {open && <div className="absolute bottom-[calc(100%+10px)] left-0 z-50 w-[min(430px,calc(100vw-48px))] overflow-hidden rounded-[18px] border border-[#d8d8db] bg-white p-2 shadow-[0_20px_55px_rgba(15,23,42,0.16)]">
+            <label className="flex h-14 items-center gap-3 px-3 text-slate-400">
+                <Search size={18} strokeWidth={1.8} className="shrink-0" />
+                <span className="sr-only">搜索项目</span>
+                <input
+                    ref={searchRef}
+                    value={query}
+                    onChange={(event) => {
+                        setQuery(event.target.value);
+                        setActiveIndex(0);
+                    }}
+                    onKeyDown={handleSearchKeyDown}
+                    placeholder="搜索项目"
+                    className="min-w-0 flex-1 bg-transparent text-[15px] text-[#303136] outline-none placeholder:text-[#8d8e93]"
+                />
+                {query && <button type="button" onClick={() => setQuery('')} className="rounded-md p-1 text-slate-400 hover:bg-slate-100 hover:text-slate-600" title="清除搜索" aria-label="清除搜索"><X size={14} /></button>}
+            </label>
+            <div role="listbox" aria-label="工作区项目" className="custom-scrollbar max-h-[280px] overflow-y-auto">
+                {filteredWorkspaces.length ? filteredWorkspaces.map((item, index) => {
+                    const selected = item === workspace;
+                    return <button
+                        key={item}
+                        type="button"
+                        role="option"
+                        aria-selected={selected}
+                        title={item}
+                        onMouseEnter={() => setActiveIndex(index)}
+                        onClick={() => select(item)}
+                        className={`flex h-14 w-full items-center gap-3 rounded-[13px] px-3 text-left text-[#303136] transition ${activeIndex === index ? 'bg-[#f0f0f1]' : 'hover:bg-[#f4f4f5]'}`}
+                    >
+                        <Folder size={19} strokeWidth={1.8} className="shrink-0 text-[#55565b]" />
+                        <span className="min-w-0 flex-1 truncate text-[15px] font-medium">{workspaceName(item)}</span>
+                        {selected && <Check size={18} strokeWidth={1.8} className="shrink-0 text-[#55565b]" />}
+                    </button>;
+                }) : <div className="flex h-20 items-center justify-center text-sm text-slate-400">没有匹配的项目</div>}
+            </div>
+            <div className="mt-1 border-t border-[#ececee] pt-1">
+                <button
+                    type="button"
+                    onClick={() => {
+                        setOpen(false);
+                        setQuery('');
+                        void onBrowse();
+                    }}
+                    className="flex h-12 w-full items-center gap-3 rounded-[13px] px-3 text-left text-[14px] font-medium text-[#55565b] transition hover:bg-[#f4f4f5] hover:text-[#303136]"
+                >
+                    <FolderOpen size={18} strokeWidth={1.8} />
+                    选择其他文件夹…
+                </button>
+            </div>
+        </div>}
+        <button
+            type="button"
+            disabled={disabled}
+            onClick={openMenu}
+            aria-haspopup="listbox"
+            aria-expanded={open}
+            aria-label={`选择工作区，当前为 ${label}`}
+            className={`flex h-8 max-w-48 items-center gap-1.5 rounded-lg px-2 text-[#5b5c61] transition hover:bg-[#f1f1f2] hover:text-[#303136] disabled:cursor-not-allowed disabled:opacity-50 ${open ? 'bg-[#eeeeef] text-[#303136]' : ''}`}
+            title={workspace || '选择任务工作空间'}
+        >
+            <Folder size={15} strokeWidth={1.8} className="shrink-0 text-[#6b6c71]" />
+            <span className="min-w-0 flex-1 truncate text-[12px] font-medium">{label}</span>
+            <ChevronDown size={11} strokeWidth={1.8} className={`shrink-0 text-[#9a9ba0] transition-transform ${open ? 'rotate-180' : ''}`} />
+        </button>
+    </div>;
+};
+
 const TaskComposer: React.FC<{ task?: ArkDesktopTask; runtime: ReturnType<typeof useArkDesktopRuntime>; value: string; onChange: (value: string) => void; onSubmit: () => Promise<void>; onCancel?: () => Promise<void>; sending: boolean; newTask?: NewTaskConfig }> = ({ task, runtime, value, onChange, onSubmit, onCancel, sending, newTask }) => {
     const isNewTask = !task;
     const isRunning = task?.status === 'running';
     const isWaitingAuthorization = task?.status === 'waiting_authorization';
     const execution = runtime.snapshot.settings.execution;
-    const workspace = runtime.snapshot.settings.workspace;
-    const workspaceLabel = workspace.split(/[\\/]/).filter(Boolean).pop() || '选择工作空间';
+    const workspace = isNewTask ? newTask?.workspace || '' : task?.workspace || runtime.snapshot.settings.workspace;
     const canSubmit = isNewTask
-        ? !sending && (!!value.trim() || (execution.engine === 'headless' && execution.promptMode !== 'text'))
+        ? Boolean(workspace) && !sending && (!!value.trim() || (execution.engine === 'headless' && execution.promptMode !== 'text'))
         : !isWaitingAuthorization && !sending && !!value.trim();
     return <div className="sticky bottom-0 mt-7 bg-gradient-to-t from-white via-white to-white/85 pt-5">
-        {task?.engine !== 'headless' && <SessionCommandBar commands={task?.availableCommands || []} disabled={isRunning || isWaitingAuthorization || sending} onSelect={onChange} />}
         {isNewTask && newTask?.attachments.length ? <div className="mb-2 flex flex-wrap gap-2">{newTask.attachments.map((path) => <span key={path} title={path} className="flex max-w-72 items-center gap-1.5 rounded-lg border border-slate-200 bg-white px-2.5 py-1.5 text-xs text-slate-600"><Paperclip size={13} /><span className="truncate">{path.split(/[\\/]/).pop()}</span><button type="button" onClick={() => newTask.setAttachments((current) => current.filter((item) => item !== path))} aria-label="移除附件"><X size={13} /></button></span>)}</div> : null}
         <div className="rounded-[22px] border border-slate-200 bg-white p-2 shadow-[0_10px_28px_rgba(15,23,42,0.09)] transition focus-within:border-slate-300 focus-within:shadow-[0_12px_34px_rgba(15,23,42,0.12)]">
-            {isNewTask && <div className="flex items-center gap-1 px-1 pt-0.5 text-slate-500"><button type="button" onClick={() => void newTask?.chooseAttachments()} className="rounded-md p-1.5 hover:bg-slate-100" title="添加本地文件"><Paperclip size={16} /></button></div>}
             <ConversationPromptInput value={value} commands={task?.availableCommands?.length ? task.availableCommands : runtime.availableCommands} onChange={onChange} onSubmit={onSubmit} disabled={isRunning || isWaitingAuthorization || sending} slashDisabled={task?.engine === 'headless' || (isNewTask && execution.engine === 'headless')} placeholder={isNewTask ? '描述希望智能体在本地完成的任务，输入 / 查看会话命令…' : isWaitingAuthorization ? '请先解锁本地模型密钥…' : task?.sessionId ? '继续补充任务要求，输入 / 查看会话命令…' : '输入指令，将尝试恢复原历史会话…'} rows={2} />
             <div className={`flex flex-wrap items-center justify-between gap-2 px-1 ${isNewTask ? 'pt-1' : 'pb-1'}`}>
                 <div className="relative flex min-w-0 flex-wrap items-center gap-1">
                     {isNewTask && newTask ? <>
-                        <button type="button" onClick={() => void newTask.chooseWorkspace()} className="flex max-w-52 items-center gap-1.5 rounded-lg px-2.5 py-2 text-xs font-medium text-slate-500 hover:bg-slate-100" title={workspace || '选择任务工作空间'}><Folder size={15} /><span className="truncate">{workspaceLabel}</span></button>
+                        <SessionCommandBar
+                            commands={runtime.availableCommands}
+                            disabled={sending}
+                            onSelect={onChange}
+                            onChooseAttachments={newTask.chooseAttachments}
+                            skills={runtime.snapshot.skills}
+                            selectedSkillIds={newTask.selectedSkillIds}
+                            onToggleSkill={(skillId) => newTask.setSelectedSkillIds((current) => current.includes(skillId)
+                                ? current.filter((id) => id !== skillId)
+                                : [...current, skillId])}
+                            plugins={runtime.discoveredPlugins}
+                            sessionPluginDirs={execution.pluginDirs.split('\n').map((item) => item.trim()).filter(Boolean)}
+                            capabilitiesLoading={runtime.capabilitiesLoading}
+                            capabilitiesError={runtime.capabilitiesError}
+                            onRefreshCapabilities={async () => { await runtime.prepareEngine(workspace); }}
+                            onManagePlugins={newTask.managePlugins}
+                        />
+                        <WorkspacePicker
+                            workspace={workspace}
+                            workspaces={newTask.workspaceOptions}
+                            disabled={sending}
+                            onSelect={newTask.selectWorkspace}
+                            onBrowse={newTask.chooseWorkspace}
+                        />
                         <PermissionModePicker value={execution.permissionMode} onChange={(permissionMode) => runtime.setSnapshot((current) => ({ ...current, settings: { ...current.settings, execution: { ...current.settings.execution, permissionMode, alwaysApprove: false } } }))} />
                         <DefaultModelPicker runtime={runtime} />
                     </> : task ? <>
+                        {task.engine !== 'headless' && <SessionCommandBar commands={task.availableCommands || []} disabled={isRunning || isWaitingAuthorization || sending} onSelect={onChange} />}
                         <PermissionModePicker value={task.permissionMode || execution.permissionMode} disabled={isRunning || isWaitingAuthorization} onChange={(permissionMode) => runtime.setTaskPermissionMode(task.id, permissionMode)} />
                         <TaskModelPicker task={task} runtime={runtime} />
                     </> : null}
@@ -691,11 +896,6 @@ const AgentsView: React.FC<{ agents: ArkDesktopAgent[]; skills: ArkDesktopSkill[
 
 const SkillsView: React.FC<{ skills: ArkDesktopSkill[]; runtime: ReturnType<typeof useArkDesktopRuntime>; onEdit: (id: string) => void; onCreate: () => void }> = ({ skills, runtime, onEdit, onCreate }) => <div className="p-6 md:p-8"><ViewHeader title="技能" description="仅注入本地任务会话，不读取或复用原 ARK 技能。" onCreate={onCreate} button="新建技能" /><div className="grid gap-4 md:grid-cols-2 xl:grid-cols-3">{skills.map((skill) => <div key={skill.id} className="rounded-2xl border border-slate-200 p-5"><div className="flex items-start justify-between gap-3"><span className="rounded-lg bg-slate-100 px-2 py-1 text-xs text-slate-500">{categoryLabel[skill.category]}</span><Toggle checked={skill.enabled} label={`启用 ${skill.name}`} onChange={() => runtime.setSnapshot((current) => ({ ...current, skills: current.skills.map((item) => item.id === skill.id ? { ...item, enabled: !item.enabled } : item) }))} /></div><h3 className="mt-4 font-semibold text-slate-900">{skill.name}</h3><p className="mt-2 text-sm leading-6 text-slate-500">{skill.description}</p><button type="button" onClick={() => onEdit(skill.id)} className="mt-4 flex items-center gap-1.5 text-xs font-medium text-slate-600"><Pencil size={14} />编辑任务指令</button></div>)}</div></div>;
 
-const AutomationsView: React.FC<{ automations: ArkDesktopAutomation[]; runtime: ReturnType<typeof useArkDesktopRuntime>; onEdit: (id: string) => void; onCreate: () => void }> = ({ automations, runtime, onEdit, onCreate }) => {
-    const run = async (automation: ArkDesktopAutomation) => { try { runtime.setActiveTaskId(await runtime.startTask({ prompt: automation.prompt, agentId: automation.agentId, skillIds: automation.skillIds, automationId: automation.id })); } catch (error) { runtime.setRuntimeError(error instanceof Error ? error.message : String(error)); } };
-    return <div className="p-6 md:p-8"><ViewHeader title="自动化" description="保存可重复任务；每日/每周计划会在 URGS 桌面客户端运行期间自动触发。" onCreate={onCreate} button="新建自动化" /><div className="space-y-4">{automations.map((automation) => <div key={automation.id} className="rounded-2xl border border-slate-200 p-5"><div className="flex flex-wrap items-start justify-between gap-4"><div><div className="flex items-center gap-2"><h3 className="font-semibold text-slate-900">{automation.name}</h3>{automation.schedule !== 'manual' && <span className="rounded-full bg-blue-50 px-2 py-1 text-[11px] text-blue-600"><Clock3 size={11} className="mr-1 inline" />{automation.schedule === 'daily' ? '每日' : '每周'} {automation.scheduleTime}</span>}</div><p className="mt-1 text-sm text-slate-500">{automation.description}</p><p className="mt-3 line-clamp-2 text-sm leading-6 text-slate-600">{automation.prompt}</p><div className="mt-3 text-xs text-slate-400">上次：{formatDateTime(automation.lastRunAt)}{automation.nextRunAt ? ` · 下次：${formatDateTime(automation.nextRunAt)}` : ''}</div></div><div className="flex items-center gap-2"><Toggle checked={automation.enabled} label={`启用 ${automation.name}`} onChange={() => runtime.setSnapshot((current) => ({ ...current, automations: current.automations.map((item) => item.id === automation.id ? { ...item, enabled: !item.enabled, nextRunAt: !item.enabled ? nextRunAt(item.schedule, item.scheduleTime, item.scheduleWeekday) : undefined } : item) }))} /><button type="button" onClick={() => onEdit(automation.id)} className="rounded-lg border border-slate-200 p-2 text-slate-500"><Pencil size={16} /></button><button type="button" disabled={!automation.enabled} onClick={() => void run(automation)} className="flex items-center gap-1.5 rounded-lg bg-slate-900 px-3 py-2 text-xs font-medium text-white disabled:opacity-40"><Play size={14} />立即运行</button></div></div></div>)}</div></div>;
-};
-
 const ModelProviderPanel: React.FC<{ providers: ArkDesktopModelProvider[]; currentModel: string; onSave: ReturnType<typeof useArkDesktopRuntime>['saveModelProvider']; onSelect: (model: string) => Promise<void>; onDelete: ReturnType<typeof useArkDesktopRuntime>['removeModelProvider']; onError: (message: string) => void }> = ({ providers, currentModel, onSave, onSelect, onDelete, onError }) => {
     const [name, setName] = useState('');
     const [model, setModel] = useState('');
@@ -754,11 +954,10 @@ const ModelProviderPanel: React.FC<{ providers: ArkDesktopModelProvider[]; curre
     return <div className="rounded-2xl border border-slate-200 p-5"><div><h3 className="font-semibold text-slate-900">模型连接</h3><p className="mt-1 text-sm leading-6 text-slate-500">添加 OpenAI 兼容、Responses 或 Messages 协议的模型。任务仍由内置智能引擎执行工具和工作区操作，仅推理由这里配置的模型完成。</p></div><div className="mt-5 grid gap-3 md:grid-cols-2"><Field label="连接名称"><input value={name} onChange={(event) => setName(event.target.value)} placeholder="例如：通义千问" className={inputClass} /></Field><Field label="模型标识"><input value={model} onChange={(event) => setModel(event.target.value)} placeholder="例如：qwen-plus" className={inputClass} /></Field><Field label="API Base URL"><input value={baseUrl} onChange={(event) => setBaseUrl(event.target.value)} placeholder="例如：http://127.0.0.1:1234/v1" className={inputClass} /></Field><Field label="API Key"><input type="password" value={apiKey} onChange={(event) => setApiKey(event.target.value)} placeholder={editingProviderId ? '留空则保留已有密钥' : '仅保存到系统凭据库'} className={inputClass} /></Field><Field label="API 协议"><select value={apiBackend} onChange={(event) => setApiBackend(event.target.value as ArkDesktopModelProvider['apiBackend'])} className={inputClass}><option value="chat_completions">Chat Completions（Kimi / Qwen / OpenAI）</option><option value="responses">Responses</option><option value="messages">Messages</option></select></Field><Field label="认证方式"><select value={authScheme} onChange={(event) => setAuthScheme(event.target.value as ArkDesktopModelProvider['authScheme'])} className={inputClass}><option value="bearer">Bearer Token</option><option value="x_api_key">x-api-key</option></select></Field><Field label="上下文窗口"><input type="number" min="4096" max="2000000" value={contextWindow} onChange={(event) => setContextWindow(event.target.value)} className={inputClass} /></Field></div><div className="mt-4 flex justify-end gap-2">{editingProviderId && <button type="button" disabled={saving} onClick={() => { setEditingProviderId(undefined); setName(''); setModel(''); setBaseUrl(''); setApiKey(''); }} className="rounded-xl border border-slate-200 px-3.5 py-2.5 text-sm text-slate-600">取消编辑</button>}<button type="button" disabled={saving || !name.trim() || !model.trim() || !baseUrl.trim()} onClick={() => void add()} className="flex items-center gap-1.5 rounded-xl bg-slate-900 px-3.5 py-2.5 text-sm text-white disabled:opacity-40">{saving ? <LoaderCircle size={15} className="animate-spin" /> : <Plus size={15} />}{editingProviderId ? '保存连接' : '添加并设为默认'}</button></div><div className="mt-5 space-y-2">{providers.length === 0 ? <div className="rounded-xl bg-slate-50 px-3 py-3 text-sm text-slate-400">暂未添加模型连接。添加后即可在新任务和会话中选择。</div> : providers.map((provider) => <div key={provider.id} className={`flex flex-wrap items-center justify-between gap-3 rounded-xl border px-3.5 py-3 ${provider.id === currentModel ? 'border-slate-800 bg-slate-50' : 'border-slate-200'}`}><div className="min-w-0"><div className="flex items-center gap-2"><span className="font-medium text-slate-800">{provider.name}</span>{provider.id === currentModel && <span className="rounded bg-slate-900 px-1.5 py-0.5 text-[10px] text-white">默认</span>}{provider.hasApiKey ? <span className="text-xs text-emerald-600">密钥已保存</span> : <span className="text-xs text-amber-600">未配置密钥</span>}</div><p className="mt-1 truncate text-xs text-slate-500">{provider.model} · {provider.baseUrl}</p></div><div className="flex items-center gap-2"><button type="button" disabled={saving} onClick={() => edit(provider)} className="rounded-lg border border-slate-200 px-2.5 py-1.5 text-xs text-slate-600 disabled:opacity-40">编辑</button><button type="button" disabled={saving || provider.id === currentModel} onClick={() => void apply(() => onSelect(provider.id))} className="rounded-lg border border-slate-200 px-2.5 py-1.5 text-xs text-slate-600 disabled:opacity-40">设为默认</button><button type="button" disabled={saving} onClick={() => void remove(provider)} className="rounded-lg p-1.5 text-slate-400 hover:bg-red-50 hover:text-red-600 disabled:opacity-40" title="删除模型连接"><Trash2 size={16} /></button></div></div>)}</div></div>;
 };
 
-type SettingsTab = 'general' | 'execution' | 'configuration' | 'diagnostics';
-
-const SettingsView: React.FC<{ runtime: ReturnType<typeof useArkDesktopRuntime>; chooseWorkspace: () => Promise<void> }> = ({ runtime, chooseWorkspace }) => {
-    const [activeTab, setActiveTab] = useState<SettingsTab>('general');
+const SettingsView: React.FC<{ runtime: ReturnType<typeof useArkDesktopRuntime>; chooseWorkspace: () => Promise<void>; initialTab?: SettingsTab }> = ({ runtime, chooseWorkspace, initialTab = 'general' }) => {
+    const [activeTab, setActiveTab] = useState<SettingsTab>(initialTab);
     const rootRef = useRef<HTMLDivElement>(null);
+    useEffect(() => setActiveTab(initialTab), [initialTab]);
     const selectedProvider = runtime.snapshot.settings.modelProviders.find((provider) => provider.id === runtime.snapshot.settings.grokModel);
     const runtimeReady = Boolean(runtime.runtimeStatus?.available);
     const modelReady = Boolean(selectedProvider?.enabled && selectedProvider.hasApiKey);
@@ -769,6 +968,7 @@ const SettingsView: React.FC<{ runtime: ReturnType<typeof useArkDesktopRuntime>;
         { id: 'general', label: '常规', description: '运行状态、工作区与模型', icon: Cpu },
         { id: 'execution', label: '任务执行', description: '权限、工具与会话参数', icon: CheckSquare },
         { id: 'configuration', label: '运行配置', description: '用户与项目 TOML', icon: Code2 },
+        { id: 'plugins', label: '插件', description: '本地安装与会话加载', icon: Puzzle },
         { id: 'diagnostics', label: 'CLI 与诊断', description: '长尾能力和本地维护', icon: Wrench },
     ];
     const selectTab = (tab: SettingsTab) => {
@@ -778,7 +978,7 @@ const SettingsView: React.FC<{ runtime: ReturnType<typeof useArkDesktopRuntime>;
 
     return <div ref={rootRef} className="mx-auto w-full max-w-5xl p-6 md:p-8">
         <div className="mb-5"><h1 className="text-2xl font-semibold tracking-[-0.03em] text-slate-900">设置</h1><p className="mt-1 text-sm text-slate-500">先确认运行条件，再按需调整高级能力。</p></div>
-        <div className="mb-6 grid gap-2 rounded-2xl bg-slate-100 p-1.5 md:grid-cols-4" role="tablist" aria-label="智能任务中心设置">
+        <div className="mb-6 grid gap-2 rounded-2xl bg-slate-100 p-1.5 md:grid-cols-5" role="tablist" aria-label="智能任务中心设置">
             {tabs.map((tab) => {
                 const Icon = tab.icon;
                 const active = activeTab === tab.id;
@@ -797,6 +997,7 @@ const SettingsView: React.FC<{ runtime: ReturnType<typeof useArkDesktopRuntime>;
 
         {activeTab === 'execution' && <div role="tabpanel"><GrokExecutionSettingsPanel value={runtime.snapshot.settings.execution} onChange={(execution) => runtime.setSnapshot((current) => ({ ...current, settings: { ...current.settings, execution } }))} /></div>}
         {activeTab === 'configuration' && <div role="tabpanel"><GrokConfigEditor workspace={runtime.snapshot.settings.workspace} onError={runtime.setRuntimeError} /></div>}
+        {activeTab === 'plugins' && <GrokPluginManager workspace={runtime.snapshot.settings.workspace} onChanged={runtime.reloadPluginCapabilities} onError={runtime.setRuntimeError} />}
         {activeTab === 'diagnostics' && <div className="space-y-6" role="tabpanel"><GrokCliCenter workspace={runtime.snapshot.settings.workspace} onError={runtime.setRuntimeError} /><div className="rounded-2xl border border-red-200 p-5"><h3 className="font-semibold text-slate-900">重置本地数据</h3><p className="mt-1 text-sm text-slate-500">清除自定义智能体、技能、运行配置、自动化和任务历史，不会删除工作区文件。</p><button type="button" onClick={() => { if (window.confirm('确认重置智能任务中心的全部本地配置和历史？')) runtime.resetAll(); }} className="mt-4 flex items-center gap-2 rounded-lg bg-red-50 px-3 py-2 text-sm text-red-700"><Trash2 size={16} />重置数据</button></div></div>}
     </div>;
 };
@@ -818,8 +1019,8 @@ const SkillEditor: React.FC<{ id?: string; runtime: ReturnType<typeof useArkDesk
 const AutomationEditor: React.FC<{ id?: string; runtime: ReturnType<typeof useArkDesktopRuntime>; onClose: () => void }> = ({ id, runtime, onClose }) => {
     const source = runtime.snapshot.automations.find((item) => item.id === id);
     const [value, setValue] = useState<ArkDesktopAutomation>(source || { id: createLocalId('automation'), name: '', description: '', prompt: '', agentId: runtime.snapshot.settings.defaultAgentId, skillIds: [], schedule: 'manual', scheduleTime: '09:00', scheduleWeekday: 1, enabled: true });
-    const save = () => { if (!value.name.trim() || !value.prompt.trim()) return; const saved = { ...value, nextRunAt: value.enabled ? nextRunAt(value.schedule, value.scheduleTime, value.scheduleWeekday) : undefined }; runtime.setSnapshot((current) => ({ ...current, automations: source ? current.automations.map((item) => item.id === source.id ? saved : item) : [...current.automations, saved] })); onClose(); };
-    return <Modal title={source ? '编辑自动化' : '新建自动化'} onClose={onClose}><div className="space-y-4"><Field label="名称"><input className={inputClass} value={value.name} onChange={(event) => setValue({ ...value, name: event.target.value })} /></Field><Field label="说明"><input className={inputClass} value={value.description} onChange={(event) => setValue({ ...value, description: event.target.value })} /></Field><Field label="任务内容"><textarea className={inputClass} rows={6} value={value.prompt} onChange={(event) => setValue({ ...value, prompt: event.target.value })} /></Field><div className="grid gap-4 sm:grid-cols-2"><Field label="执行 Agent"><select className={inputClass} value={value.agentId} onChange={(event) => setValue({ ...value, agentId: event.target.value })}>{runtime.snapshot.agents.filter((agent) => agent.enabled).map((agent) => <option key={agent.id} value={agent.id}>{agent.name}</option>)}</select></Field><Field label="运行计划"><select className={inputClass} value={value.schedule} onChange={(event) => setValue({ ...value, schedule: event.target.value as AutomationSchedule })}><option value="manual">仅手动</option><option value="daily">每日</option><option value="weekly">每周</option></select></Field></div>{value.schedule !== 'manual' && <div className="grid gap-4 sm:grid-cols-2">{value.schedule === 'weekly' && <Field label="星期"><select className={inputClass} value={value.scheduleWeekday} onChange={(event) => setValue({ ...value, scheduleWeekday: Number(event.target.value) })}>{['周日', '周一', '周二', '周三', '周四', '周五', '周六'].map((label, index) => <option key={label} value={index}>{label}</option>)}</select></Field>}<Field label="时间"><input type="time" className={inputClass} value={value.scheduleTime} onChange={(event) => setValue({ ...value, scheduleTime: event.target.value })} /></Field></div>}<EditorActions canDelete={Boolean(source)} onDelete={() => { runtime.setSnapshot((current) => ({ ...current, automations: current.automations.filter((item) => item.id !== source?.id) })); onClose(); }} onClose={onClose} onSave={save} /></div></Modal>;
+    const save = () => { if (!value.name.trim() || !value.prompt.trim()) return; const saved = { ...value, nextRunAt: value.enabled ? nextAutomationRunAt(value.schedule, value.scheduleTime, value.scheduleWeekday) : undefined }; runtime.setSnapshot((current) => ({ ...current, automations: source ? current.automations.map((item) => item.id === source.id ? saved : item) : [...current.automations, saved] })); onClose(); };
+    return <Modal title={source ? '编辑独立计划' : '新建独立计划'} onClose={onClose}><div className="space-y-4"><Field label="名称"><input className={inputClass} value={value.name} onChange={(event) => setValue({ ...value, name: event.target.value })} /></Field><Field label="说明"><input className={inputClass} value={value.description} onChange={(event) => setValue({ ...value, description: event.target.value })} /></Field><Field label="任务内容"><textarea className={inputClass} rows={6} value={value.prompt} onChange={(event) => setValue({ ...value, prompt: event.target.value })} /></Field><div className="grid gap-4 sm:grid-cols-2"><Field label="执行 Agent"><select className={inputClass} value={value.agentId} onChange={(event) => setValue({ ...value, agentId: event.target.value })}>{runtime.snapshot.agents.filter((agent) => agent.enabled).map((agent) => <option key={agent.id} value={agent.id}>{agent.name}</option>)}</select></Field><Field label="运行计划"><select className={inputClass} value={value.schedule} onChange={(event) => setValue({ ...value, schedule: event.target.value as AutomationSchedule })}><option value="manual">仅手动</option><option value="daily">每日</option><option value="weekly">每周</option></select></Field></div>{value.schedule !== 'manual' && <div className="grid gap-4 sm:grid-cols-2">{value.schedule === 'weekly' && <Field label="星期"><select className={inputClass} value={value.scheduleWeekday} onChange={(event) => setValue({ ...value, scheduleWeekday: Number(event.target.value) })}>{['周日', '周一', '周二', '周三', '周四', '周五', '周六'].map((label, index) => <option key={label} value={index}>{label}</option>)}</select></Field>}<Field label="时间"><input type="time" className={inputClass} value={value.scheduleTime} onChange={(event) => setValue({ ...value, scheduleTime: event.target.value })} /></Field></div>}<EditorActions canDelete={Boolean(source)} onDelete={() => { runtime.setSnapshot((current) => ({ ...current, automations: current.automations.filter((item) => item.id !== source?.id) })); onClose(); }} onClose={onClose} onSave={save} /></div></Modal>;
 };
 
 const EditorActions: React.FC<{ canDelete: boolean; onDelete: () => void; onClose: () => void; onSave: () => void }> = ({ canDelete, onDelete, onClose, onSave }) => <div className="flex items-center justify-between border-t border-slate-100 pt-4">{canDelete ? <button type="button" onClick={onDelete} className="flex items-center gap-1.5 text-sm text-red-600"><Trash2 size={15} />删除</button> : <span />}<div className="flex gap-2"><button type="button" onClick={onClose} className="rounded-lg border border-slate-200 px-4 py-2 text-sm text-slate-600">取消</button><button type="button" onClick={onSave} className="rounded-lg bg-slate-900 px-4 py-2 text-sm text-white">保存</button></div></div>;

@@ -12,6 +12,10 @@
     "dialog:allow-open",
     "dialog:allow-save",
     "fs:allow-write-file",
+    {
+      "identifier": "opener:allow-open-path",
+      "allow": [{ "path": "$HOME/**" }]
+    },
     "opener:allow-open-url",
     "opener:allow-default-urls",
     "process:allow-restart",

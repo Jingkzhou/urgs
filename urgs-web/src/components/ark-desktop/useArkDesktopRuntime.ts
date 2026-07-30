@@ -8,10 +8,16 @@ import {
     chooseGrokWorkspace,
     createGrokSession,
     deleteGrokModelProvider,
+    deleteGrokScheduledTask,
     getGrokRuntimeStatus,
+    invalidatePreparedGrokRuntime,
+    inspectGrokPlugins,
     loadGrokSession,
+    listGrokAvailableCommands,
     listGrokCliServices,
     listGrokModelProviders,
+    openGrokWorkspace,
+    releaseGrokSession,
     runGrokCli,
     respondGrokPlanApproval,
     respondGrokUserQuestion,
@@ -28,6 +34,7 @@ import {
     type GrokRuntimeStatus,
     type GrokModelProvider,
     type GrokModelProviderInput,
+    type GrokDiscoveredPlugin,
 } from '@/services/grokDesktop';
 import { loadArkDesktopSnapshot, resetArkDesktopSnapshot, saveArkDesktopSnapshot } from './storage';
 import type {
@@ -39,6 +46,7 @@ import type {
     ArkDesktopUserQuestionRequest,
     ArkDesktopSkill,
     ArkDesktopSnapshot,
+    ArkDesktopScheduledTask,
     ArkDesktopSlashCommand,
     ArkDesktopTask,
     ArkDesktopTaskStatus,
@@ -50,6 +58,7 @@ import { buildGrokHeadlessArguments, extractGrokHeadlessSessionId, extractGrokHe
 
 interface StartTaskInput {
     prompt: string;
+    workspace?: string;
     agentId?: string;
     skillIds?: string[];
     attachmentPaths?: string[];
@@ -241,6 +250,9 @@ export const useArkDesktopRuntime = () => {
     const [snapshot, setSnapshot] = useState<ArkDesktopSnapshot>(loadArkDesktopSnapshot);
     const [runtimeStatus, setRuntimeStatus] = useState<GrokRuntimeStatus | null>(null);
     const [discoveredCommands, setDiscoveredCommands] = useState<ArkDesktopSlashCommand[]>([]);
+    const [discoveredPlugins, setDiscoveredPlugins] = useState<GrokDiscoveredPlugin[]>([]);
+    const [capabilitiesLoading, setCapabilitiesLoading] = useState(false);
+    const [capabilitiesError, setCapabilitiesError] = useState('');
     const [activeTaskId, setActiveTaskId] = useState<string | null>(null);
     const [permissions, setPermissions] = useState<ArkDesktopPermissionRequest[]>([]);
     const [userQuestions, setUserQuestions] = useState<ArkDesktopUserQuestionRequest[]>([]);
@@ -251,6 +263,7 @@ export const useArkDesktopRuntime = () => {
     const taskBySessionIdRef = useRef(new Map<string, string>());
     const subagentBySessionIdRef = useRef(new Map<string, string>());
     const snapshotRef = useRef(snapshot);
+    const capabilityRequestIdRef = useRef(0);
 
     useEffect(() => {
         snapshotRef.current = snapshot;
@@ -276,6 +289,33 @@ export const useArkDesktopRuntime = () => {
         } catch (error) {
             setRuntimeError(redactRuntimeText(error instanceof Error ? error.message : '无法检测内置智能引擎'));
         }
+    }, []);
+
+    const refreshCapabilities = useCallback(async (workspaceOverride?: string) => {
+        if (!isDesktopRuntime()) return;
+        const requestId = ++capabilityRequestIdRef.current;
+        setCapabilitiesLoading(true);
+        setCapabilitiesError('');
+        const workspace = workspaceOverride?.trim() || snapshotRef.current.settings.workspace;
+        const results = await Promise.allSettled([
+            workspace ? listGrokAvailableCommands(workspace) : Promise.resolve([]),
+            inspectGrokPlugins(workspace || undefined),
+        ]);
+        if (requestId !== capabilityRequestIdRef.current) return;
+        const [commandsResult, pluginsResult] = results;
+        if (commandsResult.status === 'fulfilled') {
+            setDiscoveredCommands(commandsResult.value.map((command) => ({
+                name: command.name,
+                description: command.description,
+                inputHint: command.inputHint,
+            })));
+        } else setDiscoveredCommands([]);
+        if (pluginsResult.status === 'fulfilled') setDiscoveredPlugins(pluginsResult.value);
+        const capabilityErrors = [commandsResult, pluginsResult]
+            .filter((result): result is PromiseRejectedResult => result.status === 'rejected')
+            .map((result) => redactRuntimeText(result.reason instanceof Error ? result.reason.message : String(result.reason)));
+        setCapabilitiesError(capabilityErrors.join('；'));
+        setCapabilitiesLoading(false);
     }, []);
 
     const refreshModelProviders = useCallback(async () => {
@@ -304,6 +344,30 @@ export const useArkDesktopRuntime = () => {
                 (processId && task.runtimeProcessId === processId)
                 || (sessionId && task.sessionId === sessionId)
             ))?.id;
+        if (event.eventType === 'scheduled_prompt' && taskId) {
+            const phase = String(event.payload?.phase || '');
+            if (phase === 'started') {
+                const prompt = redactRuntimeText(String(event.payload?.prompt || '').trim());
+                updateTask(taskId, (task) => ({
+                    ...task,
+                    status: 'running',
+                    error: undefined,
+                    messages: prompt
+                        ? [...task.messages, { id: createId('message'), role: 'user' as const, content: prompt, createdAt: Date.now() }]
+                        : task.messages,
+                    updatedAt: Date.now(),
+                }));
+            } else if (phase === 'failed') {
+                const message = redactRuntimeText(String(event.payload?.message || 'Grok 会话循环执行失败'));
+                updateTask(taskId, (task) => ({
+                    ...settleForegroundActivities(task, 'failed'),
+                    error: message,
+                }));
+            } else if (phase === 'completed') {
+                updateTask(taskId, (task) => settleForegroundActivities(task, 'completed'));
+            }
+            return;
+        }
         if (event.eventType === 'session_update' && taskId) {
             const params = event.payload?.params || event.payload;
             const update = params?.update || params?.sessionUpdate || {};
@@ -328,17 +392,21 @@ export const useArkDesktopRuntime = () => {
             if (updateType === 'agent_message_chunk' || updateType === 'message_delta') {
                 const chunk = extractText(update);
                 if (!chunk) return;
-                const subagentId = updateType === 'message_delta'
-                    ? subagentBySessionIdRef.current.get(sessionId)
-                    : undefined;
-                if (subagentId) {
-                    updateTask(taskId, (task) => upsertTaskActivity(task, {
-                        id: `subagent-${subagentId}`,
-                        title: task.tools.find((tool) => tool.id === `subagent-${subagentId}`)?.title || '子智能体协作',
-                        status: '运行中',
-                        kind: 'subagent',
-                        output: redactRuntimeText(chunk),
-                    }, { appendOutput: true }));
+                const subagentId = subagentBySessionIdRef.current.get(sessionId);
+                const taskSessionId = snapshotRef.current.tasks.find((task) => task.id === taskId)?.sessionId;
+                const isChildSession = Boolean(sessionId && taskSessionId && sessionId !== taskSessionId);
+                if (subagentId || isChildSession) {
+                    const activityId = subagentId || sessionId;
+                    updateTask(taskId, (task) => {
+                        const existing = task.tools.find((tool) => tool.id === `subagent-${activityId}`);
+                        return upsertTaskActivity(task, {
+                            id: `subagent-${activityId}`,
+                            title: existing?.title || '子智能体协作',
+                            status: existing && isSettledActivity(existing.status) ? existing.status : '运行中',
+                            kind: 'subagent',
+                            output: redactRuntimeText(chunk),
+                        }, { appendOutput: true });
+                    });
                     return;
                 }
                 updateTask(taskId, (task) => {
@@ -350,9 +418,11 @@ export const useArkDesktopRuntime = () => {
                     } else {
                         messages.push({ id: createId('message'), role: 'assistant', content: chunk, createdAt: Date.now() });
                     }
-                    const tools = task.tools.map((tool) => tool.kind === 'reasoning' && !isSettledActivity(tool.status)
-                        ? { ...tool, status: '已完成', updatedAt: Date.now() }
-                        : tool);
+                    const isWorkflowCompletionMessage = String(params?._meta?.promptId || '').startsWith('workflow-completed-');
+                    const tools = task.tools.map((tool) => (
+                        (tool.kind === 'reasoning' || (tool.kind === 'subagent' && isWorkflowCompletionMessage))
+                        && !isSettledActivity(tool.status)
+                    ) ? { ...tool, status: '已完成', updatedAt: Date.now() } : tool);
                     return { ...task, messages, tools, updatedAt: Date.now() };
                 });
                 return;
@@ -466,7 +536,7 @@ export const useArkDesktopRuntime = () => {
                 return;
             }
             if (updateType === 'subagent_spawned' || updateType === 'subagent_progress' || updateType === 'subagent_finished') {
-                const subagentId = String(update.subagent_id || update.child_session_id || createId('subagent'));
+                const subagentId = String(update.child_session_id || update.subagent_id || createId('subagent'));
                 if (updateType === 'subagent_spawned' && typeof update.child_session_id === 'string' && update.child_session_id) {
                     taskBySessionIdRef.current.set(update.child_session_id, taskId);
                     subagentBySessionIdRef.current.set(update.child_session_id, subagentId);
@@ -529,6 +599,39 @@ export const useArkDesktopRuntime = () => {
                     status: `${update.status || 'active'} · ${update.phase || 'executing'}`,
                     kind: 'goal',
                     output: formatToolDetail(update.pause_message || update.last_event_detail),
+                }));
+                return;
+            }
+            if (updateType === 'scheduled_task_created' || updateType === 'scheduled_task_fired') {
+                const scheduledTaskId = String(update.task_id || '').trim();
+                if (!scheduledTaskId) return;
+                const fired = updateType === 'scheduled_task_fired';
+                updateTask(taskId, (task) => {
+                    const scheduledTasks = task.scheduledTasks?.slice() || [];
+                    const existingIndex = scheduledTasks.findIndex((item) => item.id === scheduledTaskId);
+                    const existing = existingIndex >= 0 ? scheduledTasks[existingIndex] : undefined;
+                    const scheduledTask: ArkDesktopScheduledTask = {
+                        id: scheduledTaskId,
+                        prompt: String(update.prompt || existing?.prompt || '').trim(),
+                        humanSchedule: String(update.human_schedule || existing?.humanSchedule || '计划执行'),
+                        nextFireAt: typeof update.next_fire_at === 'string' ? update.next_fire_at : existing?.nextFireAt,
+                        createdAt: existing?.createdAt || Date.now(),
+                        lastFiredAt: fired ? Date.now() : existing?.lastFiredAt,
+                        firedCount: (existing?.firedCount || 0) + (fired ? 1 : 0),
+                    };
+                    if (existingIndex >= 0) scheduledTasks[existingIndex] = scheduledTask;
+                    else scheduledTasks.push(scheduledTask);
+                    return { ...task, scheduledTasks, updatedAt: Date.now() };
+                });
+                return;
+            }
+            if (updateType === 'scheduled_task_deleted') {
+                const scheduledTaskId = String(update.task_id || '').trim();
+                if (!scheduledTaskId) return;
+                updateTask(taskId, (task) => ({
+                    ...task,
+                    scheduledTasks: (task.scheduledTasks || []).filter((item) => item.id !== scheduledTaskId),
+                    updatedAt: Date.now(),
                 }));
                 return;
             }
@@ -680,6 +783,10 @@ export const useArkDesktopRuntime = () => {
         };
     }, [handleGrokEvent, refreshModelProviders, refreshRuntimeStatus]);
 
+    useEffect(() => {
+        void refreshCapabilities();
+    }, [refreshCapabilities, snapshot.settings.grokModel, snapshot.settings.workspace]);
+
     const selectWorkspace = useCallback(async () => {
         const selected = await chooseGrokWorkspace();
         if (!selected) return '';
@@ -687,10 +794,22 @@ export const useArkDesktopRuntime = () => {
         return selected;
     }, []);
 
+    const pickWorkspace = useCallback(async () => chooseGrokWorkspace(), []);
+
+    const setDefaultWorkspace = useCallback((workspace: string) => {
+        const normalized = workspace.trim();
+        if (!normalized) return;
+        setSnapshot((current) => ({
+            ...current,
+            settings: { ...current.settings, workspace: normalized },
+        }));
+    }, []);
+
     const selectAttachments = useCallback(async () => chooseGrokAttachments(), []);
 
     const startTask = useCallback(async ({
         prompt,
+        workspace: requestedWorkspace,
         agentId,
         skillIds = [],
         attachmentPaths = [],
@@ -698,7 +817,7 @@ export const useArkDesktopRuntime = () => {
         automationId,
     }: StartTaskInput) => {
         const current = snapshotRef.current;
-        const workspace = current.settings.workspace;
+        const workspace = requestedWorkspace?.trim() || current.settings.workspace;
         if (!isDesktopRuntime()) throw new Error('请在 URGS 桌面客户端中运行 ARK Desktop');
         if (!runtimeStatus?.available) throw new Error('未检测到内置智能引擎，请先检查桌面安装包');
         if (!workspace) throw new Error('请先选择本地工作区');
@@ -842,17 +961,17 @@ export const useArkDesktopRuntime = () => {
         return taskId;
     }, [refreshModelProviders, runtimeStatus, updateTask]);
 
-    const prepareEngine = useCallback(async () => {
+    const prepareEngine = useCallback(async (workspaceOverride?: string) => {
         const current = snapshotRef.current;
-        const workspace = current.settings.workspace;
+        const workspace = workspaceOverride?.trim() || current.settings.workspace;
         const provider = current.settings.modelProviders.find((item) => item.id === current.settings.grokModel);
-        if (!isDesktopRuntime() || !runtimeStatus?.available || !workspace || !provider?.enabled || !provider.hasApiKey) return;
+        if (!isDesktopRuntime() || !runtimeStatus?.available || !workspace || !provider?.enabled || !provider.hasApiKey) return false;
         setRuntimeError('');
         const execution = current.settings.execution;
         const agentId = selectAgentId(current, undefined, current.settings.defaultSkillIds);
         const agent = current.agents.find((item) => item.id === agentId && item.enabled)
             || current.agents.find((item) => item.enabled);
-        if (!agent) return;
+        if (!agent) return false;
         const skillIds = Array.from(new Set([...agent.skillIds, ...current.settings.defaultSkillIds]));
         const skills = current.skills.filter((skill) => skill.enabled && skillIds.includes(skill.id));
         await prepareGrokRuntime(
@@ -861,7 +980,14 @@ export const useArkDesktopRuntime = () => {
             buildAcpOptions(execution),
             buildSessionRules(agent, skills),
         );
-    }, [runtimeStatus]);
+        await refreshCapabilities(workspace);
+        return true;
+    }, [refreshCapabilities, runtimeStatus]);
+
+    const reloadPluginCapabilities = useCallback(async () => {
+        await invalidatePreparedGrokRuntime();
+        if (!await prepareEngine()) await refreshCapabilities();
+    }, [prepareEngine, refreshCapabilities]);
 
     useEffect(() => {
         const timer = window.setTimeout(() => {
@@ -988,6 +1114,7 @@ export const useArkDesktopRuntime = () => {
                 setSnapshot(updateProvider);
                 const nextTaskId = await startTask({
                     prompt: task.prompt,
+                    workspace: task.workspace,
                     agentId: task.agentId,
                     skillIds: task.skillIds,
                     attachmentPaths: task.attachmentPaths,
@@ -1207,6 +1334,80 @@ export const useArkDesktopRuntime = () => {
         }));
     }, [updateTask]);
 
+    const renameTask = useCallback((taskId: string, title: string) => {
+        const normalized = title.trim().slice(0, 80);
+        if (!normalized) throw new Error('会话名称不能为空');
+        updateTask(taskId, (task) => ({ ...task, title: normalized }));
+    }, [updateTask]);
+
+    const toggleTaskPin = useCallback((taskId: string) => {
+        updateTask(taskId, (task) => ({
+            ...task,
+            pinnedAt: task.pinnedAt ? undefined : Date.now(),
+        }));
+    }, [updateTask]);
+
+    const archiveTask = useCallback((taskId: string) => {
+        const task = snapshotRef.current.tasks.find((item) => item.id === taskId);
+        if (!task) throw new Error('会话不存在');
+        if (task.status === 'running' || task.status === 'waiting_authorization') {
+            throw new Error('请先停止正在执行的会话');
+        }
+        updateTask(taskId, (value) => ({ ...value, archivedAt: Date.now() }));
+        setActiveTaskId((current) => current === taskId ? null : current);
+    }, [updateTask]);
+
+    const restoreTask = useCallback((taskId: string) => {
+        updateTask(taskId, (task) => ({ ...task, archivedAt: undefined }));
+    }, [updateTask]);
+
+    const deleteTask = useCallback(async (taskId: string) => {
+        const task = snapshotRef.current.tasks.find((item) => item.id === taskId);
+        if (!task) return;
+        if (task.status === 'running' || task.status === 'waiting_authorization') {
+            throw new Error('请先停止正在执行的会话');
+        }
+        if (task.sessionId) {
+            // Native release is idempotent: historical sessions that are not
+            // mounted in this app process return success without stopping anything.
+            await releaseGrokSession(task.sessionId);
+            // Upstream `sessions delete` resolves by session ID with `cwd = None`,
+            // so it remains valid even when the original workspace was moved.
+            const result = await runGrokCli(['sessions', 'delete', task.sessionId], undefined, 30);
+            const missing = /not found|no session|不存在|未找到/i.test(`${result.stderr}\n${result.stdout}`);
+            if (!result.success && !missing) {
+                throw new Error(redactRuntimeText(result.stderr || result.stdout || '删除本地会话失败'));
+            }
+        }
+        setSnapshot((current) => ({
+            ...current,
+            tasks: current.tasks.filter((item) => item.id !== taskId),
+        }));
+        setActiveTaskId((current) => current === taskId ? null : current);
+        setPermissions((current) => current.filter((item) => item.taskId !== taskId));
+        setUserQuestions((current) => current.filter((item) => item.taskId !== taskId));
+        setPlanApprovals((current) => current.filter((item) => item.taskId !== taskId));
+        if (task.runtimeProcessId) taskByProcessIdRef.current.delete(task.runtimeProcessId);
+        if (task.sessionId) taskBySessionIdRef.current.delete(task.sessionId);
+    }, []);
+
+    const deleteScheduledTask = useCallback(async (ownerTaskId: string, scheduledTaskId: string) => {
+        const ownerTask = snapshotRef.current.tasks.find((item) => item.id === ownerTaskId);
+        if (!ownerTask?.sessionId) throw new Error('关联会话尚未建立，无法停止循环');
+        if (!ownerTask.runtimeProcessId) throw new Error('关联会话未连接，请先打开会话并发送一条消息后再停止循环');
+        const deleted = await deleteGrokScheduledTask(ownerTask.sessionId, scheduledTaskId);
+        if (!deleted) throw new Error('该会话循环已经停止或不存在');
+        updateTask(ownerTaskId, (task) => ({
+            ...task,
+            scheduledTasks: (task.scheduledTasks || []).filter((item) => item.id !== scheduledTaskId),
+            updatedAt: Date.now(),
+        }));
+    }, [updateTask]);
+
+    const revealWorkspace = useCallback(async (workspace: string) => {
+        await openGrokWorkspace(workspace);
+    }, []);
+
     const availableCommands = useMemo(() => {
         const commands = new Map<string, ArkDesktopSlashCommand>();
         discoveredCommands.forEach((command) => commands.set(command.name, command));
@@ -1245,6 +1446,9 @@ export const useArkDesktopRuntime = () => {
         setRuntimeError: (message: string) => setRuntimeError(redactRuntimeText(message)),
         refreshRuntimeStatus,
         selectWorkspace,
+        pickWorkspace,
+        setDefaultWorkspace,
+        revealWorkspace,
         selectAttachments,
         startTask,
         prepareEngine,
@@ -1264,7 +1468,18 @@ export const useArkDesktopRuntime = () => {
         refreshModelProviders,
         switchTaskModel,
         setTaskPermissionMode,
+        renameTask,
+        toggleTaskPin,
+        archiveTask,
+        restoreTask,
+        deleteTask,
+        deleteScheduledTask,
         availableCommands,
+        discoveredPlugins,
+        capabilitiesLoading,
+        capabilitiesError,
+        refreshCapabilities,
+        reloadPluginCapabilities,
         activeTask,
         activeTaskId,
         setActiveTaskId,

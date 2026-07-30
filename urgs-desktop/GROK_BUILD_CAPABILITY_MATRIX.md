@@ -17,15 +17,17 @@
 |---|---|---|---|---|---|---|---|
 | 新建、加载、续聊 | ACP `session/new`、`session/load`、`session/prompt` | 新建任务、历史任务输入框 | ACP + 会话状态 | 原生 UI | Rust 会话测试、前端类型检查 | 历史任务可恢复后继续发送 | 已按 session/process/task 三重标识隔离 |
 | 多会话与取消 | ACP `session/cancel` | 左侧历史会话、输入框停止按钮 | ACP + 会话状态 | 原生 UI | Rust 进程关联测试 | 多任务状态独立显示 | 并发数量不硬编码 |
+| 工作区会话管理 | `grok sessions delete` + URGS 本地会话状态 | 左侧工作区、工作区/会话菜单、状态筛选 | 受控 CLI + 本地持久化状态 | 原生 UI | 前端类型检查、真实 App 交互验收 | 支持在指定工作区新建、固定、重命名、归档/恢复、搜索筛选和永久删除 | 运行中或等待授权的会话禁止归档和删除；永久删除会同步清理 Grok 历史 |
 | 工具、思考、计划、权限 | ACP `session/update`、permission reverse request | 消息区工具时间线、计划按钮、权限弹窗 | ACP 事件桥接 | 原生 UI | Rust 事件解析测试、前端类型检查 | 工具详情可展开，权限归属当前任务 | 未识别事件保留为诊断活动 |
 | 本地附件上下文 | `promptCapabilities.embeddedContext=true`，ACP 基线支持嵌入资源 | 新任务附件按钮、首条消息附件回显 | 原生文件选择授权 + ACP 文本/二进制 `resource` | 原生 UI | Rust 文本、二进制、路径、一次性授权与大小门禁单测 | 原生选择授权和附件回显已验收；未发送文件内容 | 最多 20 个绝对路径文件，单文件 10 MB、合计 25 MB；不支持目录 |
-| 持续目标 | `availableCommands: goal`、`goal_updated` | 会话能力条、`/goal` 菜单、目标活动 | ACP 命令 + 事件 | 原生 UI | 前端类型检查 | 待真实目标运行验收 | 支持设置、状态、暂停、恢复、清理 |
-| 工作流 | `availableCommands: workflow` | 会话能力条、`/workflow` 菜单 | ACP 命令 | 原生 UI | 前端类型检查 | 待真实工作流运行验收 | 运行详情依赖运行时事件，未知变体进入诊断 |
-| 深度研究 | `availableCommands: deep-research` | 会话能力条、`/deep-research` 菜单 | ACP 命令 | 原生 UI | 前端类型检查 | 待真实研究任务验收 | 内网模型是否具备搜索工具由会话配置决定 |
+| 本地任务技能 | URGS `ArkDesktopSkill` 与 `buildSessionRules` | 新任务输入框 `+` → 技能 | 本地技能状态 + ACP 会话规则 | 原生 UI | 前端类型检查 | 真实 App 已验证多选、取消与菜单保持展开 | 仅展示已启用技能；选择状态在新会话创建时注入，不伪装成 Grok 原生插件技能 |
+| 持续目标 | `availableCommands: goal`、`goal_updated` | 输入框 `+` → 会话能力、`/goal` 菜单、目标活动 | ACP 命令 + 事件 | 原生 UI | 前端类型检查 | 真实 App 已完成创建、状态展示、结果和清理验收 | 支持设置、状态、暂停、恢复、清理 |
+| 工作流 | `availableCommands: workflow` | 输入框 `+` → 会话能力、`/workflow` 菜单 | ACP 命令 | 原生 UI | 前端类型检查、固定 Rhai 夹具 | 用户作用域工作流真实 App 运行通过 | 隔离 `GROK_HOME` 暂未发现仓库 `.grok/workflows`，项目作用域仍待接入 |
+| 深度研究 | `availableCommands: deep-research` | 输入框 `+` → 会话能力、`/deep-research` 菜单 | ACP 命令 | 原生 UI | 前端类型检查、真实本地研究用例 | 本地 README 研究结果和子智能体中间输出隔离均通过；入口可正确填入命令 | 内网模型是否具备搜索工具由会话配置决定 |
 | 上下文、会话信息、压缩 | `context`、`session-info`、`compact` | 会话能力条、斜杠命令菜单 | ACP 命令 | 原生 UI | 前端类型检查 | 待长会话验收 | 自动压缩事件已进入工具时间线 |
 | 模型与凭据 | ACP model state；官方自定义模型配置 | 设置 → 常规 → 模型连接 | Tauri + 系统凭据库 | 原生 UI | Rust 模型配置测试 | 模型可选择且页面初始化不读取密钥 | URGS 内网隔离禁止 xAI 登录和回退 |
 | MCP | `grok mcp list/add/remove/doctor` | 设置 → CLI 与诊断 → MCP 服务 | 受控 CLI | 仅 CLI 中心 | CLI allowlist 测试 | 待真实 MCP 连通性验收 | ACP 新会话当前传入空 `mcpServers`，运行时读取本地配置 |
-| 插件与市场 | `grok plugin *` | 设置 → CLI 与诊断 → 插件与市场 | 受控 CLI | 仅 CLI 中心 | CLI 参数测试 | 待真实本地插件验收 | 内网隔离关闭官方市场自动注册；本地源仍可用 |
+| 插件与市场 | `grok plugin validate/install/enable/disable/details/list --json`、`grok inspect --json` | 新任务输入框 `+` → 插件状态；设置 → 插件 | 本地目录选择 + 稳定 DTO + 受控 CLI | 原生 UI | 隔离 `GROK_HOME` 完整生命周期、Rust 单测、前端类型检查 | 真实 App 已验证本地目录校验、信任安装、组件详情、启停和 `+` 菜单同步 | 仅支持本地源；在线市场保持关闭。当前 sidecar 禁用后 `inspect.plugins[].enabled` 仍为 true，状态改以 `[plugins] enabled/disabled` 为准，并用技能列表消失验证实际停用 |
 | 记忆 | `grok memory clear`、`--experimental-memory` | 任务执行设置、CLI 与诊断 | ACP 参数 + 受控 CLI | 通用桥接 | 参数构建测试 | 记忆事件显示在工具时间线 | 清理动作需要确认 |
 | Worktree | `--worktree`、`grok worktree *` | 任务执行设置、CLI 与诊断 | Headless 参数 + 受控 CLI | 通用桥接 | CLI 参数测试 | 待真实创建/清理验收 | 删除默认 dry-run，关闭预览需再次确认 |
 | Agent/Leader 后台服务 | `agent headless/serve/leader`、`leader *` | 设置 → CLI 与诊断 → Agent 服务 | Tauri 后台进程 | 通用桥接 | Rust 服务 allowlist 测试 | 服务 PID、输出和停止可见 | ACP stdio 由新建任务托管 |
@@ -40,4 +42,4 @@
 
 1. 升级并锁定新的官方 sidecar 后，重新探测 `x.ai/rewind/*`、`x.ai/recap`、`x.ai/session/info` 和 Hooks 扩展。
 2. 扩展方法真实可用后，优先补齐原生 Rewind 选择器、会话 Recap 和结构化上下文用量面板。
-3. 继续验证工作流运行详情、目标暂停恢复、两个并发会话和历史恢复后的事件隔离。
+3. 补齐项目作用域 `.grok/workflows` 的安全发现机制，并继续验证严格重叠执行的两个并发会话。

@@ -111,10 +111,13 @@ pub fn run() {
             grok_runtime::grok_pick_prompt_attachments,
             grok_runtime::grok_send_prompt,
             grok_runtime::grok_session_set_model,
+            grok_runtime::grok_scheduled_task_delete,
             grok_runtime::grok_cancel,
+            grok_runtime::grok_release_session,
             grok_runtime::grok_respond_permission,
             grok_runtime::grok_respond_user_question,
             grok_runtime::grok_respond_plan_approval,
+            grok_runtime::grok_runtime_invalidate_prepared,
             grok_runtime::grok_shutdown,
             grok_runtime::grok_start_login
         ])
