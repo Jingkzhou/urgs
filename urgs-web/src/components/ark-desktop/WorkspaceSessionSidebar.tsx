@@ -10,6 +10,7 @@ type SessionView = 'active' | 'running' | 'archived';
 
 interface WorkspaceSessionSidebarProps {
     tasks: ArkDesktopTask[];
+    workspaces: string[];
     defaultWorkspace: string;
     searchValue: string;
     activeTaskId: string | null;
@@ -17,6 +18,7 @@ interface WorkspaceSessionSidebarProps {
     onAddWorkspace: () => Promise<void>;
     onCreateInWorkspace: (workspace: string) => void;
     onSetDefaultWorkspace: (workspace: string) => void;
+    onRemoveWorkspace: (workspace: string) => void;
     onRevealWorkspace: (workspace: string) => Promise<void>;
     onRenameTask: (taskId: string, title: string) => void;
     onToggleTaskPin: (taskId: string) => void;
@@ -50,6 +52,7 @@ const MenuButton: React.FC<{
 
 const WorkspaceSessionSidebar: React.FC<WorkspaceSessionSidebarProps> = ({
     tasks,
+    workspaces,
     defaultWorkspace,
     searchValue,
     activeTaskId,
@@ -57,6 +60,7 @@ const WorkspaceSessionSidebar: React.FC<WorkspaceSessionSidebarProps> = ({
     onAddWorkspace,
     onCreateInWorkspace,
     onSetDefaultWorkspace,
+    onRemoveWorkspace,
     onRevealWorkspace,
     onRenameTask,
     onToggleTaskPin,
@@ -72,6 +76,7 @@ const WorkspaceSessionSidebar: React.FC<WorkspaceSessionSidebarProps> = ({
     const [renamingTaskId, setRenamingTaskId] = useState<string | null>(null);
     const [renameValue, setRenameValue] = useState('');
     const [deleteTarget, setDeleteTarget] = useState<ArkDesktopTask | null>(null);
+    const [removeWorkspaceTarget, setRemoveWorkspaceTarget] = useState<string | null>(null);
     const [deleting, setDeleting] = useState(false);
     const [addingWorkspace, setAddingWorkspace] = useState(false);
     const [toast, setToast] = useState<{ message: string; restoreTaskId?: string } | null>(null);
@@ -101,9 +106,7 @@ const WorkspaceSessionSidebar: React.FC<WorkspaceSessionSidebarProps> = ({
 
     const query = searchValue.trim().toLowerCase();
     const groups = useMemo(() => {
-        const workspaces = new Set(tasks.map((task) => task.workspace).filter(Boolean));
-        if (defaultWorkspace) workspaces.add(defaultWorkspace);
-        return Array.from(workspaces).map((workspace) => {
+        return workspaces.map((workspace) => {
             const workspaceTasks = tasks.filter((task) => task.workspace === workspace);
             const filtered = workspaceTasks
                 .filter((task) => !query || `${task.title} ${task.prompt} ${task.workspace}`.toLowerCase().includes(query))
@@ -124,15 +127,16 @@ const WorkspaceSessionSidebar: React.FC<WorkspaceSessionSidebarProps> = ({
                 tasks: filtered,
                 latestAt,
                 default: workspace === defaultWorkspace,
+                busy: workspaceTasks.some((task) => !task.archivedAt && isBusyTask(task)),
             };
         }).filter((group) => {
             if (query || view !== 'active') return group.tasks.length > 0;
-            return group.tasks.length > 0 || group.default;
+            return true;
         }).sort((left, right) => {
             if (left.default !== right.default) return left.default ? -1 : 1;
             return right.latestAt - left.latestAt;
         });
-    }, [defaultWorkspace, query, tasks, view]);
+    }, [defaultWorkspace, query, tasks, view, workspaces]);
 
     const runningCount = tasks.filter((task) => !task.archivedAt && isBusyTask(task)).length;
     const archivedCount = tasks.filter((task) => task.archivedAt).length;
@@ -203,6 +207,14 @@ const WorkspaceSessionSidebar: React.FC<WorkspaceSessionSidebarProps> = ({
         }
     };
 
+    const confirmRemoveWorkspace = () => {
+        if (!removeWorkspaceTarget) return;
+        const label = removeWorkspaceTarget.split(/[\\/]/).filter(Boolean).pop() || removeWorkspaceTarget;
+        onRemoveWorkspace(removeWorkspaceTarget);
+        setRemoveWorkspaceTarget(null);
+        setToast({ message: `已从列表移除“${label}”` });
+    };
+
     return <div className="relative mt-5 flex min-h-0 flex-1 flex-col">
         <div className="flex items-center justify-between px-2">
             <span className="text-[11px] font-medium text-slate-400">工作空间</span>
@@ -264,6 +276,7 @@ const WorkspaceSessionSidebar: React.FC<WorkspaceSessionSidebarProps> = ({
                                 : <FolderOpen size={17} strokeWidth={1.7} className="shrink-0 text-slate-600" />}
                             <span className="min-w-0 flex-1 truncate text-[13px] font-medium text-[#47484e]">{group.label}</span>
                             {group.default && <span className="rounded bg-[#e8e4ff] px-1 py-0.5 text-[9px] font-medium text-[#6657d9]">默认</span>}
+                            {group.busy && <LoaderCircle size={14} strokeWidth={2} className="shrink-0 animate-spin text-slate-500" aria-label={`${group.label} 中有进行中的会话`} />}
                             <span className="text-[10px] text-slate-400">{group.tasks.length}</span>
                         </button>
                         <div className="mr-1 flex items-center opacity-0 transition group-hover/workspace:opacity-100 focus-within:opacity-100">
@@ -278,6 +291,17 @@ const WorkspaceSessionSidebar: React.FC<WorkspaceSessionSidebarProps> = ({
                                 if (!await copyToClipboard(group.workspace)) throw new Error('复制工作区路径失败');
                                 setToast({ message: '已复制工作区路径' });
                             })} />
+                            <div className="my-1 border-t border-slate-100" />
+                            <MenuButton
+                                icon={Trash2}
+                                label={group.tasks.some(isBusyTask) ? '请先停止进行中的会话' : '从列表移除'}
+                                disabled={group.tasks.some(isBusyTask)}
+                                dangerous
+                                onClick={() => {
+                                    setOpenMenu(null);
+                                    setRemoveWorkspaceTarget(group.workspace);
+                                }}
+                            />
                         </div>}
                     </div>
 
@@ -357,6 +381,24 @@ const WorkspaceSessionSidebar: React.FC<WorkspaceSessionSidebarProps> = ({
                 <div className="mt-5 flex justify-end gap-2">
                     <button type="button" disabled={deleting} onClick={() => setDeleteTarget(null)} className="rounded-lg border border-slate-200 px-3.5 py-2 text-sm text-slate-600 hover:bg-slate-50 disabled:opacity-50">取消</button>
                     <button type="button" disabled={deleting} onClick={() => void confirmDelete()} className="flex items-center gap-1.5 rounded-lg bg-red-600 px-3.5 py-2 text-sm font-medium text-white hover:bg-red-700 disabled:opacity-50">{deleting && <LoaderCircle size={14} className="animate-spin" />}永久删除</button>
+                </div>
+            </div>
+        </div>}
+
+        {removeWorkspaceTarget && <div className="fixed inset-0 z-[1200] flex items-center justify-center bg-slate-950/35 p-5 backdrop-blur-sm" role="dialog" aria-modal="true" aria-labelledby="remove-workspace-title">
+            <div className="w-full max-w-md rounded-2xl border border-slate-200 bg-white p-5 shadow-2xl">
+                <div className="flex items-start gap-3">
+                    <span className="flex h-10 w-10 shrink-0 items-center justify-center rounded-xl bg-red-50 text-red-600"><Trash2 size={18} /></span>
+                    <div className="min-w-0 flex-1">
+                        <h2 id="remove-workspace-title" className="font-semibold text-slate-900">移除这个工作空间？</h2>
+                        <p className="mt-2 text-sm leading-6 text-slate-500">
+                            只会从 URGS 的工作空间列表移除“{removeWorkspaceTarget.split(/[\\/]/).filter(Boolean).pop() || removeWorkspaceTarget}”，不会删除磁盘文件或已有会话。重新添加该文件夹后，历史会话会恢复显示。
+                        </p>
+                    </div>
+                </div>
+                <div className="mt-5 flex justify-end gap-2">
+                    <button type="button" onClick={() => setRemoveWorkspaceTarget(null)} className="rounded-lg border border-slate-200 px-3.5 py-2 text-sm text-slate-600 hover:bg-slate-50">取消</button>
+                    <button type="button" onClick={confirmRemoveWorkspace} className="rounded-lg bg-red-600 px-3.5 py-2 text-sm font-medium text-white hover:bg-red-700">从列表移除</button>
                 </div>
             </div>
         </div>}

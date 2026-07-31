@@ -119,6 +119,7 @@ export interface ArkDesktopTask {
 
 export interface ArkDesktopSettings {
     workspace: string;
+    workspacePaths: string[];
     grokModel: string;
     modelOptions: string[];
     modelProviders: ArkDesktopModelProvider[];

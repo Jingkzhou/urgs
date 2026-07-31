@@ -377,12 +377,14 @@ export const sendGrokPrompt = (
     prompt: string,
     attachments: string[] = [],
     attachmentGrants: string[] = [],
+    queued = false,
 ) =>
     invokeGrok<void>('grok_send_prompt', {
         sessionId,
         prompt,
         attachments: attachments.length > 0 ? attachments : null,
         attachmentGrants: attachmentGrants.length > 0 ? attachmentGrants : null,
+        queued,
     });
 
 export interface GrokPromptAttachmentSelection {

@@ -262,6 +262,7 @@ export const useArkDesktopRuntime = () => {
     const taskByProcessIdRef = useRef(new Map<string, string>());
     const taskBySessionIdRef = useRef(new Map<string, string>());
     const subagentBySessionIdRef = useRef(new Map<string, string>());
+    const activePromptCountsRef = useRef(new Map<string, number>());
     const snapshotRef = useRef(snapshot);
     const capabilityRequestIdRef = useRef(0);
 
@@ -280,6 +281,29 @@ export const useArkDesktopRuntime = () => {
             tasks: current.tasks.map((task) => task.id === taskId ? updater(task) : task),
         }));
     }, []);
+
+    const finishForegroundPrompt = useCallback((
+        taskId: string,
+        terminalStatus: Extract<ArkDesktopTaskStatus, 'completed' | 'failed'>,
+        error?: string,
+    ) => {
+        const remaining = Math.max(0, (activePromptCountsRef.current.get(taskId) || 1) - 1);
+        if (remaining > 0) activePromptCountsRef.current.set(taskId, remaining);
+        else activePromptCountsRef.current.delete(taskId);
+        updateTask(taskId, (task) => {
+            if (cancelledTaskIdsRef.current.has(taskId)) return task;
+            if (remaining > 0) {
+                return {
+                    ...task,
+                    status: 'running',
+                    ...(error ? { error } : {}),
+                    updatedAt: Date.now(),
+                };
+            }
+            const settled = settleForegroundActivities(task, terminalStatus);
+            return error ? { ...settled, error } : settled;
+        });
+    }, [updateTask]);
 
     const refreshRuntimeStatus = useCallback(async () => {
         if (!isDesktopRuntime()) return;
@@ -344,6 +368,19 @@ export const useArkDesktopRuntime = () => {
                 (processId && task.runtimeProcessId === processId)
                 || (sessionId && task.sessionId === sessionId)
             ))?.id;
+        if (event.eventType === 'queued_prompt' && taskId) {
+            const phase = String(event.payload?.phase || '');
+            if (phase === 'completed') {
+                finishForegroundPrompt(taskId, 'completed');
+            } else if (phase === 'failed') {
+                finishForegroundPrompt(
+                    taskId,
+                    'failed',
+                    redactRuntimeText(String(event.payload?.message || '补充消息执行失败')),
+                );
+            }
+            return;
+        }
         if (event.eventType === 'scheduled_prompt' && taskId) {
             const phase = String(event.payload?.phase || '');
             if (phase === 'started') {
@@ -756,7 +793,7 @@ export const useArkDesktopRuntime = () => {
         if (event.eventType === 'login_completed') {
             void refreshRuntimeStatus();
         }
-    }, [refreshRuntimeStatus, updateTask]);
+    }, [finishForegroundPrompt, refreshRuntimeStatus, updateTask]);
 
     useEffect(() => {
         if (!isDesktopRuntime()) return;
@@ -790,19 +827,60 @@ export const useArkDesktopRuntime = () => {
     const selectWorkspace = useCallback(async () => {
         const selected = await chooseGrokWorkspace();
         if (!selected) return '';
-        setSnapshot((current) => ({ ...current, settings: { ...current.settings, workspace: selected } }));
+        setSnapshot((current) => ({
+            ...current,
+            settings: {
+                ...current.settings,
+                workspace: selected,
+                workspacePaths: Array.from(new Set([...current.settings.workspacePaths, selected])),
+            },
+        }));
         return selected;
     }, []);
 
     const pickWorkspace = useCallback(async () => chooseGrokWorkspace(), []);
+
+    const addWorkspace = useCallback((workspace: string) => {
+        const normalized = workspace.trim();
+        if (!normalized) return;
+        setSnapshot((current) => ({
+            ...current,
+            settings: {
+                ...current.settings,
+                workspacePaths: Array.from(new Set([...current.settings.workspacePaths, normalized])),
+            },
+        }));
+    }, []);
 
     const setDefaultWorkspace = useCallback((workspace: string) => {
         const normalized = workspace.trim();
         if (!normalized) return;
         setSnapshot((current) => ({
             ...current,
-            settings: { ...current.settings, workspace: normalized },
+            settings: {
+                ...current.settings,
+                workspace: normalized,
+                workspacePaths: Array.from(new Set([...current.settings.workspacePaths, normalized])),
+            },
         }));
+    }, []);
+
+    const removeWorkspace = useCallback((workspace: string) => {
+        const normalized = workspace.trim();
+        if (!normalized) return;
+        setSnapshot((current) => {
+            const workspacePaths = current.settings.workspacePaths.filter((item) => item !== normalized);
+            return {
+                ...current,
+                settings: {
+                    ...current.settings,
+                    workspacePaths,
+                    workspace: current.settings.workspace === normalized
+                        ? workspacePaths[0] || ''
+                        : current.settings.workspace,
+                },
+            };
+        });
     }, []);
 
     const selectAttachments = useCallback(async () => chooseGrokAttachments(), []);
@@ -858,7 +936,15 @@ export const useArkDesktopRuntime = () => {
             createdAt: now,
             updatedAt: now,
         };
-        setSnapshot((value) => ({ ...value, tasks: [task, ...value.tasks].slice(0, 50) }));
+        setSnapshot((value) => ({
+            ...value,
+            tasks: [task, ...value.tasks].slice(0, 50),
+            settings: {
+                ...value.settings,
+                workspacePaths: Array.from(new Set([...value.settings.workspacePaths, workspace])),
+            },
+        }));
+        activePromptCountsRef.current.set(taskId, 1);
         setActiveTaskId(taskId);
         setRuntimeError('');
 
@@ -929,9 +1015,7 @@ export const useArkDesktopRuntime = () => {
                     }
                     await sendGrokPrompt(session.sessionId, effectivePrompt, attachmentPaths, attachmentGrantIds);
                 }
-                updateTask(taskId, (value) => cancelledTaskIdsRef.current.has(taskId)
-                    ? value
-                    : settleForegroundActivities(value, 'completed'));
+                finishForegroundPrompt(taskId, 'completed');
                 if (automationId) {
                     setSnapshot((value) => ({
                         ...value,
@@ -944,6 +1028,7 @@ export const useArkDesktopRuntime = () => {
                 if (!cancelledTaskIdsRef.current.has(taskId)) {
                     const providerId = modelKeyAuthorizationProviderId(error);
                     if (providerId) {
+                        activePromptCountsRef.current.delete(taskId);
                         updateTask(taskId, (value) => ({
                             ...value,
                             status: 'waiting_authorization',
@@ -953,13 +1038,13 @@ export const useArkDesktopRuntime = () => {
                         }));
                     } else {
                         const message = redactRuntimeText(runtimeErrorText(error));
-                        updateTask(taskId, (value) => ({ ...value, status: 'failed', error: message, updatedAt: Date.now() }));
+                        finishForegroundPrompt(taskId, 'failed', message);
                     }
                 }
             }
         })();
         return taskId;
-    }, [refreshModelProviders, runtimeStatus, updateTask]);
+    }, [finishForegroundPrompt, refreshModelProviders, runtimeStatus, updateTask]);
 
     const prepareEngine = useCallback(async (workspaceOverride?: string) => {
         const current = snapshotRef.current;
@@ -999,6 +1084,8 @@ export const useArkDesktopRuntime = () => {
     const sendFollowUp = useCallback(async (taskId: string, prompt: string) => {
         const task = snapshotRef.current.tasks.find((item) => item.id === taskId);
         if (!task) throw new Error('历史任务不存在');
+        const activePromptCount = activePromptCountsRef.current.get(taskId) || 0;
+        activePromptCountsRef.current.set(taskId, activePromptCount + 1);
         try {
             const current = snapshotRef.current;
             const sessionId = task.sessionId
@@ -1063,15 +1150,14 @@ export const useArkDesktopRuntime = () => {
                     updatedAt: Date.now(),
                 }));
             } else {
-                await sendGrokPrompt(sessionId, prompt);
+                await sendGrokPrompt(sessionId, prompt, [], [], true);
             }
-            updateTask(taskId, (value) => cancelledTaskIdsRef.current.has(taskId)
-                ? value
-                : settleForegroundActivities(value, 'completed'));
+            if (task.engine === 'headless') finishForegroundPrompt(taskId, 'completed');
         } catch (error) {
             if (!cancelledTaskIdsRef.current.has(taskId)) {
                 const providerId = modelKeyAuthorizationProviderId(error);
                 if (providerId) {
+                    activePromptCountsRef.current.delete(taskId);
                     updateTask(taskId, (value) => {
                         const lastMessage = value.messages[value.messages.length - 1];
                         const messages = task.engine === 'headless' && lastMessage?.role === 'user' && lastMessage.content === prompt
@@ -1088,12 +1174,12 @@ export const useArkDesktopRuntime = () => {
                     });
                 } else {
                     const message = redactRuntimeText(runtimeErrorText(error));
-                    updateTask(taskId, (value) => ({ ...value, status: 'failed', error: message, updatedAt: Date.now() }));
+                    finishForegroundPrompt(taskId, 'failed', message);
                 }
             }
             throw error;
         }
-    }, [updateTask]);
+    }, [finishForegroundPrompt, updateTask]);
 
     const authorizeTaskModel = useCallback(async (taskId: string) => {
         const task = snapshotRef.current.tasks.find((item) => item.id === taskId);
@@ -1149,6 +1235,7 @@ export const useArkDesktopRuntime = () => {
         const task = snapshotRef.current.tasks.find((item) => item.id === taskId);
         if (!task) return;
         cancelledTaskIdsRef.current.add(taskId);
+        activePromptCountsRef.current.delete(taskId);
         if (task.engine === 'headless' && task.cliServiceId) {
             await stopGrokCliService(task.cliServiceId);
         } else if (task.sessionId) {
@@ -1447,7 +1534,9 @@ export const useArkDesktopRuntime = () => {
         refreshRuntimeStatus,
         selectWorkspace,
         pickWorkspace,
+        addWorkspace,
         setDefaultWorkspace,
+        removeWorkspace,
         revealWorkspace,
         selectAttachments,
         startTask,

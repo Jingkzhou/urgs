@@ -25,6 +25,7 @@ export const createDefaultArkDesktopSnapshot = (): ArkDesktopSnapshot => ({
     tasks: [],
     settings: {
         workspace: '',
+        workspacePaths: [],
         grokModel: '',
         modelOptions: [],
         modelProviders: [],
@@ -135,6 +136,13 @@ export const loadArkDesktopSnapshot = (): ArkDesktopSnapshot => {
         const storedModel = stored.settings?.grokModel?.trim() || '';
         const configuredModel = enabledModelIds.includes(storedModel) ? storedModel : enabledModelIds[0] || '';
         const modelOptions = Array.from(new Set(enabledModelIds));
+        const workspacePaths = Array.from(new Set(
+            (Array.isArray(stored.settings?.workspacePaths)
+                ? stored.settings.workspacePaths
+                : [stored.settings?.workspace, ...tasks.map((task) => task.workspace)])
+                .map((workspace) => workspace?.trim())
+                .filter((workspace): workspace is string => Boolean(workspace)),
+        ));
         const snapshot: ArkDesktopSnapshot = {
             agents,
             skills,
@@ -143,6 +151,7 @@ export const loadArkDesktopSnapshot = (): ArkDesktopSnapshot => {
             settings: {
                 ...defaults.settings,
                 ...(stored.settings || {}),
+                workspacePaths,
                 grokModel: configuredModel,
                 modelOptions,
                 modelProviders,

@@ -2820,16 +2820,53 @@ pub async fn grok_pick_prompt_attachments(
 
 #[tauri::command]
 pub async fn grok_send_prompt(
+    app: AppHandle,
     state: State<'_, GrokRuntimeState>,
     session_id: String,
     prompt: String,
     attachments: Option<Vec<String>>,
     attachment_grants: Option<Vec<String>>,
+    queued: Option<bool>,
 ) -> Result<(), String> {
     let grants_to_consume = attachment_grants.clone().unwrap_or_default();
     let attachments = authorize_prompt_attachments(&state, attachments, attachment_grants)?;
     let content = build_prompt_content(&prompt, attachments)?;
     let process = session_process(&state, &session_id)?;
+    if queued.unwrap_or(false) {
+        let queued_session_id = session_id.clone();
+        let queued_process = Arc::clone(&process);
+        tauri::async_runtime::spawn(async move {
+            let result = queued_process
+                .request(
+                    "session/prompt",
+                    json!({
+                        "sessionId": queued_session_id,
+                        "prompt": content
+                    }),
+                )
+                .await;
+            match result {
+                Ok(_) => emit_process_event(
+                    &app,
+                    &queued_process,
+                    "queued_prompt",
+                    json!({ "sessionId": queued_session_id, "phase": "completed" }),
+                ),
+                Err(error) => emit_process_event(
+                    &app,
+                    &queued_process,
+                    "queued_prompt",
+                    json!({
+                        "sessionId": queued_session_id,
+                        "phase": "failed",
+                        "message": error,
+                    }),
+                ),
+            }
+        });
+        consume_prompt_attachment_grants(&state, &grants_to_consume);
+        return Ok(());
+    }
     process
         .request(
             "session/prompt",
