@@ -114,13 +114,17 @@ const buildTaskFormValue = (task?: WorkTask, fallback?: Partial<WorkFormValues['
     assignMode: (task?.assignMode || fallback?.assignMode || 'OPEN') as 'OPEN' | 'ASSIGN' | 'COMPETE',
     assigneeId: task?.assigneeId || fallback?.assigneeId || '',
     maxApplicants: task?.maxApplicants ?? fallback?.maxApplicants ?? '',
-    deadline: toInputDateTime(task?.deadline),
+    deadline: toInputDateTime(task?.deadline) || fallback?.deadline || '',
 });
 
 const buildEditValues = (work: Work, tasks: WorkTask[]): WorkFormValues => {
     const mainTask = tasks.find(task => task.taskRole === 'MAIN');
     const subTasks = tasks.filter(task => task.taskRole !== 'MAIN');
-    const mainTaskValue = buildTaskFormValue(mainTask, defaultValues.mainTask);
+    const requirementDeadline = toInputDateTime(work.deadline);
+    const mainTaskValue = buildTaskFormValue(mainTask, {
+        ...defaultValues.mainTask,
+        deadline: requirementDeadline,
+    });
     return {
         title: work.title || '',
         description: work.description || '',
@@ -138,7 +142,7 @@ const buildEditValues = (work: Work, tasks: WorkTask[]): WorkFormValues => {
             taskType: mainTask?.taskType === '主任务' ? defaultValues.mainTask.taskType : mainTaskValue.taskType,
         } as WorkFormValues['mainTask'],
         attachments: parseAttachments(work.attachments),
-        tasks: subTasks.map(task => buildTaskFormValue(task)) as WorkFormValues['tasks'],
+        tasks: subTasks.map(task => buildTaskFormValue(task, { deadline: requirementDeadline })) as WorkFormValues['tasks'],
     };
 };
 
@@ -152,6 +156,7 @@ const CreateWorkDrawer: React.FC<CreateWorkDrawerProps> = ({ isOpen, onClose, on
         control,
         handleSubmit,
         watch,
+        getValues,
         setValue,
         reset,
         formState: { errors, isSubmitting }
@@ -166,6 +171,7 @@ const CreateWorkDrawer: React.FC<CreateWorkDrawerProps> = ({ isOpen, onClose, on
     });
 
     const attachments = watch('attachments') || [];
+    const requirementDeadline = watch('deadline');
     const primarySystem = watch('primarySystem');
     const mainTaskAssignMode = watch('mainTask.assignMode');
     const mainTaskType = watch('mainTask.taskType');
@@ -181,6 +187,20 @@ const CreateWorkDrawer: React.FC<CreateWorkDrawerProps> = ({ isOpen, onClose, on
         rule.enabled !== false && rule.taskType === taskType && rule.difficulty === difficulty
     );
     const mainTaskSuggestedRule = findRule(mainTaskType, mainTaskDifficulty);
+
+    React.useEffect(() => {
+        if (!requirementDeadline) return;
+
+        if (!getValues('mainTask.deadline')) {
+            setValue('mainTask.deadline', requirementDeadline, { shouldDirty: false });
+        }
+
+        getValues('tasks').forEach((task, index) => {
+            if (!task.deadline) {
+                setValue(`tasks.${index}.deadline`, requirementDeadline, { shouldDirty: false });
+            }
+        });
+    }, [getValues, requirementDeadline, setValue]);
 
     const applyMainTaskPoints = (taskType?: string, difficulty?: string) => {
         const rule = findRule(taskType, difficulty);
@@ -636,11 +656,11 @@ const CreateWorkDrawer: React.FC<CreateWorkDrawerProps> = ({ isOpen, onClose, on
 
                         {/* 任务拆分 */}
                         <div className="space-y-4">
-                            <div className="flex items-center justify-between">
+                            <div className="sticky top-0 z-20 -my-2 py-2 bg-slate-50/95 backdrop-blur-sm flex items-center justify-between">
                                 <h3 className="text-base font-bold text-slate-800">子任务拆分</h3>
                                 <button
                                     type="button"
-                                    onClick={() => append({ title: '', description: '', points: 5, taskType: '开发', difficulty: '简单', involvedSystemIds: [], assignMode: 'ASSIGN', deadline: '' })}
+                                    onClick={() => append({ title: '', description: '', points: 5, taskType: '开发', difficulty: '简单', involvedSystemIds: [], assignMode: 'ASSIGN', deadline: requirementDeadline || '' })}
                                     className="flex items-center gap-1.5 text-sm font-medium text-red-600 hover:text-red-700 hover:bg-red-50 px-3 py-1.5 rounded-md transition-colors"
                                 >
                                     <Plus size={16} /> 添加子任务
