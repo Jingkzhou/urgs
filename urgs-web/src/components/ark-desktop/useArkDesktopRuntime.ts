@@ -548,7 +548,12 @@ export const useArkDesktopRuntime = () => {
             const params = event.payload?.params || event.payload;
             const update = params?.update || params?.sessionUpdate || {};
             const updateType = update?.sessionUpdate;
-            const todoPlan = parseTodoPlan(update);
+            // Grok emits a non-persisted turn-end Plan without `_meta.eventId`.
+            // It maps stale in_progress items to completed only to clear its
+            // native spinner, so it must not overwrite the authoritative TodoWrite state.
+            const isTransientPlanCleanup = updateType === 'plan'
+                && !String(params?._meta?.eventId || '').trim();
+            const todoPlan = isTransientPlanCleanup ? null : parseTodoPlan(update);
             if (todoPlan) {
                 updateTask(taskId, (task) => ({ ...task, plan: todoPlan, updatedAt: Date.now() }));
             }
@@ -620,6 +625,7 @@ export const useArkDesktopRuntime = () => {
                 return;
             }
             if (updateType === 'plan') {
+                if (isTransientPlanCleanup) return;
                 const plan = parsePlanSteps(update.entries);
                 updateTask(taskId, (task) => ({ ...task, plan, updatedAt: Date.now() }));
                 return;
