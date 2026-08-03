@@ -74,6 +74,7 @@ const ArkPage: React.FC<ArkPageProps> = ({ launchTask, onLaunchTaskHandled }) =>
     const [isSidebarCollapsed, setIsSidebarCollapsed] = useState(true);
     const [scrollTop, setScrollTop] = useState(0);
     const [viewportHeight, setViewportHeight] = useState(0);
+    const openingGrokTaskCenterRef = useRef<Promise<void> | null>(null);
 
     const openGrokTaskCenter = async () => {
         if (!isDesktopRuntime()) {
@@ -81,28 +82,60 @@ const ArkPage: React.FC<ArkPageProps> = ({ launchTask, onLaunchTaskHandled }) =>
             return;
         }
 
-        const existingWindow = await WebviewWindow.getByLabel('grok-task-center');
-        if (existingWindow) {
-            await existingWindow.show();
-            await existingWindow.setFocus();
+        if (openingGrokTaskCenterRef.current) {
+            await openingGrokTaskCenterRef.current;
             return;
         }
 
-        const taskCenterWindow = new WebviewWindow('grok-task-center', {
-            url: '/#/grok-task-center',
-            title: 'URGS 智能任务中心',
-            width: 1440,
-            height: 900,
-            minWidth: 1100,
-            minHeight: 700,
-            center: true,
-            resizable: true,
-            titleBarStyle: 'overlay',
-            hiddenTitle: true,
-        });
-        taskCenterWindow.once('tauri://error', (event) => {
-            console.error('无法打开 URGS 智能任务中心窗口', event.payload);
-        });
+        const opening = (async () => {
+            const existingWindow = await WebviewWindow.getByLabel('grok-task-center');
+            if (existingWindow) {
+                await existingWindow.show();
+                await existingWindow.setFocus();
+                return;
+            }
+
+            const taskCenterWindow = new WebviewWindow('grok-task-center', {
+                url: '/#/grok-task-center',
+                title: 'URGS 智能任务中心',
+                width: 1440,
+                height: 900,
+                minWidth: 1100,
+                minHeight: 700,
+                center: true,
+                resizable: true,
+                visible: true,
+                focus: true,
+                titleBarStyle: 'overlay',
+                hiddenTitle: true,
+            });
+
+            await new Promise<void>((resolve, reject) => {
+                taskCenterWindow.once('tauri://created', async () => {
+                    try {
+                        await taskCenterWindow.show();
+                        await taskCenterWindow.setFocus();
+                        resolve();
+                    } catch (error) {
+                        reject(error);
+                    }
+                });
+                taskCenterWindow.once('tauri://error', (event) => {
+                    reject(new Error(`无法打开 URGS 智能任务中心窗口：${String(event.payload)}`));
+                });
+            });
+        })();
+
+        openingGrokTaskCenterRef.current = opening;
+        try {
+            await opening;
+        } catch (error) {
+            console.error('无法打开 URGS 智能任务中心窗口', error);
+        } finally {
+            if (openingGrokTaskCenterRef.current === opening) {
+                openingGrokTaskCenterRef.current = null;
+            }
+        }
     };
     const [measurementVersion, setMeasurementVersion] = useState(0);
 
@@ -601,14 +634,16 @@ const ArkPage: React.FC<ArkPageProps> = ({ launchTask, onLaunchTaskHandled }) =>
                     >
                         <SquarePen size={18} />
                     </button>
-                    <button
-                        onClick={() => void openGrokTaskCenter()}
-                        className="flex h-9 items-center gap-1.5 rounded-lg px-2.5 text-sm font-medium text-slate-500 transition-colors hover:bg-[#f4f4f4] hover:text-slate-900"
-                        title="打开独立的 URGS 智能任务中心"
-                    >
-                        <Bot size={17} />
-                        <span className="hidden sm:inline">Agents</span>
-                    </button>
+                    {isDesktopRuntime() && (
+                        <button
+                            onClick={() => void openGrokTaskCenter()}
+                            className="flex h-9 items-center gap-1.5 rounded-lg px-2.5 text-sm font-medium text-slate-500 transition-colors hover:bg-[#f4f4f4] hover:text-slate-900"
+                            title="打开独立的 URGS 智能任务中心"
+                        >
+                            <Bot size={17} />
+                            <span className="hidden sm:inline">Agents</span>
+                        </button>
+                    )}
                 </div>
 
                 <div className="min-w-0 flex-1 px-3">

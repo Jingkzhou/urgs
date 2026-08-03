@@ -5,8 +5,31 @@
     display: flex;
     align-items: center;
     justify-content: space-between;
-    gap: 16px;
-    flex-wrap: wrap;
+    gap: 12px;
+    flex-wrap: nowrap;
+    min-width: 0;
+}
+.lineage-page-toolbar-brand {
+    flex: 0 0 auto;
+    min-width: 116px;
+}
+.lineage-page-toolbar > .lineage-quick-search-section {
+    flex: 1 1 520px;
+    min-width: 280px;
+    padding: 0;
+    border-bottom: 0;
+    background: transparent;
+}
+.lineage-page-toolbar > .lineage-quick-search-section .lineage-quick-filter-row {
+    justify-content: flex-start;
+    gap: 8px;
+}
+.lineage-page-toolbar > .lineage-quick-search-section .lineage-quick-result-count {
+    display: none;
+}
+.lineage-page-toolbar > .lineage-action-bar {
+    flex: 0 0 auto;
+    min-width: 0;
 }
 .lineage-action-bar {
     display: flex;
@@ -70,76 +93,34 @@
     flex-direction: column;
     background: #fff;
 }
-.lineage-catalog-hero {
-    padding: 20px 24px 16px;
+.lineage-quick-search-section {
+    flex: 0 0 auto;
+    padding: 10px 24px;
     border-bottom: 1px solid #e8eef7;
+    background: #fff;
+}
+.lineage-quick-filter-row {
     display: flex;
     align-items: center;
     justify-content: space-between;
-    gap: 16px;
-    background: linear-gradient(180deg, #fbfdff 0%, #fff 100%);
+    gap: 12px;
+    flex-wrap: nowrap;
 }
-.lineage-catalog-title {
-    min-width: 0;
-    display: flex;
+.lineage-quick-filter-row .ant-input-affix-wrapper {
+    min-width: 220px;
+    flex: 1 1 auto;
+}
+.lineage-quick-filter-row .ant-checkbox-group {
+    display: inline-flex;
     align-items: center;
-    gap: 14px;
-}
-.lineage-catalog-title h3 {
-    margin: 0;
-    color: #111827;
-    font-size: 20px;
-    font-weight: 750;
-}
-.lineage-catalog-title p {
-    margin: 5px 0 0;
-    color: #64748b;
-    font-size: 13px;
-}
-.lineage-catalog-icon {
-    width: 40px;
-    height: 40px;
-    border-radius: 8px;
-    display: flex;
-    align-items: center;
-    justify-content: center;
-    background: #eff6ff;
-    color: #1677ff;
-    border: 1px solid #dbeafe;
+    gap: 12px;
     flex: 0 0 auto;
 }
-.lineage-catalog-stats {
-    display: grid;
-    grid-template-columns: repeat(3, minmax(0, 1fr));
-    gap: 1px;
-    background: #e8eef7;
-    border-bottom: 1px solid #e8eef7;
-}
-.lineage-catalog-stats > div {
-    padding: 14px 24px;
-    background: #fff;
-    display: flex;
-    align-items: baseline;
-    gap: 8px;
-}
-.lineage-stat-value {
-    color: #0f172a;
-    font-size: 22px;
-    font-weight: 760;
-    line-height: 1;
-    font-variant-numeric: tabular-nums;
-}
-.lineage-stat-label {
+.lineage-quick-result-count {
+    margin-left: auto;
     color: #64748b;
     font-size: 12px;
-    font-weight: 650;
-}
-.lineage-search-input-row {
-    padding: 16px 24px;
-    display: flex;
-    gap: 8px;
-    border-bottom: 1px solid #e8eef7;
-    background: #fff;
+    white-space: nowrap;
 }
 .lineage-catalog-layout {
     flex: 1;
@@ -147,6 +128,9 @@
     display: grid;
     grid-template-columns: 300px minmax(0, 1fr);
     background: #f8fafc;
+}
+.lineage-catalog-layout-with-quick-results {
+    grid-template-columns: 280px minmax(0, 1fr) 360px;
 }
 .lineage-owner-rail {
     min-height: 0;
@@ -161,6 +145,75 @@
     overflow: auto;
     padding: 18px;
     background: #fff;
+}
+.lineage-quick-result-pane {
+    min-width: 0;
+    min-height: 0;
+    display: flex;
+    flex-direction: column;
+    gap: 8px;
+    padding: 18px 16px;
+    border-left: 1px solid #e8eef7;
+    background: #fbfdff;
+}
+.lineage-quick-result-pane-header {
+    display: flex;
+    align-items: flex-start;
+    justify-content: space-between;
+    gap: 12px;
+}
+.lineage-quick-result-pane-title {
+    margin-top: 2px;
+    color: #111827;
+    font-size: 18px;
+    font-weight: 750;
+}
+.lineage-quick-result-pane-hint {
+    color: #94a3b8;
+    font-size: 12px;
+}
+.lineage-quick-result-list {
+    min-height: 0;
+    display: flex;
+    flex-direction: column;
+    gap: 8px;
+    overflow-y: auto;
+    padding: 4px 2px 4px 0;
+}
+.lineage-quick-result-item {
+    width: 100%;
+    min-width: 0;
+    display: grid;
+    grid-template-columns: auto minmax(0, 1fr) auto;
+    align-items: center;
+    gap: 8px;
+    padding: 9px 10px;
+    border: 1px solid #e8eef7;
+    border-radius: 8px;
+    background: #fff;
+    color: #1f2937;
+    cursor: pointer;
+    text-align: left;
+    transition: border-color 0.2s, background 0.2s, box-shadow 0.2s;
+}
+.lineage-quick-result-item:hover {
+    border-color: #91caff;
+    background: #f8fbff;
+    box-shadow: 0 4px 12px rgba(22, 119, 255, 0.08);
+}
+.lineage-quick-result-item .ant-tag {
+    margin: 0;
+}
+.lineage-quick-result-item-label {
+    min-width: 0;
+    overflow: hidden;
+    color: #334155;
+    text-overflow: ellipsis;
+    white-space: nowrap;
+}
+.lineage-quick-result-item-arrow {
+    color: #cbd5e1;
+    font-size: 11px;
 }
 .lineage-search-footer {
     padding: 10px 24px;
@@ -403,6 +456,17 @@
     box-shadow: 0 8px 20px rgba(15, 23, 42, 0.12);
 }
 @media (max-width: 900px) {
+    .lineage-page-toolbar {
+        flex-wrap: wrap;
+    }
+    .lineage-page-toolbar > .lineage-quick-search-section {
+        order: 3;
+        flex-basis: 100%;
+        min-width: 0;
+    }
+    .lineage-page-toolbar > .lineage-quick-search-section .lineage-quick-filter-row {
+        flex-wrap: wrap;
+    }
     .lineage-entry-content {
         padding: 0;
     }
@@ -414,13 +478,32 @@
     .lineage-search-panel-drawer .lineage-catalog-layout {
         grid-template-columns: 1fr;
     }
+    .lineage-catalog-layout-with-quick-results {
+        grid-template-columns: 1fr;
+    }
     .lineage-owner-rail {
         max-height: 220px;
         border-right: 0;
         border-bottom: 1px solid #e8eef7;
     }
-    .lineage-catalog-stats {
-        grid-template-columns: 1fr;
+    .lineage-quick-search-section {
+        padding-inline: 16px;
+    }
+    .lineage-quick-filter-row {
+        flex-wrap: wrap;
+    }
+    .lineage-quick-filter-row .ant-input-affix-wrapper {
+        flex-basis: 100%;
+        min-width: 0;
+    }
+    .lineage-quick-filter-row .ant-checkbox-group {
+        flex-wrap: wrap;
+    }
+    .lineage-quick-result-pane {
+        max-height: 280px;
+        border-top: 1px solid #e8eef7;
+        border-left: 0;
+        padding: 14px 16px;
     }
 }
 .lineage-search-panel-drawer .lineage-catalog-layout {
@@ -430,4 +513,9 @@
     max-height: 260px;
     border-right: 0;
     border-bottom: 1px solid #e8eef7;
+}
+.lineage-search-panel-drawer .lineage-quick-result-pane {
+    max-height: 280px;
+    border-top: 1px solid #e8eef7;
+    border-left: 0;
 }

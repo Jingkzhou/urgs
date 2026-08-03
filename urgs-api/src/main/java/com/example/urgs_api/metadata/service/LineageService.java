@@ -108,8 +108,9 @@ public class LineageService {
                 "size", querySize);
 
         String ownerSummaryQuery = "MATCH (n:Table) WHERE " + keywordFilter + " "
-                + "WITH " + ownerExpression + " AS ownerName, count(DISTINCT n) AS tableCount "
-                + "RETURN ownerName, tableCount ORDER BY ownerName";
+                + "OPTIONAL MATCH (c:Column)-[:BELONGS_TO]->(n) "
+                + "WITH " + ownerExpression + " AS ownerName, count(DISTINCT n) AS tableCount, count(DISTINCT c) AS columnCount "
+                + "RETURN ownerName, tableCount, columnCount ORDER BY ownerName";
         String countQuery = "MATCH (n:Table) WHERE " + keywordFilter + " AND " + ownerFilter + " "
                 + "RETURN count(DISTINCT n) AS total";
         String dataQuery = "MATCH (n:Table) WHERE " + keywordFilter + " AND " + ownerFilter + " "
@@ -128,10 +129,12 @@ public class LineageService {
             while (ownerResult.hasNext()) {
                 var record = ownerResult.next();
                 long tableCount = record.get("tableCount").asLong();
+                long columnCount = record.get("columnCount").asLong();
                 allOwnerTotal += tableCount;
                 Map<String, Object> group = new LinkedHashMap<>();
                 group.put("ownerName", record.get("ownerName").asString("DEFAULT"));
                 group.put("tableCount", tableCount);
+                group.put("columnCount", columnCount);
                 group.put("tables", Collections.emptyList());
                 groupedOwners.add(group);
             }

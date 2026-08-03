@@ -12,6 +12,7 @@ export interface LineageSearchTableItem {
 export interface LineageSearchOwnerGroup {
     ownerName: string;
     tableCount: number;
+    columnCount: number;
     tables: LineageSearchTableItem[];
 }
 

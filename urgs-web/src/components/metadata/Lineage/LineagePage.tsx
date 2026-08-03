@@ -252,6 +252,10 @@ const LineagePage: React.FC<LineagePageProps> = () => {
     const selectedOwnerTables = useMemo(() => (
         selectedOwnerGroup?.tables?.slice().sort((a, b) => a.tableName.localeCompare(b.tableName)) || []
     ), [selectedOwnerGroup]);
+    const showQuickResults = Boolean(searchText.trim() && quickResults.length > 0);
+    const totalColumnCount = useMemo(() => (
+        sortedOwnerGroups.reduce((sum, group) => sum + (group.columnCount || 0), 0)
+    ), [sortedOwnerGroups]);
 
     const handleSearch = async (page: number = 1, ownerName: string | null = selectedOwnerName) => {
         setLoading(true);
@@ -424,39 +428,9 @@ const LineagePage: React.FC<LineagePageProps> = () => {
         message.success('导出成功');
     };
 
-    const renderSearchPanel = (inDrawer = false) => (
-        <div className={`lineage-search-panel ${inDrawer ? 'lineage-search-panel-drawer' : ''}`}>
-            <div className="lineage-catalog-hero">
-                <div className="lineage-catalog-title">
-                    <div className="lineage-catalog-icon">
-                        <SearchOutlined />
-                    </div>
-                    <div>
-                        <h3>血缘入口</h3>
-                        <p>先定位 Schema、表或字段，再进入全屏画布分析上下游关系。</p>
-                    </div>
-                </div>
-                {inDrawer ? (
-                    <Button type="text" size="small" onClick={() => setSearchDrawerOpen(false)}>
-                        关闭
-                    </Button>
-                ) : null}
-            </div>
-            <div className="lineage-catalog-stats">
-                <div>
-                    <span className="lineage-stat-value">{totalOwners}</span>
-                    <span className="lineage-stat-label">Schema</span>
-                </div>
-                <div>
-                    <span className="lineage-stat-value">{total}</span>
-                    <span className="lineage-stat-label">表 / 报表</span>
-                </div>
-                <div>
-                    <span className="lineage-stat-value">{selectedOwnerName ? selectedOwnerTotal : total}</span>
-                    <span className="lineage-stat-label">{selectedOwnerName ? '当前 Schema' : '可检索对象'}</span>
-                </div>
-            </div>
-            <div className="lineage-search-input-row">
+    const renderSearchControls = () => (
+        <div className="lineage-quick-search-section">
+            <div className="lineage-quick-filter-row">
                 <Input
                     size="large"
                     placeholder="搜索用户、表名、qualifiedName 或字段名"
@@ -468,8 +442,6 @@ const LineagePage: React.FC<LineagePageProps> = () => {
                 <Button type="primary" size="large" icon={<SearchOutlined />} onClick={handleSearchSubmit} loading={loading}>
                     查询
                 </Button>
-            </div>
-            <div style={{ marginTop: 12, display: 'flex', alignItems: 'center', justifyContent: 'space-between', gap: 12, flexWrap: 'wrap' }}>
                 <Checkbox.Group
                     value={quickNodeTypes}
                     options={[
@@ -480,24 +452,15 @@ const LineagePage: React.FC<LineagePageProps> = () => {
                     ]}
                     onChange={values => setQuickNodeTypes(values as LineageSearchNodeType[])}
                 />
-                {searchText.trim() ? <span style={{ color: '#64748b', fontSize: 12 }}>匹配 {quickResultTotal} 个对象</span> : null}
+                {searchText.trim() ? <span className="lineage-quick-result-count">匹配 {quickResultTotal} 个对象</span> : null}
             </div>
-            {searchText.trim() && quickResults.length > 0 ? (
-                <div style={{ marginTop: 12, padding: 10, border: '1px solid #e2e8f0', borderRadius: 8, background: '#f8fafc' }}>
-                    <div style={{ marginBottom: 8, color: '#475569', fontSize: 12, fontWeight: 600 }}>快速定位</div>
-                    <Space size={[8, 8]} wrap>
-                        {quickResults.map(item => (
-                            <Button key={item.id} size="small" onClick={() => handleQuickNodeSelect(item)}>
-                                <Tag color={item.nodeType === 'ANALYSIS' && item.properties.status !== 'EXACT' ? 'gold' : 'blue'} style={{ marginInlineEnd: 6 }}>
-                                    {item.nodeType}
-                                </Tag>
-                                {item.displayName}
-                            </Button>
-                        ))}
-                    </Space>
-                </div>
-            ) : null}
-            <div className="lineage-catalog-layout">
+        </div>
+    );
+
+    const renderSearchPanel = (inDrawer = false) => (
+        <div className={`lineage-search-panel ${inDrawer ? 'lineage-search-panel-drawer' : ''}`}>
+            {inDrawer ? renderSearchControls() : null}
+            <div className={`lineage-catalog-layout ${showQuickResults ? 'lineage-catalog-layout-with-quick-results' : ''}`}>
                 <aside className="lineage-owner-rail">
                     <div className="lineage-section-label">用户 / Schema</div>
                     <div className="lineage-owner-list">
@@ -624,12 +587,43 @@ const LineagePage: React.FC<LineagePageProps> = () => {
                         </div>
                     )}
                 </main>
+                {showQuickResults ? (
+                    <aside className="lineage-quick-result-pane">
+                        <div className="lineage-quick-result-pane-header">
+                            <div>
+                                <div className="lineage-pane-eyebrow">快速定位</div>
+                                <div className="lineage-quick-result-pane-title">匹配对象</div>
+                            </div>
+                            <Tag color="blue" style={{ margin: 0 }}>{quickResultTotal} 个</Tag>
+                        </div>
+                        <div className="lineage-quick-result-pane-hint">点击对象进入画布或查看解析详情</div>
+                        <div className="lineage-quick-result-list">
+                            {quickResults.map(item => (
+                                <button
+                                    key={item.id}
+                                    type="button"
+                                    className="lineage-quick-result-item"
+                                    title={item.displayName}
+                                    onClick={() => handleQuickNodeSelect(item)}
+                                >
+                                    <Tag color={item.nodeType === 'ANALYSIS' && item.properties.status !== 'EXACT' ? 'gold' : 'blue'}>
+                                        {item.nodeType}
+                                    </Tag>
+                                    <span className="lineage-quick-result-item-label">{item.displayName}</span>
+                                    <RightOutlined className="lineage-quick-result-item-arrow" />
+                                </button>
+                            ))}
+                        </div>
+                    </aside>
+                ) : null}
             </div>
             <div className="lineage-search-footer">
                 <div style={{ color: '#64748b', fontSize: 12 }}>
                     {selectedOwnerName
-                        ? `${selectedOwnerName}：${selectedOwnerTotal} 张表`
-                        : `共 ${totalOwners} 个用户/Schema，${total} 张表`}
+                        ? `${selectedOwnerName}：${selectedOwnerTotal} 张表，${selectedOwnerGroup?.columnCount || 0} 个字段`
+                        : sortedOwnerGroups.length === 1
+                            ? `${sortedOwnerGroups[0].ownerName}：${sortedOwnerGroups[0].tableCount} 张表，${sortedOwnerGroups[0].columnCount || 0} 个字段`
+                            : `共 ${totalOwners} 个用户/Schema，${total} 张表，${totalColumnCount} 个字段`}
                 </div>
                 {selectedOwnerName ? (
                     <Pagination
@@ -656,7 +650,7 @@ const LineagePage: React.FC<LineagePageProps> = () => {
             }}
         >
             <div className="lineage-page-toolbar" style={{ padding: '12px 16px', borderBottom: '1px solid #f0f0f0', background: '#fff' }}>
-                <div style={{ display: 'flex', alignItems: 'center', gap: 12 }}>
+                <div className="lineage-page-toolbar-brand" style={{ display: 'flex', alignItems: 'center', gap: 12 }}>
                         <div>
                             <div style={{ fontSize: 14, fontWeight: 600, color: '#1f2937' }}>SQL Lineage</div>
                             <div style={{ fontSize: 12, color: '#8c8c8c' }}>血缘模块</div>
@@ -696,6 +690,7 @@ const LineagePage: React.FC<LineagePageProps> = () => {
                         </div>
                     ) : null}
                 </div>
+                {workspaceMode === 'catalog' ? renderSearchControls() : null}
                 <LineagePageActionBar
                     viewMode={viewMode}
                     displayMode={displayMode}

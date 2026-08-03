@@ -22,6 +22,7 @@ dayjs.locale('zh-cn');
 import App from './App';
 import DesktopConnectionSetup from './components/desktop/DesktopConnectionSetup';
 import DesktopAutoUpdater from './components/desktop/DesktopAutoUpdater';
+import { getCurrentWebviewWindow } from '@tauri-apps/api/webviewWindow';
 import { getApiBaseUrl, installServiceRequestAdapters, isDesktopRuntime } from './config';
 import { installDesktopDownloadAdapter } from './utils/desktopDownload';
 import { initializeDesktopAutostart } from './utils/desktopAutostart';
@@ -41,6 +42,10 @@ const revealDesktopMainWindow = async () => {
   }
 
   try {
+    if (getCurrentWebviewWindow().label !== 'main') {
+      return;
+    }
+
     const { invoke } = await import('@tauri-apps/api/core');
     await invoke('complete_desktop_startup');
   } catch (error) {
