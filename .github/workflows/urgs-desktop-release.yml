@@ -50,6 +50,19 @@ jobs:
         shell: pwsh
         run: pnpm --dir urgs-desktop install --frozen-lockfile
 
+      - name: 准备固定版本的 Grok Build Sidecar
+        shell: pwsh
+        env:
+          GROK_BUILD_VERSION: "0.2.103"
+        run: |
+          $grokBinDir = Join-Path $env:RUNNER_TEMP "grok-build-bin"
+          New-Item -ItemType Directory -Force -Path $grokBinDir | Out-Null
+          $env:GROK_VERSION = $env:GROK_BUILD_VERSION
+          $env:GROK_BIN_DIR = $grokBinDir
+          & ([scriptblock]::Create((Invoke-RestMethod -Uri "https://x.ai/cli/install.ps1"))) -Version $env:GROK_BUILD_VERSION
+          $env:GROK_SIDECAR_SOURCE = Join-Path $grokBinDir "grok.exe"
+          pnpm --dir urgs-desktop run prepare:grok -- --target x86_64-pc-windows-msvc
+
       - name: 设置内网更新地址
         id: updater
         shell: pwsh

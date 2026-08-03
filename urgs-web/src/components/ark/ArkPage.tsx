@@ -1,11 +1,13 @@
 import React, { useState, useEffect, useRef, useMemo, useLayoutEffect, useCallback } from 'react';
 import { v4 as uuidv4 } from 'uuid';
 import { RobotOutlined } from '@ant-design/icons';
-import { Sparkles, Database, Cpu, Layers, PenTool, ArrowDown, PanelLeftClose, PanelLeftOpen, SquarePen } from 'lucide-react';
+import { Sparkles, Database, Cpu, Layers, PenTool, ArrowDown, PanelLeftClose, PanelLeftOpen, SquarePen, Bot } from 'lucide-react';
 import { motion, AnimatePresence } from 'framer-motion';
+import { WebviewWindow } from '@tauri-apps/api/webviewWindow';
 import Sidebar from './Sidebar';
 import ChatMessage from './ChatMessage';
 import ChatInput from './ChatInput';
+import { isDesktopRuntime } from '../../config';
 import {
     Message, type AgentAppSkill, type ConversationContextMessage, createSession, streamChatResponse, loadSessionMessages, generateSessionTitle, getAgents, getRoleAgents, getAgentAppSkills
 } from '../../api/chat';
@@ -19,6 +21,17 @@ interface SessionState {
     scrollTop: number;
     itemHeights: Map<string, number>;
     isAtBottom: boolean;
+}
+
+interface ArkLaunchTask {
+    agentId?: number | string;
+    prompt?: string;
+    requestId: number;
+}
+
+interface ArkPageProps {
+    launchTask?: ArkLaunchTask | null;
+    onLaunchTaskHandled: () => void;
 }
 
 const parseAgentAppTools = (value: any) => {
@@ -45,7 +58,7 @@ const buildConversationContext = (items: Message[]): ConversationContextMessage[
         }));
 };
 
-const ArkPage: React.FC = () => {
+const ArkPage: React.FC<ArkPageProps> = ({ launchTask, onLaunchTaskHandled }) => {
     // ... state remains the same ...
     const [currentSessionId, setCurrentSessionId] = useState<string | null>(null);
     const [messages, setMessages] = useState<Message[]>([]);
@@ -61,6 +74,36 @@ const ArkPage: React.FC = () => {
     const [isSidebarCollapsed, setIsSidebarCollapsed] = useState(true);
     const [scrollTop, setScrollTop] = useState(0);
     const [viewportHeight, setViewportHeight] = useState(0);
+
+    const openGrokTaskCenter = async () => {
+        if (!isDesktopRuntime()) {
+            window.open('#/grok-task-center', '_blank', 'noopener,noreferrer');
+            return;
+        }
+
+        const existingWindow = await WebviewWindow.getByLabel('grok-task-center');
+        if (existingWindow) {
+            await existingWindow.show();
+            await existingWindow.setFocus();
+            return;
+        }
+
+        const taskCenterWindow = new WebviewWindow('grok-task-center', {
+            url: '/#/grok-task-center',
+            title: 'URGS 智能任务中心',
+            width: 1440,
+            height: 900,
+            minWidth: 1100,
+            minHeight: 700,
+            center: true,
+            resizable: true,
+            titleBarStyle: 'overlay',
+            hiddenTitle: true,
+        });
+        taskCenterWindow.once('tauri://error', (event) => {
+            console.error('无法打开 URGS 智能任务中心窗口', event.payload);
+        });
+    };
     const [measurementVersion, setMeasurementVersion] = useState(0);
 
     const [showScrollBottom, setShowScrollBottom] = useState(false);
@@ -403,6 +446,13 @@ const ArkPage: React.FC = () => {
         if (isGenerating) handleStop();
     };
 
+    useEffect(() => {
+        if (!launchTask || loading) return;
+        handleNewChat(launchTask.agentId);
+        setInputValue(launchTask.prompt || '');
+        onLaunchTaskHandled();
+    }, [launchTask?.requestId, loading, agents]);
+
     const resetStreamingState = () => {
         if (flushTimerRef.current !== null) {
             window.clearTimeout(flushTimerRef.current);
@@ -550,6 +600,14 @@ const ArkPage: React.FC = () => {
                         title="新建对话"
                     >
                         <SquarePen size={18} />
+                    </button>
+                    <button
+                        onClick={() => void openGrokTaskCenter()}
+                        className="flex h-9 items-center gap-1.5 rounded-lg px-2.5 text-sm font-medium text-slate-500 transition-colors hover:bg-[#f4f4f4] hover:text-slate-900"
+                        title="打开独立的 URGS 智能任务中心"
+                    >
+                        <Bot size={17} />
+                        <span className="hidden sm:inline">Agents</span>
                     </button>
                 </div>
 
@@ -729,7 +787,7 @@ const ArkPage: React.FC = () => {
                             )}
                         </motion.div>
                     )}
-                </AnimatePresence>
+                    </AnimatePresence>
 
                 {/* Scroll to Bottom Button */}
                 <AnimatePresence>

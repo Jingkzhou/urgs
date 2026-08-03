@@ -1,3 +1,5 @@
+mod grok_runtime;
+
 use serde::{Deserialize, Serialize};
 use std::fs;
 use std::io::Write;
@@ -246,17 +248,50 @@ pub fn run() {
         .plugin(tauri_plugin_fs::init())
         .plugin(tauri_plugin_opener::init())
         .plugin(tauri_plugin_process::init())
+        .plugin(tauri_plugin_shell::init())
         .plugin(tauri_plugin_updater::Builder::new().build())
         .plugin(tauri_plugin_autostart::init(
             tauri_plugin_autostart::MacosLauncher::LaunchAgent,
             None,
         ))
+        .manage(grok_runtime::GrokRuntimeState::default())
         .invoke_handler(tauri::generate_handler![
             load_desktop_runtime_config,
             save_desktop_runtime_config,
             load_desktop_auto_start_enabled,
             save_desktop_auto_start_enabled,
-            complete_desktop_startup
+            complete_desktop_startup,
+            grok_runtime::grok_runtime_status,
+            grok_runtime::grok_available_commands,
+            grok_runtime::grok_runtime_prepare,
+            grok_runtime::grok_cli_run,
+            grok_runtime::grok_cli_service_start,
+            grok_runtime::grok_cli_service_list,
+            grok_runtime::grok_cli_service_stop,
+            grok_runtime::grok_config_read,
+            grok_runtime::grok_config_save,
+            grok_runtime::grok_model_apply,
+            grok_runtime::grok_model_provider_list,
+            grok_runtime::grok_model_provider_authorize,
+            grok_runtime::grok_model_provider_save,
+            grok_runtime::grok_model_provider_delete,
+            grok_runtime::grok_create_session,
+            grok_runtime::grok_load_session,
+            grok_runtime::grok_pick_prompt_attachments,
+            grok_runtime::grok_send_prompt,
+            grok_runtime::grok_queue_action,
+            grok_runtime::grok_session_set_model,
+            grok_runtime::grok_rewind_points,
+            grok_runtime::grok_rewind_files,
+            grok_runtime::grok_scheduled_task_delete,
+            grok_runtime::grok_cancel,
+            grok_runtime::grok_release_session,
+            grok_runtime::grok_respond_permission,
+            grok_runtime::grok_respond_user_question,
+            grok_runtime::grok_respond_plan_approval,
+            grok_runtime::grok_runtime_invalidate_prepared,
+            grok_runtime::grok_shutdown,
+            grok_runtime::grok_start_login
         ])
         .setup(|app| {
             write_startup_log("Tauri setup started.");
