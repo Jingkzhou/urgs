@@ -55,8 +55,25 @@ export interface ArkDesktopToolActivity {
     kind?: string;
     input?: string;
     output?: string;
+    fileChanges?: ArkDesktopFileChange[];
+    changesRevertedAt?: number;
     startedAt?: number;
     updatedAt: number;
+}
+
+export interface ArkDesktopDiffHunk {
+    oldLine: number;
+    newLine: number;
+    oldLines: string[];
+    newLines: string[];
+}
+
+export interface ArkDesktopFileChange {
+    path: string;
+    additions: number;
+    deletions: number;
+    hunks: ArkDesktopDiffHunk[];
+    previewTruncated?: boolean;
 }
 
 export interface ArkDesktopPlanStep {
@@ -70,12 +87,23 @@ export interface ArkDesktopMessage {
     role: 'user' | 'assistant';
     content: string;
     createdAt: number;
+    queueEntryId?: string;
 }
 
 export interface ArkDesktopSlashCommand {
     name: string;
     description: string;
     inputHint?: string | null;
+}
+
+export interface ArkDesktopQueueEntry {
+    id: string;
+    version: number;
+    owner?: string | null;
+    lastEditor?: string | null;
+    kind: string;
+    text: string;
+    position: number;
 }
 
 export type ArkDesktopTaskStatus = 'running' | 'waiting_authorization' | 'completed' | 'failed' | 'cancelled';
@@ -105,6 +133,8 @@ export interface ArkDesktopTask {
     status: ArkDesktopTaskStatus;
     messages: ArkDesktopMessage[];
     tools: ArkDesktopToolActivity[];
+    queueEntries?: ArkDesktopQueueEntry[];
+    queueRunningPromptId?: string | null;
     plan?: ArkDesktopPlanStep[];
     availableCommands?: ArkDesktopSlashCommand[];
     error?: string;

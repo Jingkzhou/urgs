@@ -1,4 +1,4 @@
-import React, { useEffect, useMemo, useRef, useState } from 'react';
+import React, { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import ReactMarkdown from 'react-markdown';
 import remarkBreaks from 'remark-breaks';
 import remarkGfm from 'remark-gfm';
@@ -6,7 +6,7 @@ import { Prism as SyntaxHighlighter } from 'react-syntax-highlighter';
 import { oneDark } from 'react-syntax-highlighter/dist/esm/styles/prism';
 import {
     AlertCircle, Bot, BriefcaseBusiness, Check, CheckCircle2, CheckSquare,
-    ChevronDown, CircleStop, Code2, Copy, Cpu, FileText, Folder, FolderOpen,
+    ChevronDown, ChevronUp, CircleStop, Code2, Copy, Cpu, FileText, Folder, FolderOpen,
     Hand, KeyRound, Lightbulb, LoaderCircle, Paperclip, Pencil, Plus,
     Puzzle, Search, Send, Settings, ShieldAlert, Trash2, WandSparkles, Wrench, X,
 } from 'lucide-react';
@@ -21,6 +21,7 @@ import { ArkDesktopSidebarToggle, ArkDesktopTitleContent } from './ArkDesktopTit
 import { ConversationPromptInput } from './SlashCommandMenu';
 import SessionCommandBar from './SessionCommandBar';
 import TaskActivityTimeline from './TaskActivityTimeline';
+import TaskChangeSummary from './TaskChangeSummary';
 import TaskPlanPanel from './TaskPlanPanel';
 import PlanApprovalDialog from './PlanApprovalDialog';
 import UserQuestionDialog from './UserQuestionDialog';
@@ -130,6 +131,7 @@ const ArkDesktopPage: React.FC = () => {
     const schedulingRef = useRef(false);
     const draftWorkspaceFollowsDefaultRef = useRef(true);
     const conversationScrollRef = useRef<HTMLDivElement>(null);
+    const clearLatestMessageLocation = useCallback(() => setLatestMessageTaskId(null), []);
 
     useEffect(() => {
         const initializeSchedules = () => {
@@ -395,6 +397,7 @@ const ArkDesktopPage: React.FC = () => {
                         followUp={runtime.activeTask ? followUpDrafts[runtime.activeTask.id] || '' : draft}
                         setFollowUp={runtime.activeTask ? (value) => setFollowUpDrafts((current) => ({ ...current, [runtime.activeTask!.id]: value })) : setDraft}
                         locateLatestMessage={latestMessageTaskId === runtime.activeTask?.id}
+                        onLatestMessageLocated={clearLatestMessageLocation}
                         newTask={!runtime.activeTask ? {
                             selectedSkillIds,
                             setSelectedSkillIds,
@@ -613,6 +616,14 @@ const TaskMessage: React.FC<{ message: ArkDesktopTask['messages'][number]; attac
     return <div ref={scrollTarget} className="scroll-mt-6 py-2"><MarkdownContent content={message.content} /></div>;
 };
 
+const isInternalGoalHarnessPrompt = (content: string) => [
+    '<system-reminder>\nA goal has been set:',
+    'You are the Goal Plan Writer for the xAI Grok Build harness.',
+    'You are the Goal Strategist for the xAI Grok Build harness.',
+    'You are the Goal Summarizer for the xAI Grok Build harness.',
+    'You are an **adversarial verifier** for the xAI Grok Build harness.',
+].some((prefix) => content.trimStart().startsWith(prefix));
+
 const workspaceName = (workspace: string) => workspace.split(/[\\/]/).filter(Boolean).pop() || workspace;
 
 const WorkspacePicker: React.FC<{
@@ -744,6 +755,70 @@ const WorkspacePicker: React.FC<{
     </div>;
 };
 
+const QueuePanel: React.FC<{ task: ArkDesktopTask; runtime: ReturnType<typeof useArkDesktopRuntime> }> = ({ task, runtime }) => {
+    const entries = [...(task.queueEntries || [])].sort((left, right) => left.position - right.position);
+    const [editingId, setEditingId] = useState<string | null>(null);
+    const [draft, setDraft] = useState('');
+    const [busyId, setBusyId] = useState<string | null>(null);
+    if (entries.length === 0) return null;
+
+    const runAction = async (id: string, action: Parameters<typeof runtime.queueAction>[1], options: Parameters<typeof runtime.queueAction>[2] = {}) => {
+        setBusyId(id);
+        try {
+            await runtime.queueAction(task.id, action, options);
+        } catch {
+            // queueAction 已将可读错误写回当前任务，避免按钮事件产生未处理的 Promise。
+        } finally {
+            setBusyId(null);
+        }
+    };
+    const saveEdit = async (entry: typeof entries[number]) => {
+        const text = draft.trim();
+        if (!text || text === entry.text) {
+            setEditingId(null);
+            return;
+        }
+        await runAction(entry.id, 'edit', { id: entry.id, newText: text });
+        setEditingId(null);
+    };
+    const reorder = async (index: number, offset: number) => {
+        const target = index + offset;
+        if (target < 0 || target >= entries.length) return;
+        const orderedIds = entries.map((entry) => entry.id);
+        [orderedIds[index], orderedIds[target]] = [orderedIds[target], orderedIds[index]];
+        await runAction(entries[index].id, 'reorder', { orderedIds });
+    };
+
+    return <section className="mb-3 rounded-2xl border border-slate-200 bg-slate-50/85 px-3 py-2.5" aria-label="排队中的消息">
+        <div className="flex items-center justify-between gap-3 px-1 pb-2">
+            <div className="flex items-center gap-2 text-xs font-semibold text-slate-700"><span className="flex h-5 min-w-5 items-center justify-center rounded-full bg-slate-900 px-1.5 text-[10px] text-white">{entries.length}</span>排队中</div>
+            <button type="button" disabled={busyId === 'clear'} onClick={() => void runAction('clear', 'clear')} className="text-[11px] font-medium text-slate-400 transition hover:text-red-600 disabled:opacity-40">清空队列</button>
+        </div>
+        <div className="space-y-1.5">
+            {entries.map((entry, index) => {
+                const busy = busyId === entry.id;
+                const editing = editingId === entry.id;
+                return <div key={entry.id} className="rounded-xl border border-slate-200/80 bg-white px-3 py-2 shadow-sm">
+                    {editing ? <div className="space-y-2">
+                        <textarea value={draft} onChange={(event) => setDraft(event.target.value)} rows={2} autoFocus className="w-full resize-none rounded-lg border border-slate-200 px-2.5 py-2 text-sm text-slate-700 outline-none focus:border-slate-400 focus:ring-2 focus:ring-slate-100" />
+                        <div className="flex justify-end gap-2"><button type="button" onClick={() => setEditingId(null)} className="rounded-lg px-2.5 py-1 text-xs text-slate-500 hover:bg-slate-100">取消</button><button type="button" disabled={!draft.trim() || busy} onClick={() => void saveEdit(entry)} className="rounded-lg bg-slate-900 px-2.5 py-1 text-xs font-medium text-white disabled:opacity-40">保存</button></div>
+                    </div> : <div className="flex items-start gap-2">
+                        <span className="mt-0.5 shrink-0 text-xs font-medium text-slate-400">{index + 1}</span>
+                        <p className="min-w-0 flex-1 whitespace-pre-wrap break-words text-sm leading-5 text-slate-700">{entry.text}</p>
+                        <div className="flex shrink-0 items-center gap-0.5">
+                            <button type="button" disabled={busy || index === 0} onClick={() => void reorder(index, -1)} title="上移" aria-label="上移队列项" className="rounded-md p-1 text-slate-400 hover:bg-slate-100 hover:text-slate-700 disabled:opacity-25"><ChevronUp size={14} /></button>
+                            <button type="button" disabled={busy || index === entries.length - 1} onClick={() => void reorder(index, 1)} title="下移" aria-label="下移队列项" className="rounded-md p-1 text-slate-400 hover:bg-slate-100 hover:text-slate-700 disabled:opacity-25"><ChevronDown size={14} /></button>
+                            <button type="button" disabled={busy} onClick={() => { setEditingId(entry.id); setDraft(entry.text); }} title="编辑" aria-label="编辑队列项" className="rounded-md p-1 text-slate-400 hover:bg-slate-100 hover:text-slate-700 disabled:opacity-25"><Pencil size={14} /></button>
+                            <button type="button" disabled={busy} onClick={() => void runAction(entry.id, 'interject', { id: entry.id, expectedVersion: entry.version, newText: entry.text })} title="立即补充到当前执行，不中断任务" aria-label="立即补充到当前执行" className="rounded-md p-1 text-slate-400 hover:bg-blue-50 hover:text-blue-600 disabled:opacity-25">{busy ? <LoaderCircle size={14} className="animate-spin" /> : <Send size={14} />}</button>
+                            <button type="button" disabled={busy} onClick={() => void runAction(entry.id, 'remove', { id: entry.id, expectedVersion: entry.version })} title="移除" aria-label="移除队列项" className="rounded-md p-1 text-slate-400 hover:bg-red-50 hover:text-red-600 disabled:opacity-25"><Trash2 size={14} /></button>
+                        </div>
+                    </div>}
+                </div>;
+            })}
+        </div>
+    </section>;
+};
+
 const TaskComposer: React.FC<{ task?: ArkDesktopTask; runtime: ReturnType<typeof useArkDesktopRuntime>; value: string; onChange: (value: string) => void; onSubmit: () => Promise<void>; onCancel?: () => Promise<void>; sending: boolean; newTask?: NewTaskConfig }> = ({ task, runtime, value, onChange, onSubmit, onCancel, sending, newTask }) => {
     const isNewTask = !task;
     const isRunning = task?.status === 'running';
@@ -800,21 +875,25 @@ const TaskComposer: React.FC<{ task?: ArkDesktopTask; runtime: ReturnType<typeof
     </div>;
 };
 
-const TaskView: React.FC<{ task?: ArkDesktopTask; runtime: ReturnType<typeof useArkDesktopRuntime>; scrollContainerRef: React.RefObject<HTMLDivElement | null>; followUp: string; setFollowUp: (value: string) => void; locateLatestMessage: boolean; newTask?: NewTaskConfig }> = ({ task, runtime, scrollContainerRef, followUp, setFollowUp, locateLatestMessage, newTask }) => {
+const TaskView: React.FC<{ task?: ArkDesktopTask; runtime: ReturnType<typeof useArkDesktopRuntime>; scrollContainerRef: React.RefObject<HTMLDivElement | null>; followUp: string; setFollowUp: (value: string) => void; locateLatestMessage: boolean; onLatestMessageLocated: () => void; newTask?: NewTaskConfig }> = ({ task, runtime, scrollContainerRef, followUp, setFollowUp, locateLatestMessage, onLatestMessageLocated, newTask }) => {
     const [sending, setSending] = useState(false);
     const [authorizing, setAuthorizing] = useState(false);
     const lastMessageRef = useRef<HTMLDivElement>(null);
     const isNewTask = !task;
+    useEffect(() => {
+        if (task?.status === 'running') setSending(false);
+    }, [task?.status]);
     const submit = async () => {
         if (isNewTask) {
             await newTask?.runTask();
             return;
         }
-        if (!followUp.trim()) return;
+        const prompt = followUp.trim();
+        if (!prompt) return;
+        setFollowUp('');
         setSending(true);
         try {
-            await runtime.sendFollowUp(task!.id, followUp.trim());
-            setFollowUp('');
+            await runtime.sendFollowUp(task!.id, prompt);
         } catch {
             // 会话级错误由运行时写入当前任务，避免影响其他并发任务。
         } finally {
@@ -834,12 +913,25 @@ const TaskView: React.FC<{ task?: ArkDesktopTask; runtime: ReturnType<typeof use
             setAuthorizing(false);
         }
     };
-    const waitingForReply = task?.status === 'running' && task.messages[task.messages.length - 1]?.role === 'user';
+    const hasActiveTool = Boolean(task?.tools.some((tool) => !/已完成|完成|成功|取消|completed|success|cancelled|canceled|done|失败|错误|退出码|failed|error/i.test(tool.status)));
+    const waitingForReply = task?.status === 'running' && task.messages[task.messages.length - 1]?.role === 'user' && !hasActiveTool;
     const followOutputRef = useRef(true);
+    const pendingFollowFrameRef = useRef<number | null>(null);
     const turns = useMemo(() => {
         const result: Array<{ user?: ArkDesktopTask['messages'][number]; stages: Array<{ message?: ArkDesktopTask['messages'][number]; tools: ArkDesktopTask['tools'] }> }> = [];
         if (!task) return result;
-        task.messages.forEach((message) => {
+        const visibleMessages = task.messages.filter((message, index, messages) => {
+            if (message.role === 'user' && isInternalGoalHarnessPrompt(message.content)) return false;
+            const previous = messages[index - 1];
+            if (message.role !== 'user' || previous?.role !== 'user' || message.content.trim() !== previous.content.trim()) return true;
+            return !(
+                message.id.startsWith('interjection-')
+                || previous.id.startsWith('interjection-')
+                || message.queueEntryId
+                || previous.queueEntryId
+            );
+        });
+        visibleMessages.forEach((message) => {
             if (message.role === 'user' || result.length === 0) result.push({ ...(message.role === 'user' ? { user: message } : {}), stages: message.role === 'assistant' ? [{ message, tools: [] }] : [] });
             else result[result.length - 1].stages.push({ message, tools: [] });
         });
@@ -878,30 +970,57 @@ const TaskView: React.FC<{ task?: ArkDesktopTask; runtime: ReturnType<typeof use
     useEffect(() => {
         const container = scrollContainerRef.current;
         if (!container) return undefined;
-        const updateFollowState = () => {
-            followOutputRef.current = container.scrollHeight - container.scrollTop - container.clientHeight < 48;
+        const pauseFollowing = () => {
+            followOutputRef.current = false;
+            if (pendingFollowFrameRef.current !== null) {
+                window.cancelAnimationFrame(pendingFollowFrameRef.current);
+                pendingFollowFrameRef.current = null;
+            }
         };
+        const updateFollowState = () => {
+            const nearBottom = container.scrollHeight - container.scrollTop - container.clientHeight < 48;
+            if (!nearBottom) pauseFollowing();
+            else followOutputRef.current = true;
+        };
+        const handleWheel = (event: WheelEvent) => {
+            if (event.deltaY < 0 || container.scrollTop + container.clientHeight < container.scrollHeight - 48) pauseFollowing();
+        };
+        const handleTouchStart = () => pauseFollowing();
         container.addEventListener('scroll', updateFollowState, { passive: true });
+        container.addEventListener('wheel', handleWheel, { passive: true });
+        container.addEventListener('touchstart', handleTouchStart, { passive: true });
         updateFollowState();
-        return () => container.removeEventListener('scroll', updateFollowState);
+        return () => {
+            container.removeEventListener('scroll', updateFollowState);
+            container.removeEventListener('wheel', handleWheel);
+            container.removeEventListener('touchstart', handleTouchStart);
+        };
     }, [scrollContainerRef, task?.id]);
 
     useEffect(() => {
         if (!task || (!locateLatestMessage && !followOutputRef.current)) return undefined;
         const container = scrollContainerRef.current;
         const frame = window.requestAnimationFrame(() => {
+            pendingFollowFrameRef.current = null;
+            if (!locateLatestMessage && !followOutputRef.current) return;
             if (container) {
                 container.scrollTop = container.scrollHeight;
                 followOutputRef.current = true;
             } else {
                 lastMessageRef.current?.scrollIntoView({ block: 'end' });
             }
+            if (locateLatestMessage) onLatestMessageLocated();
         });
-        return () => window.cancelAnimationFrame(frame);
-    }, [locateLatestMessage, scrollContainerRef, task?.id, latestMessage?.content, latestMessage?.createdAt, latestTool?.id, latestTool?.updatedAt]);
+        pendingFollowFrameRef.current = frame;
+        return () => {
+            window.cancelAnimationFrame(frame);
+            if (pendingFollowFrameRef.current === frame) pendingFollowFrameRef.current = null;
+        };
+    }, [locateLatestMessage, onLatestMessageLocated, scrollContainerRef, task?.id, latestMessage?.content, latestMessage?.createdAt, latestTool?.id, latestTool?.updatedAt]);
 
-    return <div className="mx-auto flex min-h-full w-full max-w-[870px] flex-col px-5 py-6 font-sans sm:px-6 lg:px-0">
-        <div className="flex-1">{isNewTask ? <div className="flex min-h-[300px] flex-col items-center justify-center py-8 text-center"><img src="/ark/ark-agents-robot-cropped.png" alt="URGS 智能任务中心" className="mb-3 h-20 w-20 object-contain mix-blend-multiply" /><h2 className="text-2xl font-semibold tracking-[-0.035em] text-[#303136]">让智能体把想法变成现实</h2><p className="mt-2 text-sm text-slate-500">输入第一条消息，即可在当前会话中开始执行</p><div className="mt-5 flex w-full flex-wrap justify-center gap-2">{taskTags.map((tag) => { const Icon = tag.icon; const active = newTask?.selectedSkillIds.includes(tag.skillId); return <button key={tag.label} type="button" onClick={() => { setFollowUp(tag.prompt); newTask?.setSelectedSkillIds((current) => active ? current.filter((id) => id !== tag.skillId) : [...current, tag.skillId]); }} className={`flex items-center gap-2 rounded-full px-4 py-2.5 text-sm font-medium transition hover:-translate-y-0.5 ${active ? 'bg-slate-900 text-white' : 'bg-[#e9e9eb] text-[#494a4f] hover:bg-[#dedee1]'}`}><Icon size={17} />{tag.label}{active && <Check size={14} />}</button>; })}</div></div> : <>{turns.map((turn, index) => <div key={`${task!.id}-${turn.user?.id || `turn-${index}`}`} className="border-b border-slate-100 py-2 last:border-b-0">{turn.user && <TaskMessage message={turn.user} attachments={index === 0 ? task!.attachmentPaths : undefined} scrollTarget={turn.user.id === task!.messages[task!.messages.length - 1]?.id ? lastMessageRef : undefined} />}{turn.stages.map((stage, stageIndex) => <React.Fragment key={stage.message?.id || `${task!.id}-stage-${index}-${stageIndex}`} >{stage.message && <TaskMessage message={stage.message} scrollTarget={stage.message.id === task!.messages[task!.messages.length - 1]?.id ? lastMessageRef : undefined} />}{stage.tools.length > 0 && <TaskActivityTimeline tools={stage.tools} />}</React.Fragment>)}</div>)}{task?.modelKeyAuthorization && <div className="my-5 flex flex-wrap items-center gap-3 rounded-xl border border-amber-200 bg-amber-50 px-4 py-3 text-sm text-amber-900"><span className="flex h-8 w-8 shrink-0 items-center justify-center rounded-lg bg-white text-amber-700 shadow-sm"><KeyRound size={16} /></span><div className="min-w-0 flex-1"><div className="font-medium">解锁本地模型密钥</div><div className="mt-0.5 text-xs leading-5 text-amber-700">仅从本机 macOS 钥匙串读取，不连接 xAI。解锁后将继续当前任务。</div></div><div className="flex items-center gap-2"><button type="button" disabled={authorizing} onClick={() => void runtime.cancelTask(task.id)} className="h-8 rounded-lg px-2.5 text-xs font-medium text-amber-800 hover:bg-amber-100 disabled:opacity-60">取消任务</button><button type="button" disabled={authorizing} onClick={() => void authorizeModelKey()} className="flex h-8 items-center gap-1.5 rounded-lg bg-amber-700 px-3 text-xs font-medium text-white hover:bg-amber-800 disabled:opacity-60">{authorizing ? <LoaderCircle size={14} className="animate-spin" /> : <KeyRound size={14} />}解锁密钥</button></div></div>}{task?.error && <div className="my-5 flex gap-2 rounded-xl border border-red-200 bg-red-50 px-4 py-3 text-sm leading-6 text-red-700"><AlertCircle size={16} className="mt-0.5 shrink-0" /><span className="flex-1">{task.error}</span><button type="button" onClick={() => runtime.dismissTaskError(task.id)} className="shrink-0 text-red-500 hover:text-red-700" title="关闭提示" aria-label="关闭提示"><X size={16} /></button></div>}{waitingForReply && <div className="flex items-center gap-2 py-4 text-sm text-slate-400"><LoaderCircle size={16} className="animate-spin" />智能体正在分析并调用必要工具…</div>}</>}</div>
+    return <div className="mx-auto flex min-h-full w-full max-w-[960px] flex-col px-4 py-5 font-sans sm:px-5 lg:px-0">
+        <div className="flex-1">{isNewTask ? <div className="flex min-h-[300px] flex-col items-center justify-center py-8 text-center"><img src="/ark/ark-agents-robot-cropped.png" alt="URGS 智能任务中心" className="mb-3 h-20 w-20 object-contain mix-blend-multiply" /><h2 className="text-2xl font-semibold tracking-[-0.035em] text-[#303136]">让智能体把想法变成现实</h2><p className="mt-2 text-sm text-slate-500">输入第一条消息，即可在当前会话中开始执行</p><div className="mt-5 flex w-full flex-wrap justify-center gap-2">{taskTags.map((tag) => { const Icon = tag.icon; const active = newTask?.selectedSkillIds.includes(tag.skillId); return <button key={tag.label} type="button" onClick={() => { setFollowUp(tag.prompt); newTask?.setSelectedSkillIds((current) => active ? current.filter((id) => id !== tag.skillId) : [...current, tag.skillId]); }} className={`flex items-center gap-2 rounded-full px-4 py-2.5 text-sm font-medium transition hover:-translate-y-0.5 ${active ? 'bg-slate-900 text-white' : 'bg-[#e9e9eb] text-[#494a4f] hover:bg-[#dedee1]'}`}><Icon size={17} />{tag.label}{active && <Check size={14} />}</button>; })}</div></div> : <>{turns.map((turn, index) => <div key={`${task!.id}-${turn.user?.id || `turn-${index}`}`} className="border-b border-slate-100 py-2 last:border-b-0">{turn.user && <TaskMessage message={turn.user} attachments={index === 0 ? task!.attachmentPaths : undefined} scrollTarget={turn.user.id === task!.messages[task!.messages.length - 1]?.id ? lastMessageRef : undefined} />}{turn.stages.map((stage, stageIndex) => <React.Fragment key={stage.message?.id || `${task!.id}-stage-${index}-${stageIndex}`} >{stage.message && <TaskMessage message={stage.message} scrollTarget={stage.message.id === task!.messages[task!.messages.length - 1]?.id ? lastMessageRef : undefined} />}{stage.tools.length > 0 && <TaskActivityTimeline tools={stage.tools} />}</React.Fragment>)}<TaskChangeSummary taskId={task!.id} workspace={task!.workspace} promptIndex={index} tools={turn.stages.flatMap((stage) => stage.tools)} onRewind={runtime.rewindTaskFiles} /></div>)}{task?.modelKeyAuthorization && <div className="my-5 flex flex-wrap items-center gap-3 rounded-xl border border-amber-200 bg-amber-50 px-4 py-3 text-sm text-amber-900"><span className="flex h-8 w-8 shrink-0 items-center justify-center rounded-lg bg-white text-amber-700 shadow-sm"><KeyRound size={16} /></span><div className="min-w-0 flex-1"><div className="font-medium">解锁本地模型密钥</div><div className="mt-0.5 text-xs leading-5 text-amber-700">仅从本机 macOS 钥匙串读取，不连接 xAI。解锁后将继续当前任务。</div></div><div className="flex items-center gap-2"><button type="button" disabled={authorizing} onClick={() => void runtime.cancelTask(task.id)} className="h-8 rounded-lg px-2.5 text-xs font-medium text-amber-800 hover:bg-amber-100 disabled:opacity-60">取消任务</button><button type="button" disabled={authorizing} onClick={() => void authorizeModelKey()} className="flex h-8 items-center gap-1.5 rounded-lg bg-amber-700 px-3 text-xs font-medium text-white hover:bg-amber-800 disabled:opacity-60">{authorizing ? <LoaderCircle size={14} className="animate-spin" /> : <KeyRound size={14} />}解锁密钥</button></div></div>}{task?.error && <div className="my-5 flex gap-2 rounded-xl border border-red-200 bg-red-50 px-4 py-3 text-sm leading-6 text-red-700"><AlertCircle size={16} className="mt-0.5 shrink-0" /><span className="flex-1">{task.error}</span><button type="button" onClick={() => runtime.dismissTaskError(task.id)} className="shrink-0 text-red-500 hover:text-red-700" title="关闭提示" aria-label="关闭提示"><X size={16} /></button></div>}{waitingForReply && <div className="flex items-center gap-2 py-4 text-sm text-slate-400"><LoaderCircle size={16} className="animate-spin" />智能体正在分析并调用必要工具…</div>}</>}</div>
+        {task && <QueuePanel task={task} runtime={runtime} />}
         <TaskComposer task={task} runtime={runtime} value={followUp} onChange={setFollowUp} onSubmit={submit} onCancel={task ? () => runtime.cancelTask(task.id) : undefined} sending={isNewTask ? newTask?.actionPending || false : sending} newTask={newTask} />
     </div>;
 };

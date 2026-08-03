@@ -44,6 +44,22 @@ export interface GrokBridgeEvent {
     payload: Record<string, any>;
 }
 
+export interface GrokQueueEntry {
+    id: string;
+    version: number;
+    owner?: string | null;
+    lastEditor?: string | null;
+    kind: string;
+    text: string;
+    position: number;
+}
+
+export interface GrokQueueChanged {
+    sessionId: string;
+    entries: GrokQueueEntry[];
+    runningPromptId?: string | null;
+}
+
 export interface GrokCliResult {
     arguments: string[];
     success: boolean;
@@ -387,6 +403,20 @@ export const sendGrokPrompt = (
         queued,
     });
 
+export const applyGrokQueueAction = (
+    sessionId: string,
+    action: 'remove' | 'edit' | 'reorder' | 'clear' | 'send_now' | 'interject',
+    options: { id?: string; expectedVersion?: number; newText?: string; orderedIds?: string[] } = {},
+) =>
+    invokeGrok<void>('grok_queue_action', {
+        sessionId,
+        action,
+        id: options.id || null,
+        expectedVersion: options.expectedVersion ?? null,
+        newText: options.newText || null,
+        orderedIds: options.orderedIds || null,
+    });
+
 export interface GrokPromptAttachmentSelection {
     paths: string[];
     grantId?: string;
@@ -394,6 +424,74 @@ export interface GrokPromptAttachmentSelection {
 
 export const setGrokSessionModel = (sessionId: string, model: string) =>
     invokeGrok<void>('grok_session_set_model', { sessionId, model });
+
+export interface GrokRewindPoint {
+    promptIndex: number;
+    createdAt?: string;
+    numFileSnapshots?: number;
+    promptPreview?: string;
+    hasFileChanges: boolean;
+}
+
+export interface GrokRewindPointsResponse {
+    rewindPoints: GrokRewindPoint[];
+}
+
+export interface GrokRewindConflict {
+    path: string;
+    conflictType: string;
+}
+
+export interface GrokRewindResponse {
+    success: boolean;
+    targetPromptIndex: number;
+    revertedFiles: string[];
+    cleanFiles: string[];
+    conflicts: GrokRewindConflict[];
+    error?: string;
+    mode?: string;
+}
+
+export const listGrokRewindPoints = (sessionId: string) =>
+    invokeGrok<any>('grok_rewind_points', { sessionId }).then((response) => ({
+        rewindPoints: (response.rewindPoints || response.rewind_points || []).map((point: any) => ({
+            promptIndex: point.promptIndex ?? point.prompt_index,
+            createdAt: point.createdAt ?? point.created_at,
+            numFileSnapshots: point.numFileSnapshots ?? point.num_file_snapshots,
+            promptPreview: point.promptPreview ?? point.prompt_preview,
+            hasFileChanges: point.hasFileChanges ?? point.has_file_changes ?? false,
+        })),
+    }));
+
+export const rewindGrokFiles = (
+    sessionId: string,
+    targetPromptIndex: number,
+    workspace: string,
+    model: string,
+    rules?: string,
+    options?: GrokAcpOptions,
+    force = false,
+) =>
+    invokeGrok<any>('grok_rewind_files', {
+        sessionId,
+        targetPromptIndex,
+        workspace,
+        model,
+        rules: rules || null,
+        options: options || null,
+        force,
+    }).then((response) => ({
+        success: Boolean(response.success),
+        targetPromptIndex: response.targetPromptIndex ?? response.target_prompt_index,
+        revertedFiles: response.revertedFiles ?? response.reverted_files ?? [],
+        cleanFiles: response.cleanFiles ?? response.clean_files ?? [],
+        conflicts: (response.conflicts || []).map((conflict: any) => ({
+            path: conflict.path,
+            conflictType: conflict.conflictType ?? conflict.conflict_type,
+        })),
+        error: response.error,
+        mode: response.mode,
+    } as GrokRewindResponse));
 
 export const deleteGrokScheduledTask = (sessionId: string, taskId: string) =>
     invokeGrok<boolean>('grok_scheduled_task_delete', { sessionId, taskId });

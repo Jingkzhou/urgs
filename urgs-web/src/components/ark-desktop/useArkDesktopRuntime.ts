@@ -2,6 +2,7 @@ import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import { isDesktopRuntime } from '@/config';
 import {
     applyGrokModel,
+    applyGrokQueueAction,
     authorizeGrokModelProvider,
     cancelGrokPrompt,
     chooseGrokAttachments,
@@ -18,6 +19,7 @@ import {
     listGrokModelProviders,
     openGrokWorkspace,
     releaseGrokSession,
+    rewindGrokFiles,
     runGrokCli,
     respondGrokPlanApproval,
     respondGrokUserQuestion,
@@ -37,8 +39,10 @@ import {
     type GrokDiscoveredPlugin,
 } from '@/services/grokDesktop';
 import { loadArkDesktopSnapshot, resetArkDesktopSnapshot, saveArkDesktopSnapshot } from './storage';
+import { extractFileChanges } from './fileChanges';
 import type {
     ArkDesktopAgent,
+    ArkDesktopQueueEntry,
     ArkDesktopAutomation,
     ArkDesktopPermissionRequest,
     ArkDesktopPlanStep,
@@ -368,8 +372,18 @@ export const useArkDesktopRuntime = () => {
                 (processId && task.runtimeProcessId === processId)
                 || (sessionId && task.sessionId === sessionId)
             ))?.id;
+        const taskSessionId = taskId
+            ? snapshotRef.current.tasks.find((task) => task.id === taskId)?.sessionId
+            : undefined;
+        const isChildSession = Boolean(sessionId && taskSessionId && sessionId !== taskSessionId);
+        if (taskId && isChildSession && ['queue_changed', 'interjection', 'scheduled_prompt'].includes(event.eventType)) {
+            return;
+        }
         if (event.eventType === 'queued_prompt' && taskId) {
             const phase = String(event.payload?.phase || '');
+            if (phase === 'accepted') {
+                return;
+            }
             if (phase === 'completed') {
                 finishForegroundPrompt(taskId, 'completed');
             } else if (phase === 'failed') {
@@ -405,6 +419,75 @@ export const useArkDesktopRuntime = () => {
             }
             return;
         }
+        if (event.eventType === 'queue_changed' && taskId) {
+            const queue = event.payload?.params || event.payload || {};
+            const entries: ArkDesktopQueueEntry[] = Array.isArray(queue.entries)
+                ? queue.entries
+                    .filter((entry: any) => typeof entry?.id === 'string' && typeof entry?.text === 'string')
+                    .map((entry: any, index: number) => ({
+                        id: entry.id,
+                        version: Number.isFinite(Number(entry.version)) ? Number(entry.version) : 0,
+                        owner: typeof entry.owner === 'string' ? entry.owner : null,
+                        lastEditor: typeof entry.lastEditor === 'string' ? entry.lastEditor : null,
+                        kind: typeof entry.kind === 'string' ? entry.kind : 'prompt',
+                        text: entry.text,
+                        position: Number.isFinite(Number(entry.position)) ? Number(entry.position) : index,
+                    }))
+                : [];
+            const runningPromptId = typeof queue.runningPromptId === 'string' ? queue.runningPromptId : null;
+            updateTask(taskId, (task) => {
+                const previousEntries = task.queueEntries || [];
+                const startedEntry = runningPromptId
+                    ? previousEntries.find((entry) => entry.id === runningPromptId && !entries.some((next) => next.id === entry.id))
+                    : undefined;
+                const latestMessage = task.messages[task.messages.length - 1];
+                const alreadyRendered = startedEntry && latestMessage?.role === 'user'
+                    && latestMessage.content.trim() === startedEntry.text.trim();
+                const messages = startedEntry
+                    && !alreadyRendered
+                    && !task.messages.some((message) => message.queueEntryId === startedEntry.id)
+                    ? [...task.messages, {
+                        id: createId('message'),
+                        role: 'user' as const,
+                        content: startedEntry.text,
+                        queueEntryId: startedEntry.id,
+                        createdAt: Date.now(),
+                    }]
+                    : task.messages;
+                return {
+                    ...task,
+                    queueEntries: entries,
+                    queueRunningPromptId: runningPromptId,
+                    messages,
+                    updatedAt: Date.now(),
+                };
+            });
+            return;
+        }
+        if (event.eventType === 'interjection' && taskId) {
+            const text = redactRuntimeText(String(event.payload?.text || '').trim());
+            const interjectionId = String(event.payload?.interjectionId || '').trim();
+            if (!text) return;
+            const messageId = interjectionId ? `interjection-${interjectionId}` : createId('interjection');
+            updateTask(taskId, (task) => {
+                const latestMessage = task.messages[task.messages.length - 1];
+                const alreadyRendered = latestMessage?.role === 'user'
+                    && latestMessage.content.trim() === text;
+                return {
+                    ...task,
+                    messages: alreadyRendered || task.messages.some((message) => message.id === messageId)
+                        ? task.messages
+                        : [...task.messages, {
+                        id: messageId,
+                        role: 'user' as const,
+                        content: text,
+                        createdAt: Date.now(),
+                    }],
+                    updatedAt: Date.now(),
+                };
+            });
+            return;
+        }
         if (event.eventType === 'session_update' && taskId) {
             const params = event.payload?.params || event.payload;
             const update = params?.update || params?.sessionUpdate || {};
@@ -430,8 +513,6 @@ export const useArkDesktopRuntime = () => {
                 const chunk = extractText(update);
                 if (!chunk) return;
                 const subagentId = subagentBySessionIdRef.current.get(sessionId);
-                const taskSessionId = snapshotRef.current.tasks.find((task) => task.id === taskId)?.sessionId;
-                const isChildSession = Boolean(sessionId && taskSessionId && sessionId !== taskSessionId);
                 if (subagentId || isChildSession) {
                     const activityId = subagentId || sessionId;
                     updateTask(taskId, (task) => {
@@ -489,7 +570,11 @@ export const useArkDesktopRuntime = () => {
                     const tools = task.tools.slice();
                     const existingIndex = tools.findIndex((tool) => tool.id === id);
                     const input = formatToolDetail(update.rawInput ?? update.toolCall?.rawInput);
-                    const output = formatToolDetail(update.rawOutput ?? update.content ?? update.toolCall?.content);
+                    const structuredContent = update.content ?? update.toolCall?.content;
+                    const fileChanges = extractFileChanges(structuredContent);
+                    const output = formatToolDetail(
+                        update.rawOutput ?? (fileChanges.length > 0 ? undefined : structuredContent),
+                    );
                     const nextTool = {
                         id,
                         title: redactRuntimeText(update.title || update.toolCall?.title || '本地工具调用'),
@@ -497,6 +582,7 @@ export const useArkDesktopRuntime = () => {
                         kind: update.kind || update.toolCall?.kind,
                         ...(input ? { input } : {}),
                         ...(output ? { output } : {}),
+                        ...(fileChanges.length > 0 ? { fileChanges } : {}),
                         startedAt: existingIndex >= 0 ? tools[existingIndex].startedAt || tools[existingIndex].updatedAt : Date.now(),
                         updatedAt: Date.now(),
                     };
@@ -1124,12 +1210,15 @@ export const useArkDesktopRuntime = () => {
                 }));
             }
             cancelledTaskIdsRef.current.delete(taskId);
+            const shouldQueue = task.engine !== 'headless' && task.status === 'running';
             updateTask(taskId, (value) => ({
                 ...value,
                 status: 'running',
                 error: undefined,
                 modelKeyAuthorization: undefined,
-                messages: [...value.messages, { id: createId('message'), role: 'user', content: prompt, createdAt: Date.now() }],
+                messages: shouldQueue
+                    ? value.messages
+                    : [...value.messages, { id: createId('message'), role: 'user', content: prompt, createdAt: Date.now() }],
                 updatedAt: Date.now(),
             }));
             if (task.engine === 'headless') {
@@ -1150,9 +1239,11 @@ export const useArkDesktopRuntime = () => {
                     updatedAt: Date.now(),
                 }));
             } else {
-                await sendGrokPrompt(sessionId, prompt, [], [], true);
+                await sendGrokPrompt(sessionId, prompt, [], [], shouldQueue);
             }
-            if (task.engine === 'headless') finishForegroundPrompt(taskId, 'completed');
+            if (task.engine === 'headless' || !shouldQueue) {
+                finishForegroundPrompt(taskId, 'completed');
+            }
         } catch (error) {
             if (!cancelledTaskIdsRef.current.has(taskId)) {
                 const providerId = modelKeyAuthorizationProviderId(error);
@@ -1180,6 +1271,22 @@ export const useArkDesktopRuntime = () => {
             throw error;
         }
     }, [finishForegroundPrompt, updateTask]);
+
+    const queueAction = useCallback(async (
+        taskId: string,
+        action: 'remove' | 'edit' | 'reorder' | 'clear' | 'send_now' | 'interject',
+        options: { id?: string; expectedVersion?: number; newText?: string; orderedIds?: string[] } = {},
+    ) => {
+        const task = snapshotRef.current.tasks.find((item) => item.id === taskId);
+        if (!task?.sessionId) throw new Error('当前任务没有可操作的 Grok 会话');
+        try {
+            await applyGrokQueueAction(task.sessionId, action, options);
+        } catch (error) {
+            const message = redactRuntimeText(runtimeErrorText(error));
+            updateTask(taskId, (value) => ({ ...value, error: message, updatedAt: Date.now() }));
+            throw error;
+        }
+    }, [updateTask]);
 
     const authorizeTaskModel = useCallback(async (taskId: string) => {
         const task = snapshotRef.current.tasks.find((item) => item.id === taskId);
@@ -1249,6 +1356,61 @@ export const useArkDesktopRuntime = () => {
         setPermissions((current) => current.filter((item) => item.taskId !== taskId));
         setUserQuestions((current) => current.filter((item) => item.taskId !== taskId));
         setPlanApprovals((current) => current.filter((item) => item.taskId !== taskId));
+    }, [updateTask]);
+
+    const rewindTaskFiles = useCallback(async (taskId: string, promptIndex: number, force = false) => {
+        const task = snapshotRef.current.tasks.find((item) => item.id === taskId);
+        if (!task?.sessionId) throw new Error('当前会话尚未建立，无法撤销文件修改');
+        if (task.engine === 'headless') throw new Error('后台模式暂不支持按会话检查点撤销');
+        if (task.status === 'running' || task.status === 'waiting_authorization') {
+            throw new Error('请等待当前任务结束或先停止任务，再撤销文件修改');
+        }
+        const current = snapshotRef.current;
+        const agent = current.agents.find((item) => item.id === task.agentId)
+            || current.agents.find((item) => item.enabled);
+        if (!agent) throw new Error('该历史任务使用的 Agent 已不存在');
+        const skills = current.skills.filter((skill) => task.skillIds.includes(skill.id) && skill.enabled);
+        const execution = {
+            ...current.settings.execution,
+            permissionMode: task.permissionMode || current.settings.execution.permissionMode,
+            alwaysApprove: false,
+        };
+        const model = task.model || current.settings.grokModel;
+        if (!model) throw new Error('该历史任务没有可用的模型连接元数据');
+        const requestRewind = (shouldForce: boolean) => rewindGrokFiles(
+            task.sessionId,
+            promptIndex,
+            task.workspace,
+            model,
+            buildSessionRules(agent, skills),
+            buildAcpOptions(execution),
+            shouldForce,
+        );
+        let result = await requestRewind(force);
+        const conflicts = result.conflicts || [];
+        if (!force) {
+            if (conflicts.length > 0) {
+                return { requiresConfirmation: true, conflicts };
+            }
+            result = await requestRewind(true);
+        }
+        if (!result.success) {
+            throw new Error(result.error || '撤销文件修改失败');
+        }
+        const userMessages = task.messages.filter((message) => message.role === 'user');
+        const rewindStartedAt = userMessages[promptIndex]?.createdAt || 0;
+        const rewoundAt = Date.now();
+        updateTask(taskId, (value) => ({
+            ...value,
+            tools: value.tools.map((tool) => (
+                tool.fileChanges?.length && (tool.startedAt || tool.updatedAt) >= rewindStartedAt
+                    ? { ...tool, changesRevertedAt: rewoundAt, updatedAt: rewoundAt }
+                    : tool
+            )),
+            error: undefined,
+            updatedAt: rewoundAt,
+        }));
+        return { requiresConfirmation: false, conflicts: [] };
     }, [updateTask]);
 
     const permission = useMemo(
@@ -1542,8 +1704,10 @@ export const useArkDesktopRuntime = () => {
         startTask,
         prepareEngine,
         sendFollowUp,
+        queueAction,
         authorizeTaskModel,
         cancelTask,
+        rewindTaskFiles,
         permission,
         answerPermission,
         userQuestion,

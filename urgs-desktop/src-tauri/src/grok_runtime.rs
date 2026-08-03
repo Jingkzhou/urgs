@@ -16,6 +16,9 @@ use tokio::sync::{oneshot, Mutex as AsyncMutex};
 use uuid::Uuid;
 
 const GROK_EVENT_NAME: &str = "grok-event";
+// ACP extension methods use an underscore-prefixed JSON-RPC wire name. The
+// Grok agent strips the prefix before dispatching to its `x.ai/interject` handler.
+const GROK_INTERJECT_METHOD: &str = "_x.ai/interject";
 const REQUEST_TIMEOUT: Duration = Duration::from_secs(30);
 const INITIALIZE_TIMEOUT: Duration = Duration::from_secs(90);
 const AUTHENTICATE_TIMEOUT: Duration = Duration::from_secs(180);
@@ -47,6 +50,7 @@ fn request_timeout(method: &str) -> Duration {
 fn initialize_client_meta(rules: Option<&str>) -> Value {
     let mut meta = json!({
         "clientType": "urgs-ark-desktop",
+        "clientIdentifier": "urgs-desktop",
         "clientVersion": env!("CARGO_PKG_VERSION"),
         "startupHints": {
             "nonInteractive": false,
@@ -363,6 +367,15 @@ impl GrokProcess {
     }
 
     async fn request(&self, method: &str, params: Value) -> Result<Value, String> {
+        self.request_with_meta(method, params, None).await
+    }
+
+    async fn request_with_meta(
+        &self,
+        method: &str,
+        params: Value,
+        meta: Option<Value>,
+    ) -> Result<Value, String> {
         let id = self.request_sequence.fetch_add(1, Ordering::Relaxed);
         let (sender, receiver) = oneshot::channel();
         self.pending_requests
@@ -370,12 +383,15 @@ impl GrokProcess {
             .map_err(|_| "Grok 请求队列锁不可用".to_string())?
             .insert(id, sender);
 
-        let message = json!({
+        let mut message = json!({
             "jsonrpc": "2.0",
             "id": id,
             "method": method,
             "params": params,
         });
+        if let Some(meta) = meta {
+            message["meta"] = meta;
+        }
         if let Err(error) = self.write_json(message) {
             self.pending_requests
                 .lock()
@@ -1554,6 +1570,48 @@ fn normalized_session_update_message(message: &Value) -> Option<Value> {
     }))
 }
 
+fn normalized_queue_changed_params(message: &Value) -> Option<Value> {
+    let method = message.get("method")?.as_str()?;
+    let params = message.get("params")?;
+    match method {
+        "x.ai/queue/changed" => Some(params.clone()),
+        "_x.ai/queue/changed" => {
+            if params.get("method").and_then(Value::as_str) == Some("x.ai/queue/changed") {
+                Some(
+                    params
+                        .get("params")
+                        .cloned()
+                        .unwrap_or_else(|| params.clone()),
+                )
+            } else {
+                Some(params.clone())
+            }
+        }
+        _ => None,
+    }
+}
+
+fn normalized_interjection_params(message: &Value) -> Option<Value> {
+    let method = message.get("method")?.as_str()?;
+    let params = message.get("params")?;
+    match method {
+        "x.ai/session/interjection" => Some(params.clone()),
+        "_x.ai/session/interjection" => {
+            if params.get("method").and_then(Value::as_str) == Some("x.ai/session/interjection") {
+                Some(
+                    params
+                        .get("params")
+                        .cloned()
+                        .unwrap_or_else(|| params.clone()),
+                )
+            } else {
+                Some(params.clone())
+            }
+        }
+        _ => None,
+    }
+}
+
 fn scheduled_prompt_injection(message: &Value) -> Option<(String, String, String)> {
     let method = message.get("method")?.as_str()?;
     let outer_params = message.get("params")?;
@@ -1666,6 +1724,14 @@ fn handle_stdout(app: &AppHandle, process: &Arc<GrokProcess>, line: Vec<u8>) {
                 ),
             }
         });
+        return;
+    }
+    if let Some(queue_changed) = normalized_queue_changed_params(&message) {
+        emit_process_event(app, process, "queue_changed", queue_changed);
+        return;
+    }
+    if let Some(interjection) = normalized_interjection_params(&message) {
+        emit_process_event(app, process, "interjection", interjection);
         return;
     }
     if let Some(session_update) = normalized_session_update_message(&message) {
@@ -2832,17 +2898,25 @@ pub async fn grok_send_prompt(
     let attachments = authorize_prompt_attachments(&state, attachments, attachment_grants)?;
     let content = build_prompt_content(&prompt, attachments)?;
     let process = session_process(&state, &session_id)?;
+    let prompt_meta = Some(json!({ "clientIdentifier": "urgs-desktop" }));
     if queued.unwrap_or(false) {
         let queued_session_id = session_id.clone();
         let queued_process = Arc::clone(&process);
+        emit_process_event(
+            &app,
+            &queued_process,
+            "queued_prompt",
+            json!({ "sessionId": queued_session_id, "phase": "accepted" }),
+        );
         tauri::async_runtime::spawn(async move {
             let result = queued_process
-                .request(
+                .request_with_meta(
                     "session/prompt",
                     json!({
                         "sessionId": queued_session_id,
                         "prompt": content
                     }),
+                    prompt_meta,
                 )
                 .await;
             match result {
@@ -2868,16 +2942,98 @@ pub async fn grok_send_prompt(
         return Ok(());
     }
     process
-        .request(
+        .request_with_meta(
             "session/prompt",
             json!({
                 "sessionId": session_id,
                 "prompt": content
             }),
+            prompt_meta,
         )
         .await?;
     consume_prompt_attachment_grants(&state, &grants_to_consume);
     Ok(())
+}
+
+#[tauri::command]
+pub async fn grok_queue_action(
+    state: State<'_, GrokRuntimeState>,
+    session_id: String,
+    action: String,
+    id: Option<String>,
+    expected_version: Option<u64>,
+    new_text: Option<String>,
+    ordered_ids: Option<Vec<String>>,
+) -> Result<(), String> {
+    let session_id = session_id.trim();
+    if session_id.is_empty() {
+        return Err("会话标识不能为空".to_string());
+    }
+    let process = session_process(&state, session_id)?;
+    let mut params = json!({ "sessionId": session_id, "clientIdentifier": "urgs-desktop" });
+    let method = match action.trim() {
+        "remove" => {
+            params["id"] = json!(id
+                .filter(|value| !value.trim().is_empty())
+                .ok_or_else(|| "队列项标识不能为空".to_string())?);
+            params["expectedVersion"] = json!(expected_version.unwrap_or(0));
+            "_x.ai/queue/remove"
+        }
+        "edit" => {
+            params["id"] = json!(id
+                .filter(|value| !value.trim().is_empty())
+                .ok_or_else(|| "队列项标识不能为空".to_string())?);
+            let text = new_text
+                .filter(|value| !value.trim().is_empty())
+                .ok_or_else(|| "队列内容不能为空".to_string())?;
+            params["newText"] = json!(text);
+            "_x.ai/queue/edit"
+        }
+        "reorder" => {
+            params["orderedIds"] = json!(ordered_ids.unwrap_or_default());
+            "_x.ai/queue/reorder"
+        }
+        "clear" => "_x.ai/queue/clear",
+        "send_now" => {
+            params["id"] = json!(id
+                .filter(|value| !value.trim().is_empty())
+                .ok_or_else(|| "队列项标识不能为空".to_string())?);
+            params["expectedVersion"] = json!(expected_version.unwrap_or(0));
+            if let Some(text) = new_text.filter(|value| !value.trim().is_empty()) {
+                params["newText"] = json!(text);
+            }
+            "_x.ai/queue/interject"
+        }
+        "interject" => {
+            let id = id
+                .filter(|value| !value.trim().is_empty())
+                .ok_or_else(|| "队列项标识不能为空".to_string())?;
+            let text = new_text
+                .filter(|value| !value.trim().is_empty())
+                .ok_or_else(|| "补充内容不能为空".to_string())?;
+            let interjection_id = format!("urgs-{}", Uuid::new_v4());
+            process
+                .request(
+                    GROK_INTERJECT_METHOD,
+                    json!({
+                        "sessionId": session_id,
+                        "text": text,
+                        "interjectionId": interjection_id,
+                    }),
+                )
+                .await?;
+            return process.notify(
+                "_x.ai/queue/remove",
+                json!({
+                    "sessionId": session_id,
+                    "id": id,
+                    "expectedVersion": expected_version.unwrap_or(0),
+                }),
+            );
+        }
+        _ => return Err("不支持的队列操作".to_string()),
+    };
+    process.notify(method, params)
 }
 
 #[tauri::command]
@@ -2901,6 +3057,150 @@ pub async fn grok_session_set_model(
         )
         .await?;
     Ok(())
+}
+
+#[tauri::command]
+pub async fn grok_rewind_points(
+    state: State<'_, GrokRuntimeState>,
+    session_id: String,
+) -> Result<Value, String> {
+    let session_id = session_id.trim();
+    if session_id.is_empty() {
+        return Err("会话标识不能为空".to_string());
+    }
+    let process = session_process(&state, session_id)?;
+    process
+        .request("_x.ai/rewind/points", json!({ "sessionId": session_id }))
+        .await
+}
+
+#[tauri::command]
+pub async fn grok_rewind_files(
+    app: AppHandle,
+    state: State<'_, GrokRuntimeState>,
+    session_id: String,
+    target_prompt_index: usize,
+    workspace: String,
+    model: String,
+    rules: Option<String>,
+    options: Option<GrokAcpOptions>,
+    force: bool,
+) -> Result<Value, String> {
+    let session_id = session_id.trim();
+    if session_id.is_empty() {
+        return Err("会话标识不能为空".to_string());
+    }
+    let workspace = validate_workspace(&workspace)?;
+    let model = normalize_model_id(&model)?;
+    let provider = read_model_providers(&app)?
+        .into_iter()
+        .find(|provider| provider.id == model)
+        .ok_or_else(|| format!("模型连接“{model}”不存在"))?;
+    if !provider.enabled {
+        return Err(format!("模型连接“{}”已停用", provider.name));
+    }
+    let (process, transient) = match session_process(&state, session_id) {
+        Ok(process) => (process, false),
+        Err(_) => {
+            enforce_offline_config(&app)?;
+            let mut effective_options = options.unwrap_or_default();
+            effective_options.reauth = None;
+            let arguments = grok_agent_arguments(Some(&model), &effective_options, true)?;
+            let home = grok_home(&app)?;
+            let process = spawn_grok_process_with_env(
+                &app,
+                &workspace,
+                arguments,
+                vec![(
+                    model_key_env_name(&model),
+                    "urgs-rewind-local-only".to_string(),
+                )],
+                home,
+                format!("rewind-{}", Uuid::new_v4()),
+            )?;
+            if let Err(error) = process.initialize(rules.as_deref()).await {
+                process.stop();
+                return Err(error);
+            }
+            process.replaying_session.store(true, Ordering::Relaxed);
+            let load_result = process
+                .request(
+                    "session/load",
+                    json!({
+                        "sessionId": session_id,
+                        "cwd": workspace,
+                        "mcpServers": [],
+                    }),
+                )
+                .await;
+            process.replaying_session.store(false, Ordering::Relaxed);
+            if let Err(error) = load_result {
+                process.stop();
+                return Err(error);
+            }
+            (process, true)
+        }
+    };
+    let points = process
+        .request("_x.ai/rewind/points", json!({ "sessionId": session_id }))
+        .await;
+    let points = match points {
+        Ok(points) => points,
+        Err(error) => {
+            if transient {
+                process.stop();
+            }
+            return Err(error);
+        }
+    };
+    let matching_point = points
+        .get("rewindPoints")
+        .or_else(|| points.get("rewind_points"))
+        .and_then(Value::as_array)
+        .and_then(|items| {
+            items.iter().find(|item| {
+                item.get("promptIndex")
+                    .or_else(|| item.get("prompt_index"))
+                    .and_then(Value::as_u64)
+                    == Some(target_prompt_index as u64)
+            })
+        })
+        .ok_or_else(|| "当前会话没有对应的文件撤销检查点".to_string());
+    let matching_point = match matching_point {
+        Ok(point) => point,
+        Err(error) => {
+            if transient {
+                process.stop();
+            }
+            return Err(error);
+        }
+    };
+    let has_file_changes = matching_point
+        .get("hasFileChanges")
+        .or_else(|| matching_point.get("has_file_changes"))
+        .and_then(Value::as_bool)
+        .unwrap_or(false);
+    if !has_file_changes {
+        if transient {
+            process.stop();
+        }
+        return Err("该轮没有可撤销的文件修改".to_string());
+    }
+    let result = process
+        .request(
+            "_x.ai/rewind/execute",
+            json!({
+                "sessionId": session_id,
+                "targetPromptIndex": target_prompt_index,
+                "force": force,
+                "mode": "files_only",
+            }),
+        )
+        .await;
+    if transient {
+        process.stop();
+    }
+    result
 }
 
 #[tauri::command]
@@ -3123,11 +3423,12 @@ mod tests {
         available_commands_from_list, available_commands_from_session_update, build_prompt_content,
         cache_provider_api_key, consume_prompt_attachment_grants, forget_cached_provider_api_key,
         format_rpc_error, grok_agent_arguments, model_key_env_name, normalize_model_id,
-        normalize_model_provider, normalized_session_update_message, parse_grok_toml,
-        plan_approval_params, process_launch_key, read_provider_api_key, request_timeout,
-        scheduled_prompt_injection, select_auth_method, serialize_grok_toml, user_question_params,
-        validate_cli_arguments, validate_service_arguments, GrokAcpOptions, GrokCliService,
-        GrokModelProviderInput, GrokRuntimeState, PromptAttachmentGrant, AUTHENTICATE_TIMEOUT,
+        normalize_model_provider, normalized_interjection_params, normalized_queue_changed_params,
+        normalized_session_update_message, parse_grok_toml, plan_approval_params,
+        process_launch_key, read_provider_api_key, request_timeout, scheduled_prompt_injection,
+        select_auth_method, serialize_grok_toml, user_question_params, validate_cli_arguments,
+        validate_service_arguments, GrokAcpOptions, GrokCliService, GrokModelProviderInput,
+        GrokRuntimeState, PromptAttachmentGrant, AUTHENTICATE_TIMEOUT, GROK_INTERJECT_METHOD,
         INITIALIZE_TIMEOUT, MAX_PROMPT_ATTACHMENT_BYTES, REQUEST_TIMEOUT, SESSION_START_TIMEOUT,
     };
     use serde_json::json;
@@ -3473,6 +3774,73 @@ mod tests {
         assert!(normalized_session_update_message(&json!({
             "method": "session/request_permission",
             "params": { "sessionId": "session-1" }
+        }))
+        .is_none());
+    }
+
+    #[test]
+    fn normalizes_direct_and_wrapped_queue_changed_notifications() {
+        let direct = normalized_queue_changed_params(&json!({
+            "method": "x.ai/queue/changed",
+            "params": {
+                "sessionId": "session-1",
+                "entries": [{ "id": "prompt-1", "version": 0, "text": "继续检查" }]
+            }
+        }))
+        .unwrap();
+        assert_eq!(direct["sessionId"], "session-1");
+        assert_eq!(direct["entries"][0]["id"], "prompt-1");
+
+        let wrapped = normalized_queue_changed_params(&json!({
+            "method": "_x.ai/queue/changed",
+            "params": {
+                "method": "x.ai/queue/changed",
+                "params": { "sessionId": "session-2", "entries": [], "runningPromptId": "prompt-2" }
+            }
+        }))
+        .unwrap();
+        assert_eq!(wrapped["sessionId"], "session-2");
+        assert_eq!(wrapped["runningPromptId"], "prompt-2");
+        assert!(normalized_queue_changed_params(&json!({
+            "method": "session/update",
+            "params": {}
+        }))
+        .is_none());
+    }
+
+    #[test]
+    fn normalizes_direct_and_wrapped_interjection_notifications() {
+        assert_eq!(GROK_INTERJECT_METHOD, "_x.ai/interject");
+        let direct = normalized_interjection_params(&json!({
+            "method": "x.ai/session/interjection",
+            "params": {
+                "sessionId": "session-1",
+                "text": "补充检查测试",
+                "interjectionId": "interjection-1"
+            }
+        }))
+        .unwrap();
+        assert_eq!(direct["sessionId"], "session-1");
+        assert_eq!(direct["text"], "补充检查测试");
+        assert_eq!(direct["interjectionId"], "interjection-1");
+
+        let wrapped = normalized_interjection_params(&json!({
+            "method": "_x.ai/session/interjection",
+            "params": {
+                "method": "x.ai/session/interjection",
+                "params": {
+                    "sessionId": "session-2",
+                    "text": "继续执行",
+                    "interjectionId": "interjection-2"
+                }
+            }
+        }))
+        .unwrap();
+        assert_eq!(wrapped["sessionId"], "session-2");
+        assert_eq!(wrapped["text"], "继续执行");
+        assert!(normalized_interjection_params(&json!({
+            "method": "session/update",
+            "params": {}
         }))
         .is_none());
     }

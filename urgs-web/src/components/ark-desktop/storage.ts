@@ -9,6 +9,9 @@ const STORAGE_KEY = 'urgs_ark_desktop_grok_snapshot_v3';
 const LEGACY_STORAGE_KEY = 'urgs_ark_desktop_grok_snapshot_v2';
 const MAX_TASK_HISTORY = 50;
 const settledActivityPattern = /已完成|完成|成功|失败|取消|退出码|completed|success|failed|cancelled|canceled|done/i;
+const MAX_PERSISTED_TEXT = 4_000;
+const MAX_PERSISTED_DIFF_HUNKS = 6;
+const MAX_PERSISTED_DIFF_LINES = 32;
 
 const clone = <T>(value: T): T => JSON.parse(JSON.stringify(value));
 
@@ -177,10 +180,46 @@ export const loadArkDesktopSnapshot = (): ArkDesktopSnapshot => {
 
 export const saveArkDesktopSnapshot = (snapshot: ArkDesktopSnapshot) => {
     if (typeof window === 'undefined') return;
-    localStorage.setItem(STORAGE_KEY, JSON.stringify({
-        ...snapshot,
-        tasks: snapshot.tasks.slice(0, MAX_TASK_HISTORY),
+    const compact = (value: string | undefined) => value?.slice(-MAX_PERSISTED_TEXT);
+    const compactTasks = snapshot.tasks.slice(0, MAX_TASK_HISTORY).map((task) => ({
+        ...task,
+        prompt: task.prompt.slice(0, MAX_PERSISTED_TEXT),
+        messages: task.messages.map((message) => ({ ...message, content: message.content.slice(0, MAX_PERSISTED_TEXT) })),
+        tools: task.tools.map((tool) => ({
+            ...tool,
+            ...(tool.input ? { input: compact(tool.input) } : {}),
+            ...(tool.output ? { output: compact(tool.output) } : {}),
+            ...(tool.fileChanges ? {
+                fileChanges: tool.fileChanges.map((change) => ({
+                    ...change,
+                    hunks: change.hunks.slice(0, MAX_PERSISTED_DIFF_HUNKS).map((hunk) => ({
+                        ...hunk,
+                        oldLines: hunk.oldLines.slice(0, MAX_PERSISTED_DIFF_LINES),
+                        newLines: hunk.newLines.slice(0, MAX_PERSISTED_DIFF_LINES),
+                    })),
+                    previewTruncated: true,
+                })),
+            } : {}),
+        })),
     }));
+    const payload = JSON.stringify({ ...snapshot, tasks: compactTasks });
+    try {
+        localStorage.setItem(STORAGE_KEY, payload);
+    } catch (error) {
+        // A large tool output or diff must never prevent the desktop UI from mounting.
+        if (!(error instanceof DOMException) || error.name !== 'QuotaExceededError') throw error;
+        try {
+            localStorage.setItem(STORAGE_KEY, JSON.stringify({
+                ...snapshot,
+                tasks: compactTasks.map((task) => ({
+                    ...task,
+                    tools: task.tools.map(({ fileChanges: _fileChanges, input: _input, output: _output, ...tool }) => tool),
+                })),
+            }));
+        } catch (fallbackError) {
+            console.warn('ARK Desktop 本地快照空间不足，已跳过本轮持久化', fallbackError);
+        }
+    }
 };
 
 export const resetArkDesktopSnapshot = () => {

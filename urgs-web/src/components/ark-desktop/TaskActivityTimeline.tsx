@@ -1,10 +1,13 @@
 import React, { useState } from 'react';
 import {
-    AlertCircle, ChevronDown, ChevronRight, Circle, Eye, FileText, LoaderCircle, Search, SquareTerminal, Wrench,
+    AlertCircle, Brain, ChevronDown, ChevronRight, Circle, Eye, FileText, LoaderCircle, Search, SquareTerminal, Target, Wrench,
 } from 'lucide-react';
 import type { ArkDesktopTask } from './types';
 
 type Tool = ArkDesktopTask['tools'][number];
+
+const isReasoning = (tool: Tool) => tool.kind === 'reasoning';
+const isGoal = (tool: Tool) => tool.kind === 'goal';
 
 const getToolState = (status: string) => {
     if (/已完成|完成|成功|取消|completed|success|cancelled|canceled|done/i.test(status)) return 'completed';
@@ -14,6 +17,8 @@ const getToolState = (status: string) => {
 };
 
 const getToolIcon = (tool: Tool) => {
+    if (isReasoning(tool)) return Brain;
+    if (isGoal(tool)) return Target;
     const hint = `${tool.kind || ''} ${tool.title}`.toLowerCase();
     if (/search|find|grep|检索|搜索/.test(hint)) return Search;
     if (/read|读取/.test(hint)) return Eye;
@@ -23,6 +28,8 @@ const getToolIcon = (tool: Tool) => {
 };
 
 const getToolVerb = (tool: Tool, state: ReturnType<typeof getToolState>) => {
+    if (isReasoning(tool)) return state === 'failed' ? '分析失败' : state === 'completed' ? '已完成分析' : '正在分析';
+    if (isGoal(tool)) return state === 'failed' ? '目标执行失败' : state === 'completed' ? '持续目标已结束' : '持续目标执行中';
     const hint = `${tool.kind || ''} ${tool.title}`.toLowerCase();
     const running = state === 'running' || state === 'pending';
     if (/write|edit|patch|写入|编辑|修改/.test(hint)) return running ? '正在编辑' : '已编辑';
@@ -80,14 +87,25 @@ const TaskActivityTimeline: React.FC<{ tools: ArkDesktopTask['tools'] }> = ({ to
     const latestTool = tools[tools.length - 1];
     const hasFailure = tools.some((tool) => getToolState(tool.status) === 'failed');
     const isRunning = tools.some((tool) => ['running', 'pending'].includes(getToolState(tool.status)));
-    const summary = hasFailure ? '工具调用存在失败' : isRunning ? '正在调用工具' : `已调用 ${tools.length} 个工具`;
+    const toolCalls = tools.filter((tool) => !isReasoning(tool));
+    const onlyReasoning = toolCalls.length === 0;
+    const onlyGoals = toolCalls.length > 0 && toolCalls.every(isGoal);
+    const summary = hasFailure
+        ? (onlyReasoning ? '分析过程出现错误' : '工具调用存在失败')
+        : isRunning
+            ? (onlyReasoning ? '正在分析' : onlyGoals ? '持续目标执行中' : '正在调用工具')
+            : onlyReasoning
+                ? '已完成分析'
+                : onlyGoals
+                    ? '持续目标已结束'
+                : `已调用 ${toolCalls.length} 个工具`;
 
     return (
         <section className="my-1.5" aria-label="工具调用记录">
             <button type="button" onClick={() => setExpanded((value) => !value)} className={`group flex w-full min-w-0 items-center gap-2 rounded-md px-1.5 py-1.5 text-left transition hover:bg-slate-50 ${hasFailure ? 'text-red-600' : 'text-slate-600'}`} aria-expanded={expanded}>
-                {hasFailure ? <AlertCircle size={17} /> : isRunning ? <LoaderCircle size={17} className="animate-spin text-blue-500" /> : <Wrench size={17} className="text-slate-400" />}
+                {hasFailure ? <AlertCircle size={17} /> : isRunning ? <LoaderCircle size={17} className="animate-spin text-blue-500" /> : onlyReasoning ? <Brain size={17} className="text-slate-400" /> : onlyGoals ? <Target size={17} className="text-slate-400" /> : <Wrench size={17} className="text-slate-400" />}
                 <span className="shrink-0 text-[14px] font-medium">{summary}</span>
-                {latestTool && <span className="min-w-0 flex-1 truncate text-[13px] text-slate-400">{latestTool.title}</span>}
+                {latestTool && !isReasoning(latestTool) && <span className="min-w-0 flex-1 truncate text-[13px] text-slate-400">{latestTool.title}</span>}
                 <ChevronDown size={15} className={`shrink-0 text-slate-300 transition-transform group-hover:text-slate-500 ${expanded ? '' : '-rotate-90'}`} />
             </button>
             {expanded && <div className="mt-1.5 space-y-0.5 border-l border-slate-200 pl-3">{tools.map((tool) => <ToolActivityItem key={tool.id} tool={tool} />)}</div>}
