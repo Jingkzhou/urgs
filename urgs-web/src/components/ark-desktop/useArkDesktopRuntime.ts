@@ -172,6 +172,62 @@ const parsePlanSteps = (entries: unknown): ArkDesktopPlanStep[] => Array.isArray
     }).filter((step: ArkDesktopPlanStep) => step.content)
     : [];
 
+const findTodoCollection = (value: unknown, visited = new Set<object>()): unknown => {
+    if (typeof value === 'string') {
+        try {
+            return findTodoCollection(JSON.parse(value), visited);
+        } catch {
+            return undefined;
+        }
+    }
+    if (!value || typeof value !== 'object') return undefined;
+    if (visited.has(value)) return undefined;
+    visited.add(value);
+
+    if (Array.isArray(value)) {
+        for (const item of value) {
+            const todos = findTodoCollection(item, visited);
+            if (todos !== undefined) return todos;
+        }
+        return undefined;
+    }
+
+    const object = value as Record<string, unknown>;
+    if (object.TodosUpdated !== undefined) {
+        return findTodoCollection(object.TodosUpdated, visited);
+    }
+    const state = object.state;
+    if (state && typeof state === 'object' && 'todos' in state) {
+        return (state as Record<string, unknown>).todos;
+    }
+    if (object.todos !== undefined) return object.todos;
+
+    for (const key of ['content', 'text', 'output', 'rawOutput', 'structuredContent', 'data', 'result']) {
+        const todos = findTodoCollection(object[key], visited);
+        if (todos !== undefined) return todos;
+    }
+    return undefined;
+};
+
+const parseTodoPlan = (value: unknown): ArkDesktopPlanStep[] | null => {
+    const todos = findTodoCollection(value);
+    if (!todos || typeof todos !== 'object') return null;
+
+    const entries = Array.isArray(todos)
+        ? todos
+        : Object.entries(todos)
+            .sort(([left], [right]) => {
+                const leftNumber = Number(left);
+                const rightNumber = Number(right);
+                return Number.isNaN(leftNumber) || Number.isNaN(rightNumber)
+                    ? left.localeCompare(right)
+                    : leftNumber - rightNumber;
+            })
+            .map(([, item]) => item);
+    const plan = parsePlanSteps(entries);
+    return plan.length ? plan : null;
+};
+
 const selectAgentId = (snapshot: ArkDesktopSnapshot, requestedAgentId?: string, skillIds: string[] = []) => {
     if (requestedAgentId && snapshot.agents.some((agent) => agent.id === requestedAgentId && agent.enabled)) {
         return requestedAgentId;
@@ -492,6 +548,10 @@ export const useArkDesktopRuntime = () => {
             const params = event.payload?.params || event.payload;
             const update = params?.update || params?.sessionUpdate || {};
             const updateType = update?.sessionUpdate;
+            const todoPlan = parseTodoPlan(update);
+            if (todoPlan) {
+                updateTask(taskId, (task) => ({ ...task, plan: todoPlan, updatedAt: Date.now() }));
+            }
             if (updateType === 'available_commands_update') {
                 const availableCommands = Array.isArray(update.availableCommands)
                     ? update.availableCommands
