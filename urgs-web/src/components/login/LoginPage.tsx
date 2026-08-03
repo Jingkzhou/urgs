@@ -406,10 +406,19 @@ const LoginPage: React.FC<LoginProps> = ({ onLogin }) => {
           </div>
         </div>
 
-        <div className="relative z-10 flex items-center">
+        <div className="relative z-10 flex items-center gap-4">
           <div className="relative overflow-hidden bg-transparent p-0">
-            {/* shimmer overlay */}
-            <img src={LOGIN_DARK_LOGO_URL} alt="监管报送一体化系统" className="relative z-10 h-36 w-36 object-contain 2xl:h-44 2xl:w-44" />
+            <img src={LOGIN_DARK_LOGO_URL} alt="吉林银行" className="relative z-10 h-28 w-28 object-contain 2xl:h-36 2xl:w-36" />
+          </div>
+          <div className="min-w-0 text-slate-100">
+            <div className="mb-1 text-xl font-semibold tracking-wide 2xl:text-2xl">吉林银行</div>
+            <div className="flex items-center gap-2">
+              <div className="h-0.5 w-8 bg-red-500" />
+              <div className="text-lg font-semibold tracking-wide 2xl:text-xl">监管报送一体化系统</div>
+            </div>
+            <div className="mt-1 text-[9px] font-medium uppercase tracking-[0.18em] text-slate-400 2xl:text-[10px]">
+              Integrated Regulatory Reporting System
+            </div>
           </div>
         </div>
 
@@ -444,8 +453,15 @@ const LoginPage: React.FC<LoginProps> = ({ onLogin }) => {
         <div className="relative z-10 w-full max-w-[400px]">
           {/* Mobile Logo */}
           <div className="mb-8 flex items-center justify-center xl:hidden sm:mb-12">
-            <div className="relative overflow-hidden">
-              <img src={LOGIN_LOGO_URL} alt="监管报送一体化系统" className="relative z-10 h-28 w-28 object-contain" />
+            <div className="flex items-center gap-3">
+              <img src={LOGIN_LOGO_URL} alt="吉林银行" className="relative z-10 h-20 w-20 object-contain" />
+              <div className="text-left text-slate-900">
+                <div className="text-sm font-semibold tracking-wide">吉林银行</div>
+                <div className="mt-0.5 text-base font-semibold tracking-wide">监管报送一体化系统</div>
+                <div className="mt-1 text-[7px] font-medium uppercase tracking-[0.12em] text-slate-400">
+                  Integrated Regulatory Reporting System
+                </div>
+              </div>
             </div>
           </div>
 

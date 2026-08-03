@@ -307,3 +307,30 @@ final result: passed
 - [x] 从 `/Applications/URGS.app` 完成真实启动验收
 
 final result: passed
+
+---
+
+## 本轮登录页透明 Logo 与系统名称验收
+
+**实现证据**
+
+- 登录页 Logo 资源：`/Users/zhoujingkun/Documents/GitHub/urgs/urgs-web/public/jlbank_logo_login_transparent.png`
+- 真实桌面截图：`/tmp/urgs-login-brand-complete.jpg`
+- 验收实例：从 `/Applications/URGS.app` 启动的 macOS Debug App
+
+**Findings**
+
+- Logo 外部和中心白色区域均已透明，深色背景可以透过 Logo 中空区域显示。
+- 红色图形内部的白色弯月也保持透明。
+- 登录页已恢复并排品牌信息：`吉林银行`、`监管报送一体化系统`、`Integrated Regulatory Reporting System`。
+- 桌面端和移动端登录页均使用同一份透明 Logo 资源。
+
+**Validation**
+
+- [x] `CI=true pnpm exec tsc --noEmit`
+- [x] Tauri macOS Debug App 构建
+- [x] `git diff --check`
+- [x] 构建产物与 `/Applications/URGS.app/Contents/MacOS/urgs-desktop` SHA-256 一致
+- [x] 从 `/Applications/URGS.app` 完成真实启动验收
+
+final result: passed
