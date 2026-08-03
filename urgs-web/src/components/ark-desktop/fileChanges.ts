@@ -77,7 +77,18 @@ export const mergeFileChanges = (changes: ArkDesktopFileChange[]) => {
             (total, hunk) => total + (hunk.oldLines.length === 1 && hunk.oldLines[0] === '' ? 0 : hunk.oldLines.length),
             0,
         );
-        merged.set(change.path, { ...change, additions, deletions });
+        const previous = merged.get(change.path);
+        if (!previous) {
+            merged.set(change.path, { ...change, additions, deletions });
+            return;
+        }
+        merged.set(change.path, {
+            ...previous,
+            additions: previous.additions + additions,
+            deletions: previous.deletions + deletions,
+            hunks: [...previous.hunks, ...change.hunks],
+            previewTruncated: previous.previewTruncated || change.previewTruncated,
+        });
     });
     return Array.from(merged.values());
 };

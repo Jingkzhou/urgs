@@ -81,6 +81,9 @@ pub struct GrokSession {
     pub workspace: String,
     pub process_id: String,
     pub available_commands: Vec<GrokAvailableCommand>,
+    pub model_catalog: Option<GrokModelCatalog>,
+    pub mcp_servers: Vec<GrokMcpServerState>,
+    pub replayed_events: Vec<Value>,
 }
 
 #[derive(Debug, Clone, Deserialize, Serialize, PartialEq, Eq)]
@@ -89,6 +92,65 @@ pub struct GrokAvailableCommand {
     pub name: String,
     pub description: String,
     pub input_hint: Option<String>,
+}
+
+#[derive(Debug, Clone, Serialize)]
+#[serde(rename_all = "camelCase")]
+pub struct GrokReasoningEffort {
+    pub id: String,
+    pub value: String,
+    pub label: String,
+    pub description: String,
+    pub default: bool,
+}
+
+#[derive(Debug, Clone, Serialize)]
+#[serde(rename_all = "camelCase")]
+pub struct GrokModelOption {
+    pub model_id: String,
+    pub name: String,
+    pub description: String,
+    pub supports_reasoning_effort: bool,
+    pub reasoning_efforts: Vec<GrokReasoningEffort>,
+    pub total_context_tokens: Option<u64>,
+}
+
+#[derive(Debug, Clone, Serialize)]
+#[serde(rename_all = "camelCase")]
+pub struct GrokModelCatalog {
+    pub current_model_id: Option<String>,
+    pub available_models: Vec<GrokModelOption>,
+    pub total_context_tokens: Option<u64>,
+}
+
+#[derive(Debug, Clone, Serialize)]
+#[serde(rename_all = "camelCase")]
+pub struct GrokMcpServerState {
+    pub name: String,
+    pub transport: String,
+    pub enabled: bool,
+    pub source: String,
+    pub command: Option<String>,
+    pub args: Vec<String>,
+    pub url: Option<String>,
+    pub env_keys: Vec<String>,
+    pub header_names: Vec<String>,
+    pub health: String,
+    pub tools: Vec<String>,
+}
+
+#[derive(Debug, Clone, Serialize)]
+#[serde(rename_all = "camelCase")]
+pub struct GrokRuntimeDiagnostics {
+    pub process_id: String,
+    pub workspace: String,
+    pub alive: bool,
+    pub session_ids: Vec<String>,
+    pub available_commands: Vec<GrokAvailableCommand>,
+    pub model_catalog: Option<GrokModelCatalog>,
+    pub mcp_servers: Vec<GrokMcpServerState>,
+    pub initialize_meta: Value,
+    pub stderr: String,
 }
 
 #[derive(Debug, Clone, Deserialize, Serialize, Default)]
@@ -313,6 +375,10 @@ struct GrokProcess {
     pending_user_questions: Mutex<Vec<PendingUserQuestion>>,
     pending_plan_approvals: Mutex<Vec<PendingPlanApproval>>,
     available_commands: Mutex<Vec<GrokAvailableCommand>>,
+    model_catalog: Mutex<Option<GrokModelCatalog>>,
+    mcp_servers: Mutex<Vec<GrokMcpServerState>>,
+    initialize_meta: Mutex<Value>,
+    replayed_events: Mutex<Vec<Value>>,
     request_sequence: AtomicU64,
     initialized: AsyncMutex<bool>,
     uses_custom_model: bool,
@@ -341,6 +407,10 @@ impl GrokProcess {
             pending_user_questions: Mutex::new(Vec::new()),
             pending_plan_approvals: Mutex::new(Vec::new()),
             available_commands: Mutex::new(Vec::new()),
+            model_catalog: Mutex::new(None),
+            mcp_servers: Mutex::new(Vec::new()),
+            initialize_meta: Mutex::new(Value::Null),
+            replayed_events: Mutex::new(Vec::new()),
             request_sequence: AtomicU64::new(1),
             initialized: AsyncMutex::new(false),
             uses_custom_model,
@@ -440,6 +510,14 @@ impl GrokProcess {
                 }),
             )
             .await?;
+        if let Ok(mut meta) = self.initialize_meta.lock() {
+            *meta = response
+                .get("_meta")
+                .or_else(|| response.get("meta"))
+                .cloned()
+                .unwrap_or(Value::Null);
+        }
+        self.replace_model_catalog(model_catalog_from_initialize(&response));
         self.replace_available_commands(available_commands_from_initialize(&response));
         if !self.uses_custom_model {
             let method_id = select_auth_method(&response)?;
@@ -468,6 +546,56 @@ impl GrokProcess {
         self.available_commands
             .lock()
             .map(|commands| commands.clone())
+            .unwrap_or_default()
+    }
+
+    fn replace_model_catalog(&self, catalog: Option<GrokModelCatalog>) {
+        if let Ok(mut current) = self.model_catalog.lock() {
+            *current = catalog;
+        }
+    }
+
+    fn model_catalog(&self) -> Option<GrokModelCatalog> {
+        self.model_catalog
+            .lock()
+            .ok()
+            .and_then(|catalog| catalog.clone())
+    }
+
+    fn replace_mcp_servers(&self, servers: Vec<GrokMcpServerState>) {
+        if let Ok(mut current) = self.mcp_servers.lock() {
+            *current = servers;
+        }
+    }
+
+    fn mcp_servers(&self) -> Vec<GrokMcpServerState> {
+        self.mcp_servers
+            .lock()
+            .map(|servers| servers.clone())
+            .unwrap_or_default()
+    }
+
+    fn initialize_meta(&self) -> Value {
+        self.initialize_meta
+            .lock()
+            .map(|meta| meta.clone())
+            .unwrap_or(Value::Null)
+    }
+
+    fn push_replayed_event(&self, event: Value) {
+        if let Ok(mut events) = self.replayed_events.lock() {
+            events.push(event);
+            if events.len() > 10_000 {
+                let keep_from = events.len().saturating_sub(8_000);
+                events.drain(..keep_from);
+            }
+        }
+    }
+
+    fn take_replayed_events(&self) -> Vec<Value> {
+        self.replayed_events
+            .lock()
+            .map(|mut events| std::mem::take(&mut *events))
             .unwrap_or_default()
     }
 
@@ -706,6 +834,111 @@ fn available_commands_from_session_update(message: &Value) -> Option<Vec<GrokAva
         .then(|| parse_available_commands(update.get("availableCommands")))
 }
 
+fn model_catalog_from_initialize(response: &Value) -> Option<GrokModelCatalog> {
+    let meta = response.get("_meta").or_else(|| response.get("meta"))?;
+    let state = meta.get("modelState")?;
+    let current_model_id = state
+        .get("currentModelId")
+        .or_else(|| state.get("current_model_id"))
+        .and_then(Value::as_str)
+        .map(str::to_string);
+    let available_models = state
+        .get("availableModels")
+        .or_else(|| state.get("available_models"))
+        .and_then(Value::as_array)
+        .map(|models| {
+            models
+                .iter()
+                .filter_map(|model| {
+                    let model_id = model
+                        .get("modelId")
+                        .or_else(|| model.get("model_id"))
+                        .or_else(|| model.get("id"))
+                        .and_then(Value::as_str)
+                        .map(str::trim)
+                        .filter(|id| !id.is_empty())
+                        .map(str::to_string)?;
+                    let model_meta = model.get("_meta").or_else(|| model.get("meta"));
+                    let reasoning_efforts = model_meta
+                        .and_then(|value| value.get("reasoningEfforts"))
+                        .or_else(|| model.get("reasoningEfforts"))
+                        .and_then(Value::as_array)
+                        .map(|efforts| {
+                            efforts
+                                .iter()
+                                .filter_map(|effort| {
+                                    let id = effort
+                                        .get("id")
+                                        .or_else(|| effort.get("value"))
+                                        .and_then(Value::as_str)
+                                        .map(str::trim)
+                                        .filter(|value| !value.is_empty())
+                                        .map(str::to_string)?;
+                                    Some(GrokReasoningEffort {
+                                        value: effort
+                                            .get("value")
+                                            .and_then(Value::as_str)
+                                            .unwrap_or(&id)
+                                            .to_string(),
+                                        label: effort
+                                            .get("label")
+                                            .and_then(Value::as_str)
+                                            .unwrap_or(&id)
+                                            .to_string(),
+                                        description: effort
+                                            .get("description")
+                                            .and_then(Value::as_str)
+                                            .unwrap_or_default()
+                                            .to_string(),
+                                        default: effort
+                                            .get("default")
+                                            .and_then(Value::as_bool)
+                                            .unwrap_or(false),
+                                        id,
+                                    })
+                                })
+                                .collect::<Vec<_>>()
+                        })
+                        .unwrap_or_default();
+                    let total_context_tokens = model_meta
+                        .and_then(|value| value.get("totalContextTokens"))
+                        .or_else(|| model.get("totalContextTokens"))
+                        .and_then(Value::as_u64);
+                    Some(GrokModelOption {
+                        model_id,
+                        name: model
+                            .get("name")
+                            .and_then(Value::as_str)
+                            .unwrap_or_default()
+                            .to_string(),
+                        description: model
+                            .get("description")
+                            .and_then(Value::as_str)
+                            .unwrap_or_default()
+                            .to_string(),
+                        supports_reasoning_effort: model_meta
+                            .and_then(|value| value.get("supportsReasoningEffort"))
+                            .or_else(|| model.get("supportsReasoningEffort"))
+                            .and_then(Value::as_bool)
+                            .unwrap_or(!reasoning_efforts.is_empty()),
+                        reasoning_efforts,
+                        total_context_tokens,
+                    })
+                })
+                .collect::<Vec<_>>()
+        })
+        .unwrap_or_default();
+    let total_context_tokens = state
+        .get("totalContextTokens")
+        .or_else(|| state.get("total_context_tokens"))
+        .and_then(Value::as_u64);
+    Some(GrokModelCatalog {
+        current_model_id,
+        available_models,
+        total_context_tokens,
+    })
+}
+
 fn grok_home(app: &AppHandle) -> Result<PathBuf, String> {
     let directory = app
         .path()
@@ -904,6 +1137,145 @@ fn parse_grok_toml(content: &str) -> Result<toml::Value, String> {
     content
         .parse::<toml::Value>()
         .map_err(|error| format!("本地智能引擎 TOML 配置无效: {error}"))
+}
+
+fn toml_string_list(value: Option<&toml::Value>) -> Vec<String> {
+    value
+        .and_then(toml::Value::as_array)
+        .into_iter()
+        .flatten()
+        .filter_map(toml::Value::as_str)
+        .map(str::to_string)
+        .collect()
+}
+
+fn toml_string_map(value: Option<&toml::Value>) -> Vec<(String, String)> {
+    let mut entries = value
+        .and_then(toml::Value::as_table)
+        .into_iter()
+        .flatten()
+        .filter_map(|(key, value)| value.as_str().map(|value| (key.clone(), value.to_string())))
+        .collect::<Vec<_>>();
+    entries.sort_by(|left, right| left.0.cmp(&right.0));
+    entries
+}
+
+fn mcp_server_from_toml(
+    name: &str,
+    entry: &toml::Value,
+    source: &str,
+) -> Option<(Value, GrokMcpServerState)> {
+    let table = entry.as_table()?;
+    let enabled = table
+        .get("enabled")
+        .and_then(toml::Value::as_bool)
+        .unwrap_or(true);
+    let args = toml_string_list(table.get("args"));
+    let env = toml_string_map(table.get("env"));
+    let headers = toml_string_map(table.get("headers"));
+    let transport_type = table
+        .get("type")
+        .or_else(|| table.get("transport"))
+        .and_then(toml::Value::as_str)
+        .unwrap_or("http")
+        .to_ascii_lowercase();
+    if let Some(command) = table.get("command").and_then(toml::Value::as_str) {
+        let mut command_args = Vec::with_capacity(args.len() + 1);
+        command_args.extend(args.clone());
+        let server = json!({
+            "name": name,
+            "command": command,
+            "args": command_args,
+            "env": env.iter().map(|(key, value)| json!({"name": key, "value": value})).collect::<Vec<_>>(),
+        });
+        let state = GrokMcpServerState {
+            name: name.to_string(),
+            transport: "stdio".to_string(),
+            enabled,
+            source: source.to_string(),
+            command: Some(command.to_string()),
+            args,
+            url: None,
+            env_keys: env.into_iter().map(|(key, _)| key).collect(),
+            header_names: Vec::new(),
+            health: if enabled { "configured" } else { "disabled" }.to_string(),
+            tools: Vec::new(),
+        };
+        return Some((server, state));
+    }
+    let url = table.get("url").and_then(toml::Value::as_str)?.trim();
+    if url.is_empty() {
+        return None;
+    }
+    let transport = if transport_type == "sse" {
+        "sse"
+    } else {
+        "http"
+    };
+    let server = json!({
+        "type": transport,
+        "name": name,
+        "url": url,
+        "headers": headers.iter().map(|(key, value)| json!({"name": key, "value": value})).collect::<Vec<_>>(),
+    });
+    let state = GrokMcpServerState {
+        name: name.to_string(),
+        transport: transport.to_string(),
+        enabled,
+        source: source.to_string(),
+        command: None,
+        args: Vec::new(),
+        url: Some(url.to_string()),
+        env_keys: env.into_iter().map(|(key, _)| key).collect(),
+        header_names: headers.into_iter().map(|(key, _)| key).collect(),
+        health: if enabled { "configured" } else { "disabled" }.to_string(),
+        tools: Vec::new(),
+    };
+    Some((server, state))
+}
+
+fn mcp_servers_from_config_content(
+    content: &str,
+    source: &str,
+) -> Result<Vec<(Value, GrokMcpServerState)>, String> {
+    let config = parse_grok_toml(content)?;
+    let Some(servers) = config.get("mcp_servers").and_then(toml::Value::as_table) else {
+        return Ok(Vec::new());
+    };
+    Ok(servers
+        .iter()
+        .filter_map(|(name, entry)| mcp_server_from_toml(name, entry, source))
+        .collect())
+}
+
+fn configured_mcp_servers(
+    app: &AppHandle,
+    workspace: &Path,
+) -> Result<(Vec<Value>, Vec<GrokMcpServerState>), String> {
+    let user_path = grok_config_path(app, "user", "config", None)?;
+    let project_path = workspace.join(".grok").join("config.toml");
+    let mut by_name: HashMap<String, (Value, GrokMcpServerState)> = HashMap::new();
+    for (source, path) in [("user", user_path), ("project", project_path)] {
+        if !path.is_file() {
+            continue;
+        }
+        let content = fs::read_to_string(&path)
+            .map_err(|error| format!("读取 {source} MCP 配置失败: {error}"))?;
+        for (server, state) in mcp_servers_from_config_content(&content, source)? {
+            by_name.insert(state.name.clone(), (server, state));
+        }
+    }
+    let mut values = by_name.into_values().collect::<Vec<_>>();
+    values.sort_by(|left, right| left.1.name.cmp(&right.1.name));
+    let states = values
+        .iter()
+        .map(|(_, state)| state.clone())
+        .collect::<Vec<_>>();
+    let servers = values
+        .into_iter()
+        .filter_map(|(server, state)| state.enabled.then_some(server))
+        .collect::<Vec<_>>();
+    Ok((servers, states))
 }
 
 fn serialize_grok_toml(config: &toml::Value) -> Result<String, String> {
@@ -1591,6 +1963,103 @@ fn normalized_queue_changed_params(message: &Value) -> Option<Value> {
     }
 }
 
+fn mcp_server_state_from_value(value: &Value) -> Option<GrokMcpServerState> {
+    let name = value.get("name").and_then(Value::as_str)?.trim();
+    if name.is_empty() {
+        return None;
+    }
+    let transport = value
+        .get("type")
+        .or_else(|| value.get("transport"))
+        .and_then(Value::as_str)
+        .unwrap_or_else(|| {
+            if value.get("command").is_some() {
+                "stdio"
+            } else {
+                "http"
+            }
+        })
+        .to_ascii_lowercase();
+    let args = value
+        .get("args")
+        .and_then(Value::as_array)
+        .map(|items| {
+            items
+                .iter()
+                .filter_map(Value::as_str)
+                .map(str::to_string)
+                .collect()
+        })
+        .unwrap_or_default();
+    let env_keys = value
+        .get("env")
+        .and_then(Value::as_array)
+        .map(|items| {
+            items
+                .iter()
+                .filter_map(|item| item.get("name").and_then(Value::as_str).map(str::to_string))
+                .collect()
+        })
+        .unwrap_or_default();
+    let header_names = value
+        .get("headers")
+        .and_then(Value::as_array)
+        .map(|items| {
+            items
+                .iter()
+                .filter_map(|item| item.get("name").and_then(Value::as_str).map(str::to_string))
+                .collect()
+        })
+        .unwrap_or_default();
+    Some(GrokMcpServerState {
+        name: name.to_string(),
+        transport,
+        enabled: true,
+        source: value
+            .get("source")
+            .and_then(Value::as_str)
+            .unwrap_or("session")
+            .to_string(),
+        command: value
+            .get("command")
+            .and_then(Value::as_str)
+            .map(str::to_string),
+        args,
+        url: value.get("url").and_then(Value::as_str).map(str::to_string),
+        env_keys,
+        header_names,
+        health: "connected".to_string(),
+        tools: value
+            .get("tools")
+            .and_then(Value::as_array)
+            .map(|items| {
+                items
+                    .iter()
+                    .filter_map(Value::as_str)
+                    .map(str::to_string)
+                    .collect()
+            })
+            .unwrap_or_default(),
+    })
+}
+
+fn normalized_mcp_servers_update_params(message: &Value) -> Option<Value> {
+    let method = message.get("method")?.as_str()?;
+    let params = message.get("params")?;
+    let params = if method == "_x.ai/mcp/servers_updated"
+        && params.get("method").and_then(Value::as_str) == Some("x.ai/mcp/servers_updated")
+    {
+        params.get("params").unwrap_or(params)
+    } else {
+        params
+    };
+    matches!(
+        method,
+        "x.ai/mcp/servers_updated" | "_x.ai/mcp/servers_updated"
+    )
+    .then(|| params.clone())
+}
+
 fn normalized_interjection_params(message: &Value) -> Option<Value> {
     let method = message.get("method")?.as_str()?;
     let params = message.get("params")?;
@@ -1734,11 +2203,34 @@ fn handle_stdout(app: &AppHandle, process: &Arc<GrokProcess>, line: Vec<u8>) {
         emit_process_event(app, process, "interjection", interjection);
         return;
     }
+    if let Some(mcp_update) = normalized_mcp_servers_update_params(&message) {
+        let states = mcp_update
+            .get("mcpServers")
+            .or_else(|| mcp_update.get("mcp_servers"))
+            .and_then(Value::as_array)
+            .map(|servers| {
+                servers
+                    .iter()
+                    .filter_map(mcp_server_state_from_value)
+                    .collect::<Vec<_>>()
+            })
+            .unwrap_or_default();
+        process.replace_mcp_servers(states.clone());
+        emit_process_event(
+            app,
+            process,
+            "mcp_servers_updated",
+            json!({ "mcpServers": states, "raw": mcp_update }),
+        );
+        return;
+    }
     if let Some(session_update) = normalized_session_update_message(&message) {
         if let Some(commands) = available_commands_from_session_update(&session_update) {
             process.replace_available_commands(commands);
         }
-        if !process.replaying_session.load(Ordering::Relaxed) {
+        if process.replaying_session.load(Ordering::Relaxed) {
+            process.push_replayed_event(session_update);
+        } else {
             emit_process_event(app, process, "session_update", session_update);
         }
         return;
@@ -2111,6 +2603,32 @@ fn live_process_for_launch_key(
         .cloned())
 }
 
+fn workspace_process(
+    state: &GrokRuntimeState,
+    workspace: &Path,
+) -> Result<Arc<GrokProcess>, String> {
+    let prepared = state
+        .prepared_process
+        .lock()
+        .map_err(|_| "Grok 运行时锁不可用".to_string())?
+        .as_ref()
+        .filter(|process| process.alive.load(Ordering::Relaxed) && process.workspace == workspace)
+        .cloned();
+    if let Some(process) = prepared {
+        return Ok(process);
+    }
+    let mut processes = state
+        .session_processes
+        .lock()
+        .map_err(|_| "Grok 会话进程池锁不可用".to_string())?;
+    processes.retain(|_, process| process.alive.load(Ordering::Relaxed));
+    processes
+        .values()
+        .find(|process| process.workspace == workspace)
+        .cloned()
+        .ok_or_else(|| "本地智能引擎正在准备会话能力".to_string())
+}
+
 #[tauri::command]
 pub async fn grok_runtime_status(app: AppHandle) -> Result<GrokRuntimeStatus, String> {
     let home = grok_home(&app)?;
@@ -2182,6 +2700,430 @@ pub async fn grok_available_commands(
     }
     process.replace_available_commands(commands.clone());
     Ok(commands)
+}
+
+#[tauri::command]
+pub async fn grok_model_catalog(
+    state: State<'_, GrokRuntimeState>,
+    workspace: String,
+) -> Result<Option<GrokModelCatalog>, String> {
+    let workspace = validate_workspace(&workspace)?;
+    Ok(workspace_process(&state, &workspace)?.model_catalog())
+}
+
+#[tauri::command]
+pub async fn grok_session_list(
+    state: State<'_, GrokRuntimeState>,
+    workspace: String,
+    query: Option<String>,
+    limit: Option<usize>,
+    cursor: Option<String>,
+) -> Result<Value, String> {
+    let workspace = validate_workspace(&workspace)?;
+    let process = workspace_process(&state, &workspace)?;
+    process
+        .request(
+            "x.ai/session/list",
+            json!({
+                "cwd": workspace.to_string_lossy(),
+                "query": query.filter(|value| !value.trim().is_empty()),
+                "limit": limit.unwrap_or(50).clamp(1, 200),
+                "cursor": cursor.filter(|value| !value.trim().is_empty()),
+            }),
+        )
+        .await
+}
+
+#[tauri::command]
+pub async fn grok_session_search(
+    state: State<'_, GrokRuntimeState>,
+    workspace: String,
+    query: String,
+    limit: Option<usize>,
+) -> Result<Value, String> {
+    let workspace = validate_workspace(&workspace)?;
+    let query = query.trim();
+    if query.is_empty() {
+        return Ok(json!({ "results": [], "nextOffset": null, "totalEstimate": 0 }));
+    }
+    let process = workspace_process(&state, &workspace)?;
+    process
+        .request(
+            "x.ai/session/search",
+            json!({
+                "query": query,
+                "cwd": workspace.to_string_lossy(),
+                "limit": limit.unwrap_or(20).clamp(1, 100),
+                "offset": 0,
+                "includeContent": true,
+            }),
+        )
+        .await
+}
+
+#[tauri::command]
+pub async fn grok_session_info(
+    state: State<'_, GrokRuntimeState>,
+    session_id: String,
+) -> Result<Value, String> {
+    let session_id = session_id.trim();
+    if session_id.is_empty() {
+        return Err("会话标识不能为空".to_string());
+    }
+    session_process(&state, session_id)?
+        .request("x.ai/session/info", json!({ "sessionId": session_id }))
+        .await
+}
+
+#[tauri::command]
+pub async fn grok_compact_session(
+    state: State<'_, GrokRuntimeState>,
+    session_id: String,
+    user_context: Option<String>,
+) -> Result<Value, String> {
+    let session_id = session_id.trim();
+    if session_id.is_empty() {
+        return Err("会话标识不能为空".to_string());
+    }
+    session_process(&state, session_id)?
+        .request(
+            "x.ai/compact_conversation",
+            json!({ "sessionId": session_id, "userContext": user_context }),
+        )
+        .await
+}
+
+#[tauri::command]
+pub async fn grok_recap_session(
+    state: State<'_, GrokRuntimeState>,
+    session_id: String,
+) -> Result<Value, String> {
+    let session_id = session_id.trim();
+    if session_id.is_empty() {
+        return Err("会话标识不能为空".to_string());
+    }
+    session_process(&state, session_id)?
+        .request(
+            "x.ai/recap",
+            json!({ "sessionId": session_id, "auto": false }),
+        )
+        .await
+}
+
+#[tauri::command]
+pub async fn grok_session_rename(
+    state: State<'_, GrokRuntimeState>,
+    session_id: String,
+    title: String,
+    workspace: Option<String>,
+) -> Result<Value, String> {
+    let session_id = session_id.trim();
+    let title = title.trim();
+    if session_id.is_empty() || title.is_empty() {
+        return Err("会话标识和名称不能为空".to_string());
+    }
+    let process = if let Some(workspace_value) = workspace
+        .as_deref()
+        .filter(|value| !value.trim().is_empty())
+    {
+        workspace_process(&state, &validate_workspace(workspace_value)?)?
+    } else {
+        session_process(&state, session_id)?
+    };
+    process
+        .request(
+            "x.ai/session/rename",
+            json!({ "sessionId": session_id, "title": title, "cwd": workspace }),
+        )
+        .await
+}
+
+#[tauri::command]
+pub async fn grok_session_delete(
+    state: State<'_, GrokRuntimeState>,
+    session_id: String,
+    workspace: Option<String>,
+) -> Result<Value, String> {
+    let session_id = session_id.trim();
+    if session_id.is_empty() {
+        return Err("会话标识不能为空".to_string());
+    }
+    let process = if let Some(workspace_value) = workspace
+        .as_deref()
+        .filter(|value| !value.trim().is_empty())
+    {
+        workspace_process(&state, &validate_workspace(workspace_value)?)?
+    } else {
+        session_process(&state, session_id)?
+    };
+    process
+        .request(
+            "x.ai/session/delete",
+            json!({ "sessionId": session_id, "cwd": workspace }),
+        )
+        .await
+}
+
+#[tauri::command]
+pub async fn grok_list_background_tasks(
+    state: State<'_, GrokRuntimeState>,
+    session_id: String,
+) -> Result<Value, String> {
+    let session_id = session_id.trim();
+    if session_id.is_empty() {
+        return Err("会话标识不能为空".to_string());
+    }
+    session_process(&state, session_id)?
+        .request("x.ai/task/list", json!({ "sessionId": session_id }))
+        .await
+}
+
+#[tauri::command]
+pub async fn grok_kill_background_task(
+    state: State<'_, GrokRuntimeState>,
+    session_id: String,
+    task_id: String,
+) -> Result<Value, String> {
+    let session_id = session_id.trim();
+    let task_id = task_id.trim();
+    if session_id.is_empty() || task_id.is_empty() {
+        return Err("会话和后台任务标识不能为空".to_string());
+    }
+    session_process(&state, session_id)?
+        .request(
+            "x.ai/task/kill",
+            json!({ "sessionId": session_id, "taskId": task_id }),
+        )
+        .await
+}
+
+#[tauri::command]
+pub async fn grok_get_subagent(
+    state: State<'_, GrokRuntimeState>,
+    subagent_id: String,
+) -> Result<Value, String> {
+    let subagent_id = subagent_id.trim();
+    if subagent_id.is_empty() {
+        return Err("子智能体标识不能为空".to_string());
+    }
+    let process = state
+        .prepared_process
+        .lock()
+        .map_err(|_| "Grok 运行时锁不可用".to_string())?
+        .as_ref()
+        .filter(|process| process.alive.load(Ordering::Relaxed))
+        .cloned()
+        .or_else(|| {
+            state.session_processes.lock().ok().and_then(|processes| {
+                processes
+                    .values()
+                    .find(|process| process.alive.load(Ordering::Relaxed))
+                    .cloned()
+            })
+        })
+        .ok_or_else(|| "本地智能引擎尚未挂载会话".to_string())?;
+    process
+        .request("x.ai/subagent/get", json!({ "subagentId": subagent_id }))
+        .await
+}
+
+#[tauri::command]
+pub async fn grok_cancel_subagent(
+    state: State<'_, GrokRuntimeState>,
+    subagent_id: String,
+) -> Result<Value, String> {
+    let subagent_id = subagent_id.trim();
+    if subagent_id.is_empty() {
+        return Err("子智能体标识不能为空".to_string());
+    }
+    let process = state
+        .prepared_process
+        .lock()
+        .map_err(|_| "Grok 运行时锁不可用".to_string())?
+        .as_ref()
+        .filter(|process| process.alive.load(Ordering::Relaxed))
+        .cloned()
+        .or_else(|| {
+            state.session_processes.lock().ok().and_then(|processes| {
+                processes
+                    .values()
+                    .find(|process| process.alive.load(Ordering::Relaxed))
+                    .cloned()
+            })
+        })
+        .ok_or_else(|| "本地智能引擎尚未挂载会话".to_string())?;
+    process
+        .request("x.ai/subagent/cancel", json!({ "subagentId": subagent_id }))
+        .await
+}
+
+#[tauri::command]
+pub async fn grok_session_update_mcp_servers(
+    state: State<'_, GrokRuntimeState>,
+    session_id: String,
+    mcp_servers: Vec<Value>,
+) -> Result<Value, String> {
+    let session_id = session_id.trim();
+    if session_id.is_empty() {
+        return Err("会话标识不能为空".to_string());
+    }
+    let process = session_process(&state, session_id)?;
+    let states = mcp_servers
+        .iter()
+        .filter_map(mcp_server_state_from_value)
+        .collect::<Vec<_>>();
+    let result = process
+        .request(
+            "x.ai/session/update_mcp_servers",
+            json!({ "sessionId": session_id, "mcpServers": mcp_servers }),
+        )
+        .await?;
+    process.replace_mcp_servers(states);
+    Ok(result)
+}
+
+#[tauri::command]
+pub fn grok_mcp_list(app: AppHandle, workspace: String) -> Result<Vec<GrokMcpServerState>, String> {
+    let workspace = validate_workspace(&workspace)?;
+    Ok(configured_mcp_servers(&app, &workspace)?.1)
+}
+
+#[tauri::command]
+pub fn grok_mcp_set_enabled(
+    app: AppHandle,
+    name: String,
+    enabled: bool,
+    workspace: Option<String>,
+) -> Result<Vec<GrokMcpServerState>, String> {
+    let name = name.trim();
+    if name.is_empty() || name.len() > 128 || name.contains('\0') {
+        return Err("MCP 服务名称不合法".to_string());
+    }
+    let workspace_path = workspace
+        .as_deref()
+        .filter(|value| !value.trim().is_empty())
+        .map(validate_workspace)
+        .transpose()?;
+    let user_path = grok_config_path(&app, "user", "config", None)?;
+    let project_path = workspace_path
+        .as_ref()
+        .map(|path| path.join(".grok").join("config.toml"));
+    let project_has_server = project_path.as_ref().is_some_and(|path| {
+        path.is_file()
+            && fs::read_to_string(path)
+                .ok()
+                .and_then(|content| parse_grok_toml(&content).ok())
+                .and_then(|config| config.get("mcp_servers").cloned())
+                .and_then(|servers| servers.as_table().cloned())
+                .is_some_and(|servers| servers.contains_key(name))
+    });
+    let path = if project_has_server {
+        project_path.expect("project_has_server implies project_path")
+    } else {
+        user_path
+    };
+    let content = if path.is_file() {
+        fs::read_to_string(&path).map_err(|error| format!("读取 MCP 配置失败: {error}"))?
+    } else {
+        String::new()
+    };
+    let mut config = parse_grok_toml(&content)?;
+    let root = config
+        .as_table_mut()
+        .ok_or_else(|| "Grok 配置根节点必须是对象".to_string())?;
+    let servers = root
+        .get_mut("mcp_servers")
+        .and_then(toml::Value::as_table_mut)
+        .ok_or_else(|| format!("未找到 MCP 服务“{name}”"))?;
+    let entry = servers
+        .get_mut(name)
+        .and_then(toml::Value::as_table_mut)
+        .ok_or_else(|| format!("未找到 MCP 服务“{name}”"))?;
+    entry.insert("enabled".to_string(), toml::Value::Boolean(enabled));
+    if path.is_file() {
+        fs::copy(&path, path.with_extension("toml.urgs-backup"))
+            .map_err(|error| format!("备份 MCP 配置失败: {error}"))?;
+    }
+    fs::write(&path, serialize_grok_toml(&config)?)
+        .map_err(|error| format!("保存 MCP 配置失败: {error}"))?;
+    let display_workspace =
+        workspace_path.unwrap_or(std::env::current_dir().map_err(|error| error.to_string())?);
+    Ok(configured_mcp_servers(&app, &display_workspace)?.1)
+}
+
+#[tauri::command]
+pub async fn grok_reload_mcp_servers(
+    state: State<'_, GrokRuntimeState>,
+    workspace: String,
+) -> Result<Value, String> {
+    let workspace = validate_workspace(&workspace)?;
+    workspace_process(&state, &workspace)?
+        .request("x.ai/internal/reload_all_mcp_servers", json!({}))
+        .await
+}
+
+#[tauri::command]
+pub async fn grok_memory_flush(
+    state: State<'_, GrokRuntimeState>,
+    session_id: String,
+) -> Result<Value, String> {
+    let session_id = session_id.trim();
+    if session_id.is_empty() {
+        return Err("会话标识不能为空".to_string());
+    }
+    session_process(&state, session_id)?
+        .request("x.ai/memory/flush", json!({ "session_id": session_id }))
+        .await
+}
+
+#[tauri::command]
+pub fn grok_runtime_diagnostics(
+    state: State<'_, GrokRuntimeState>,
+) -> Result<Vec<GrokRuntimeDiagnostics>, String> {
+    let mut by_process: HashMap<String, (Arc<GrokProcess>, Vec<String>)> = HashMap::new();
+    if let Some(process) = state
+        .prepared_process
+        .lock()
+        .map_err(|_| "Grok 运行时锁不可用".to_string())?
+        .as_ref()
+        .filter(|process| process.alive.load(Ordering::Relaxed))
+        .cloned()
+    {
+        by_process.insert(process.process_id.clone(), (process, Vec::new()));
+    }
+    for (session_id, process) in state
+        .session_processes
+        .lock()
+        .map_err(|_| "Grok 会话进程池锁不可用".to_string())?
+        .iter()
+    {
+        if !process.alive.load(Ordering::Relaxed) {
+            continue;
+        }
+        by_process
+            .entry(process.process_id.clone())
+            .or_insert_with(|| (Arc::clone(process), Vec::new()))
+            .1
+            .push(session_id.clone());
+    }
+    Ok(by_process
+        .into_values()
+        .map(|(process, session_ids)| GrokRuntimeDiagnostics {
+            process_id: process.process_id.clone(),
+            workspace: process.workspace.to_string_lossy().to_string(),
+            alive: process.alive.load(Ordering::Relaxed),
+            session_ids,
+            available_commands: process.available_commands(),
+            model_catalog: process.model_catalog(),
+            mcp_servers: process.mcp_servers(),
+            initialize_meta: process.initialize_meta(),
+            stderr: process
+                .stderr
+                .lock()
+                .map(|value| value.clone())
+                .unwrap_or_default(),
+        })
+        .collect())
 }
 
 #[tauri::command]
@@ -2674,12 +3616,14 @@ pub async fn grok_create_session(
             }
             (process, true)
         };
+    let (mcp_payload, mcp_states) = configured_mcp_servers(&app, &workspace)?;
+    process.replace_mcp_servers(mcp_states.clone());
     let response = match process
         .request(
             "session/new",
             json!({
                 "cwd": workspace,
-                "mcpServers": [],
+                "mcpServers": mcp_payload,
             }),
         )
         .await
@@ -2712,6 +3656,9 @@ pub async fn grok_create_session(
         workspace: workspace.to_string_lossy().to_string(),
         process_id: process.process_id.clone(),
         available_commands: process.available_commands(),
+        model_catalog: process.model_catalog(),
+        mcp_servers: mcp_states,
+        replayed_events: Vec::new(),
     })
 }
 
@@ -2757,6 +3704,9 @@ pub async fn grok_load_session(
                 workspace: workspace.to_string_lossy().to_string(),
                 process_id: process.process_id.clone(),
                 available_commands: process.available_commands(),
+                model_catalog: process.model_catalog(),
+                mcp_servers: process.mcp_servers(),
+                replayed_events: Vec::new(),
             });
         }
         let existing = processes.remove(&session_id);
@@ -2783,6 +3733,8 @@ pub async fn grok_load_session(
         process.stop();
         return Err(error);
     }
+    let (mcp_payload, mcp_states) = configured_mcp_servers(&app, &workspace)?;
+    process.replace_mcp_servers(mcp_states.clone());
     process.replaying_session.store(true, Ordering::Relaxed);
     let load_result = process
         .request(
@@ -2790,11 +3742,12 @@ pub async fn grok_load_session(
             json!({
                 "sessionId": session_id,
                 "cwd": workspace,
-                "mcpServers": [],
+                "mcpServers": mcp_payload,
             }),
         )
         .await;
     process.replaying_session.store(false, Ordering::Relaxed);
+    let replayed_events = process.take_replayed_events();
     if let Err(error) = load_result {
         process.stop();
         return Err(error);
@@ -2808,6 +3761,9 @@ pub async fn grok_load_session(
         workspace: workspace.to_string_lossy().to_string(),
         process_id: process.process_id.clone(),
         available_commands: process.available_commands(),
+        model_catalog: process.model_catalog(),
+        mcp_servers: mcp_states,
+        replayed_events,
     })
 }
 
@@ -3122,6 +4078,8 @@ pub async fn grok_rewind_files(
                 process.stop();
                 return Err(error);
             }
+            let (mcp_payload, mcp_states) = configured_mcp_servers(&app, &workspace)?;
+            process.replace_mcp_servers(mcp_states);
             process.replaying_session.store(true, Ordering::Relaxed);
             let load_result = process
                 .request(
@@ -3129,7 +4087,7 @@ pub async fn grok_rewind_files(
                     json!({
                         "sessionId": session_id,
                         "cwd": workspace,
-                        "mcpServers": [],
+                        "mcpServers": mcp_payload,
                     }),
                 )
                 .await;

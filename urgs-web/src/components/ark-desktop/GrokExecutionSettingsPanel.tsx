@@ -1,27 +1,32 @@
 import React from 'react';
 import { AlertTriangle, ShieldCheck, SlidersHorizontal } from 'lucide-react';
+import type { GrokModelCatalog } from '@/services/grokDesktop';
 import type { GrokExecutionSettings } from './types';
 
 interface GrokExecutionSettingsPanelProps {
     value: GrokExecutionSettings;
     onChange: (value: GrokExecutionSettings) => void;
+    modelCatalog?: GrokModelCatalog | null;
 }
 
 const inputClass = 'w-full rounded-xl border border-slate-200 bg-white px-3 py-2.5 text-sm text-slate-800 outline-none transition focus:border-slate-400 focus:ring-2 focus:ring-slate-100';
 const Field: React.FC<{ label: string; children: React.ReactNode; hint?: string }> = ({ label, children, hint }) => <label className="block"><span className="mb-1.5 block text-xs font-medium text-slate-600">{label}</span>{children}{hint && <span className="mt-1 block text-[11px] leading-5 text-slate-400">{hint}</span>}</label>;
 const Toggle: React.FC<{ checked: boolean; label: string; onChange: (checked: boolean) => void }> = ({ checked, label, onChange }) => <label className="flex items-center gap-2 rounded-xl border border-slate-200 px-3 py-2.5 text-sm text-slate-700"><input type="checkbox" checked={checked} onChange={(event) => onChange(event.target.checked)} />{label}</label>;
 
-const GrokExecutionSettingsPanel: React.FC<GrokExecutionSettingsPanelProps> = ({ value, onChange }) => {
+const GrokExecutionSettingsPanel: React.FC<GrokExecutionSettingsPanelProps> = ({ value, onChange, modelCatalog }) => {
     const set = <K extends keyof GrokExecutionSettings>(key: K, next: GrokExecutionSettings[K]) => onChange({ ...value, [key]: next });
     const dangerous = value.permissionMode === 'bypassPermissions';
     const isHeadless = value.engine === 'headless';
+    const model = modelCatalog?.availableModels.find((item) => item.modelId === modelCatalog.currentModelId)
+        || modelCatalog?.availableModels.find((item) => item.supportsReasoningEffort);
+    const reasoningOptions = model?.reasoningEfforts || [];
 
     return <div className="space-y-4">
         <div className="rounded-2xl border border-slate-200 p-5">
             <div className="mb-4 flex items-center gap-2"><SlidersHorizontal size={17} className="text-slate-500" /><h3 className="font-semibold text-slate-900">任务执行引擎</h3></div>
             <div className="grid gap-4 sm:grid-cols-2">
                 <Field label="执行模式" hint="ACP 支持流式步骤与逐次授权；Headless 开放完整 CLI 参数。"><select className={inputClass} value={value.engine} onChange={(event) => set('engine', event.target.value as GrokExecutionSettings['engine'])}><option value="acp">ACP 交互模式</option><option value="headless">CLI Headless 模式</option></select></Field>
-                <Field label="Reasoning Effort"><input className={inputClass} value={value.reasoningEffort} onChange={(event) => set('reasoningEffort', event.target.value)} placeholder="留空使用模型默认值" /></Field>
+                <Field label="Reasoning Effort" hint={modelCatalog?.totalContextTokens ? `官方模型上下文窗口：${modelCatalog.totalContextTokens.toLocaleString()} tokens` : '未连接官方模型目录时保留自由输入。'}>{reasoningOptions.length > 0 ? <select className={inputClass} value={value.reasoningEffort} onChange={(event) => set('reasoningEffort', event.target.value)}><option value="">使用模型默认值</option>{value.reasoningEffort && !reasoningOptions.some((option) => option.value === value.reasoningEffort) && <option value={value.reasoningEffort}>{value.reasoningEffort}</option>}{reasoningOptions.map((option) => <option key={option.id || option.value} value={option.value}>{option.label || option.value}{option.description ? ` · ${option.description}` : ''}</option>)}</select> : <input className={inputClass} value={value.reasoningEffort} onChange={(event) => set('reasoningEffort', event.target.value)} placeholder="留空使用模型默认值" />}</Field>
                 <Field label="权限模式" hint="其他持久化权限策略请在运行配置中设置。"><select className={inputClass} value={value.permissionMode} onChange={(event) => set('permissionMode', event.target.value as GrokExecutionSettings['permissionMode'])}><option value="default">请求批准（default）</option><option value="bypassPermissions">完全访问权限（bypassPermissions）</option></select></Field>
                 <Field label="Sandbox Profile"><input className={inputClass} value={value.sandboxProfile} onChange={(event) => set('sandboxProfile', event.target.value)} placeholder="留空使用默认沙箱" /></Field>
                 {isHeadless && <><Field label="输出格式"><select className={inputClass} value={value.outputFormat} onChange={(event) => set('outputFormat', event.target.value as GrokExecutionSettings['outputFormat'])}><option value="json">JSON</option><option value="plain">纯文本</option><option value="streaming-json">Streaming JSON</option></select></Field><Field label="最大轮数"><input type="number" min={0} className={inputClass} value={value.maxTurns} onChange={(event) => set('maxTurns', Number(event.target.value))} /></Field></>}

@@ -13,12 +13,135 @@ export interface GrokSession {
     workspace: string;
     processId: string;
     availableCommands: GrokAvailableCommand[];
+    modelCatalog?: GrokModelCatalog | null;
+    mcpServers: GrokMcpServerState[];
+    replayedEvents: Array<Record<string, any>>;
 }
 
 export interface GrokAvailableCommand {
     name: string;
     description: string;
     inputHint?: string | null;
+}
+
+export interface GrokReasoningEffort {
+    id: string;
+    value: string;
+    label: string;
+    description: string;
+    default: boolean;
+}
+
+export interface GrokModelOption {
+    modelId: string;
+    name: string;
+    description: string;
+    supportsReasoningEffort: boolean;
+    reasoningEfforts: GrokReasoningEffort[];
+    totalContextTokens?: number | null;
+}
+
+export interface GrokModelCatalog {
+    currentModelId?: string | null;
+    availableModels: GrokModelOption[];
+    totalContextTokens?: number | null;
+}
+
+export interface GrokMcpServerState {
+    name: string;
+    transport: string;
+    enabled: boolean;
+    source: string;
+    command?: string | null;
+    args: string[];
+    url?: string | null;
+    envKeys: string[];
+    headerNames: string[];
+    health: string;
+    tools: string[];
+}
+
+export interface GrokSessionSummary {
+    sessionId: string;
+    title: string;
+    summary: string;
+    firstPrompt?: string | null;
+    updatedAt?: string | null;
+    createdAt?: string | null;
+    cwd: string;
+    source?: string | null;
+    modelId?: string | null;
+    numMessages?: number;
+    lastActiveAt?: string | null;
+    snippet?: string | null;
+    score?: number;
+}
+
+export interface GrokSessionListResponse {
+    sessions: GrokSessionSummary[];
+    nextCursor?: string | null;
+}
+
+export interface GrokSessionSearchResponse {
+    results: GrokSessionSummary[];
+    nextOffset?: number | null;
+    totalEstimate?: number | null;
+    bootstrapping?: boolean;
+}
+
+export interface GrokContextInfo {
+    used: number;
+    total: number;
+    systemPromptTokens: number;
+    toolDefinitionsCount: number;
+    toolDefinitionsTokens: number;
+    compactionCount: number;
+    turnCount: number;
+    toolCallCount: number;
+    messageCount: number;
+    messageTokens: number;
+    freeTokens: number;
+    usagePct: number;
+    autoCompactThresholdPercent: number;
+    usageCategories?: Array<Record<string, any>>;
+}
+
+export interface GrokSessionInfo {
+    sessionId: string;
+    cwd: string;
+    agentName?: string | null;
+    model?: string | null;
+    modelDisplayName?: string | null;
+    resolvedModelId?: string | null;
+    turns: number;
+    turnIndex: number;
+    context: GrokContextInfo;
+}
+
+export interface GrokBackgroundTask {
+    taskId: string;
+    command?: string;
+    displayCommand?: string | null;
+    cwd?: string;
+    output?: string;
+    outputFile?: string;
+    truncated?: boolean;
+    exitCode?: number | null;
+    signal?: string | null;
+    completed: boolean;
+    kind?: string;
+}
+
+export interface GrokRuntimeDiagnostics {
+    processId: string;
+    workspace: string;
+    alive: boolean;
+    sessionIds: string[];
+    availableCommands: GrokAvailableCommand[];
+    modelCatalog?: GrokModelCatalog | null;
+    mcpServers: GrokMcpServerState[];
+    initializeMeta: Record<string, any> | null;
+    stderr: string;
 }
 
 export interface GrokAcpOptions {
@@ -161,6 +284,137 @@ export const getGrokRuntimeStatus = () => invokeGrok<GrokRuntimeStatus>('grok_ru
 
 export const listGrokAvailableCommands = (workspace: string) =>
     invokeGrok<GrokAvailableCommand[]>('grok_available_commands', { workspace });
+
+export const getGrokModelCatalog = (workspace: string) =>
+    invokeGrok<GrokModelCatalog | null>('grok_model_catalog', { workspace });
+
+const normalizeSessionSummary = (item: any, workspace = ''): GrokSessionSummary => ({
+    sessionId: String(item?.sessionId ?? item?.session_id ?? ''),
+    title: String(item?.title ?? item?.summary ?? item?.firstPrompt ?? '未命名会话'),
+    summary: String(item?.summary ?? item?.title ?? item?.firstPrompt ?? ''),
+    firstPrompt: item?.firstPrompt ?? item?.first_prompt ?? null,
+    updatedAt: item?.updatedAt ?? item?.updated_at ?? item?.lastActiveAt ?? item?.last_active_at ?? null,
+    createdAt: item?.createdAt ?? item?.created_at ?? null,
+    cwd: String(item?.cwd ?? workspace),
+    source: item?.source ?? null,
+    modelId: item?.modelId ?? item?.model_id ?? null,
+    numMessages: Number(item?.numMessages ?? item?.num_messages ?? 0),
+    lastActiveAt: item?.lastActiveAt ?? item?.last_active_at ?? null,
+    snippet: item?.snippet ?? null,
+    score: typeof item?.score === 'number' ? item.score : undefined,
+});
+
+export const listGrokSessions = (workspace: string, query?: string, limit = 50, cursor?: string) =>
+    invokeGrok<any>('grok_session_list', {
+        workspace,
+        query: query?.trim() || null,
+        limit,
+        cursor: cursor?.trim() || null,
+    }).then((response) => ({
+        sessions: Array.isArray(response?.sessions)
+            ? response.sessions.map((item: any) => normalizeSessionSummary(item, workspace)).filter((item: GrokSessionSummary) => item.sessionId)
+            : [],
+        nextCursor: response?.nextCursor ?? response?.next_cursor ?? null,
+    } as GrokSessionListResponse));
+
+export const searchGrokSessions = (workspace: string, query: string, limit = 20) =>
+    invokeGrok<any>('grok_session_search', { workspace, query, limit }).then((response) => ({
+        results: Array.isArray(response?.results)
+            ? response.results.map((item: any) => normalizeSessionSummary(item, workspace)).filter((item: GrokSessionSummary) => item.sessionId)
+            : [],
+        nextOffset: response?.nextOffset ?? response?.next_offset ?? null,
+        totalEstimate: response?.totalEstimate ?? response?.total_estimate ?? null,
+        bootstrapping: Boolean(response?.bootstrapping),
+    } as GrokSessionSearchResponse));
+
+const normalizeContextInfo = (value: any): GrokContextInfo => ({
+    used: Number(value?.used ?? 0),
+    total: Number(value?.total ?? 0),
+    systemPromptTokens: Number(value?.systemPromptTokens ?? value?.system_prompt_tokens ?? 0),
+    toolDefinitionsCount: Number(value?.toolDefinitionsCount ?? value?.tool_definitions_count ?? 0),
+    toolDefinitionsTokens: Number(value?.toolDefinitionsTokens ?? value?.tool_definitions_tokens ?? 0),
+    compactionCount: Number(value?.compactionCount ?? value?.compaction_count ?? 0),
+    turnCount: Number(value?.turnCount ?? value?.turn_count ?? 0),
+    toolCallCount: Number(value?.toolCallCount ?? value?.tool_call_count ?? 0),
+    messageCount: Number(value?.messageCount ?? value?.message_count ?? 0),
+    messageTokens: Number(value?.messageTokens ?? value?.message_tokens ?? 0),
+    freeTokens: Number(value?.freeTokens ?? value?.free_tokens ?? 0),
+    usagePct: Number(value?.usagePct ?? value?.usage_pct ?? 0),
+    autoCompactThresholdPercent: Number(value?.autoCompactThresholdPercent ?? value?.auto_compact_threshold_percent ?? 85),
+    usageCategories: Array.isArray(value?.usageCategories ?? value?.usage_categories)
+        ? (value?.usageCategories ?? value?.usage_categories)
+        : [],
+});
+
+export const getGrokSessionInfo = (sessionId: string) =>
+    invokeGrok<any>('grok_session_info', { sessionId }).then((value) => ({
+        sessionId: String(value?.sessionId ?? value?.session_id ?? sessionId),
+        cwd: String(value?.cwd ?? ''),
+        agentName: value?.agentName ?? value?.agent_name ?? null,
+        model: value?.model ?? null,
+        modelDisplayName: value?.modelDisplayName ?? value?.model_display_name ?? null,
+        resolvedModelId: value?.resolvedModelId ?? value?.resolved_model_id ?? null,
+        turns: Number(value?.turns ?? 0),
+        turnIndex: Number(value?.turnIndex ?? value?.turn_index ?? 0),
+        context: normalizeContextInfo(value?.context),
+    } as GrokSessionInfo));
+
+export const compactGrokSession = (sessionId: string, userContext?: string) =>
+    invokeGrok<Record<string, any>>('grok_compact_session', { sessionId, userContext: userContext?.trim() || null });
+
+export const recapGrokSession = (sessionId: string) =>
+    invokeGrok<Record<string, any>>('grok_recap_session', { sessionId });
+
+export const renameGrokSession = (sessionId: string, title: string, workspace?: string) =>
+    invokeGrok<Record<string, any>>('grok_session_rename', { sessionId, title, workspace: workspace || null });
+
+export const deleteGrokSession = (sessionId: string, workspace?: string) =>
+    invokeGrok<Record<string, any>>('grok_session_delete', { sessionId, workspace: workspace || null });
+
+const normalizeBackgroundTask = (item: any): GrokBackgroundTask => ({
+    taskId: String(item?.taskId ?? item?.task_id ?? ''),
+    command: item?.command,
+    displayCommand: item?.displayCommand ?? item?.display_command ?? null,
+    cwd: item?.cwd,
+    output: item?.output,
+    outputFile: item?.outputFile ?? item?.output_file,
+    truncated: Boolean(item?.truncated),
+    exitCode: item?.exitCode ?? item?.exit_code ?? null,
+    signal: item?.signal ?? null,
+    completed: Boolean(item?.completed),
+    kind: item?.kind,
+});
+
+export const listGrokBackgroundTasks = (sessionId: string) =>
+    invokeGrok<any>('grok_list_background_tasks', { sessionId }).then((value) =>
+        (Array.isArray(value?.tasks) ? value.tasks : []).map(normalizeBackgroundTask));
+
+export const killGrokBackgroundTask = (sessionId: string, taskId: string) =>
+    invokeGrok<Record<string, any>>('grok_kill_background_task', { sessionId, taskId });
+
+export const getGrokSubagent = (subagentId: string) =>
+    invokeGrok<Record<string, any>>('grok_get_subagent', { subagentId });
+
+export const cancelGrokSubagent = (subagentId: string) =>
+    invokeGrok<Record<string, any>>('grok_cancel_subagent', { subagentId });
+
+export const listGrokMcpServers = (workspace: string) =>
+    invokeGrok<GrokMcpServerState[]>('grok_mcp_list', { workspace });
+
+export const setGrokMcpEnabled = (name: string, enabled: boolean, workspace?: string) =>
+    invokeGrok<GrokMcpServerState[]>('grok_mcp_set_enabled', { name, enabled, workspace: workspace || null });
+
+export const reloadGrokMcpServers = (workspace: string) =>
+    invokeGrok<Record<string, any>>('grok_reload_mcp_servers', { workspace });
+
+export const updateGrokSessionMcpServers = (sessionId: string, mcpServers: Array<Record<string, any>>) =>
+    invokeGrok<Record<string, any>>('grok_session_update_mcp_servers', { sessionId, mcpServers });
+
+export const flushGrokMemory = (sessionId: string) =>
+    invokeGrok<Record<string, any>>('grok_memory_flush', { sessionId });
+
+export const getGrokRuntimeDiagnostics = () =>
+    invokeGrok<GrokRuntimeDiagnostics[]>('grok_runtime_diagnostics');
 
 export const prepareGrokRuntime = (workspace: string, model: string, options?: GrokAcpOptions, rules?: string) =>
     invokeGrok<void>('grok_runtime_prepare', { workspace, model, options: options || null, rules: rules || null });
@@ -329,6 +583,43 @@ export const installTrustedLocalGrokPlugin = async (path: string, workspace?: st
     return assertSuccessfulPluginCommand(
         await runGrokCli(['plugin', 'install', localPath, '--trust'], workspace, 120),
         '插件安装失败',
+    );
+};
+
+export const uninstallGrokPlugin = async (name: string, workspace?: string) => {
+    const pluginName = assertPluginName(name);
+    return assertSuccessfulPluginCommand(
+        await runGrokCli(['plugin', 'uninstall', pluginName, '--confirm'], workspace, 120),
+        '插件卸载失败',
+    );
+};
+
+export const updateGrokPlugin = async (name?: string, workspace?: string) => {
+    const arguments_ = ['plugin', 'update'];
+    if (name?.trim()) arguments_.push(assertPluginName(name));
+    return assertSuccessfulPluginCommand(
+        await runGrokCli(arguments_, workspace, 300),
+        '插件更新失败',
+    );
+};
+
+export const listGrokPluginMarketplace = async (workspace?: string) => {
+    const result = assertSuccessfulPluginCommand(
+        await runGrokCli(['plugin', 'marketplace', 'list', '--json'], workspace, 60),
+        '无法读取插件市场',
+    );
+    try {
+        return JSON.parse(result.stdout) as unknown;
+    } catch {
+        throw new Error('插件市场返回了无法解析的数据');
+    }
+};
+
+export const installGrokMarketplacePlugin = async (name: string, workspace?: string) => {
+    const pluginName = assertPluginName(name);
+    return assertSuccessfulPluginCommand(
+        await runGrokCli(['plugin', 'install', pluginName, '--trust'], workspace, 300),
+        '市场插件安装失败',
     );
 };
 

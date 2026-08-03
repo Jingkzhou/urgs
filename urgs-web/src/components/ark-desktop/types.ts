@@ -106,6 +106,42 @@ export interface ArkDesktopQueueEntry {
     position: number;
 }
 
+export interface ArkDesktopContextInfo {
+    used: number;
+    total: number;
+    systemPromptTokens: number;
+    toolDefinitionsCount: number;
+    toolDefinitionsTokens: number;
+    compactionCount: number;
+    turnCount: number;
+    toolCallCount: number;
+    messageCount: number;
+    messageTokens: number;
+    freeTokens: number;
+    usagePct: number;
+    autoCompactThresholdPercent: number;
+    usageCategories?: Array<Record<string, any>>;
+}
+
+export interface ArkDesktopBackgroundTask {
+    taskId: string;
+    title: string;
+    status: string;
+    command?: string;
+    output?: string;
+    outputFile?: string;
+    kind?: string;
+    updatedAt: number;
+}
+
+export interface ArkDesktopSubagentActivity {
+    subagentId: string;
+    title: string;
+    status: string;
+    output?: string;
+    updatedAt: number;
+}
+
 export type ArkDesktopTaskStatus = 'running' | 'waiting_authorization' | 'completed' | 'failed' | 'cancelled';
 
 export interface ArkDesktopModelKeyAuthorization {
@@ -137,6 +173,13 @@ export interface ArkDesktopTask {
     queueRunningPromptId?: string | null;
     plan?: ArkDesktopPlanStep[];
     availableCommands?: ArkDesktopSlashCommand[];
+    remoteOnly?: boolean;
+    contextInfo?: ArkDesktopContextInfo;
+    recap?: string;
+    backgroundTasks?: ArkDesktopBackgroundTask[];
+    subagents?: ArkDesktopSubagentActivity[];
+    mcpServers?: Array<{ name: string; transport: string; health: string; tools: string[] }>;
+    diagnostics?: string[];
     error?: string;
     modelKeyAuthorization?: ArkDesktopModelKeyAuthorization;
     automationId?: string;
