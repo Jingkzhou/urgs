@@ -5,10 +5,10 @@ import remarkGfm from 'remark-gfm';
 import { Prism as SyntaxHighlighter } from 'react-syntax-highlighter';
 import { oneDark } from 'react-syntax-highlighter/dist/esm/styles/prism';
 import {
-    AlertCircle, Bot, BriefcaseBusiness, Check, CheckCircle2, CheckSquare,
+    AlertCircle, BriefcaseBusiness, Check, CheckCircle2, CheckSquare,
     ChevronDown, ChevronUp, CircleStop, Code2, Copy, Cpu, FileText, Folder, FolderOpen,
     Hand, KeyRound, Lightbulb, LoaderCircle, Paperclip, Pencil, Plus,
-    Puzzle, Search, Send, Settings, ShieldAlert, Trash2, WandSparkles, Wrench, X,
+    Puzzle, Search, Send, Settings, ShieldAlert, Trash2, Wrench, X,
 } from 'lucide-react';
 import { copyToClipboard } from '@/utils/clipboard';
 import { useArkDesktopRuntime } from './useArkDesktopRuntime';
@@ -27,7 +27,7 @@ import PlanApprovalDialog from './PlanApprovalDialog';
 import UserQuestionDialog from './UserQuestionDialog';
 import WorkspaceSessionSidebar from './WorkspaceSessionSidebar';
 import type {
-    ArkDesktopAgent, ArkDesktopAutomation, ArkDesktopSection, ArkDesktopSkill,
+    ArkDesktopAutomation, ArkDesktopSection,
     ArkDesktopModelProvider, ArkDesktopTask, ArkDesktopTaskStatus, AutomationSchedule, GrokExecutionSettings,
 } from './types';
 import { nextAutomationRunAt } from './automationSchedule';
@@ -41,10 +41,11 @@ const taskTags = [
     { label: '技能编排', icon: Wrench, skillId: 'workflow-orchestration', prompt: '请把以下目标拆成可执行步骤，并使用必要工具完成和验证：' },
 ];
 
+const LONG_USER_MESSAGE_CHAR_LIMIT = 1000;
+const LONG_USER_MESSAGE_LINE_LIMIT = 12;
+
 const sectionItems: Array<{ id: ArkDesktopSection; label: string; icon: React.ElementType }> = [
     { id: 'new-task', label: '新建任务', icon: CheckSquare },
-    { id: 'agents', label: '智能体', icon: Bot },
-    { id: 'skills', label: '技能', icon: WandSparkles },
     { id: 'automations', label: '自动化', icon: BriefcaseBusiness },
 ];
 
@@ -56,10 +57,6 @@ const taskStatus: Record<ArkDesktopTaskStatus, { label: string; className: strin
     completed: { label: '已完成', className: 'bg-emerald-50 text-emerald-600' },
     failed: { label: '失败', className: 'bg-red-50 text-red-600' },
     cancelled: { label: '已停止', className: 'bg-slate-100 text-slate-500' },
-};
-
-const categoryLabel: Record<ArkDesktopSkill['category'], string> = {
-    office: '办公', data: '数据', code: '开发', research: '研究', workflow: '编排',
 };
 
 type PermissionMode = GrokExecutionSettings['permissionMode'];
@@ -76,19 +73,6 @@ const permissionModeOptions: Array<{
 ];
 
 const createLocalId = (prefix: string) => `${prefix}-${Date.now()}-${Math.random().toString(16).slice(2)}`;
-
-const Toggle: React.FC<{ checked: boolean; onChange: () => void; label: string }> = ({ checked, onChange, label }) => (
-    <button
-        type="button"
-        role="switch"
-        aria-checked={checked}
-        aria-label={label}
-        onClick={onChange}
-        className={`relative h-6 w-11 rounded-full transition-colors ${checked ? 'bg-slate-900' : 'bg-slate-300'}`}
-    >
-        <span className={`absolute top-1 h-4 w-4 rounded-full bg-white shadow-sm transition-transform ${checked ? 'translate-x-5' : 'translate-x-1'}`} />
-    </button>
-);
 
 const Modal: React.FC<{ title: string; onClose: () => void; children: React.ReactNode }> = ({ title, onClose, children }) => (
     <div className="fixed inset-0 z-[1200] flex items-center justify-center bg-slate-950/35 p-5 backdrop-blur-sm">
@@ -117,7 +101,6 @@ const ArkDesktopPage: React.FC = () => {
     const [draft, setDraft] = useState('');
     const [followUpDrafts, setFollowUpDrafts] = useState<Record<string, string>>({});
     const [searchValue, setSearchValue] = useState('');
-    const [selectedAgentId, setSelectedAgentId] = useState('');
     const [selectedSkillIds, setSelectedSkillIds] = useState<string[]>(runtime.snapshot.settings.defaultSkillIds);
     const [attachments, setAttachments] = useState<string[]>([]);
     const [attachmentGrantIds, setAttachmentGrantIds] = useState<string[]>([]);
@@ -126,7 +109,7 @@ const ArkDesktopPage: React.FC = () => {
     const [isSidebarCollapsed, setIsSidebarCollapsed] = useState(false);
     const [settingsTab, setSettingsTab] = useState<SettingsTab>('general');
 
-    const [editor, setEditor] = useState<{ type: 'agent' | 'skill' | 'automation'; id?: string } | null>(null);
+    const [editor, setEditor] = useState<{ type: 'automation'; id?: string } | null>(null);
     const [actionPending, setActionPending] = useState(false);
     const schedulingRef = useRef(false);
     const draftWorkspaceFollowsDefaultRef = useRef(true);
@@ -190,9 +173,6 @@ const ArkDesktopPage: React.FC = () => {
         }
     }, [runtime.snapshot.settings.workspace]);
 
-    const query = searchValue.trim().toLowerCase();
-    const filteredAgents = runtime.snapshot.agents.filter((agent) => !query || `${agent.name} ${agent.description}`.toLowerCase().includes(query));
-
     const openNewTask = (workspace?: string) => {
         const nextWorkspace = workspace || runtime.snapshot.settings.workspace;
         draftWorkspaceFollowsDefaultRef.current = !workspace;
@@ -229,7 +209,6 @@ const ArkDesktopPage: React.FC = () => {
             await runtime.startTask({
                 prompt: draft,
                 workspace: draftWorkspace,
-                agentId: selectedAgentId || undefined,
                 skillIds: selectedSkillIds,
                 attachmentPaths: attachments,
                 attachmentGrantIds,
@@ -237,7 +216,6 @@ const ArkDesktopPage: React.FC = () => {
             setDraft('');
             setAttachments([]);
             setAttachmentGrantIds([]);
-            setSelectedAgentId('');
         } catch (error) {
             runtime.setRuntimeError(error instanceof Error ? error.message : String(error));
         } finally {
@@ -355,8 +333,8 @@ const ArkDesktopPage: React.FC = () => {
                 </div>
                 <label className="mb-3 flex h-9 w-full cursor-text items-center gap-2 rounded-lg border border-transparent bg-[#eeeeef] px-3 text-slate-400 transition focus-within:border-slate-200 focus-within:bg-white focus-within:ring-2 focus-within:ring-slate-100">
                     <Search size={16} className="shrink-0" />
-                    <span className="sr-only">搜索会话与智能体</span>
-                    <input value={searchValue} onChange={(event) => setSearchValue(event.target.value)} placeholder="搜索会话与智能体" className="min-w-0 flex-1 bg-transparent text-[13px] text-slate-700 outline-none placeholder:text-slate-400" />
+                    <span className="sr-only">搜索会话</span>
+                    <input value={searchValue} onChange={(event) => setSearchValue(event.target.value)} placeholder="搜索会话" className="min-w-0 flex-1 bg-transparent text-[13px] text-slate-700 outline-none placeholder:text-slate-400" />
                     {searchValue && <button type="button" onClick={() => setSearchValue('')} className="rounded p-0.5 text-slate-400 hover:bg-slate-200 hover:text-slate-600" title="清除搜索" aria-label="清除搜索"><X size={13} /></button>}
                 </label>
                 <nav className="space-y-0.5">
@@ -415,18 +393,12 @@ const ArkDesktopPage: React.FC = () => {
                             actionPending,
                             managePlugins: () => openSettings('plugins'),
                         } : undefined}
-                    /> : section === 'agents' ? (
-                        <AgentsView agents={filteredAgents} skills={runtime.snapshot.skills} runtime={runtime} onEdit={(id) => setEditor({ type: 'agent', id })} onCreate={() => setEditor({ type: 'agent' })} onUse={(id) => { setSelectedAgentId(id); openNewTask(); }} />
-                    ) : section === 'skills' ? (
-                        <SkillsView skills={runtime.snapshot.skills} runtime={runtime} onEdit={(id) => setEditor({ type: 'skill', id })} onCreate={() => setEditor({ type: 'skill' })} />
-                    ) : section === 'automations' ? (
+                    /> : section === 'automations' ? (
                         <AutomationCenter runtime={runtime} onEdit={(id) => setEditor({ type: 'automation', id })} />
                     ) : <SettingsView runtime={runtime} chooseWorkspace={chooseDefaultWorkspace} initialTab={settingsTab} />}
                 </main>
             </section>
 
-            {editor?.type === 'agent' && <AgentEditor id={editor.id} runtime={runtime} onClose={() => setEditor(null)} />}
-            {editor?.type === 'skill' && <SkillEditor id={editor.id} runtime={runtime} onClose={() => setEditor(null)} />}
             {editor?.type === 'automation' && <AutomationEditor id={editor.id} runtime={runtime} onClose={() => setEditor(null)} />}
             {runtime.permission && <Modal title={`允许“${runtime.permission.taskTitle}”执行本地操作？`} onClose={() => void runtime.answerPermission()}><p className="mb-5 text-sm leading-6 text-slate-600">{runtime.permission.title}</p><div className="flex flex-wrap justify-end gap-2"><button type="button" onClick={() => void runtime.answerPermission()} className="rounded-lg border border-slate-200 px-4 py-2 text-sm text-slate-600">拒绝</button>{runtime.permission.options.map((option) => <button key={option.optionId} type="button" onClick={() => void runtime.answerPermission(option.optionId)} className="rounded-lg bg-slate-900 px-4 py-2 text-sm text-white">{option.name}</button>)}</div></Modal>}
             {runtime.userQuestion && <UserQuestionDialog request={runtime.userQuestion} onAnswer={runtime.answerUserQuestion} />}
@@ -612,7 +584,11 @@ const TaskModelPicker: React.FC<{ task: ArkDesktopTask; runtime: ReturnType<type
 };
 
 const TaskMessage: React.FC<{ message: ArkDesktopTask['messages'][number]; attachments?: string[]; scrollTarget?: React.RefObject<HTMLDivElement> }> = ({ message, attachments = [], scrollTarget }) => {
-    if (message.role === 'user') return <div ref={scrollTarget} className="flex scroll-mt-6 justify-end py-2.5"><div className="max-w-[min(86%,680px)] rounded-[20px] rounded-br-md bg-[#f0f1f3] px-4 py-2.5 text-[14px] leading-7 text-slate-800"><span className="whitespace-pre-wrap">{message.content}</span>{attachments.length > 0 && <div className="mt-2 flex flex-wrap justify-end gap-1.5">{attachments.map((path) => <span key={path} title={path} className="flex max-w-56 items-center gap-1 rounded-md bg-white/80 px-2 py-1 text-[11px] leading-4 text-slate-500"><Paperclip size={11} /><span className="truncate">{path.split(/[\\/]/).pop()}</span></span>)}</div>}</div></div>;
+    const isLongUserMessage = message.role === 'user'
+        && (message.content.length > LONG_USER_MESSAGE_CHAR_LIMIT || message.content.split(/\r?\n/).length > LONG_USER_MESSAGE_LINE_LIMIT);
+    const [expanded, setExpanded] = useState(false);
+
+    if (message.role === 'user') return <div ref={scrollTarget} className="flex scroll-mt-6 justify-end py-2.5"><div className="max-w-[min(86%,680px)] rounded-[20px] rounded-br-md bg-[#f0f1f3] px-4 py-2.5 text-[14px] leading-7 text-slate-800"><div className={isLongUserMessage && !expanded ? 'relative max-h-56 overflow-hidden' : 'relative'}><span className="whitespace-pre-wrap break-words">{message.content}</span>{isLongUserMessage && !expanded && <div aria-hidden="true" className="pointer-events-none absolute inset-x-0 bottom-0 h-16 bg-gradient-to-t from-[#f0f1f3] to-transparent" />}</div>{isLongUserMessage && <button type="button" aria-expanded={expanded} onClick={() => setExpanded((current) => !current)} className="mt-1 flex items-center gap-1 text-xs font-medium text-slate-500 transition hover:text-slate-800">{expanded ? <ChevronUp size={13} /> : <ChevronDown size={13} />}{expanded ? '收起全文' : '展开全文'}</button>}{attachments.length > 0 && <div className="mt-2 flex flex-wrap justify-end gap-1.5">{attachments.map((path) => <span key={path} title={path} className="flex max-w-56 items-center gap-1 rounded-md bg-white/80 px-2 py-1 text-[11px] leading-4 text-slate-500"><Paperclip size={11} /><span className="truncate">{path.split(/[\\/]/).pop()}</span></span>)}</div>}</div></div>;
     return <div ref={scrollTarget} className="scroll-mt-6 py-2"><MarkdownContent content={message.content} /></div>;
 };
 
@@ -1025,12 +1001,6 @@ const TaskView: React.FC<{ task?: ArkDesktopTask; runtime: ReturnType<typeof use
     </div>;
 };
 
-const ViewHeader: React.FC<{ title: string; description: string; onCreate: () => void; button: string }> = ({ title, description, onCreate, button }) => <div className="mb-6 flex flex-wrap items-end justify-between gap-3"><div><h1 className="text-2xl font-semibold text-slate-900">{title}</h1><p className="mt-1 text-sm text-slate-500">{description}</p></div><button type="button" onClick={onCreate} className="flex items-center gap-2 rounded-xl bg-slate-900 px-4 py-2.5 text-sm font-medium text-white"><Plus size={16} />{button}</button></div>;
-
-const AgentsView: React.FC<{ agents: ArkDesktopAgent[]; skills: ArkDesktopSkill[]; runtime: ReturnType<typeof useArkDesktopRuntime>; onEdit: (id: string) => void; onCreate: () => void; onUse: (id: string) => void }> = ({ agents, skills, runtime, onEdit, onCreate, onUse }) => <div className="p-6 md:p-8"><ViewHeader title="智能体" description="独立配置本地任务角色，不读取或复用 ARK Chat Agent。" onCreate={onCreate} button="新建智能体" /><div className="grid gap-4 xl:grid-cols-2">{agents.map((agent) => <div key={agent.id} className="rounded-2xl border border-slate-200 bg-white p-5 shadow-sm"><div className="flex items-start justify-between gap-3"><div className="flex min-w-0 gap-3"><span className="flex h-10 w-10 shrink-0 items-center justify-center rounded-xl bg-slate-100 text-slate-600"><Bot size={19} /></span><div><h3 className="font-semibold text-slate-900">{agent.name}</h3><p className="mt-1 text-sm leading-6 text-slate-500">{agent.description}</p></div></div><Toggle checked={agent.enabled} label={`启用 ${agent.name}`} onChange={() => runtime.setSnapshot((current) => ({ ...current, agents: current.agents.map((item) => item.id === agent.id ? { ...item, enabled: !item.enabled } : item) }))} /></div><div className="mt-4 flex flex-wrap gap-1.5">{agent.skillIds.map((id) => <span key={id} className="rounded-lg bg-slate-100 px-2 py-1 text-xs text-slate-500">{skills.find((skill) => skill.id === id)?.name || id}</span>)}</div><div className="mt-4 flex justify-end gap-2"><button type="button" onClick={() => onEdit(agent.id)} className="rounded-lg border border-slate-200 p-2 text-slate-500 hover:bg-slate-50"><Pencil size={16} /></button><button type="button" onClick={() => onUse(agent.id)} className="rounded-lg bg-slate-900 px-3 py-2 text-xs font-medium text-white">使用此智能体</button></div></div>)}</div></div>;
-
-const SkillsView: React.FC<{ skills: ArkDesktopSkill[]; runtime: ReturnType<typeof useArkDesktopRuntime>; onEdit: (id: string) => void; onCreate: () => void }> = ({ skills, runtime, onEdit, onCreate }) => <div className="p-6 md:p-8"><ViewHeader title="技能" description="仅注入本地任务会话，不读取或复用原 ARK 技能。" onCreate={onCreate} button="新建技能" /><div className="grid gap-4 md:grid-cols-2 xl:grid-cols-3">{skills.map((skill) => <div key={skill.id} className="rounded-2xl border border-slate-200 p-5"><div className="flex items-start justify-between gap-3"><span className="rounded-lg bg-slate-100 px-2 py-1 text-xs text-slate-500">{categoryLabel[skill.category]}</span><Toggle checked={skill.enabled} label={`启用 ${skill.name}`} onChange={() => runtime.setSnapshot((current) => ({ ...current, skills: current.skills.map((item) => item.id === skill.id ? { ...item, enabled: !item.enabled } : item) }))} /></div><h3 className="mt-4 font-semibold text-slate-900">{skill.name}</h3><p className="mt-2 text-sm leading-6 text-slate-500">{skill.description}</p><button type="button" onClick={() => onEdit(skill.id)} className="mt-4 flex items-center gap-1.5 text-xs font-medium text-slate-600"><Pencil size={14} />编辑任务指令</button></div>)}</div></div>;
-
 const ModelProviderPanel: React.FC<{ providers: ArkDesktopModelProvider[]; currentModel: string; onSave: ReturnType<typeof useArkDesktopRuntime>['saveModelProvider']; onSelect: (model: string) => Promise<void>; onDelete: ReturnType<typeof useArkDesktopRuntime>['removeModelProvider']; onError: (message: string) => void }> = ({ providers, currentModel, onSave, onSelect, onDelete, onError }) => {
     const [name, setName] = useState('');
     const [model, setModel] = useState('');
@@ -1135,20 +1105,6 @@ const SettingsView: React.FC<{ runtime: ReturnType<typeof useArkDesktopRuntime>;
         {activeTab === 'plugins' && <GrokPluginManager workspace={runtime.snapshot.settings.workspace} onChanged={runtime.reloadPluginCapabilities} onError={runtime.setRuntimeError} />}
         {activeTab === 'diagnostics' && <div className="space-y-6" role="tabpanel"><GrokCliCenter workspace={runtime.snapshot.settings.workspace} onError={runtime.setRuntimeError} /><div className="rounded-2xl border border-red-200 p-5"><h3 className="font-semibold text-slate-900">重置本地数据</h3><p className="mt-1 text-sm text-slate-500">清除自定义智能体、技能、运行配置、自动化和任务历史，不会删除工作区文件。</p><button type="button" onClick={() => { if (window.confirm('确认重置智能任务中心的全部本地配置和历史？')) runtime.resetAll(); }} className="mt-4 flex items-center gap-2 rounded-lg bg-red-50 px-3 py-2 text-sm text-red-700"><Trash2 size={16} />重置数据</button></div></div>}
     </div>;
-};
-
-const AgentEditor: React.FC<{ id?: string; runtime: ReturnType<typeof useArkDesktopRuntime>; onClose: () => void }> = ({ id, runtime, onClose }) => {
-    const source = runtime.snapshot.agents.find((item) => item.id === id);
-    const [value, setValue] = useState<ArkDesktopAgent>(source || { id: createLocalId('agent'), name: '', description: '', systemPrompt: '', skillIds: [], enabled: true, builtIn: false });
-    const save = () => { if (!value.name.trim() || !value.systemPrompt.trim()) return; runtime.setSnapshot((current) => ({ ...current, agents: source ? current.agents.map((item) => item.id === source.id ? value : item) : [...current.agents, value] })); onClose(); };
-    return <Modal title={source ? '编辑 Agent' : '新建 Agent'} onClose={onClose}><div className="space-y-4"><Field label="名称"><input className={inputClass} value={value.name} onChange={(event) => setValue({ ...value, name: event.target.value })} /></Field><Field label="说明"><input className={inputClass} value={value.description} onChange={(event) => setValue({ ...value, description: event.target.value })} /></Field><Field label="系统指令"><textarea className={inputClass} rows={6} value={value.systemPrompt} onChange={(event) => setValue({ ...value, systemPrompt: event.target.value })} /></Field><Field label="启用技能"><div className="grid gap-2 sm:grid-cols-2">{runtime.snapshot.skills.map((skill) => <label key={skill.id} className="flex items-center gap-2 rounded-lg border border-slate-200 p-2.5 text-sm"><input type="checkbox" checked={value.skillIds.includes(skill.id)} onChange={() => setValue({ ...value, skillIds: value.skillIds.includes(skill.id) ? value.skillIds.filter((item) => item !== skill.id) : [...value.skillIds, skill.id] })} />{skill.name}</label>)}</div></Field><EditorActions canDelete={Boolean(source && !source.builtIn)} onDelete={() => { runtime.setSnapshot((current) => ({ ...current, agents: current.agents.filter((item) => item.id !== source?.id) })); onClose(); }} onClose={onClose} onSave={save} /></div></Modal>;
-};
-
-const SkillEditor: React.FC<{ id?: string; runtime: ReturnType<typeof useArkDesktopRuntime>; onClose: () => void }> = ({ id, runtime, onClose }) => {
-    const source = runtime.snapshot.skills.find((item) => item.id === id);
-    const [value, setValue] = useState<ArkDesktopSkill>(source || { id: createLocalId('skill'), name: '', description: '', instruction: '', category: 'workflow', enabled: true, builtIn: false });
-    const save = () => { if (!value.name.trim() || !value.instruction.trim()) return; runtime.setSnapshot((current) => ({ ...current, skills: source ? current.skills.map((item) => item.id === source.id ? value : item) : [...current.skills, value] })); onClose(); };
-    return <Modal title={source ? '编辑技能' : '新建技能'} onClose={onClose}><div className="space-y-4"><Field label="名称"><input className={inputClass} value={value.name} onChange={(event) => setValue({ ...value, name: event.target.value })} /></Field><Field label="分类"><select className={inputClass} value={value.category} onChange={(event) => setValue({ ...value, category: event.target.value as ArkDesktopSkill['category'] })}>{Object.entries(categoryLabel).map(([key, label]) => <option key={key} value={key}>{label}</option>)}</select></Field><Field label="说明"><input className={inputClass} value={value.description} onChange={(event) => setValue({ ...value, description: event.target.value })} /></Field><Field label="执行指令"><textarea className={inputClass} rows={7} value={value.instruction} onChange={(event) => setValue({ ...value, instruction: event.target.value })} /></Field><EditorActions canDelete={Boolean(source && !source.builtIn)} onDelete={() => { runtime.setSnapshot((current) => ({ ...current, skills: current.skills.filter((item) => item.id !== source?.id) })); onClose(); }} onClose={onClose} onSave={save} /></div></Modal>;
 };
 
 const AutomationEditor: React.FC<{ id?: string; runtime: ReturnType<typeof useArkDesktopRuntime>; onClose: () => void }> = ({ id, runtime, onClose }) => {

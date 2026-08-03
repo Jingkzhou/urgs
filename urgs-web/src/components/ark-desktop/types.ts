@@ -1,4 +1,4 @@
-export type ArkDesktopSection = 'new-task' | 'agents' | 'skills' | 'automations' | 'settings';
+export type ArkDesktopSection = 'new-task' | 'automations' | 'settings';
 
 export interface ArkDesktopSkill {
     id: string;
