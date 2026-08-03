@@ -353,7 +353,7 @@ const App: React.FC = () => {
                             className="flex h-14 w-14 items-center justify-center p-0.5 transition-opacity hover:opacity-80"
                             aria-label="返回工作台"
                         >
-                            <img src="/favicon_large.png" alt="Bank of Jilin" className="max-h-full max-w-full object-contain" />
+                            <img src="/jlbank_logo_transparent.png" alt="Bank of Jilin" className="max-h-full max-w-full object-contain" />
                         </button>
                     </div>
 

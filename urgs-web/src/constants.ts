@@ -1,7 +1,8 @@
 import { SystemLink, Notice, CompletionStat, TrendStat } from './types';
 
 export const LOGO_URL = "/jlbank_logo_new.png";
-export const LOGIN_DARK_LOGO_URL = "/jlbank_logo_dark.png";
+export const LOGIN_DARK_LOGO_URL = "/jlbank_logo_login_transparent.png";
+export const LOGIN_LOGO_URL = "/jlbank_logo_login_transparent.png";
 
 export const SYSTEM_LINKS: SystemLink[] = [
   {

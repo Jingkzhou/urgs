@@ -33,6 +33,44 @@
 
 - [P3] If more task history is available, tune the sidebar’s recent-task density to match the reference’s richer history list.
 
+## 本轮 Web/Desktop 登录页太阳系兼容性验收
+
+**比较目标**
+
+- 用户问题截图：`/var/folders/34/nv2447mj5ns38jjkskrqbb680000gn/T/codex-clipboard-f967759d-cfc4-4589-b9d9-897fb569bca3.png`
+- Web 实现截图：`/tmp/urgs-web-solar-rich-fixed.png`
+- Desktop 实现截图：`/tmp/urgs-desktop-solar-rich-fixed.jpg`
+- 同屏归一化对比：`/tmp/urgs-web-desktop-solar-final-comparison.png`
+- 视口：Web 1280 × 720；Desktop 原生窗口 1336 × 768，去除 24px 标题栏后归一化到 1280 × 720。
+- 状态：登录页、用户名 014226、密码已填充、记住我已选中；动画运行中。
+
+**发现与修复**
+
+- 初始 Desktop 只有太阳阴影和暗色圆面，Web 才有渐变实体。原因是 Desktop WebView 未应用原来的多层 CSS 渐变声明。
+- 已为太阳、火星、地球、月亮和土星增加实体颜色回退，并将兼容渐变以内联样式注入；即使 WebView 不解析多层背景，也不会再透明或空心。
+- 已重新构建 macOS Debug App，覆盖 `/Applications/URGS.app`，并重新启动真实安装版本验收。
+
+**Required fidelity surfaces**
+
+- 字体与排版：Web/Desktop 登录表单与左侧宣传内容保持同一套共享组件和排版层级。
+- 间距与布局：两端均保留左侧暗色视觉区、右侧登录区和太阳系相对位置；原生标题栏造成的高度差已在对比中归一化。
+- 颜色与视觉 token：太阳具有黄色高光、橙色主体和暗色边缘；行星具有实体底色、明暗渐变和阴影。
+- 图片与资产：沿用现有登录页 Logo 资产；太阳系为动态装饰，未替换为静态截图。
+- 文案与内容：用户可见文案未改变。
+
+**验证**
+
+- Web 控制台 error/warning：0 条。
+- `pnpm exec tsc --noEmit`：通过。
+- `git diff --check`：通过。
+- Tauri macOS Debug 构建：通过。
+- 构建产物与 `/Applications/URGS.app/Contents/MacOS/urgs-desktop` SHA-256：均为 `0a0b0349234b27ff762eaa858f4248c2210a85bc64998ec015decbb0eb5a3db1`。
+- 已从 `/Applications/URGS.app` 启动真实桌面版本，太阳实体与明暗渐变可见。
+
+**残留说明**
+
+- [P3] Web 和 Desktop 启动时刻不同，行星会处于不同旋转相位；这是动画预期行为，不影响太阳和行星材质一致性。
+
 final result: passed
 
 ### 工作区文件夹开合与五条会话复验
@@ -238,5 +276,34 @@ final result: blocked
 **Follow-up Polish**
 
 - 无阻塞项。本地插件非空/空状态、组件详情及启停同步均已完成真实 App 验收；在线市场继续遵守内网隔离策略。
+
+final result: passed
+
+---
+
+## 本轮透明 Logo 背景移除验收
+
+**实现证据**
+
+- 源文件：`/Users/zhoujingkun/Documents/GitHub/urgs/urgs-web/public/urgs-app-icon.png`
+- 输出文件：`/Users/zhoujingkun/Documents/GitHub/urgs/urgs-web/public/urgs-app-icon-transparent.png`
+- 真实桌面启动页截图：`/tmp/urgs-transparent-logo-splash.jpg`
+- 真实桌面登录页截图：`/tmp/urgs-transparent-logo-login.jpg`
+- 验收实例：从 `/Applications/URGS.app` 启动的 macOS Debug App
+
+**Findings**
+
+- 已移除 Logo 外层白色圆角背景，保留 Logo 内部必要的白色图形。
+- 透明 PNG 四角 alpha 为 0，原始 Logo 文件未覆盖。
+- 启动页、左侧栏和 Desktop 连接配置页均已切换到透明 Logo 资源。
+- 登录页中的 `Load failed` 属于当前服务连接状态，与本次 Logo 修改无关。
+
+**Validation**
+
+- [x] `CI=true pnpm exec tsc --noEmit`
+- [x] Tauri macOS Debug App 构建
+- [x] `git diff --check`
+- [x] 构建产物与 `/Applications/URGS.app/Contents/MacOS/urgs-desktop` SHA-256 一致
+- [x] 从 `/Applications/URGS.app` 完成真实启动验收
 
 final result: passed

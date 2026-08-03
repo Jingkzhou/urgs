@@ -67,7 +67,7 @@ const DesktopConnectionSetup: React.FC = () => {
         <div className="flex min-h-screen items-center justify-center bg-slate-950 px-6 py-10">
             <div className="w-full max-w-xl rounded-3xl border border-white/10 bg-white p-8 shadow-2xl">
                 <div className="mb-8 flex items-center gap-4">
-                    <img src="/favicon_large.png" alt="URGS" className="h-16 w-16 rounded-2xl" />
+                    <img src="/jlbank_logo_transparent.png" alt="URGS" className="h-16 w-16 object-contain" />
                     <div>
                         <p className="text-xs font-bold uppercase tracking-[0.24em] text-blue-600">URGS Desktop</p>
                         <h1 className="mt-1 text-2xl font-black text-slate-900">连接服务器</h1>
