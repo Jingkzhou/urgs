@@ -263,6 +263,8 @@ pub fn run() {
             complete_desktop_startup,
             grok_runtime::grok_runtime_status,
             grok_runtime::grok_available_commands,
+            grok_runtime::grok_workflow_list,
+            grok_runtime::grok_workflow_read,
             grok_runtime::grok_model_catalog,
             grok_runtime::grok_session_list,
             grok_runtime::grok_session_search,

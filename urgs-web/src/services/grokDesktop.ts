@@ -24,6 +24,18 @@ export interface GrokAvailableCommand {
     inputHint?: string | null;
 }
 
+export interface GrokWorkflowListing {
+    name: string;
+    description: string;
+    whenToUse?: string | null;
+    source: string;
+    path?: string | null;
+}
+
+export interface GrokWorkflowFile extends GrokWorkflowListing {
+    content?: string | null;
+}
+
 export interface GrokReasoningEffort {
     id: string;
     value: string;
@@ -141,6 +153,7 @@ export interface GrokRuntimeDiagnostics {
     modelCatalog?: GrokModelCatalog | null;
     mcpServers: GrokMcpServerState[];
     initializeMeta: Record<string, any> | null;
+    agentCapabilities: Record<string, any> | null;
     stderr: string;
 }
 
@@ -233,6 +246,13 @@ export interface GrokPluginDetails extends GrokPluginValidation {
     source: string;
 }
 
+export interface GrokMarketplaceSource {
+    name: string;
+    kind: string;
+    url: string;
+    branch?: string | null;
+}
+
 export interface GrokCliServiceInfo {
     id: string;
     arguments: string[];
@@ -284,6 +304,12 @@ export const getGrokRuntimeStatus = () => invokeGrok<GrokRuntimeStatus>('grok_ru
 
 export const listGrokAvailableCommands = (workspace: string) =>
     invokeGrok<GrokAvailableCommand[]>('grok_available_commands', { workspace });
+
+export const listGrokWorkflows = (sessionId: string) =>
+    invokeGrok<GrokWorkflowListing[]>('grok_workflow_list', { sessionId });
+
+export const readGrokWorkflow = (sessionId: string, name: string) =>
+    invokeGrok<GrokWorkflowFile>('grok_workflow_read', { sessionId, name });
 
 export const getGrokModelCatalog = (workspace: string) =>
     invokeGrok<GrokModelCatalog | null>('grok_model_catalog', { workspace });
@@ -534,6 +560,14 @@ const assertPluginName = (name: string) => {
     return normalized;
 };
 
+const assertMarketplaceSource = (source: string) => {
+    const normalized = source.trim();
+    if (!normalized || normalized.length > 512 || normalized.includes('\0') || normalized.startsWith('-')) {
+        throw new Error('插件市场源不能为空、不能超过 512 个字符，也不能以短横线开头');
+    }
+    return normalized;
+};
+
 export const listGrokInstalledPlugins = async (workspace?: string): Promise<GrokInstalledPlugin[]> => {
     const [listResult, discovered] = await Promise.all([
         runGrokCli(['plugin', 'list', '--json'], workspace, 30),
@@ -605,14 +639,65 @@ export const updateGrokPlugin = async (name?: string, workspace?: string) => {
 
 export const listGrokPluginMarketplace = async (workspace?: string) => {
     const result = assertSuccessfulPluginCommand(
-        await runGrokCli(['plugin', 'marketplace', 'list', '--json'], workspace, 60),
-        '无法读取插件市场',
+        await runGrokCli(['plugin', 'list', '--available', '--json'], workspace, 120),
+        '无法读取可用市场插件',
     );
     try {
         return JSON.parse(result.stdout) as unknown;
     } catch {
-        throw new Error('插件市场返回了无法解析的数据');
+        throw new Error('可用市场插件返回了无法解析的数据');
     }
+};
+
+export const listGrokMarketplaceSources = async (workspace?: string): Promise<GrokMarketplaceSource[]> => {
+    const result = assertSuccessfulPluginCommand(
+        await runGrokCli(['plugin', 'marketplace', 'list', '--json'], workspace, 60),
+        '无法读取插件市场源',
+    );
+    let payload: unknown;
+    try {
+        payload = JSON.parse(result.stdout);
+    } catch {
+        throw new Error('插件市场源返回了无法解析的数据');
+    }
+    if (!Array.isArray(payload)) return [];
+    return payload.flatMap((item) => {
+        if (!item || typeof item !== 'object') return [];
+        const value = item as Record<string, any>;
+        const source = value.source && typeof value.source === 'object' ? value.source : {};
+        const url = String(source.url || value.url || value.path || '').trim();
+        const name = String(value.name || url || '').trim();
+        if (!name || !url) return [];
+        return [{
+            name,
+            kind: String(value.kind || 'source').trim(),
+            url,
+            branch: typeof source.branch === 'string' ? source.branch : typeof value.branch === 'string' ? value.branch : null,
+        }];
+    });
+};
+
+export const addGrokMarketplaceSource = async (source: string, workspace?: string, force = false) => {
+    const arguments_ = ['plugin', 'marketplace', 'add', assertMarketplaceSource(source)];
+    if (force) arguments_.push('--force');
+    return assertSuccessfulPluginCommand(
+        await runGrokCli(arguments_, workspace, 300),
+        '插件市场源添加失败',
+    );
+};
+
+export const removeGrokMarketplaceSource = async (source: string, workspace?: string) => assertSuccessfulPluginCommand(
+    await runGrokCli(['plugin', 'marketplace', 'remove', assertMarketplaceSource(source)], workspace, 300),
+    '插件市场源移除失败',
+);
+
+export const updateGrokMarketplaceSource = async (source?: string, workspace?: string) => {
+    const arguments_ = ['plugin', 'marketplace', 'update'];
+    if (source?.trim()) arguments_.push(assertMarketplaceSource(source));
+    return assertSuccessfulPluginCommand(
+        await runGrokCli(arguments_, workspace, 300),
+        '插件市场源刷新失败',
+    );
 };
 
 export const installGrokMarketplacePlugin = async (name: string, workspace?: string) => {

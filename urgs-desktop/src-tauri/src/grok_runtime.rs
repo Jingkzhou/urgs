@@ -19,6 +19,7 @@ const GROK_EVENT_NAME: &str = "grok-event";
 // ACP extension methods use an underscore-prefixed JSON-RPC wire name. The
 // Grok agent strips the prefix before dispatching to its `x.ai/interject` handler.
 const GROK_INTERJECT_METHOD: &str = "_x.ai/interject";
+const GROK_RECAP_METHOD: &str = "_x.ai/recap";
 const REQUEST_TIMEOUT: Duration = Duration::from_secs(30);
 const INITIALIZE_TIMEOUT: Duration = Duration::from_secs(90);
 const AUTHENTICATE_TIMEOUT: Duration = Duration::from_secs(180);
@@ -32,6 +33,7 @@ const MAX_PROMPT_ATTACHMENT_BYTES: u64 = 10 * 1024 * 1024;
 const MAX_PROMPT_ATTACHMENTS_TOTAL_BYTES: u64 = 25 * 1024 * 1024;
 const PROMPT_ATTACHMENT_GRANT_TTL_SECONDS: u64 = 60 * 60;
 const MAX_PROMPT_ATTACHMENT_GRANTS: usize = 64;
+const MAX_WORKFLOW_SOURCE_BYTES: u64 = 1024 * 1024;
 static PROCESS_SEQUENCE: AtomicU64 = AtomicU64::new(1);
 static MODEL_API_KEY_CACHE: OnceLock<Mutex<HashMap<String, String>>> = OnceLock::new();
 #[cfg(target_os = "macos")]
@@ -94,6 +96,27 @@ pub struct GrokAvailableCommand {
     pub input_hint: Option<String>,
 }
 
+#[derive(Debug, Clone, Deserialize, Serialize)]
+#[serde(rename_all = "camelCase")]
+pub struct GrokWorkflowListing {
+    pub name: String,
+    pub description: String,
+    pub when_to_use: Option<String>,
+    pub source: String,
+    pub path: Option<String>,
+}
+
+#[derive(Debug, Clone, Serialize)]
+#[serde(rename_all = "camelCase")]
+pub struct GrokWorkflowFile {
+    pub name: String,
+    pub description: String,
+    pub when_to_use: Option<String>,
+    pub source: String,
+    pub path: Option<String>,
+    pub content: Option<String>,
+}
+
 #[derive(Debug, Clone, Serialize)]
 #[serde(rename_all = "camelCase")]
 pub struct GrokReasoningEffort {
@@ -150,6 +173,7 @@ pub struct GrokRuntimeDiagnostics {
     pub model_catalog: Option<GrokModelCatalog>,
     pub mcp_servers: Vec<GrokMcpServerState>,
     pub initialize_meta: Value,
+    pub agent_capabilities: Value,
     pub stderr: String,
 }
 
@@ -378,6 +402,7 @@ struct GrokProcess {
     model_catalog: Mutex<Option<GrokModelCatalog>>,
     mcp_servers: Mutex<Vec<GrokMcpServerState>>,
     initialize_meta: Mutex<Value>,
+    agent_capabilities: Mutex<Value>,
     replayed_events: Mutex<Vec<Value>>,
     request_sequence: AtomicU64,
     initialized: AsyncMutex<bool>,
@@ -410,6 +435,7 @@ impl GrokProcess {
             model_catalog: Mutex::new(None),
             mcp_servers: Mutex::new(Vec::new()),
             initialize_meta: Mutex::new(Value::Null),
+            agent_capabilities: Mutex::new(Value::Null),
             replayed_events: Mutex::new(Vec::new()),
             request_sequence: AtomicU64::new(1),
             initialized: AsyncMutex::new(false),
@@ -460,7 +486,7 @@ impl GrokProcess {
             "params": params,
         });
         if let Some(meta) = meta {
-            message["meta"] = meta;
+            message["params"]["_meta"] = meta;
         }
         if let Err(error) = self.write_json(message) {
             self.pending_requests
@@ -514,6 +540,13 @@ impl GrokProcess {
             *meta = response
                 .get("_meta")
                 .or_else(|| response.get("meta"))
+                .cloned()
+                .unwrap_or(Value::Null);
+        }
+        if let Ok(mut capabilities) = self.agent_capabilities.lock() {
+            *capabilities = response
+                .get("agentCapabilities")
+                .or_else(|| response.get("agent_capabilities"))
                 .cloned()
                 .unwrap_or(Value::Null);
         }
@@ -579,6 +612,13 @@ impl GrokProcess {
         self.initialize_meta
             .lock()
             .map(|meta| meta.clone())
+            .unwrap_or(Value::Null)
+    }
+
+    fn agent_capabilities(&self) -> Value {
+        self.agent_capabilities
+            .lock()
+            .map(|capabilities| capabilities.clone())
             .unwrap_or(Value::Null)
     }
 
@@ -947,6 +987,122 @@ fn grok_home(app: &AppHandle) -> Result<PathBuf, String> {
         .join("grok-build");
     fs::create_dir_all(&directory).map_err(|error| format!("创建 Grok 配置目录失败: {error}"))?;
     Ok(directory)
+}
+
+fn persisted_session_number(value: &Value, camel_case: &str, snake_case: &str) -> u64 {
+    value
+        .get(camel_case)
+        .or_else(|| value.get(snake_case))
+        .and_then(Value::as_u64)
+        .unwrap_or_default()
+}
+
+fn persisted_session_string(value: &Value, camel_case: &str, snake_case: &str) -> Option<String> {
+    value
+        .get(camel_case)
+        .or_else(|| value.get(snake_case))
+        .and_then(Value::as_str)
+        .map(str::to_string)
+}
+
+fn find_persisted_session_directory(
+    app: &AppHandle,
+    session_id: &str,
+) -> Result<Option<PathBuf>, String> {
+    let sessions_root = grok_home(app)?.join("sessions");
+    if !sessions_root.is_dir() {
+        return Ok(None);
+    }
+
+    let direct_directory = sessions_root.join(session_id);
+    if direct_directory.is_dir() {
+        return Ok(Some(direct_directory));
+    }
+
+    let entries = match fs::read_dir(&sessions_root) {
+        Ok(entries) => entries,
+        Err(error) if error.kind() == std::io::ErrorKind::NotFound => return Ok(None),
+        Err(error) => return Err(format!("读取 Grok 会话目录失败: {error}")),
+    };
+    for entry in entries {
+        let entry = match entry {
+            Ok(entry) => entry,
+            Err(_) => continue,
+        };
+        let workspace_directory = entry.path();
+        if !workspace_directory.is_dir() {
+            continue;
+        }
+        let session_directory = workspace_directory.join(session_id);
+        if session_directory.is_dir() {
+            return Ok(Some(session_directory));
+        }
+    }
+    Ok(None)
+}
+
+fn read_persisted_session_info(app: &AppHandle, session_id: &str) -> Result<Option<Value>, String> {
+    let Some(session_directory) = find_persisted_session_directory(app, session_id)? else {
+        return Ok(None);
+    };
+    let signals_path = session_directory.join("signals.json");
+    let signals = match fs::read_to_string(&signals_path)
+        .ok()
+        .and_then(|content| serde_json::from_str::<Value>(&content).ok())
+    {
+        Some(signals) => signals,
+        None => return Ok(None),
+    };
+    let summary = fs::read_to_string(session_directory.join("summary.json"))
+        .ok()
+        .and_then(|content| serde_json::from_str::<Value>(&content).ok());
+    let summary_info = summary.as_ref().and_then(|value| value.get("info"));
+
+    let used = persisted_session_number(&signals, "contextTokensUsed", "context_tokens_used");
+    let total = persisted_session_number(&signals, "contextWindowTokens", "context_window_tokens");
+    let usage_pct =
+        persisted_session_number(&signals, "contextWindowUsage", "context_window_usage");
+    if used == 0 && total == 0 && usage_pct == 0 {
+        return Ok(None);
+    }
+
+    let model =
+        persisted_session_string(&signals, "primaryModelId", "primary_model_id").or_else(|| {
+            summary_info.and_then(|value| {
+                persisted_session_string(value, "currentModelId", "current_model_id")
+            })
+        });
+    let cwd = summary_info
+        .and_then(|value| persisted_session_string(value, "cwd", "cwd"))
+        .unwrap_or_default();
+    let turn_count = persisted_session_number(&signals, "turnCount", "turn_count");
+
+    Ok(Some(json!({
+        "sessionId": session_id,
+        "cwd": cwd,
+        "agentName": summary_info.and_then(|value| persisted_session_string(value, "agentName", "agent_name")),
+        "model": model.clone(),
+        "modelDisplayName": model.clone(),
+        "resolvedModelId": model,
+        "turns": turn_count,
+        "turnIndex": turn_count.saturating_sub(1),
+        "context": {
+            "used": used,
+            "total": total,
+            "systemPromptTokens": 0,
+            "toolDefinitionsCount": 0,
+            "toolDefinitionsTokens": 0,
+            "compactionCount": persisted_session_number(&signals, "compactionCount", "compaction_count"),
+            "turnCount": turn_count,
+            "toolCallCount": persisted_session_number(&signals, "toolCallCount", "tool_call_count"),
+            "messageCount": 0,
+            "messageTokens": 0,
+            "freeTokens": total.saturating_sub(used),
+            "usagePct": usage_pct,
+            "autoCompactThresholdPercent": 85,
+            "usageCategories": [],
+        },
+    })))
 }
 
 fn model_provider_path(app: &AppHandle) -> Result<PathBuf, String> {
@@ -1857,11 +2013,36 @@ fn select_auth_method(initialize_response: &Value) -> Result<String, String> {
 }
 
 fn format_rpc_error(error: &Value) -> String {
-    error
+    let message = error
         .get("message")
         .and_then(Value::as_str)
-        .map(ToString::to_string)
-        .unwrap_or_else(|| error.to_string())
+        .map(str::trim)
+        .filter(|value| !value.is_empty());
+    let detail = error
+        .get("data")
+        .and_then(|data| match data {
+            Value::String(value) => Some(value.trim()),
+            Value::Object(_) => data
+                .get("message")
+                .or_else(|| data.get("detail"))
+                .and_then(Value::as_str)
+                .map(str::trim),
+            _ => None,
+        })
+        .filter(|value| !value.is_empty());
+
+    match (message, detail) {
+        (Some(message), Some(detail)) if detail != message => {
+            format!("{message}: {detail}")
+        }
+        (Some(message), _) => message.to_string(),
+        (None, Some(detail)) => detail.to_string(),
+        (None, None) => error.to_string(),
+    }
+}
+
+fn is_method_not_found_error(error: &str) -> bool {
+    error.to_ascii_lowercase().contains("method not found")
 }
 
 fn emit_event(app: &AppHandle, event_type: &str, payload: Value) {
@@ -2629,6 +2810,108 @@ fn workspace_process(
         .ok_or_else(|| "本地智能引擎正在准备会话能力".to_string())
 }
 
+fn workflow_listings_from_response(response: &Value) -> Result<Vec<GrokWorkflowListing>, String> {
+    if let Some(error) = response.get("error").filter(|value| !value.is_null()) {
+        return Err(format!("Grok Workflow 目录获取失败: {error}"));
+    }
+
+    let payload = response
+        .get("result")
+        .filter(|value| !value.is_null())
+        .unwrap_or(response);
+    let workflows = payload
+        .get("workflows")
+        .or_else(|| {
+            payload
+                .get("inner")
+                .and_then(|value| value.get("workflows"))
+        })
+        .and_then(Value::as_array)
+        .ok_or_else(|| "Grok 未返回 Workflow 目录".to_string())?;
+
+    workflows
+        .iter()
+        .cloned()
+        .map(|item| {
+            serde_json::from_value(item).map_err(|error| format!("解析 Workflow 目录失败: {error}"))
+        })
+        .collect()
+}
+
+async fn fetch_workflow_list(
+    process: &GrokProcess,
+    session_id: &str,
+) -> Result<Vec<GrokWorkflowListing>, String> {
+    let params = json!({ "sessionId": session_id });
+    let response = match process.request("x.ai/workflows/list", params.clone()).await {
+        Ok(response) => response,
+        Err(error) if is_method_not_found_error(&error) => {
+            process.request("_x.ai/workflows/list", params).await?
+        }
+        Err(error) => return Err(error),
+    };
+    workflow_listings_from_response(&response)
+}
+
+fn workflow_project_root(workspace: &Path) -> PathBuf {
+    let mut current = workspace;
+    loop {
+        if current.join(".git").exists() {
+            return current.to_path_buf();
+        }
+        let Some(parent) = current.parent() else {
+            return workspace.to_path_buf();
+        };
+        current = parent;
+    }
+}
+
+fn trusted_workflow_path(
+    app: &AppHandle,
+    workspace: &Path,
+    raw_path: &str,
+) -> Result<PathBuf, String> {
+    let candidate = PathBuf::from(raw_path.trim());
+    if !candidate.is_absolute() {
+        return Err("Workflow 源文件必须是本地绝对路径".to_string());
+    }
+    if candidate
+        .extension()
+        .and_then(|extension| extension.to_str())
+        != Some("rhai")
+    {
+        return Err("Workflow 源文件必须是 .rhai 文件".to_string());
+    }
+
+    let metadata = fs::symlink_metadata(&candidate)
+        .map_err(|error| format!("无法读取 Workflow 源文件: {error}"))?;
+    if metadata.file_type().is_symlink() || !metadata.is_file() {
+        return Err("Workflow 源文件不是受信任的普通文件".to_string());
+    }
+    if metadata.len() > MAX_WORKFLOW_SOURCE_BYTES {
+        return Err("Workflow 源文件超过 1 MB 限制".to_string());
+    }
+
+    let canonical = candidate
+        .canonicalize()
+        .map_err(|error| format!("无法解析 Workflow 源文件: {error}"))?;
+    let project_workflow_dir = workflow_project_root(workspace)
+        .join(".grok")
+        .join("workflows");
+    let user_workflow_dir = grok_home(app)?.join("workflows");
+    let trusted_dirs = [project_workflow_dir, user_workflow_dir]
+        .into_iter()
+        .filter_map(|directory| directory.canonicalize().ok())
+        .collect::<Vec<_>>();
+    if !trusted_dirs
+        .iter()
+        .any(|directory| canonical.parent() == Some(directory.as_path()))
+    {
+        return Err("Workflow 源文件不在项目或用户 Workflow 目录中".to_string());
+    }
+    Ok(canonical)
+}
+
 #[tauri::command]
 pub async fn grok_runtime_status(app: AppHandle) -> Result<GrokRuntimeStatus, String> {
     let home = grok_home(&app)?;
@@ -2703,6 +2986,58 @@ pub async fn grok_available_commands(
 }
 
 #[tauri::command]
+pub async fn grok_workflow_list(
+    state: State<'_, GrokRuntimeState>,
+    session_id: String,
+) -> Result<Vec<GrokWorkflowListing>, String> {
+    let session_id = session_id.trim();
+    if session_id.is_empty() {
+        return Err("会话标识不能为空".to_string());
+    }
+    let process = session_process(&state, session_id)?;
+    fetch_workflow_list(&process, session_id).await
+}
+
+#[tauri::command]
+pub async fn grok_workflow_read(
+    app: AppHandle,
+    state: State<'_, GrokRuntimeState>,
+    session_id: String,
+    name: String,
+) -> Result<GrokWorkflowFile, String> {
+    let session_id = session_id.trim();
+    let name = name.trim();
+    if session_id.is_empty() || name.is_empty() {
+        return Err("会话和 Workflow 名称不能为空".to_string());
+    }
+
+    let process = session_process(&state, session_id)?;
+    let listing = fetch_workflow_list(&process, session_id)
+        .await?
+        .into_iter()
+        .find(|workflow| workflow.name == name)
+        .ok_or_else(|| format!("未找到 Workflow：{name}"))?;
+    let content = listing
+        .path
+        .as_deref()
+        .map(|path| {
+            let trusted_path = trusted_workflow_path(&app, &process.workspace, path)?;
+            fs::read_to_string(&trusted_path)
+                .map_err(|error| format!("读取 Workflow 源文件失败: {error}"))
+        })
+        .transpose()?;
+
+    Ok(GrokWorkflowFile {
+        name: listing.name,
+        description: listing.description,
+        when_to_use: listing.when_to_use,
+        source: listing.source,
+        path: listing.path,
+        content,
+    })
+}
+
+#[tauri::command]
 pub async fn grok_model_catalog(
     state: State<'_, GrokRuntimeState>,
     workspace: String,
@@ -2721,17 +3056,19 @@ pub async fn grok_session_list(
 ) -> Result<Value, String> {
     let workspace = validate_workspace(&workspace)?;
     let process = workspace_process(&state, &workspace)?;
-    process
-        .request(
-            "x.ai/session/list",
-            json!({
-                "cwd": workspace.to_string_lossy(),
-                "query": query.filter(|value| !value.trim().is_empty()),
-                "limit": limit.unwrap_or(50).clamp(1, 200),
-                "cursor": cursor.filter(|value| !value.trim().is_empty()),
-            }),
-        )
-        .await
+    let params = json!({
+        "cwd": workspace.to_string_lossy(),
+        "query": query.filter(|value| !value.trim().is_empty()),
+        "limit": limit.unwrap_or(50).clamp(1, 200),
+        "cursor": cursor.filter(|value| !value.trim().is_empty()),
+    });
+    match process.request("session/list", params.clone()).await {
+        Ok(value) => Ok(value),
+        Err(error) if is_method_not_found_error(&error) => {
+            process.request("x.ai/session/list", params).await
+        }
+        Err(error) => Err(error),
+    }
 }
 
 #[tauri::command]
@@ -2747,22 +3084,45 @@ pub async fn grok_session_search(
         return Ok(json!({ "results": [], "nextOffset": null, "totalEstimate": 0 }));
     }
     let process = workspace_process(&state, &workspace)?;
-    process
-        .request(
-            "x.ai/session/search",
-            json!({
-                "query": query,
-                "cwd": workspace.to_string_lossy(),
-                "limit": limit.unwrap_or(20).clamp(1, 100),
-                "offset": 0,
-                "includeContent": true,
-            }),
-        )
-        .await
+    let params = json!({
+        "query": query,
+        "cwd": workspace.to_string_lossy(),
+        "limit": limit.unwrap_or(20).clamp(1, 100),
+        "offset": 0,
+        "includeContent": true,
+    });
+    match process.request("x.ai/session/search", params).await {
+        Ok(value) => Ok(value),
+        Err(error) if is_method_not_found_error(&error) => {
+            let value = process
+                .request(
+                    "session/list",
+                    json!({
+                        "cwd": workspace.to_string_lossy(),
+                        "query": query,
+                        "limit": limit.unwrap_or(20).clamp(1, 100),
+                    }),
+                )
+                .await?;
+            let results = value.get("sessions").cloned().unwrap_or_else(|| json!([]));
+            let total_estimate = results
+                .as_array()
+                .map(|items| items.len())
+                .unwrap_or_default();
+            Ok(json!({
+                "results": results,
+                "nextOffset": null,
+                "totalEstimate": total_estimate,
+                "bootstrapping": false,
+            }))
+        }
+        Err(error) => Err(error),
+    }
 }
 
 #[tauri::command]
 pub async fn grok_session_info(
+    app: AppHandle,
     state: State<'_, GrokRuntimeState>,
     session_id: String,
 ) -> Result<Value, String> {
@@ -2770,9 +3130,18 @@ pub async fn grok_session_info(
     if session_id.is_empty() {
         return Err("会话标识不能为空".to_string());
     }
-    session_process(&state, session_id)?
-        .request("x.ai/session/info", json!({ "sessionId": session_id }))
-        .await
+    let request = match session_process(&state, session_id) {
+        Ok(process) => {
+            process
+                .request("x.ai/session/info", json!({ "sessionId": session_id }))
+                .await
+        }
+        Err(error) => Err(error),
+    };
+    match request {
+        Ok(value) => Ok(value),
+        Err(error) => read_persisted_session_info(&app, session_id)?.ok_or(error),
+    }
 }
 
 #[tauri::command]
@@ -2785,10 +3154,21 @@ pub async fn grok_compact_session(
     if session_id.is_empty() {
         return Err("会话标识不能为空".to_string());
     }
+    let compact_prompt = user_context
+        .map(|context| context.trim().to_string())
+        .filter(|context| !context.is_empty())
+        .map_or_else(
+            || "/compact".to_string(),
+            |context| format!("/compact {context}"),
+        );
     session_process(&state, session_id)?
-        .request(
-            "x.ai/compact_conversation",
-            json!({ "sessionId": session_id, "userContext": user_context }),
+        .request_with_meta(
+            "session/prompt",
+            json!({
+                "sessionId": session_id,
+                "prompt": [{ "type": "text", "text": compact_prompt }],
+            }),
+            Some(json!({ "clientIdentifier": "urgs-desktop" })),
         )
         .await
 }
@@ -2802,10 +3182,17 @@ pub async fn grok_recap_session(
     if session_id.is_empty() {
         return Err("会话标识不能为空".to_string());
     }
+    // x.ai/recap is an ACP extension. The outer stdio wire uses the
+    // underscore-prefixed method name; the Grok agent strips the prefix before
+    // dispatching to the built-in recap handler.
     session_process(&state, session_id)?
-        .request(
-            "x.ai/recap",
-            json!({ "sessionId": session_id, "auto": false }),
+        .request_with_meta(
+            GROK_RECAP_METHOD,
+            json!({
+                "sessionId": session_id,
+                "auto": false,
+            }),
+            Some(json!({ "clientIdentifier": "urgs-desktop" })),
         )
         .await
 }
@@ -3117,6 +3504,7 @@ pub fn grok_runtime_diagnostics(
             model_catalog: process.model_catalog(),
             mcp_servers: process.mcp_servers(),
             initialize_meta: process.initialize_meta(),
+            agent_capabilities: process.agent_capabilities(),
             stderr: process
                 .stderr
                 .lock()
@@ -3205,7 +3593,11 @@ pub async fn grok_cli_run(
         Some(workspace) => validate_workspace(&workspace)?,
         None => grok_home(&app)?,
     };
-    let mut command_arguments = vec!["--no-auto-update".to_string()];
+    let mut command_arguments = vec![
+        "--no-auto-update".to_string(),
+        "--cwd".to_string(),
+        current_dir.to_string_lossy().to_string(),
+    ];
     command_arguments.extend(arguments.iter().cloned());
     let home = grok_home(&app)?;
     let mut process_envs = offline_runtime_envs(&home);
@@ -3215,7 +3607,9 @@ pub async fn grok_cli_run(
         .sidecar("grok")
         .map_err(|error| format!("无法定位内置 Grok Build: {error}"))?
         .args(command_arguments)
-        .current_dir(current_dir)
+        // Grok 0.2.119 resolves its launch directory before dispatching the
+        // subcommand. Passing --cwd keeps Tauri's sidecar in the stable app
+        // directory while still giving Grok the selected workspace.
         .env_clear()
         .env("GROK_HOME", &home)
         .envs(process_envs);
@@ -3446,7 +3840,11 @@ pub fn grok_cli_service_start(
         Some(workspace) => validate_workspace(&workspace)?,
         None => grok_home(&app)?,
     };
-    let mut command_arguments = vec!["--no-auto-update".to_string()];
+    let mut command_arguments = vec![
+        "--no-auto-update".to_string(),
+        "--cwd".to_string(),
+        current_dir.to_string_lossy().to_string(),
+    ];
     command_arguments.extend(arguments.iter().cloned());
     let home = grok_home(&app)?;
     let mut process_envs = offline_runtime_envs(&home);
@@ -3456,7 +3854,8 @@ pub fn grok_cli_service_start(
         .sidecar("grok")
         .map_err(|error| format!("无法定位内置 Grok Build: {error}"))?
         .args(command_arguments)
-        .current_dir(current_dir)
+        // Keep the sidecar in the app directory and let Grok apply the
+        // selected workspace after its launch-directory initialization.
         .env_clear()
         .env("GROK_HOME", &home)
         .envs(process_envs)
@@ -3926,7 +4325,7 @@ pub async fn grok_queue_action(
         return Err("会话标识不能为空".to_string());
     }
     let process = session_process(&state, session_id)?;
-    let mut params = json!({ "sessionId": session_id, "clientIdentifier": "urgs-desktop" });
+    let mut params = json!({ "sessionId": session_id });
     let method = match action.trim() {
         "remove" => {
             params["id"] = json!(id
@@ -4385,9 +4784,10 @@ mod tests {
         normalized_session_update_message, parse_grok_toml, plan_approval_params,
         process_launch_key, read_provider_api_key, request_timeout, scheduled_prompt_injection,
         select_auth_method, serialize_grok_toml, user_question_params, validate_cli_arguments,
-        validate_service_arguments, GrokAcpOptions, GrokCliService, GrokModelProviderInput,
-        GrokRuntimeState, PromptAttachmentGrant, AUTHENTICATE_TIMEOUT, GROK_INTERJECT_METHOD,
-        INITIALIZE_TIMEOUT, MAX_PROMPT_ATTACHMENT_BYTES, REQUEST_TIMEOUT, SESSION_START_TIMEOUT,
+        validate_service_arguments, workflow_listings_from_response, GrokAcpOptions,
+        GrokCliService, GrokModelProviderInput, GrokRuntimeState, PromptAttachmentGrant,
+        AUTHENTICATE_TIMEOUT, GROK_INTERJECT_METHOD, GROK_RECAP_METHOD, INITIALIZE_TIMEOUT,
+        MAX_PROMPT_ATTACHMENT_BYTES, REQUEST_TIMEOUT, SESSION_START_TIMEOUT,
     };
     use serde_json::json;
     use std::fs;
@@ -4629,6 +5029,19 @@ mod tests {
     }
 
     #[test]
+    fn reports_json_rpc_detail_for_generic_error() {
+        assert_eq!(
+            format_rpc_error(&json!({
+                "message": "Internal error",
+                "data": {
+                    "message": "API error (status 400 Bad Request): image_url is not supported"
+                }
+            })),
+            "Internal error: API error (status 400 Bad Request): image_url is not supported"
+        );
+    }
+
+    #[test]
     fn parses_available_commands_from_initialize_metadata() {
         let commands = available_commands_from_initialize(&json!({
             "_meta": {
@@ -4663,6 +5076,61 @@ mod tests {
         assert_eq!(commands.len(), 2);
         assert_eq!(commands[1].name, "project:review");
         assert_eq!(commands[1].input_hint.as_deref(), Some("optional scope"));
+    }
+
+    #[test]
+    fn parses_direct_and_wrapped_workflow_catalogs() {
+        let direct = workflow_listings_from_response(&json!({
+            "workflows": [{
+                "name": "deep-research",
+                "description": "Research a question",
+                "whenToUse": "Use for multi-source research",
+                "source": "builtin"
+            }]
+        }))
+        .unwrap();
+        assert_eq!(direct.len(), 1);
+        assert_eq!(direct[0].name, "deep-research");
+        assert_eq!(
+            direct[0].when_to_use.as_deref(),
+            Some("Use for multi-source research")
+        );
+        assert_eq!(direct[0].source, "builtin");
+
+        let wrapped = workflow_listings_from_response(&json!({
+            "inner": { "workflows": [{
+                "name": "project-review",
+                "description": "Review a project",
+                "source": "project",
+                "path": "/workspace/.grok/workflows/project-review.rhai"
+            }] }
+        }))
+        .unwrap();
+        assert_eq!(wrapped[0].name, "project-review");
+        assert_eq!(
+            wrapped[0].path.as_deref(),
+            Some("/workspace/.grok/workflows/project-review.rhai")
+        );
+
+        let official = workflow_listings_from_response(&json!({
+            "result": { "workflows": [{
+                "name": "release-check",
+                "description": "Check a release",
+                "source": "user"
+            }] },
+            "error": null
+        }))
+        .unwrap();
+        assert_eq!(official[0].name, "release-check");
+
+        let failed = workflow_listings_from_response(&json!({
+            "result": null,
+            "error": "unknown session id"
+        }))
+        .unwrap_err();
+        assert!(failed.contains("unknown session id"));
+
+        assert!(workflow_listings_from_response(&json!({ "workflows": {} })).is_err());
     }
 
     #[test]
@@ -4769,6 +5237,7 @@ mod tests {
     #[test]
     fn normalizes_direct_and_wrapped_interjection_notifications() {
         assert_eq!(GROK_INTERJECT_METHOD, "_x.ai/interject");
+        assert_eq!(GROK_RECAP_METHOD, "_x.ai/recap");
         let direct = normalized_interjection_params(&json!({
             "method": "x.ai/session/interjection",
             "params": {

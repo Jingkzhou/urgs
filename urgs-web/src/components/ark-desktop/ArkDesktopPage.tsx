@@ -5,10 +5,10 @@ import remarkGfm from 'remark-gfm';
 import { Prism as SyntaxHighlighter } from 'react-syntax-highlighter';
 import { oneDark } from 'react-syntax-highlighter/dist/esm/styles/prism';
 import {
-    AlertCircle, BriefcaseBusiness, Check, CheckCircle2, CheckSquare, Database,
+    AlertCircle, BriefcaseBusiness, Check, CheckCircle2, CheckSquare,
     ChevronDown, ChevronUp, CircleStop, Code2, Copy, Cpu, FileText, Folder, FolderOpen,
     Hand, KeyRound, Lightbulb, LoaderCircle, Paperclip, Pencil, Plus, RefreshCw,
-    Puzzle, Search, Send, Settings, ShieldAlert, Trash2, Wrench, X,
+    Puzzle, Search, Send, Settings, ShieldAlert, Trash2, Workflow, Wrench, X,
 } from 'lucide-react';
 import { copyToClipboard } from '@/utils/clipboard';
 import { useArkDesktopRuntime } from './useArkDesktopRuntime';
@@ -28,6 +28,8 @@ import TaskPlanPanel from './TaskPlanPanel';
 import PlanApprovalDialog from './PlanApprovalDialog';
 import UserQuestionDialog from './UserQuestionDialog';
 import WorkspaceSessionSidebar from './WorkspaceSessionSidebar';
+import WorkflowCenter from './WorkflowCenter';
+import WorkflowRunControls from './WorkflowRunControls';
 import type {
     ArkDesktopAutomation, ArkDesktopSection,
     ArkDesktopModelProvider, ArkDesktopTask, ArkDesktopTaskStatus, AutomationSchedule, GrokExecutionSettings,
@@ -48,6 +50,7 @@ const LONG_USER_MESSAGE_LINE_LIMIT = 12;
 
 const sectionItems: Array<{ id: ArkDesktopSection; label: string; icon: React.ElementType }> = [
     { id: 'new-task', label: '新建任务', icon: CheckSquare },
+    { id: 'workflows', label: '工作流', icon: Workflow },
     { id: 'automations', label: '自动化', icon: BriefcaseBusiness },
 ];
 
@@ -59,6 +62,21 @@ const taskStatus: Record<ArkDesktopTaskStatus, { label: string; className: strin
     completed: { label: '已完成', className: 'bg-emerald-50 text-emerald-600' },
     failed: { label: '失败', className: 'bg-red-50 text-red-600' },
     cancelled: { label: '已停止', className: 'bg-slate-100 text-slate-500' },
+};
+
+const workflowStatusPresentation = (status: string) => {
+    switch (status.toLowerCase()) {
+        case 'complete':
+        case 'completed': return { label: '已完成', className: 'bg-emerald-50 text-emerald-700' };
+        case 'failed': return { label: '失败', className: 'bg-red-50 text-red-700' };
+        case 'interrupted':
+        case 'cancelled': return { label: '已取消', className: 'bg-slate-100 text-slate-600' };
+        case 'stopped': return { label: '已停止', className: 'bg-slate-100 text-slate-600' };
+        case 'paused':
+        case 'user_paused': return { label: '已暂停', className: 'bg-amber-50 text-amber-700' };
+        case 'cleared': return { label: '已清理', className: 'bg-slate-100 text-slate-500' };
+        default: return { label: '运行中', className: 'bg-blue-50 text-blue-700' };
+    }
 };
 
 type PermissionMode = GrokExecutionSettings['permissionMode'];
@@ -312,6 +330,9 @@ const ArkDesktopPage: React.FC = () => {
         const opened = new Set(runtime.snapshot.tasks.map((task) => task.sessionId).filter(Boolean));
         return runtime.remoteSessions.filter((session) => !opened.has(session.sessionId));
     }, [runtime.remoteSessions, runtime.snapshot.tasks]);
+    const activeWorkflowCount = useMemo(() => runtime.snapshot.tasks
+        .flatMap((task) => task.workflowRuns || [])
+        .filter((run) => !/complete|completed|failed|interrupted|cancelled|stopped|cleared/i.test(run.status)).length, [runtime.snapshot.tasks]);
 
     useEffect(() => { document.title = headerTitle; }, [headerTitle]);
 
@@ -325,7 +346,7 @@ const ArkDesktopPage: React.FC = () => {
                     meta={headerMeta}
                     settingsActive={section === 'settings' && !runtime.activeTask}
                     onOpenSettings={() => openSettings()}
-                    icon={runtime.activeTask ? <Cpu size={16} strokeWidth={1.8} /> : section === 'settings' ? <Settings size={16} strokeWidth={1.8} /> : <CheckSquare size={16} strokeWidth={1.8} />}
+                    icon={runtime.activeTask ? <Cpu size={16} strokeWidth={1.8} /> : section === 'settings' ? <Settings size={16} strokeWidth={1.8} /> : section === 'workflows' ? <Workflow size={16} strokeWidth={1.8} /> : <CheckSquare size={16} strokeWidth={1.8} />}
                     status={headerStatus ? <span className={`shrink-0 rounded-full px-2 py-0.5 text-[10px] font-medium ${headerStatus.className}`}>{headerStatus.label}</span> : undefined}
                     planControl={runtime.activeTask?.plan?.length
                         ? <TaskPlanPanel plan={runtime.activeTask.plan} taskStatus={runtime.activeTask.status} />
@@ -346,7 +367,7 @@ const ArkDesktopPage: React.FC = () => {
                 <nav className="space-y-0.5">
                     {sectionItems.map((item) => {
                         const Icon = item.icon;
-                        return <button key={item.id} type="button" onClick={() => openSection(item.id)} className={`flex h-10 w-full items-center gap-3 rounded-lg px-3 text-left text-[14px] font-medium transition ${section === item.id && !runtime.activeTask ? 'bg-[#e9e9eb] text-[#25262b]' : 'text-[#55565c] hover:bg-[#eeeeef] hover:text-[#303136]'}`}><Icon size={18} strokeWidth={1.8} />{item.label}</button>;
+                        return <button key={item.id} type="button" onClick={() => openSection(item.id)} className={`flex h-10 w-full items-center gap-3 rounded-lg px-3 text-left text-[14px] font-medium transition ${section === item.id && !runtime.activeTask ? 'bg-[#e9e9eb] text-[#25262b]' : 'text-[#55565c] hover:bg-[#eeeeef] hover:text-[#303136]'}`}><Icon size={18} strokeWidth={1.8} /><span className="min-w-0 flex-1">{item.label}</span>{item.id === 'workflows' && activeWorkflowCount > 0 && <span className="rounded-full bg-[#eeeaff] px-1.5 py-0.5 text-[10px] font-medium text-[#6657d9]">{activeWorkflowCount}</span>}</button>;
                     })}
                 </nav>
                 <WorkspaceSessionSidebar
@@ -403,7 +424,9 @@ const ArkDesktopPage: React.FC = () => {
                             actionPending,
                             managePlugins: () => openSettings('plugins'),
                         } : undefined}
-                    /> : section === 'automations' ? (
+                    /> : section === 'workflows' ? (
+                        <WorkflowCenter runtime={runtime} onOpenTask={(taskId) => { setLatestMessageTaskId(taskId); setSection('new-task'); runtime.setActiveTaskId(taskId); }} />
+                    ) : section === 'automations' ? (
                         <AutomationCenter runtime={runtime} onEdit={(id) => setEditor({ type: 'automation', id })} />
                     ) : <SettingsView runtime={runtime} chooseWorkspace={chooseDefaultWorkspace} initialTab={settingsTab} />}
                 </main>
@@ -808,6 +831,98 @@ const QueuePanel: React.FC<{ task: ArkDesktopTask; runtime: ReturnType<typeof us
     </section>;
 };
 
+const getContextUsagePercent = (context?: ArkDesktopTask['contextInfo']) => {
+    if (!context) return undefined;
+    if (context.total <= 0) {
+        return context.usagePct > 0 ? Math.min(100, Math.max(0, context.usagePct)) : undefined;
+    }
+    const value = typeof context.usagePct === 'number' ? context.usagePct : context.used / context.total * 100;
+    return Math.min(100, Math.max(0, value));
+};
+
+const formatContextTokens = (value?: number) => typeof value === 'number' && value > 0 ? value.toLocaleString('zh-CN') : '—';
+
+const ContextUsageMenu: React.FC<{ task: ArkDesktopTask; runtime: ReturnType<typeof useArkDesktopRuntime> }> = ({ task, runtime }) => {
+    const [pending, setPending] = useState<string | null>(null);
+    const context = task.contextInfo;
+    const percent = getContextUsagePercent(context);
+    const displayPercent = percent === undefined ? '·' : `${Math.round(percent)}`;
+    const ringColor = percent !== undefined && percent >= 85 ? '#ef4444' : percent !== undefined && percent >= 70 ? '#f59e0b' : '#8a7cf0';
+    const circumference = 2 * Math.PI * 9;
+    const run = async (action: string, callback: () => Promise<unknown>) => {
+        if (pending) return;
+        setPending(action);
+        try {
+            await callback();
+        } catch (error) {
+            runtime.setRuntimeError(error instanceof Error ? error.message : String(error));
+        } finally {
+            setPending(null);
+        }
+    };
+    const sessionReady = Boolean(task.sessionId);
+    const actionClass = 'flex w-full items-center justify-between rounded-xl px-3 py-2 text-left text-xs text-slate-600 transition hover:bg-slate-50 disabled:cursor-not-allowed disabled:opacity-40';
+    useEffect(() => {
+        if (!task.sessionId) return;
+        setPending((current) => current || 'info');
+        void runtime.refreshTaskSessionInfo(task.id)
+            .catch(() => undefined)
+            .finally(() => setPending((current) => current === 'info' ? null : current));
+    }, [runtime.refreshTaskSessionInfo, task.id, task.sessionId]);
+
+    return <details className="relative shrink-0">
+        <summary
+            title="查看用量"
+            aria-label={`查看用量${percent === undefined ? '' : `，已使用 ${Math.round(percent)}%`}`}
+            className="flex h-8 w-8 cursor-pointer list-none items-center justify-center rounded-full text-slate-400 transition hover:bg-slate-100 hover:text-slate-600 [&::-webkit-details-marker]:hidden"
+        >
+            <svg viewBox="0 0 24 24" className="h-[21px] w-[21px]" aria-hidden="true">
+                <circle cx="12" cy="12" r="9" fill="none" stroke="#e2e8f0" strokeWidth="2.2" />
+                {percent !== undefined && <circle
+                    cx="12"
+                    cy="12"
+                    r="9"
+                    fill="none"
+                    stroke={ringColor}
+                    strokeWidth="2.2"
+                    strokeLinecap="round"
+                    strokeDasharray={circumference}
+                    strokeDashoffset={circumference * (1 - percent / 100)}
+                    transform="rotate(-90 12 12)"
+                    className="transition-all duration-300"
+                />}
+                <text x="12" y="13.5" textAnchor="middle" className="fill-slate-500 text-[5px] font-semibold">{displayPercent}</text>
+            </svg>
+        </summary>
+        <div className="absolute bottom-[calc(100%+10px)] right-0 z-50 w-[min(300px,calc(100vw-32px))] overflow-hidden rounded-2xl border border-slate-200 bg-white p-2 shadow-[0_20px_55px_rgba(15,23,42,0.16)]">
+            <div className="rounded-xl bg-slate-50 px-3 py-2.5">
+                <div className="flex items-center justify-between gap-3">
+                    <span className="text-xs font-semibold text-slate-700">上下文用量</span>
+                    <span className="text-[11px] text-slate-500">{context ? `${Math.round(percent || 0)}%` : pending === 'info' ? '获取中…' : '暂未获取'}</span>
+                </div>
+                <p className="mt-1 text-[10px] text-slate-400">{context ? `${formatContextTokens(context.used)} / ${formatContextTokens(context.total)} tokens` : pending === 'info' ? '正在自动获取当前会话数据…' : '尚未获取到当前会话数据'}</p>
+                {context && <div className="mt-2 h-1.5 overflow-hidden rounded-full bg-slate-200"><div className="h-full rounded-full transition-all" style={{ width: `${percent || 0}%`, backgroundColor: ringColor }} /></div>}
+                {context && <div className="mt-1.5 flex items-center justify-between text-[10px] text-slate-400"><span>剩余 {formatContextTokens(context.freeTokens)}</span><span>阈值 {context.autoCompactThresholdPercent}%</span></div>}
+            </div>
+            <div className="mt-1.5">
+                <button type="button" disabled={!sessionReady || pending !== null} onClick={() => void run('info', () => runtime.refreshTaskSessionInfo(task.id))} className={actionClass}>
+                    <span>查看用量</span>{pending === 'info' ? <RefreshCw size={13} className="animate-spin" /> : <span className="text-[10px] text-slate-400">刷新</span>}
+                </button>
+                <button type="button" disabled={!sessionReady || pending !== null || task.status === 'running'} onClick={() => void run('compact', () => runtime.compactTask(task.id))} className={actionClass}>
+                    <span>压缩上下文</span>{pending === 'compact' ? <RefreshCw size={13} className="animate-spin" /> : null}
+                </button>
+                <button type="button" disabled={!sessionReady || pending !== null} onClick={() => void run('recap', () => runtime.recapTask(task.id))} className={actionClass}>
+                    <span>Recap</span>{pending === 'recap' ? <RefreshCw size={13} className="animate-spin" /> : null}
+                </button>
+                <button type="button" disabled={!sessionReady || pending !== null} onClick={() => void run('memory', () => runtime.flushTaskMemory(task.id))} className={actionClass}>
+                    <span>刷新记忆</span>{pending === 'memory' ? <RefreshCw size={13} className="animate-spin" /> : null}
+                </button>
+            </div>
+            {!sessionReady && <p className="px-3 pb-1 pt-1 text-[10px] leading-4 text-slate-400">当前任务尚未建立本地会话，这些操作将在会话开始后可用。</p>}
+        </div>
+    </details>;
+};
+
 const TaskComposer: React.FC<{ task?: ArkDesktopTask; runtime: ReturnType<typeof useArkDesktopRuntime>; value: string; onChange: (value: string) => void; onSubmit: () => Promise<void>; onCancel?: () => Promise<void>; sending: boolean; newTask?: NewTaskConfig }> = ({ task, runtime, value, onChange, onSubmit, onCancel, sending, newTask }) => {
     const isNewTask = !task;
     const isRunning = task?.status === 'running';
@@ -852,12 +967,12 @@ const TaskComposer: React.FC<{ task?: ArkDesktopTask; runtime: ReturnType<typeof
                         <PermissionModePicker value={execution.permissionMode} onChange={(permissionMode) => runtime.setSnapshot((current) => ({ ...current, settings: { ...current.settings, execution: { ...current.settings.execution, permissionMode, alwaysApprove: false } } }))} />
                         <DefaultModelPicker runtime={runtime} />
                     </> : task ? <>
-                        {task.engine !== 'headless' && <SessionCommandBar commands={task.availableCommands || []} disabled={isRunning || isWaitingAuthorization || sending} onSelect={onChange} />}
+                        {task.engine !== 'headless' && <SessionCommandBar commands={task.availableCommands?.length ? task.availableCommands : runtime.availableCommands} disabled={isRunning || isWaitingAuthorization || sending} onSelect={onChange} />}
                         <PermissionModePicker value={task.permissionMode || execution.permissionMode} disabled={isRunning || isWaitingAuthorization} onChange={(permissionMode) => runtime.setTaskPermissionMode(task.id, permissionMode)} />
                         <TaskModelPicker task={task} runtime={runtime} />
                     </> : null}
                 </div>
-                <div className="flex items-center gap-2"><span className="hidden text-[11px] text-slate-400 sm:inline">{canQueuePrompt ? '执行中，可继续追加消息' : isRunning ? '任务正在执行' : isWaitingAuthorization ? '等待本地密钥解锁' : isNewTask ? 'Enter 发送' : task?.sessionId ? 'Enter 发送' : '发送时恢复历史会话'}</span>{isRunning ? <><button type="button" onClick={() => void onCancel?.()} className="flex h-8 items-center gap-1.5 rounded-lg px-2.5 text-xs font-medium text-red-600 hover:bg-red-50"><CircleStop size={15} />停止任务</button>{canQueuePrompt ? <button type="button" disabled={!canSubmit} onClick={() => void onSubmit()} aria-label="追加消息" title="追加消息" className="flex h-8 w-8 items-center justify-center rounded-full bg-slate-900 text-white transition hover:bg-slate-700 disabled:cursor-not-allowed disabled:opacity-35">{sending ? <LoaderCircle size={15} className="animate-spin" /> : <Send size={15} />}</button> : null}</> : <button type="button" disabled={!canSubmit} onClick={() => void onSubmit()} className="flex h-8 w-8 items-center justify-center rounded-full bg-slate-900 text-white transition hover:bg-slate-700 disabled:cursor-not-allowed disabled:opacity-35">{sending ? <LoaderCircle size={15} className="animate-spin" /> : <Send size={15} />}</button>}</div>
+                <div className="flex items-center gap-2">{task && <ContextUsageMenu task={task} runtime={runtime} />}<span className="hidden text-[11px] text-slate-400 sm:inline">{canQueuePrompt ? '执行中，可继续追加消息' : isRunning ? '任务正在执行' : isWaitingAuthorization ? '等待本地密钥解锁' : isNewTask ? 'Enter 发送' : task?.sessionId ? 'Enter 发送' : '发送时恢复历史会话'}</span>{isRunning ? <><button type="button" onClick={() => void onCancel?.()} className="flex h-8 items-center gap-1.5 rounded-lg px-2.5 text-xs font-medium text-red-600 hover:bg-red-50"><CircleStop size={15} />停止任务</button>{canQueuePrompt ? <button type="button" disabled={!canSubmit} onClick={() => void onSubmit()} aria-label="追加消息" title="追加消息" className="flex h-8 w-8 items-center justify-center rounded-full bg-slate-900 text-white transition hover:bg-slate-700 disabled:cursor-not-allowed disabled:opacity-35">{sending ? <LoaderCircle size={15} className="animate-spin" /> : <Send size={15} />}</button> : null}</> : <button type="button" disabled={!canSubmit} onClick={() => void onSubmit()} className="flex h-8 w-8 items-center justify-center rounded-full bg-slate-900 text-white transition hover:bg-slate-700 disabled:cursor-not-allowed disabled:opacity-35">{sending ? <LoaderCircle size={15} className="animate-spin" /> : <Send size={15} />}</button>}</div>
             </div>
         </div>
         <p className="mt-2 text-center text-[11px] text-slate-400">智能体可能会出错，请核实重要信息与工具操作。</p>
@@ -866,12 +981,13 @@ const TaskComposer: React.FC<{ task?: ArkDesktopTask; runtime: ReturnType<typeof
 
 const TaskSessionUtilityBar: React.FC<{ task: ArkDesktopTask; runtime: ReturnType<typeof useArkDesktopRuntime> }> = ({ task, runtime }) => {
     const [pending, setPending] = useState<string | null>(null);
-    const context = task.contextInfo;
-    const percent = context && context.total > 0
-        ? Math.min(100, Math.max(0, context.usagePct || context.used / context.total * 100))
-        : 0;
     const backgroundCount = (task.backgroundTasks || []).filter((item) => !/完成|退出码|取消/i.test(item.status)).length;
     const subagentCount = (task.subagents || []).filter((item) => !/完成|失败|取消|退出/i.test(item.status)).length;
+    const workflowCount = (task.workflowRuns || []).filter((item) => !/complete|failed|interrupted|cancelled|stopped|cleared/i.test(item.status)).length;
+    const workflowCommandAvailable = Boolean(
+        task.availableCommands?.some((command) => command.name === 'workflow')
+        || (runtime.activeTaskId === task.id && runtime.availableCommands.some((command) => command.name === 'workflow')),
+    );
     const run = async (action: string, callback: () => Promise<unknown>) => {
         if (pending) return;
         setPending(action);
@@ -883,31 +999,32 @@ const TaskSessionUtilityBar: React.FC<{ task: ArkDesktopTask; runtime: ReturnTyp
             setPending(null);
         }
     };
-    const formatTokens = (value?: number) => typeof value === 'number' && value > 0 ? value.toLocaleString('zh-CN') : '—';
-    const contextClass = percent >= 85 ? 'bg-red-500' : percent >= 70 ? 'bg-amber-400' : 'bg-[#8a7cf0]';
+    const hasSessionDetails = Boolean(task.recap || task.backgroundTasks?.length || task.subagents?.length || task.workflowRuns?.length || task.mcpServers?.length);
+    if (!hasSessionDetails) return null;
 
     return <div className="mb-4 rounded-2xl border border-slate-200 bg-white px-4 py-3 shadow-[0_4px_18px_rgba(15,23,42,0.04)]">
-        <div className="flex flex-wrap items-center gap-x-4 gap-y-2">
-            <div className="min-w-[180px] flex-1">
-                <div className="flex items-center justify-between gap-3 text-[11px] text-slate-500">
-                    <span className="flex items-center gap-1.5 font-medium text-slate-700"><Database size={13} />上下文用量</span>
-                    <span>{context ? `${Math.round(percent)}% · ${formatTokens(context.used)} / ${formatTokens(context.total)} tokens` : '尚未读取'}</span>
-                </div>
-                <div className="mt-1.5 h-1.5 overflow-hidden rounded-full bg-slate-100"><div className={`h-full rounded-full transition-all ${contextClass}`} style={{ width: `${context ? percent : 0}%` }} /></div>
-                {context && <div className="mt-1 flex items-center justify-between text-[10px] text-slate-400"><span>剩余 {formatTokens(context.freeTokens)}</span><span>自动整理阈值 {context.autoCompactThresholdPercent}%</span></div>}
-            </div>
-            <div className="flex max-w-full flex-wrap items-center gap-1.5">
-                <button type="button" disabled={!task.sessionId || pending !== null} onClick={() => void run('info', () => runtime.refreshTaskSessionInfo(task.id))} className="rounded-lg border border-slate-200 px-2.5 py-1.5 text-[11px] font-medium text-slate-600 hover:bg-slate-50 disabled:opacity-40">{pending === 'info' ? <RefreshCw size={12} className="inline animate-spin" /> : '查看用量'}</button>
-                <button type="button" disabled={!task.sessionId || pending !== null || task.status === 'running'} onClick={() => void run('compact', () => runtime.compactTask(task.id))} className="rounded-lg border border-slate-200 px-2.5 py-1.5 text-[11px] font-medium text-slate-600 hover:bg-slate-50 disabled:opacity-40">{pending === 'compact' ? <RefreshCw size={12} className="inline animate-spin" /> : '压缩上下文'}</button>
-                <button type="button" disabled={!task.sessionId || pending !== null} onClick={() => void run('recap', () => runtime.recapTask(task.id))} className="rounded-lg border border-slate-200 px-2.5 py-1.5 text-[11px] font-medium text-slate-600 hover:bg-slate-50 disabled:opacity-40">{pending === 'recap' ? <RefreshCw size={12} className="inline animate-spin" /> : 'Recap'}</button>
-                <button type="button" disabled={!task.sessionId || pending !== null} onClick={() => void run('memory', () => runtime.flushTaskMemory(task.id))} className="rounded-lg border border-slate-200 px-2.5 py-1.5 text-[11px] font-medium text-slate-600 hover:bg-slate-50 disabled:opacity-40">{pending === 'memory' ? <RefreshCw size={12} className="inline animate-spin" /> : '刷新记忆'}</button>
-            </div>
-        </div>
-        {(task.recap || task.backgroundTasks?.length || task.subagents?.length || task.mcpServers?.length) && <div className="mt-3 space-y-2 border-t border-slate-100 pt-3">
+        <div className="space-y-2">
             {task.recap && <details className="group" open>
                 <summary className="cursor-pointer list-none text-[11px] font-medium text-slate-600">最近会话 Recap</summary>
                 <p className="mt-1.5 whitespace-pre-wrap text-xs leading-5 text-slate-500">{task.recap}</p>
             </details>}
+            {task.workflowRuns?.length ? <details className="group" open>
+                <summary className="flex cursor-pointer list-none items-center gap-2 text-[11px] font-medium text-slate-600"><Workflow size={13} className="text-[#6657d9]" /><span>工作流运行</span>{workflowCount > 0 && <span className="rounded-full bg-[#eeeaff] px-1.5 py-0.5 text-[10px] text-[#6657d9]">{workflowCount} 运行中</span>}</summary>
+                <div className="mt-2 space-y-1.5">
+                    {task.workflowRuns.map((item) => {
+                        const presentation = workflowStatusPresentation(item.status);
+                        const phase = item.currentPhase || item.phases.find((value) => value.state === 'active')?.title;
+                        return <div key={`workflow-${item.runId}`} className="rounded-lg bg-slate-50 px-2.5 py-2">
+                            <div className="flex items-center gap-2"><span className="min-w-0 flex-1 truncate text-[11px] font-medium text-slate-700">{item.name}</span><span className={`rounded-full px-1.5 py-0.5 text-[10px] ${presentation.className}`}>{presentation.label}</span>{workflowCommandAvailable && <WorkflowRunControls compact run={item} onCommand={(action) => runtime.sendWorkflowCommand(task.id, action, item.name)} onError={(error) => runtime.setRuntimeError(error instanceof Error ? error.message : String(error))} />}</div>
+                            {item.objective && <p className="mt-1 line-clamp-2 text-[10px] leading-4 text-slate-500">{item.objective}</p>}
+                            <div className="mt-1 flex flex-wrap gap-x-3 gap-y-1 text-[10px] text-slate-400"><span>{phase ? `阶段：${phase}` : '阶段：准备中'}</span><span>{item.activeAgents} 个活跃智能体</span>{item.agentBudget != null && <span>预算 {item.agentsUsed}/{item.agentBudget}</span>}</div>
+                            {item.pauseMessage && <p className="mt-1 text-[10px] leading-4 text-amber-700">{item.pauseMessage}</p>}
+                            {item.resultSummary && <p className="mt-1 max-h-10 overflow-hidden text-[10px] leading-4 text-slate-400">{item.resultSummary}</p>}
+                        </div>;
+                    })}
+                </div>
+                <p className="mt-2 text-[10px] text-slate-400">可在会话命令栏选择 <code>/workflow</code> 管理暂停、恢复或停止。</p>
+            </details> : null}
             <details className="group">
                 <summary className="flex cursor-pointer list-none items-center gap-2 text-[11px] font-medium text-slate-600"><span>后台运行</span>{(backgroundCount + subagentCount) > 0 && <span className="rounded-full bg-[#eeeaff] px-1.5 py-0.5 text-[10px] text-[#6657d9]">{backgroundCount + subagentCount} 运行中</span>}</summary>
                 <div className="mt-2 flex items-center justify-between gap-2"><span className="text-[10px] text-slate-400">后台任务和子智能体属于当前会话，控制入口集中在这里。</span><button type="button" disabled={!task.sessionId || pending !== null} onClick={() => void run('background', () => runtime.refreshTaskBackgroundTasks(task.id))} className="flex items-center gap-1 rounded-md px-2 py-1 text-[10px] font-medium text-slate-500 hover:bg-slate-100 disabled:opacity-40"><RefreshCw size={11} />刷新</button></div>
@@ -918,7 +1035,7 @@ const TaskSessionUtilityBar: React.FC<{ task: ArkDesktopTask; runtime: ReturnTyp
                 </div>
             </details>
             {task.mcpServers?.length ? <details className="group"><summary className="flex cursor-pointer list-none items-center gap-2 text-[11px] font-medium text-slate-600"><span>当前会话 MCP</span><span className="rounded-full bg-slate-100 px-1.5 py-0.5 text-[10px] text-slate-500">{task.mcpServers.length}</span></summary><div className="mt-2 space-y-1.5">{task.mcpServers.map((server) => <div key={server.name} className="flex items-center gap-2 rounded-lg bg-slate-50 px-2.5 py-2 text-[10px] text-slate-500"><span className="min-w-0 flex-1 truncate">{server.name} · {server.transport}</span><span>{server.health || 'configured'} · {server.tools.length} tools</span></div>)}<button type="button" disabled={pending !== null} onClick={() => void run('mcp', () => runtime.reloadTaskMcp(task.id))} className="mt-1 flex items-center gap-1 rounded-md px-2 py-1 text-[10px] font-medium text-slate-500 hover:bg-slate-100 disabled:opacity-40"><RefreshCw size={11} />热更新当前会话 MCP</button></div></details> : null}
-        </div>}
+        </div>
     </div>;
 };
 
@@ -960,7 +1077,7 @@ const TaskView: React.FC<{ task?: ArkDesktopTask; runtime: ReturnType<typeof use
             setAuthorizing(false);
         }
     };
-    const hasActiveTool = Boolean(task?.tools.some((tool) => !/已完成|完成|成功|取消|completed|success|cancelled|canceled|done|失败|错误|退出码|failed|error/i.test(tool.status)));
+    const hasActiveTool = Boolean(task?.tools.some((tool) => tool.kind !== 'diagnostic' && !/已完成|已记录|完成|成功|取消|不可用|未生成|completed|recorded|success|cancelled|canceled|unavailable|done|失败|错误|退出码|failed|error/i.test(tool.status)));
     const waitingForReply = task?.status === 'running' && task.messages[task.messages.length - 1]?.role === 'user' && !hasActiveTool;
     const followOutputRef = useRef(true);
     const pendingFollowFrameRef = useRef<number | null>(null);

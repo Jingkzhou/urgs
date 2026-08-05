@@ -1,4 +1,4 @@
-export type ArkDesktopSection = 'new-task' | 'automations' | 'settings';
+export type ArkDesktopSection = 'new-task' | 'workflows' | 'automations' | 'settings';
 
 export interface ArkDesktopSkill {
     id: string;
@@ -142,11 +142,53 @@ export interface ArkDesktopSubagentActivity {
     updatedAt: number;
 }
 
+export interface ArkDesktopWorkflowPhase {
+    title: string;
+    state: string;
+}
+
+export interface ArkDesktopWorkflowAgent {
+    agentId: string;
+    label: string;
+    phase?: string;
+    model?: string;
+    state: string;
+    tokensUsed: number;
+    durationMs: number;
+}
+
+export interface ArkDesktopWorkflowRun {
+    runId: string;
+    name: string;
+    objective: string;
+    status: string;
+    foreground: boolean;
+    revision: number;
+    phases: ArkDesktopWorkflowPhase[];
+    currentPhase?: string;
+    agentBudget?: number;
+    agentsUsed: number;
+    agentsReserved: number;
+    agentsRemaining?: number;
+    agentUsageIncomplete: boolean;
+    elapsedMs: number;
+    activeAgents: number;
+    currentAgentLabel?: string;
+    agents: ArkDesktopWorkflowAgent[];
+    lastEvent?: string;
+    lastEventDetail?: string;
+    lastEventTimestamp?: string;
+    pauseMessage?: string;
+    resultSummary?: string;
+    updatedAt: number;
+}
+
 export type ArkDesktopTaskStatus = 'running' | 'waiting_authorization' | 'completed' | 'failed' | 'cancelled';
 
 export interface ArkDesktopModelKeyAuthorization {
     providerId: string;
-    action: 'start' | 'follow_up';
+    action: 'start' | 'follow_up' | 'context';
+    contextAction?: 'compact' | 'recap' | 'memory' | 'workflow';
     prompt?: string;
 }
 
@@ -178,6 +220,7 @@ export interface ArkDesktopTask {
     recap?: string;
     backgroundTasks?: ArkDesktopBackgroundTask[];
     subagents?: ArkDesktopSubagentActivity[];
+    workflowRuns?: ArkDesktopWorkflowRun[];
     mcpServers?: Array<{ name: string; transport: string; health: string; tools: string[] }>;
     diagnostics?: string[];
     error?: string;

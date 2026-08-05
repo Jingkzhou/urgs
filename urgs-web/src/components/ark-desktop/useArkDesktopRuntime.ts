@@ -32,6 +32,8 @@ import {
     inspectGrokPlugins,
     loadGrokSession,
     listGrokAvailableCommands,
+    listGrokWorkflows,
+    readGrokWorkflow,
     listGrokCliServices,
     listGrokModelProviders,
     openGrokWorkspace,
@@ -58,6 +60,8 @@ import {
     type GrokSessionSummary,
     type GrokRuntimeDiagnostics,
     type GrokMcpServerState,
+    type GrokWorkflowFile,
+    type GrokWorkflowListing,
 } from '@/services/grokDesktop';
 import { loadArkDesktopSnapshot, resetArkDesktopSnapshot, saveArkDesktopSnapshot } from './storage';
 import { extractFileChanges } from './fileChanges';
@@ -76,6 +80,7 @@ import type {
     ArkDesktopTask,
     ArkDesktopTaskStatus,
     ArkDesktopToolActivity,
+    ArkDesktopWorkflowRun,
     ArkDesktopModelProvider,
     GrokExecutionSettings,
 } from './types';
@@ -106,9 +111,23 @@ const modelKeyAuthorizationProviderId = (error: unknown) => {
 
 const createId = (prefix: string) => `${prefix}-${Date.now()}-${Math.random().toString(16).slice(2)}`;
 
-const redactRuntimeText = (value: string) => value
-    .replace(/\bgrok(?:\s+build)?\b/gi, '内置智能引擎')
-    .replace(/\bxai\b/gi, '服务');
+const resolveModelProvider = (snapshot: ArkDesktopSnapshot, modelValue?: string) => {
+    const value = modelValue?.trim();
+    if (!value) return undefined;
+    return snapshot.settings.modelProviders.find((provider) => provider.id === value)
+        || snapshot.settings.modelProviders.find((provider) => provider.model === value);
+};
+
+const redactRuntimeText = (value: string) => {
+    const redacted = value
+        .replace(/\bgrok(?:\s+build)?\b/gi, '内置智能引擎')
+        .replace(/\bxai\b/gi, '服务')
+        .replace(/MODEL_KEY_AUTHORIZATION_REQUIRED:[A-Za-z0-9_-]+/g, '当前模型连接需要先解锁本机密钥');
+    if (/unknown variant[\s`'\"]*image_url[\s`'\"]*[\s\S]*expected[\s`'\"]*text/i.test(redacted)) {
+        return '当前模型连接不支持图像输入；已生成的文件仍然保留，请切换支持图片的模型后重新进行视觉验证。';
+    }
+    return redacted;
+};
 
 const extractText = (update: Record<string, any>) =>
     (typeof update?.content === 'string' ? update.content : undefined)
@@ -128,6 +147,13 @@ const formatToolDetail = (value: unknown) => {
     return redactRuntimeText(text).slice(0, 12_000);
 };
 
+const formatDisplayToolTitle = (value: unknown, fallback = '本地工具调用') => {
+    const title = redactRuntimeText(String(value || '').trim()) || fallback;
+    return /^(get task output|get_task_output|get command or subagent output|get_command_or_subagent_output)(:|\s|$)/i.test(title)
+        ? '等待后台任务完成'
+        : title;
+};
+
 const statusLabel = (status?: string) => {
     switch (status) {
         case 'pending': return '等待中';
@@ -135,6 +161,78 @@ const statusLabel = (status?: string) => {
         case 'completed': return '已完成';
         case 'failed': return '失败';
         default: return status || '运行中';
+    }
+};
+
+const workflowText = (value: unknown) => {
+    const text = typeof value === 'string' ? value.trim() : '';
+    return text ? redactRuntimeText(text) : undefined;
+};
+
+const workflowNumber = (value: unknown, fallback = 0) => {
+    const number = Number(value);
+    return Number.isFinite(number) ? number : fallback;
+};
+
+const normalizeWorkflowRun = (update: Record<string, any>): ArkDesktopWorkflowRun => {
+    const agents = Array.isArray(update.agents)
+        ? update.agents.map((agent: any) => ({
+            agentId: String(agent?.agent_id || agent?.agentId || '').trim(),
+            label: workflowText(agent?.label) || '工作流智能体',
+            phase: workflowText(agent?.phase),
+            model: workflowText(agent?.model),
+            state: String(agent?.state || 'unknown'),
+            tokensUsed: workflowNumber(agent?.tokens_used ?? agent?.tokensUsed),
+            durationMs: workflowNumber(agent?.duration_ms ?? agent?.durationMs),
+        })).filter((agent: ArkDesktopWorkflowRun['agents'][number]) => agent.agentId || agent.label)
+        : [];
+    const phases = Array.isArray(update.phases)
+        ? update.phases.map((phase: any) => ({
+            title: workflowText(phase?.title) || '未命名阶段',
+            state: String(phase?.state || 'pending'),
+        }))
+        : [];
+    const budget = update.agent_budget ?? update.agentBudget;
+    const remaining = update.agents_remaining ?? update.agentsRemaining;
+    return {
+        runId: String(update.run_id || update.runId || '').trim(),
+        name: workflowText(update.name) || '工作流',
+        objective: workflowText(update.objective) || '',
+        status: String(update.status || 'active'),
+        foreground: update.foreground === true,
+        revision: workflowNumber(update.revision),
+        phases,
+        currentPhase: workflowText(update.current_phase ?? update.currentPhase),
+        agentBudget: budget == null ? undefined : workflowNumber(budget),
+        agentsUsed: workflowNumber(update.agents_used ?? update.agentsUsed),
+        agentsReserved: workflowNumber(update.agents_reserved ?? update.agentsReserved),
+        agentsRemaining: remaining == null ? undefined : workflowNumber(remaining),
+        agentUsageIncomplete: update.agent_usage_incomplete === true || update.agentUsageIncomplete === true,
+        elapsedMs: workflowNumber(update.elapsed_ms ?? update.elapsedMs),
+        activeAgents: workflowNumber(update.active_agents ?? update.activeAgents ?? agents.filter((agent: ArkDesktopWorkflowRun['agents'][number]) => agent.state === 'running').length),
+        currentAgentLabel: workflowText(update.current_agent_label ?? update.currentAgentLabel),
+        agents,
+        lastEvent: workflowText(update.last_event ?? update.lastEvent),
+        lastEventDetail: workflowText(update.last_event_detail ?? update.lastEventDetail),
+        lastEventTimestamp: workflowText(update.last_event_timestamp ?? update.lastEventTimestamp),
+        pauseMessage: workflowText(update.pause_message ?? update.pauseMessage),
+        resultSummary: workflowText(update.result_summary ?? update.resultSummary),
+        updatedAt: Date.now(),
+    };
+};
+
+const workflowStatusLabel = (status: string) => {
+    switch (status.toLowerCase()) {
+        case 'complete':
+        case 'completed': return '已完成';
+        case 'failed': return '失败';
+        case 'interrupted':
+        case 'cancelled': return '已取消';
+        case 'stopped': return '已停止';
+        case 'cleared': return '已清理';
+        case 'paused':
+        case 'user_paused': return '已暂停';
+        default: return '运行中';
     }
 };
 
@@ -161,7 +259,24 @@ const upsertTaskActivity = (
     return { ...task, tools: tools.slice(-200), updatedAt: Date.now() };
 };
 
-const isSettledActivity = (status: string) => /已完成|完成|成功|失败|取消|退出码|completed|success|failed|cancelled|canceled|done/i.test(status);
+const applyCompactedContextInfo = (
+    contextInfo: ArkDesktopTask['contextInfo'],
+    tokensAfter: unknown,
+) => {
+    if (!contextInfo) return contextInfo;
+    const used = Number(tokensAfter);
+    if (!Number.isFinite(used) || used < 0) return contextInfo;
+    const total = Number(contextInfo.total);
+    return {
+        ...contextInfo,
+        used,
+        freeTokens: total > 0 ? Math.max(0, total - used) : contextInfo.freeTokens,
+        usagePct: total > 0 ? Math.min(100, Math.floor((used * 100) / total)) : contextInfo.usagePct,
+        compactionCount: contextInfo.compactionCount + 1,
+    };
+};
+
+const isSettledActivity = (status: string) => /已完成|已记录|完成|成功|失败|取消|不可用|未生成|退出码|completed|recorded|success|failed|cancelled|canceled|unavailable|done/i.test(status);
 
 const settleForegroundActivities = (
     task: ArkDesktopTask,
@@ -169,7 +284,9 @@ const settleForegroundActivities = (
 ) => {
     const nextStatus = terminalStatus === 'failed' ? '失败' : terminalStatus === 'cancelled' ? '已取消' : '已完成';
     const tools = task.tools.map((tool) => {
-        if (isSettledActivity(tool.status) || ['background_task', 'monitor', 'goal'].includes(tool.kind || '')) return tool;
+        // Recap is queued asynchronously by the sidecar. A foreground turn can
+        // finish before its session_recap/session_recap_unavailable event arrives.
+        if (tool.id === 'session-recap' || isSettledActivity(tool.status) || ['background_task', 'monitor', 'goal', 'workflow'].includes(tool.kind || '')) return tool;
         return { ...tool, status: nextStatus, updatedAt: Date.now() };
     });
     return { ...task, status: terminalStatus, tools, updatedAt: Date.now() };
@@ -264,7 +381,7 @@ const buildSessionRules = (agent: ArkDesktopAgent, skills: ArkDesktopSkill[]) =>
     agent.systemPrompt,
     ...skills.map((skill) => `技能【${skill.name}】：${skill.instruction}`),
     '当需要用户在预设方向、方案或偏好中选择时，必须调用 AskUserQuestion 工具并提供结构化选项。不要在普通消息里列出题目、选项或要求用户用文字回答；调用前最多用一句话说明需要确认方向，随后等待用户在界面卡片中选择。',
-    '多阶段任务必须使用计划工具维护 3 至 7 个可执行阶段；开始、完成或跳过每个阶段时立即更新状态，不要只在普通消息中口头描述进度。',
+    '多阶段任务必须使用计划工具维护 3 至 7 个可执行阶段；开始执行前先创建完整计划，并且只允许一个阶段处于 in_progress。阶段必须严格串行：完成当前阶段的全部工具工作后，立即调用计划工具将当前阶段标记为 completed、将下一个阶段标记为 in_progress，等待该调用成功后才能开始下一阶段。不要把多个阶段的状态留到最后一次调用，也不要只在普通消息中口头描述进度；如果阶段包含多个工具调用，在该阶段全部完成前保持它为 in_progress。',
     '执行要求：先理解目标，再使用必要工具完成实际工作；涉及修改或命令时等待 ARK Desktop 的用户授权；结束时总结产物、修改文件和验证结果。',
 ].filter(Boolean).join('\n\n');
 
@@ -357,6 +474,7 @@ export const useArkDesktopRuntime = () => {
     const cancelledTaskIdsRef = useRef(new Set<string>());
     const taskByProcessIdRef = useRef(new Map<string, string>());
     const taskBySessionIdRef = useRef(new Map<string, string>());
+    const mountedSessionIdsRef = useRef(new Set<string>());
     const subagentBySessionIdRef = useRef(new Map<string, string>());
     const activePromptCountsRef = useRef(new Map<string, number>());
     const snapshotRef = useRef(snapshot);
@@ -697,16 +815,25 @@ export const useArkDesktopRuntime = () => {
             }
             if (updateType === 'session_recap') {
                 const recap = redactRuntimeText(String(update.content || update.summary || update.recap || '').trim());
-                if (recap) updateTask(taskId, (task) => ({ ...task, recap, updatedAt: Date.now() }));
+                updateTask(taskId, (task) => {
+                    const next = upsertTaskActivity(task, {
+                        id: 'session-recap',
+                        title: '生成会话 Recap',
+                        status: recap ? '已完成' : '不可用',
+                        kind: 'context',
+                        output: recap ? '会话 Recap 已生成' : 'Recap 返回为空，当前未生成摘要',
+                    });
+                    return recap ? { ...next, recap } : next;
+                });
                 return;
             }
             if (updateType === 'session_recap_unavailable') {
                 updateTask(taskId, (task) => upsertTaskActivity(task, {
                     id: 'session-recap',
-                    title: '会话 Recap 不可用',
+                    title: '生成会话 Recap',
                     status: '不可用',
-                    kind: 'diagnostic',
-                    output: formatToolDetail(update.reason || update.message),
+                    kind: 'context',
+                    output: formatToolDetail(update.reason || update.message || '当前会话暂时无法生成 Recap') || '当前会话暂时无法生成 Recap',
                 }));
                 return;
             }
@@ -767,19 +894,19 @@ export const useArkDesktopRuntime = () => {
                 return;
             }
             if (updateType === 'tool_call' || updateType === 'tool_call_update') {
-                const id = String(update.toolCallId || update.toolCall?.toolCallId || createId('tool'));
+                const id = String(update.toolCallId || update.tool_call_id || update.toolCall?.toolCallId || update.toolCall?.tool_call_id || createId('tool'));
                 updateTask(taskId, (task) => {
                     const tools = task.tools.slice();
                     const existingIndex = tools.findIndex((tool) => tool.id === id);
-                    const input = formatToolDetail(update.rawInput ?? update.toolCall?.rawInput);
+                    const input = formatToolDetail(update.rawInput ?? update.raw_input ?? update.toolCall?.rawInput ?? update.toolCall?.raw_input);
                     const structuredContent = update.content ?? update.toolCall?.content;
                     const fileChanges = extractFileChanges(structuredContent);
                     const output = formatToolDetail(
-                        update.rawOutput ?? (fileChanges.length > 0 ? undefined : structuredContent),
+                        update.rawOutput ?? update.raw_output ?? (fileChanges.length > 0 ? undefined : structuredContent),
                     );
                     const nextTool = {
                         id,
-                        title: redactRuntimeText(update.title || update.toolCall?.title || '本地工具调用'),
+                        title: formatDisplayToolTitle(update.title || update.toolCall?.title),
                         status: statusLabel(update.status),
                         kind: update.kind || update.toolCall?.kind,
                         ...(input ? { input } : {}),
@@ -795,11 +922,11 @@ export const useArkDesktopRuntime = () => {
                 return;
             }
             if (updateType === 'tool_call_delta_chunk') {
-                const id = String(update.tool_call_id || `tool-stream-${update.tool_index || 0}`);
+                const id = String(update.tool_call_id || update.toolCallId || `tool-stream-${update.tool_index || 0}`);
                 const chunk = typeof update.arguments_delta === 'string' ? update.arguments_delta : '';
                 updateTask(taskId, (task) => upsertTaskActivity(task, {
                     id,
-                    title: redactRuntimeText(update.name || '正在准备工具调用'),
+                    title: formatDisplayToolTitle(update.name, '正在准备工具调用'),
                     status: '运行中',
                     kind: update.name || 'tool',
                     ...(chunk ? { input: `${task.tools.find((tool) => tool.id === id)?.input || ''}${chunk}`.slice(-12_000) } : {}),
@@ -931,13 +1058,21 @@ export const useArkDesktopRuntime = () => {
             if (updateType?.startsWith('auto_compact_')) {
                 const failed = updateType === 'auto_compact_failed';
                 const completed = updateType === 'auto_compact_completed';
-                updateTask(taskId, (task) => upsertTaskActivity(task, {
-                    id: 'context-compaction',
-                    title: '整理会话上下文',
-                    status: failed ? '失败' : completed ? '已完成' : updateType === 'auto_compact_cancelled' ? '已取消' : '运行中',
-                    kind: 'context',
-                    output: formatToolDetail(update.error || update.reason || update.summary_preview),
-                }));
+                updateTask(taskId, (task) => {
+                    const activityId = task.tools.some((tool) => tool.id === 'context-compaction-manual')
+                        ? 'context-compaction-manual'
+                        : 'context-compaction';
+                    const next = upsertTaskActivity(task, {
+                        id: activityId,
+                        title: '整理会话上下文',
+                        status: failed ? '失败' : completed ? '已完成' : updateType === 'auto_compact_cancelled' ? '已取消' : '运行中',
+                        kind: 'context',
+                        output: formatToolDetail(update.error || update.reason || update.summary_preview),
+                    });
+                    return completed
+                        ? { ...next, contextInfo: applyCompactedContextInfo(next.contextInfo, update.tokens_after) }
+                        : next;
+                });
                 return;
             }
             if (updateType?.startsWith('auto_recovery_')) {
@@ -974,6 +1109,38 @@ export const useArkDesktopRuntime = () => {
                     kind: 'goal',
                     output: formatToolDetail(update.pause_message || update.last_event_detail),
                 }));
+                return;
+            }
+            if (updateType === 'workflow_updated') {
+                const workflow = normalizeWorkflowRun(update);
+                if (!workflow.runId) return;
+                updateTask(taskId, (task) => {
+                    const existing = (task.workflowRuns || []).find((item) => item.runId === workflow.runId);
+                    const isCleared = workflow.status.toLowerCase() === 'cleared';
+                    if (!isCleared && existing && ((workflow.revision === 0 && existing.revision > 0)
+                        || (workflow.revision > 0 && workflow.revision <= existing.revision))) {
+                        return task;
+                    }
+                    const detail = [
+                        workflow.currentPhase ? `阶段：${workflow.currentPhase}` : '',
+                        workflow.activeAgents > 0 ? `活跃智能体：${workflow.activeAgents}` : '',
+                        workflow.currentAgentLabel ? `当前智能体：${workflow.currentAgentLabel}` : '',
+                        workflow.pauseMessage,
+                        workflow.lastEventDetail,
+                        workflow.resultSummary,
+                    ].filter(Boolean).join('\n');
+                    const next = upsertTaskActivity(task, {
+                        id: `workflow-${workflow.runId}`,
+                        title: workflow.name,
+                        status: workflowStatusLabel(workflow.status),
+                        kind: 'workflow',
+                        output: detail || undefined,
+                    });
+                    const workflowRuns = isCleared
+                        ? (task.workflowRuns || []).filter((item) => item.runId !== workflow.runId)
+                        : [...(task.workflowRuns || []).filter((item) => item.runId !== workflow.runId), workflow];
+                    return { ...next, workflowRuns, updatedAt: Date.now() };
+                });
                 return;
             }
             if (updateType === 'scheduled_task_created' || updateType === 'scheduled_task_fired') {
@@ -1134,6 +1301,8 @@ export const useArkDesktopRuntime = () => {
         if (event.eventType === 'terminated' && taskId) {
             if (!processId) return;
             taskByProcessIdRef.current.delete(processId);
+            const taskSessionId = snapshotRef.current.tasks.find((task) => task.id === taskId)?.sessionId;
+            if (taskSessionId) mountedSessionIdsRef.current.delete(taskSessionId);
             setPermissions((current) => current.filter((item) => item.taskId !== taskId));
             setUserQuestions((current) => current.filter((item) => item.taskId !== taskId));
             setPlanApprovals((current) => current.filter((item) => item.taskId !== taskId));
@@ -1354,6 +1523,7 @@ export const useArkDesktopRuntime = () => {
                     void refreshModelProviders().catch(() => undefined);
                     taskByProcessIdRef.current.set(session.processId, taskId);
                     taskBySessionIdRef.current.set(session.sessionId, taskId);
+                    mountedSessionIdsRef.current.add(session.sessionId);
                     updateTask(taskId, (value) => ({
                         ...value,
                         sessionId: session.sessionId,
@@ -1366,6 +1536,13 @@ export const useArkDesktopRuntime = () => {
                         return;
                     }
                     await sendGrokPrompt(session.sessionId, effectivePrompt, attachmentPaths, attachmentGrantIds);
+                    const info = await getGrokSessionInfo(session.sessionId).catch(() => null);
+                    if (info) updateTask(taskId, (value) => ({
+                        ...value,
+                        model: info.model || value.model,
+                        contextInfo: info.context,
+                        updatedAt: Date.now(),
+                    }));
                 }
                 finishForegroundPrompt(taskId, 'completed');
                 if (automationId) {
@@ -1439,6 +1616,50 @@ export const useArkDesktopRuntime = () => {
         return () => window.clearTimeout(timer);
     }, [prepareEngine, snapshot.settings.workspace, snapshot.settings.grokModel, snapshot.settings.defaultAgentId]);
 
+    const ensureTaskSessionMounted = useCallback(async (taskId: string) => {
+        const task = snapshotRef.current.tasks.find((item) => item.id === taskId);
+        if (!task?.sessionId || task.engine === 'headless' || mountedSessionIdsRef.current.has(task.sessionId)) return;
+        const current = snapshotRef.current;
+        const agent = current.agents.find((item) => item.id === task.agentId && item.enabled)
+            || current.agents.find((item) => item.enabled);
+        if (!agent) throw new Error('该历史任务使用的 Agent 已不存在');
+        const skills = current.skills.filter((skill) => task.skillIds.includes(skill.id) && skill.enabled);
+        const execution = {
+            ...current.settings.execution,
+            permissionMode: task.permissionMode || current.settings.execution.permissionMode,
+            alwaysApprove: false,
+        };
+        const modelProvider = resolveModelProvider(current, task.model || current.settings.grokModel);
+        if (!modelProvider) throw new Error(`历史会话使用的模型连接“${task.model || current.settings.grokModel}”不存在，请在设置中配置对应连接`);
+        if (!modelProvider.enabled) throw new Error(`模型连接“${modelProvider.name}”已停用`);
+        const session = await loadGrokSession(
+            task.sessionId,
+            task.workspace,
+            buildSessionRules(agent, skills),
+            modelProvider.id,
+            buildAcpOptions(execution),
+        );
+        mountedSessionIdsRef.current.add(session.sessionId);
+        taskByProcessIdRef.current.set(session.processId, taskId);
+        taskBySessionIdRef.current.set(session.sessionId, taskId);
+        updateTask(taskId, (value) => ({
+            ...value,
+            runtimeProcessId: session.processId,
+            availableCommands: session.availableCommands,
+            mcpServers: session.mcpServers.map((server) => ({
+                name: server.name,
+                transport: server.transport,
+                health: server.health,
+                tools: server.tools,
+            })),
+            updatedAt: Date.now(),
+        }));
+        session.replayedEvents.forEach((replayed) => handleGrokEvent({
+            eventType: 'session_update',
+            payload: { ...replayed, processId: session.processId },
+        }));
+    }, [handleGrokEvent, loadGrokSession, updateTask]);
+
     const openRemoteSession = useCallback(async (summary: GrokSessionSummary) => {
         const current = snapshotRef.current;
         const existing = current.tasks.find((task) => task.sessionId === summary.sessionId);
@@ -1482,6 +1703,7 @@ export const useArkDesktopRuntime = () => {
                 task.model,
                 buildAcpOptions(current.settings.execution),
             );
+            mountedSessionIdsRef.current.add(session.sessionId);
             taskByProcessIdRef.current.set(session.processId, taskId);
             taskBySessionIdRef.current.set(session.sessionId, taskId);
             updateTask(taskId, (value) => ({
@@ -1516,7 +1738,7 @@ export const useArkDesktopRuntime = () => {
         }
     }, [handleGrokEvent, updateTask]);
 
-    const sendFollowUp = useCallback(async (taskId: string, prompt: string) => {
+    const sendFollowUp = useCallback(async (taskId: string, prompt: string, displayPrompt = prompt) => {
         const task = snapshotRef.current.tasks.find((item) => item.id === taskId);
         if (!task) throw new Error('历史任务不存在');
         const activePromptCount = activePromptCountsRef.current.get(taskId) || 0;
@@ -1536,27 +1758,37 @@ export const useArkDesktopRuntime = () => {
                 const agent = current.agents.find((item) => item.id === task.agentId)
                     || current.agents.find((item) => item.enabled);
                 if (!agent) throw new Error('该历史任务使用的 Agent 已不存在');
+                const modelProvider = resolveModelProvider(current, task.model || current.settings.grokModel);
+                if (!modelProvider) {
+                    throw new Error(`历史会话使用的模型连接“${task.model || current.settings.grokModel}”不存在，请在设置中配置对应连接`);
+                }
+                if (!modelProvider.enabled) {
+                    throw new Error(`模型连接“${modelProvider.name}”已停用`);
+                }
                 const skills = current.skills.filter((skill) => task.skillIds.includes(skill.id) && skill.enabled);
                 const execution = {
                     ...current.settings.execution,
                     permissionMode: task.permissionMode || current.settings.execution.permissionMode,
                     alwaysApprove: false,
                 };
-                const session = await loadGrokSession(
-                    sessionId,
-                    task.workspace,
-                    buildSessionRules(agent, skills),
-                    task.model || current.settings.grokModel,
-                    buildAcpOptions(execution),
-                );
-                taskByProcessIdRef.current.set(session.processId, taskId);
-                taskBySessionIdRef.current.set(session.sessionId, taskId);
-                updateTask(taskId, (value) => ({
-                    ...value,
-                    runtimeProcessId: session.processId,
-                    availableCommands: session.availableCommands,
-                    updatedAt: Date.now(),
-                }));
+                if (!mountedSessionIdsRef.current.has(sessionId)) {
+                    const session = await loadGrokSession(
+                        sessionId,
+                        task.workspace,
+                        buildSessionRules(agent, skills),
+                        modelProvider.id,
+                        buildAcpOptions(execution),
+                    );
+                    mountedSessionIdsRef.current.add(session.sessionId);
+                    taskByProcessIdRef.current.set(session.processId, taskId);
+                    taskBySessionIdRef.current.set(session.sessionId, taskId);
+                    updateTask(taskId, (value) => ({
+                        ...value,
+                        runtimeProcessId: session.processId,
+                        availableCommands: session.availableCommands,
+                        updatedAt: Date.now(),
+                    }));
+                }
             }
             cancelledTaskIdsRef.current.delete(taskId);
             const shouldQueue = task.engine !== 'headless' && task.status === 'running';
@@ -1567,7 +1799,7 @@ export const useArkDesktopRuntime = () => {
                 modelKeyAuthorization: undefined,
                 messages: shouldQueue
                     ? value.messages
-                    : [...value.messages, { id: createId('message'), role: 'user', content: prompt, createdAt: Date.now() }],
+                    : [...value.messages, { id: createId('message'), role: 'user', content: displayPrompt, createdAt: Date.now() }],
                 updatedAt: Date.now(),
             }));
             if (task.engine === 'headless') {
@@ -1589,6 +1821,15 @@ export const useArkDesktopRuntime = () => {
                 }));
             } else {
                 await sendGrokPrompt(sessionId, prompt, [], [], shouldQueue);
+                if (!shouldQueue) {
+                    const info = await getGrokSessionInfo(sessionId).catch(() => null);
+                    if (info) updateTask(taskId, (value) => ({
+                        ...value,
+                        model: info.model || value.model,
+                        contextInfo: info.context,
+                        updatedAt: Date.now(),
+                    }));
+                }
             }
             if (task.engine === 'headless' || !shouldQueue) {
                 finishForegroundPrompt(taskId, 'completed');
@@ -1600,7 +1841,7 @@ export const useArkDesktopRuntime = () => {
                     activePromptCountsRef.current.delete(taskId);
                     updateTask(taskId, (value) => {
                         const lastMessage = value.messages[value.messages.length - 1];
-                        const messages = task.engine === 'headless' && lastMessage?.role === 'user' && lastMessage.content === prompt
+                        const messages = task.engine === 'headless' && lastMessage?.role === 'user' && lastMessage.content === displayPrompt
                             ? value.messages.slice(0, -1)
                             : value.messages;
                         return {
@@ -1621,6 +1862,83 @@ export const useArkDesktopRuntime = () => {
         }
     }, [finishForegroundPrompt, updateTask]);
 
+    const sendWorkflowCommand = useCallback(async (
+        taskId: string,
+        action: 'pause' | 'resume' | 'stop' | 'save',
+        workflowName: string,
+    ) => {
+        const task = snapshotRef.current.tasks.find((item) => item.id === taskId);
+        if (!task?.sessionId) throw new Error('当前任务还没有可操作的 Grok 会话');
+        const command = `/workflow ${action} ${workflowName}`;
+        const actionLabel = action === 'pause'
+            ? '暂停'
+            : action === 'resume'
+                ? '恢复'
+                : action === 'stop'
+                    ? '停止'
+                    : '保存';
+        await sendFollowUp(taskId, command, `工作流控制：${actionLabel}“${workflowName}”`);
+    }, [sendFollowUp]);
+
+    const listTaskWorkflows = useCallback(async (taskId: string): Promise<GrokWorkflowListing[]> => {
+        const task = snapshotRef.current.tasks.find((item) => item.id === taskId);
+        if (!task?.sessionId) throw new Error('当前任务还没有可读取 Workflow 的 Grok 会话');
+        try {
+            await ensureTaskSessionMounted(taskId);
+            return await listGrokWorkflows(task.sessionId);
+        } catch (error) {
+            const providerId = modelKeyAuthorizationProviderId(error);
+            if (providerId) {
+                updateTask(taskId, (value) => ({
+                    ...value,
+                    error: undefined,
+                    modelKeyAuthorization: { providerId, action: 'context', contextAction: 'workflow' },
+                    updatedAt: Date.now(),
+                }));
+                throw new Error('当前会话需要先解锁本地模型密钥，请点击下方“解锁密钥”后刷新目录');
+            }
+            throw error;
+        }
+    }, [ensureTaskSessionMounted, updateTask]);
+
+    const readTaskWorkflow = useCallback(async (taskId: string, workflowName: string): Promise<GrokWorkflowFile> => {
+        const task = snapshotRef.current.tasks.find((item) => item.id === taskId);
+        if (!task?.sessionId) throw new Error('当前任务还没有可读取 Workflow 的 Grok 会话');
+        await ensureTaskSessionMounted(taskId);
+        return readGrokWorkflow(task.sessionId, workflowName);
+    }, [ensureTaskSessionMounted]);
+
+    const launchWorkflow = useCallback(async (taskId: string, workflowName: string, args: string) => {
+        const task = snapshotRef.current.tasks.find((item) => item.id === taskId);
+        if (!task?.sessionId) throw new Error('当前任务还没有可启动 Workflow 的 Grok 会话');
+        const name = workflowName.trim();
+        if (!name) throw new Error('请选择要启动的 Workflow');
+        const normalizedArgs = args.trim();
+        const command = `/workflow ${name}${normalizedArgs ? ` ${normalizedArgs}` : ''}`;
+        await sendFollowUp(taskId, command, `启动工作流：“${name}”${normalizedArgs ? '（已附加参数）' : ''}`);
+    }, [sendFollowUp]);
+
+    const validateWorkflow = useCallback(async (taskId: string, workflowName: string, args: string) => {
+        const task = snapshotRef.current.tasks.find((item) => item.id === taskId);
+        if (!task?.sessionId) throw new Error('当前任务还没有可校验 Workflow 的 Grok 会话');
+        const normalizedArgs = args.trim();
+        let parsedArgs: unknown = null;
+        if (normalizedArgs) {
+            try {
+                parsedArgs = JSON.parse(normalizedArgs);
+            } catch {
+                throw new Error('只校验不启动时，运行参数必须是合法 JSON');
+            }
+        }
+        const input = JSON.stringify({
+            name: workflowName.trim(),
+            args: parsedArgs,
+            validate_only: true,
+        });
+        const prompt = `请只调用 Workflow 工具执行一次运行前校验，不要启动实际运行。必须使用 validate_only=true，参数如下：${input}。完成后只返回校验结果。`;
+        await sendFollowUp(taskId, prompt, `只校验 Workflow：“${workflowName.trim()}”`);
+    }, [sendFollowUp]);
+
     const queueAction = useCallback(async (
         taskId: string,
         action: 'remove' | 'edit' | 'reorder' | 'clear' | 'send_now' | 'interject',
@@ -1640,7 +1958,26 @@ export const useArkDesktopRuntime = () => {
     const refreshTaskSessionInfo = useCallback(async (taskId: string) => {
         const task = snapshotRef.current.tasks.find((item) => item.id === taskId);
         if (!task?.sessionId) throw new Error('当前任务还没有本地会话');
-        const info = await getGrokSessionInfo(task.sessionId);
+        let info;
+        try {
+            info = await getGrokSessionInfo(task.sessionId);
+        } catch (error) {
+            try {
+                await ensureTaskSessionMounted(taskId);
+                info = await getGrokSessionInfo(task.sessionId);
+            } catch (mountError) {
+                const providerId = modelKeyAuthorizationProviderId(mountError);
+                if (providerId) {
+                    updateTask(taskId, (value) => ({
+                        ...value,
+                        error: undefined,
+                        modelKeyAuthorization: { providerId, action: 'context' },
+                        updatedAt: Date.now(),
+                    }));
+                }
+                throw mountError;
+            }
+        }
         updateTask(taskId, (value) => ({
             ...value,
             model: info.model || value.model,
@@ -1648,7 +1985,27 @@ export const useArkDesktopRuntime = () => {
             updatedAt: Date.now(),
         }));
         return info;
-    }, [updateTask]);
+    }, [ensureTaskSessionMounted, updateTask]);
+
+    const ensureContextSession = useCallback(async (
+        taskId: string,
+        contextAction: 'compact' | 'recap' | 'memory',
+    ) => {
+        try {
+            await ensureTaskSessionMounted(taskId);
+        } catch (error) {
+            const providerId = modelKeyAuthorizationProviderId(error);
+            if (providerId) {
+                updateTask(taskId, (value) => ({
+                    ...value,
+                    error: undefined,
+                    modelKeyAuthorization: { providerId, action: 'context', contextAction },
+                    updatedAt: Date.now(),
+                }));
+            }
+            throw error;
+        }
+    }, [ensureTaskSessionMounted, updateTask]);
 
     const compactTask = useCallback(async (taskId: string, userContext?: string) => {
         const task = snapshotRef.current.tasks.find((item) => item.id === taskId);
@@ -1660,8 +2017,14 @@ export const useArkDesktopRuntime = () => {
             kind: 'context',
         }));
         try {
+            await ensureContextSession(taskId, 'compact');
             await compactGrokSession(task.sessionId, userContext);
-            await refreshTaskSessionInfo(taskId).catch(() => undefined);
+            updateTask(taskId, (value) => upsertTaskActivity(value, {
+                id: 'context-compaction-manual',
+                title: '整理会话上下文',
+                status: '已完成',
+                kind: 'context',
+            }));
         } catch (error) {
             updateTask(taskId, (value) => upsertTaskActivity(value, {
                 id: 'context-compaction-manual',
@@ -1672,7 +2035,7 @@ export const useArkDesktopRuntime = () => {
             }));
             throw error;
         }
-    }, [refreshTaskSessionInfo, updateTask]);
+    }, [ensureContextSession, updateTask]);
 
     const recapTask = useCallback(async (taskId: string) => {
         const task = snapshotRef.current.tasks.find((item) => item.id === taskId);
@@ -1683,8 +2046,25 @@ export const useArkDesktopRuntime = () => {
             status: '运行中',
             kind: 'context',
         }));
-        await recapGrokSession(task.sessionId);
-    }, [updateTask]);
+        try {
+            await ensureContextSession(taskId, 'recap');
+            await recapGrokSession(task.sessionId);
+        } catch (error) {
+            const detail = redactRuntimeText(runtimeErrorText(error));
+            const recapUnavailable = /method not found/i.test(detail);
+            const unavailable = detail.includes('当前模型连接不支持图像输入') || recapUnavailable;
+            updateTask(taskId, (value) => upsertTaskActivity(value, {
+                id: 'session-recap',
+                title: '生成会话 Recap',
+                status: unavailable ? '不可用' : '失败',
+                kind: 'context',
+                output: recapUnavailable
+                    ? '当前安装的内置智能引擎暂未提供 Recap 接口，请更新内置引擎后重启客户端。'
+                    : detail,
+            }));
+            if (!unavailable) throw error;
+        }
+    }, [ensureContextSession, updateTask]);
 
     const flushTaskMemory = useCallback(async (taskId: string) => {
         const task = snapshotRef.current.tasks.find((item) => item.id === taskId);
@@ -1695,8 +2075,20 @@ export const useArkDesktopRuntime = () => {
             status: '运行中',
             kind: 'memory',
         }));
-        await flushGrokMemory(task.sessionId);
-    }, [updateTask]);
+        try {
+            await ensureContextSession(taskId, 'memory');
+            await flushGrokMemory(task.sessionId);
+        } catch (error) {
+            updateTask(taskId, (value) => upsertTaskActivity(value, {
+                id: 'memory-flush',
+                title: '刷新会话记忆',
+                status: '失败',
+                kind: 'memory',
+                output: redactRuntimeText(runtimeErrorText(error)),
+            }));
+            throw error;
+        }
+    }, [ensureContextSession, updateTask]);
 
     const refreshTaskBackgroundTasks = useCallback(async (taskId: string) => {
         const task = snapshotRef.current.tasks.find((item) => item.id === taskId);
@@ -1828,6 +2220,35 @@ export const useArkDesktopRuntime = () => {
                 }));
                 return nextTaskId;
             }
+            if (authorization.action === 'context') {
+                setSnapshot((current) => {
+                    const next = updateProvider(current);
+                    return {
+                        ...next,
+                        tasks: next.tasks.map((item) => item.id === taskId
+                            ? { ...item, modelKeyAuthorization: undefined, error: undefined, updatedAt: Date.now() }
+                        : item),
+                    };
+                });
+                if (authorization.contextAction === 'compact') {
+                    await compactTask(taskId);
+                    return taskId;
+                }
+                if (authorization.contextAction === 'recap') {
+                    await recapTask(taskId);
+                    return taskId;
+                }
+                if (authorization.contextAction === 'memory') {
+                    await flushTaskMemory(taskId);
+                    return taskId;
+                }
+                if (authorization.contextAction === 'workflow') {
+                    await ensureTaskSessionMounted(taskId);
+                    return taskId;
+                }
+                await refreshTaskSessionInfo(taskId);
+                return taskId;
+            }
             setSnapshot((current) => {
                 const next = updateProvider(current);
                 return {
@@ -1844,7 +2265,7 @@ export const useArkDesktopRuntime = () => {
             updateTask(taskId, (value) => ({ ...value, error: message, updatedAt: Date.now() }));
             throw error;
         }
-    }, [sendFollowUp, startTask, updateTask]);
+    }, [compactTask, ensureTaskSessionMounted, flushTaskMemory, recapTask, refreshTaskSessionInfo, sendFollowUp, startTask, updateTask]);
 
     const cancelTask = useCallback(async (taskId: string) => {
         const task = snapshotRef.current.tasks.find((item) => item.id === taskId);
@@ -2057,13 +2478,17 @@ export const useArkDesktopRuntime = () => {
                 permissionMode: task.permissionMode || current.settings.execution.permissionMode,
                 alwaysApprove: false,
             };
+            const modelProvider = resolveModelProvider(current, task.model || current.settings.grokModel);
+            if (!modelProvider) throw new Error(`历史会话使用的模型连接“${task.model || current.settings.grokModel}”不存在，请在设置中配置对应连接`);
+            if (!modelProvider.enabled) throw new Error(`模型连接“${modelProvider.name}”已停用`);
             const session = await loadGrokSession(
                 task.sessionId,
                 task.workspace,
                 buildSessionRules(agent, skills),
-                task.model || current.settings.grokModel,
+                modelProvider.id,
                 buildAcpOptions(execution),
             );
+            mountedSessionIdsRef.current.add(session.sessionId);
             taskByProcessIdRef.current.set(session.processId, taskId);
             taskBySessionIdRef.current.set(session.sessionId, taskId);
             await setGrokSessionModel(task.sessionId, modelId);
@@ -2154,7 +2579,10 @@ export const useArkDesktopRuntime = () => {
         setUserQuestions((current) => current.filter((item) => item.taskId !== taskId));
         setPlanApprovals((current) => current.filter((item) => item.taskId !== taskId));
         if (task.runtimeProcessId) taskByProcessIdRef.current.delete(task.runtimeProcessId);
-        if (task.sessionId) taskBySessionIdRef.current.delete(task.sessionId);
+        if (task.sessionId) {
+            mountedSessionIdsRef.current.delete(task.sessionId);
+            taskBySessionIdRef.current.delete(task.sessionId);
+        }
     }, [refreshRemoteSessions]);
 
     const deleteScheduledTask = useCallback(async (ownerTaskId: string, scheduledTaskId: string) => {
@@ -2232,6 +2660,11 @@ export const useArkDesktopRuntime = () => {
         startTask,
         prepareEngine,
         sendFollowUp,
+        sendWorkflowCommand,
+        listTaskWorkflows,
+        readTaskWorkflow,
+        launchWorkflow,
+        validateWorkflow,
         refreshTaskSessionInfo,
         compactTask,
         recapTask,

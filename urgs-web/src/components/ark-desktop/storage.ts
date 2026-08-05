@@ -8,7 +8,7 @@ import type { ArkDesktopSnapshot } from './types';
 const STORAGE_KEY = 'urgs_ark_desktop_grok_snapshot_v3';
 const LEGACY_STORAGE_KEY = 'urgs_ark_desktop_grok_snapshot_v2';
 const MAX_TASK_HISTORY = 50;
-const settledActivityPattern = /已完成|完成|成功|失败|取消|退出码|completed|success|failed|cancelled|canceled|done/i;
+const settledActivityPattern = /已完成|完成|成功|失败|取消|不可用|未生成|退出码|completed|success|failed|cancelled|canceled|unavailable|done/i;
 const MAX_PERSISTED_TEXT = 4_000;
 const MAX_PERSISTED_DIFF_HUNKS = 6;
 const MAX_PERSISTED_DIFF_LINES = 32;
