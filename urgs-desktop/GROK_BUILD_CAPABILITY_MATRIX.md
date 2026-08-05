@@ -1,10 +1,11 @@
 # Grok Build Desktop 能力矩阵
 
-更新时间：2026-07-30
+更新时间：2026-08-05
 
 ## 现场基线
 
-- URGS 随包二进制：`grok 0.2.112 (9bbd559437aa)`，`aarch64-apple-darwin`
+- URGS 随包二进制：`grok 0.2.119 (e5478ef)`，当前开发机为 `aarch64-apple-darwin`
+- Windows 发布锁定：`0.2.119`，目标为 `x86_64-pc-windows-msvc`，哈希见 `grok-sidecar.lock.json`
 - 随包清单：`src-tauri/binaries/grok-sidecar-manifest.json`
 - 官方公开仓库最新提交：`5da6962e4adb9c857f3def762542b52b4ec3e522`
 - 发现方式：随包二进制 `--version`、根命令和全部顶级子命令 `--help`、真实 ACP `initialize`、扩展方法探测、官方同提交源码与用户指南

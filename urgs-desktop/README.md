@@ -33,7 +33,25 @@ pnpm build:unsigned
 pnpm verify:windows
 ```
 
-验收结果会写入 `src-tauri/target/release/bundle/windows-build-manifest.json` 和 `SHA256SUMS.txt`。
+`pnpm verify:windows` 同时检查以下交付门禁：
+
+- `grok-sidecar.lock.json` 锁定的 Windows x64 Grok Build 版本和 SHA-256；
+- Tauri `bundle.externalBin` 确实声明了 `grok`；
+- Windows WebView2 使用离线安装模式；
+- MSI 和 NSIS 安装包均存在、非空且版本一致。
+
+验收结果会写入 `src-tauri/target/release/bundle/windows-build-manifest.json` 和 `SHA256SUMS.txt`，清单中会记录 sidecar 的版本、大小和 SHA-256。
+
+在 Windows 构建机上还必须执行一次安装后验证。它会静默安装 NSIS 包，从安装目录找到 `grok*.exe`，并运行 `grok.exe --no-auto-update --version`：
+
+```powershell
+$setup = Get-ChildItem "src-tauri/target/release/bundle/nsis/*-setup.exe" | Select-Object -First 1
+pnpm verify:windows:install -- -InstallerPath $setup.FullName -ExpectedVersion 0.2.119
+```
+
+因此正式客户端不需要用户另行安装 Grok Build；安装 URGS 客户端后，Grok 运行时随客户端一起部署。Windows 构建流水线使用官方安装源只是在构建机准备 sidecar，最终安装包内包含的是已锁定并验收过的 `grok.exe`。
+
+这里的“自包含”指 Grok Build 运行时和 WebView2 离线安装资源随客户端分发，不代表把大模型权重打进客户端。当前内网模式会关闭 xAI 登录、在线市场、自动更新和远程搜索；首次使用仍需在“设置 → 模型连接”配置一个内网可访问的模型服务地址和 API Key，密钥只保存到 Windows 系统凭据库。
 
 也可以在 GitHub Actions 中手动运行“URGS Windows 客户端”工作流，或提交包含桌面端相关变更的 Pull Request 触发验证构建。生成的 MSI、`setup.exe` 和 SHA-256 清单会作为流水线产物保留 14 天。
 
@@ -71,4 +89,4 @@ http://25.18.17.210:18080/desktop/latest.json
 
 生产环境使用 `DEPLOY_ENV=prod`，客户端构建时的 `TAURI_UPDATER_ENDPOINT` 必须改为 `http://214.129.29.66:18080/desktop/latest.json`。首次接入内网更新时，旧版客户端仍可能指向 GitHub；需要人工安装一次这个写入内网地址的桥接版，之后才可以自动升级。
 
-正式分发前必须配置 Windows 代码签名证书。内网终端无法在线安装 WebView2 时，应将 `webviewInstallMode` 调整为离线安装模式。
+正式分发前必须配置 Windows 代码签名证书。当前配置已经启用 `webviewInstallMode.type=offlineInstaller`，所以内网终端无需访问互联网安装 WebView2；发布前仍需在一台干净 Windows 机器上完成一次“安装客户端 → 启动客户端 → 配置内网模型 → 创建会话”的验收。

@@ -12,7 +12,8 @@
     "build:web": "pnpm --dir ../urgs-web build --mode desktop",
     "icon": "tauri icon app-icon.png",
     "test": "node --test scripts/*.test.mjs",
-    "verify:windows": "node scripts/verify-windows-bundle.mjs"
+    "verify:windows": "node scripts/verify-windows-bundle.mjs",
+    "verify:windows:install": "powershell -NoProfile -ExecutionPolicy Bypass -File scripts/verify-windows-install.ps1"
   },
   "devDependencies": {
     "@tauri-apps/cli": "^2.11.4"

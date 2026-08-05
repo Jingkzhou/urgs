@@ -275,7 +275,7 @@ logs/java/urgs-executor-prod.log
 ## 8. 补充说明
 
 - `full` 包含：`api web executor agent lineage nginx redis onlyoffice`。
-- `desktop` 不是常驻服务；未指定 `DESKTOP_UPDATER_SOURCE_DIR` 时，它会触发 GitHub Actions 的“构建 URGS 内网 Windows 更新包”、等待完成，并下载工件到 `deploy/artifacts/windows-updater/<环境>/<请求标识>/`。随后把签名的 Windows MSI、NSIS `setup.exe` 和 `.sig` 发布到 Nginx 的 `/desktop/`。更新地址来自环境模板中的 `DESKTOP_UPDATER_BASE_URL`，SIT 和生产必须填写客户端可访问的内网地址。
+- `desktop` 不是常驻服务；未指定 `DESKTOP_UPDATER_SOURCE_DIR` 时，它会触发 GitHub Actions 的“构建 URGS 内网 Windows 更新包”、等待完成，并下载工件到 `deploy/artifacts/windows-updater/<环境>/<请求标识>/`。随后把签名的 Windows MSI、NSIS `setup.exe` 和 `.sig` 发布到 Nginx 的 `/desktop/`。安装包已内置并在 Windows 构建机上完成安装后冒烟验证的 Grok sidecar，不需要终端另行安装 Grok Build。更新地址来自环境模板中的 `DESKTOP_UPDATER_BASE_URL`，SIT 和生产必须填写客户端可访问的内网地址。
 - Windows 安装包必须在 Windows 构建机上使用 `TAURI_UPDATER_ENDPOINT=<内网地址>/latest.json pnpm --dir urgs-desktop build:updater` 构建；部署脚本只发布已签名工件，不会在 macOS/Linux 上伪造 Windows 更新签名。
 - `lineage` 是随包分发的命令行工具，不是常驻服务。
 - `onlyoffice` 使用官方 ARM64 DEB 安装为 Linux 系统服务，首次执行 `bin/deploy.sh install/up` 需要 sudo 权限并安装 PostgreSQL、RabbitMQ、字体、Nginx 等系统依赖。

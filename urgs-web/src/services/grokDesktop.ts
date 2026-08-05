@@ -388,9 +388,6 @@ export const getGrokSessionInfo = (sessionId: string) =>
 export const compactGrokSession = (sessionId: string, userContext?: string) =>
     invokeGrok<Record<string, any>>('grok_compact_session', { sessionId, userContext: userContext?.trim() || null });
 
-export const recapGrokSession = (sessionId: string) =>
-    invokeGrok<Record<string, any>>('grok_recap_session', { sessionId });
-
 export const renameGrokSession = (sessionId: string, title: string, workspace?: string) =>
     invokeGrok<Record<string, any>>('grok_session_rename', { sessionId, title, workspace: workspace || null });
 

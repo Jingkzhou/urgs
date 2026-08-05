@@ -57,6 +57,26 @@ const readSignature = async (installerPath) => {
     }
 };
 
+const readBuildManifest = async (files, version) => {
+    const manifestPath = files.find((file) => basename(file) === 'windows-build-manifest.json');
+    if (!manifestPath) {
+        throw new Error('缺少 Windows 构建清单 windows-build-manifest.json，无法确认安装包包含 Grok sidecar');
+    }
+    let manifest;
+    try {
+        manifest = JSON.parse(await readFile(manifestPath, 'utf8'));
+    } catch (error) {
+        throw new Error(`读取 Windows 构建清单失败：${error instanceof Error ? error.message : error}`);
+    }
+    if (manifest.version !== version) {
+        throw new Error(`Windows 构建清单版本 ${manifest.version || '未声明'} 与客户端版本 ${version} 不一致`);
+    }
+    if (!manifest.grokSidecar?.version || !manifest.grokSidecar?.sha256) {
+        throw new Error('Windows 构建清单未记录 Grok sidecar 版本和 SHA-256');
+    }
+    return { path: manifestPath, manifest };
+};
+
 const normalizeBaseUrl = (value) => {
     const url = new URL(value);
     if (!['http:', 'https:'].includes(url.protocol)) {
@@ -81,6 +101,7 @@ export const prepareDesktopUpdater = async ({ sourceDir, outputDir, baseUrl, ver
     }
 
     const files = await listFiles(source);
+    const build = await readBuildManifest(files, version);
     const nsisInstaller = requireSingleFile(
         files.filter((file) => /-setup\.exe$/i.test(file)),
         'NSIS setup.exe',
@@ -99,12 +120,18 @@ export const prepareDesktopUpdater = async ({ sourceDir, outputDir, baseUrl, ver
         cp(nsis.signaturePath, resolve(outputDir, basename(nsis.signaturePath))),
         cp(msiInstaller, resolve(outputDir, basename(msiInstaller))),
         cp(msi.signaturePath, resolve(outputDir, basename(msi.signaturePath))),
+        cp(build.path, resolve(outputDir, 'windows-build-manifest.json')),
     ]);
 
     const manifest = {
         version,
-        notes: 'URGS Windows 客户端自动更新版本。',
+        notes: `URGS Windows 客户端自动更新版本，内置 Grok ${build.manifest.grokSidecar.version}。`,
         pub_date: new Date().toISOString(),
+        grok_sidecar: {
+            version: build.manifest.grokSidecar.version,
+            sha256: build.manifest.grokSidecar.sha256,
+            size_bytes: build.manifest.grokSidecar.sizeBytes,
+        },
         platforms: {
             'windows-x86_64': {
                 signature: nsis.signature,

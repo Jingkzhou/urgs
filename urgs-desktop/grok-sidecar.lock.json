@@ -1,0 +1,11 @@
+{
+  "version": "0.2.119",
+  "targets": {
+    "x86_64-pc-windows-msvc": {
+      "version": "0.2.119",
+      "sha256": "1cc60bef45ab793fd905885b41d310f37c949a027148639c2d750e61eafc88dd",
+      "sizeBytes": 138699080,
+      "downloadUrl": "https://x.ai/cli/grok-0.2.119-windows-x86_64.exe"
+    }
+  }
+}

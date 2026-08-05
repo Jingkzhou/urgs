@@ -20,7 +20,6 @@ import {
     listGrokSessions,
     searchGrokSessions,
     compactGrokSession,
-    recapGrokSession,
     flushGrokMemory,
     killGrokBackgroundTask,
     cancelGrokSubagent,
@@ -1989,7 +1988,7 @@ export const useArkDesktopRuntime = () => {
 
     const ensureContextSession = useCallback(async (
         taskId: string,
-        contextAction: 'compact' | 'recap' | 'memory',
+        contextAction: 'compact' | 'memory',
     ) => {
         try {
             await ensureTaskSessionMounted(taskId);
@@ -2034,35 +2033,6 @@ export const useArkDesktopRuntime = () => {
                 output: redactRuntimeText(runtimeErrorText(error)),
             }));
             throw error;
-        }
-    }, [ensureContextSession, updateTask]);
-
-    const recapTask = useCallback(async (taskId: string) => {
-        const task = snapshotRef.current.tasks.find((item) => item.id === taskId);
-        if (!task?.sessionId) throw new Error('当前任务还没有本地会话');
-        updateTask(taskId, (value) => upsertTaskActivity(value, {
-            id: 'session-recap',
-            title: '生成会话 Recap',
-            status: '运行中',
-            kind: 'context',
-        }));
-        try {
-            await ensureContextSession(taskId, 'recap');
-            await recapGrokSession(task.sessionId);
-        } catch (error) {
-            const detail = redactRuntimeText(runtimeErrorText(error));
-            const recapUnavailable = /method not found/i.test(detail);
-            const unavailable = detail.includes('当前模型连接不支持图像输入') || recapUnavailable;
-            updateTask(taskId, (value) => upsertTaskActivity(value, {
-                id: 'session-recap',
-                title: '生成会话 Recap',
-                status: unavailable ? '不可用' : '失败',
-                kind: 'context',
-                output: recapUnavailable
-                    ? '当前安装的内置智能引擎暂未提供 Recap 接口，请更新内置引擎后重启客户端。'
-                    : detail,
-            }));
-            if (!unavailable) throw error;
         }
     }, [ensureContextSession, updateTask]);
 
@@ -2234,10 +2204,6 @@ export const useArkDesktopRuntime = () => {
                     await compactTask(taskId);
                     return taskId;
                 }
-                if (authorization.contextAction === 'recap') {
-                    await recapTask(taskId);
-                    return taskId;
-                }
                 if (authorization.contextAction === 'memory') {
                     await flushTaskMemory(taskId);
                     return taskId;
@@ -2265,7 +2231,7 @@ export const useArkDesktopRuntime = () => {
             updateTask(taskId, (value) => ({ ...value, error: message, updatedAt: Date.now() }));
             throw error;
         }
-    }, [compactTask, ensureTaskSessionMounted, flushTaskMemory, recapTask, refreshTaskSessionInfo, sendFollowUp, startTask, updateTask]);
+    }, [compactTask, ensureTaskSessionMounted, flushTaskMemory, refreshTaskSessionInfo, sendFollowUp, startTask, updateTask]);
 
     const cancelTask = useCallback(async (taskId: string) => {
         const task = snapshotRef.current.tasks.find((item) => item.id === taskId);
@@ -2667,7 +2633,6 @@ export const useArkDesktopRuntime = () => {
         validateWorkflow,
         refreshTaskSessionInfo,
         compactTask,
-        recapTask,
         flushTaskMemory,
         refreshTaskBackgroundTasks,
         killTaskBackgroundTask,

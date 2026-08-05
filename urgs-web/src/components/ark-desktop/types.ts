@@ -188,7 +188,7 @@ export type ArkDesktopTaskStatus = 'running' | 'waiting_authorization' | 'comple
 export interface ArkDesktopModelKeyAuthorization {
     providerId: string;
     action: 'start' | 'follow_up' | 'context';
-    contextAction?: 'compact' | 'recap' | 'memory' | 'workflow';
+    contextAction?: 'compact' | 'memory' | 'workflow';
     prompt?: string;
 }
 

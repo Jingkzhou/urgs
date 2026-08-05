@@ -911,9 +911,6 @@ const ContextUsageMenu: React.FC<{ task: ArkDesktopTask; runtime: ReturnType<typ
                 <button type="button" disabled={!sessionReady || pending !== null || task.status === 'running'} onClick={() => void run('compact', () => runtime.compactTask(task.id))} className={actionClass}>
                     <span>压缩上下文</span>{pending === 'compact' ? <RefreshCw size={13} className="animate-spin" /> : null}
                 </button>
-                <button type="button" disabled={!sessionReady || pending !== null} onClick={() => void run('recap', () => runtime.recapTask(task.id))} className={actionClass}>
-                    <span>Recap</span>{pending === 'recap' ? <RefreshCw size={13} className="animate-spin" /> : null}
-                </button>
                 <button type="button" disabled={!sessionReady || pending !== null} onClick={() => void run('memory', () => runtime.flushTaskMemory(task.id))} className={actionClass}>
                     <span>刷新记忆</span>{pending === 'memory' ? <RefreshCw size={13} className="animate-spin" /> : null}
                 </button>

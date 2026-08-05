@@ -3458,9 +3458,26 @@ pub async fn grok_memory_flush(
     if session_id.is_empty() {
         return Err("会话标识不能为空".to_string());
     }
-    session_process(&state, session_id)?
+    let process = session_process(&state, session_id)?;
+    match process
         .request("x.ai/memory/flush", json!({ "session_id": session_id }))
         .await
+    {
+        Ok(value) => Ok(value),
+        Err(error) if is_method_not_found_error(&error) => {
+            process
+                .request_with_meta(
+                    "session/prompt",
+                    json!({
+                        "sessionId": session_id,
+                        "prompt": [{ "type": "text", "text": "/flush" }],
+                    }),
+                    Some(json!({ "clientIdentifier": "urgs-desktop" })),
+                )
+                .await
+        }
+        Err(error) => Err(error),
+    }
 }
 
 #[tauri::command]
