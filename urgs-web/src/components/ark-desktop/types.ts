@@ -345,4 +345,5 @@ export interface ArkDesktopPlanApprovalRequest {
     requestId: unknown;
     toolCallId?: string;
     planContent?: string;
+    planSteps?: ArkDesktopPlanStep[];
 }

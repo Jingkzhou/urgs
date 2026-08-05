@@ -52,14 +52,14 @@ const AiManagement: React.FC = () => {
     ];
 
     return (
-        <div className="bg-white rounded-lg shadow-sm min-h-[600px]">
+        <div className="ai-management-page min-w-0 w-full bg-white rounded-lg shadow-sm min-h-[600px]">
             {/* Use Ant Design Tabs for sub-navigation */}
             <Tabs
                 activeKey={activeTab}
                 onChange={setActiveTab}
                 items={items}
                 type="card"
-                className="pt-4 px-4"
+                className="ai-management-tabs pt-4 px-4"
                 tabBarStyle={{ marginBottom: 0 }}
             />
             <div className="p-0 bg-slate-50 border-t border-slate-200">

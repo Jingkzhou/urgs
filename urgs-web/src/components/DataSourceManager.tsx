@@ -1,6 +1,6 @@
-import React, { useState, useEffect } from 'react';
+import React, { useMemo, useState, useEffect } from 'react';
 import { Table, Button, Modal, Form, Input, Select, InputNumber, message, Space, Tag, Popconfirm, Card, Divider, Switch } from 'antd';
-import { PlusOutlined, EditOutlined, DeleteOutlined, ApiOutlined, DatabaseOutlined } from '@ant-design/icons';
+import { PlusOutlined, EditOutlined, DeleteOutlined, ApiOutlined, DatabaseOutlined, ReloadOutlined, SearchOutlined } from '@ant-design/icons';
 import { getDeployEnvironments, type DeployEnvironment, type SsoConfig } from '@/api/version';
 import { getSystemList } from '@/api/ops';
 
@@ -45,6 +45,7 @@ interface DataSourceConfig {
     // Helper fields for display
     metaName?: string;
     metaCategory?: string;
+    metaCode?: string;
 }
 
 interface DataSourcePoolMember {
@@ -108,28 +109,42 @@ const DataSourceManager: React.FC = () => {
     const [loading, setLoading] = useState(false);
     const [poolLoading, setPoolLoading] = useState(false);
     const [testLoading, setTestLoading] = useState(false);
+    const [dataLoading, setDataLoading] = useState(false);
+    const [refreshing, setRefreshing] = useState(false);
+    const [sourceKeyword, setSourceKeyword] = useState('');
+    const [sourceCategoryFilter, setSourceCategoryFilter] = useState<string | undefined>();
+    const [sourceStatusFilter, setSourceStatusFilter] = useState<number | undefined>();
+    const [poolKeyword, setPoolKeyword] = useState('');
+    const [poolStatusFilter, setPoolStatusFilter] = useState<number | undefined>();
 
     // Fetch Data
     const fetchData = async () => {
+        setDataLoading(true);
         try {
-            // Mock API calls - replace with real fetch
             const token = localStorage.getItem('auth_token');
-            const metaRes = await fetch('/api/datasource/meta', {
-                headers: { 'Authorization': `Bearer ${token}` }
-            }).then(res => res.json());
-            const configRes = await fetch('/api/datasource/config', {
-                headers: { 'Authorization': `Bearer ${token}` }
-            }).then(res => res.json());
-            const poolRes = await fetch('/api/datasource/pool', {
-                headers: { 'Authorization': `Bearer ${token}` }
-            }).then(res => res.json());
+            const headers = { 'Authorization': `Bearer ${token}` };
+            const [metaResponse, configResponse, poolResponse] = await Promise.all([
+                fetch('/api/datasource/meta', { headers }),
+                fetch('/api/datasource/config', { headers }),
+                fetch('/api/datasource/pool', { headers }),
+            ]);
+            if (!metaResponse.ok || !configResponse.ok || !poolResponse.ok) {
+                throw new Error('数据源接口返回失败');
+            }
+            const [metaData, configData, poolData] = await Promise.all([
+                metaResponse.json(),
+                configResponse.json(),
+                poolResponse.json(),
+            ]);
+            const nextMetaList: DataSourceMeta[] = Array.isArray(metaData) ? metaData : [];
+            const nextConfigList: DataSourceConfig[] = Array.isArray(configData) ? configData : [];
 
-            setMetaList(metaRes);
-            setPools(Array.isArray(poolRes) ? poolRes : []);
+            setMetaList(nextMetaList);
+            setPools(Array.isArray(poolData) ? poolData : []);
 
             // Enrich config with meta info
-            const enrichedConfigs = configRes.map((config: any) => {
-                const meta = metaRes.find((m: any) => m.id === config.metaId);
+            const enrichedConfigs = nextConfigList.map((config: DataSourceConfig) => {
+                const meta = nextMetaList.find(item => item.id === config.metaId);
                 return {
                     ...config,
                     metaName: meta?.name,
@@ -140,7 +155,18 @@ const DataSourceManager: React.FC = () => {
             setSources(enrichedConfigs);
         } catch (error) {
             console.error('获取数据失败:', error);
-            // message.error('加载后端数据失败');
+            message.error('数据源配置加载失败，请稍后重试');
+        } finally {
+            setDataLoading(false);
+        }
+    };
+
+    const handleRefresh = async () => {
+        setRefreshing(true);
+        try {
+            await Promise.all([fetchData(), fetchSystems()]);
+        } finally {
+            setRefreshing(false);
         }
     };
 
@@ -462,22 +488,22 @@ const DataSourceManager: React.FC = () => {
 
                 // RDBMS & Standard DBs
                 if (['mysql', 'oracle', 'sqlserver', 'postgresql', 'db2', 'clickhouse', 'drds', 'redis', 'cassandra', 'mongodb', 'inceptor', 'xinghuan', 'transwarp'].includes(type || '')) {
-                    return <span className="text-slate-500 font-mono text-xs">{config.host || config.address}:{config.port}/{config.database || config.serviceName || config.keyspace || ''}</span>;
+                    return <span className="data-source-connection text-slate-500 font-mono text-xs">{config.host || config.address}:{config.port}/{config.database || config.serviceName || config.keyspace || ''}</span>;
                 }
                 // File Systems
                 if (['ftp', 'sftp'].includes(type || '')) {
-                    return <span className="text-slate-500 font-mono text-xs">{config.host}:{config.port}{config.rootPath}</span>;
+                    return <span className="data-source-connection text-slate-500 font-mono text-xs">{config.host}:{config.port}{config.rootPath}</span>;
                 }
                 // Big Data
                 if (['hdfs', 'hive'].includes(type || '')) {
-                    return <span className="text-slate-500 font-mono text-xs">{config.defaultFS}</span>;
+                    return <span className="data-source-connection text-slate-500 font-mono text-xs">{config.defaultFS}</span>;
                 }
                 // Others
                 if (['elasticsearch', 'opentsdb', 'tsdb', 'ots', 'odps', 'oss'].includes(type || '')) {
-                    return <span className="text-slate-500 font-mono text-xs">{config.endpoint}</span>;
+                    return <span className="data-source-connection text-slate-500 font-mono text-xs">{config.endpoint}</span>;
                 }
-                if (type === 'hbase') return <span className="text-slate-500 font-mono text-xs">{config.zkQuorum}</span>;
-                if (type === 'http') return <span className="text-slate-500 font-mono text-xs">{config.method} {config.url}</span>;
+                if (type === 'hbase') return <span className="data-source-connection text-slate-500 font-mono text-xs">{config.zkQuorum}</span>;
+                if (type === 'http') return <span className="data-source-connection text-slate-500 font-mono text-xs">{config.method} {config.url}</span>;
 
                 return '-';
             }
@@ -491,6 +517,15 @@ const DataSourceManager: React.FC = () => {
                     <div>{getSystemName(record.appSystemId)}</div>
                     <div className="text-slate-400">{getEnvName(record.envId)}</div>
                 </div>
+            )
+        },
+        {
+            title: '状态',
+            dataIndex: 'status',
+            key: 'status',
+            width: 90,
+            render: (status: number) => (
+                <Tag color={status === 0 ? 'default' : 'green'}>{status === 0 ? '停用' : '启用'}</Tag>
             )
         },
         {
@@ -587,6 +622,44 @@ const DataSourceManager: React.FC = () => {
         }
     ];
 
+    const sourceCategoryOptions = useMemo(() => Array.from(new Set(
+        metaList.map(meta => meta.category).filter(Boolean),
+    )).sort().map(category => ({ label: category, value: category })), [metaList]);
+
+    const filteredSources = useMemo(() => {
+        const keyword = sourceKeyword.trim().toLowerCase();
+        return sources.filter(source => {
+            const meta = metaList.find(item => item.id === source.metaId);
+            const searchable = [
+                source.name,
+                source.metaName,
+                source.metaCode,
+                meta?.name,
+                meta?.code,
+                getSystemName(source.appSystemId),
+                getEnvName(source.envId),
+            ].filter(Boolean).join(' ').toLowerCase();
+            return (!keyword || searchable.includes(keyword))
+                && (!sourceCategoryFilter || meta?.category === sourceCategoryFilter)
+                && (sourceStatusFilter === undefined || (source.status ?? 1) === sourceStatusFilter);
+        });
+    }, [getEnvName, getSystemName, metaList, sourceCategoryFilter, sourceKeyword, sourceStatusFilter, sources]);
+
+    const filteredPools = useMemo(() => {
+        const keyword = poolKeyword.trim().toLowerCase();
+        return pools.filter(pool => {
+            const searchable = [
+                pool.name,
+                ...(pool.members || []).flatMap(member => [member.datasourceName, String(member.datasourceId)]),
+            ].filter(Boolean).join(' ').toLowerCase();
+            return (!keyword || searchable.includes(keyword))
+                && (poolStatusFilter === undefined || (pool.status ?? 1) === poolStatusFilter);
+        });
+    }, [poolKeyword, poolStatusFilter, pools]);
+
+    const enabledSourceCount = sources.filter(source => (source.status ?? 1) !== 0).length;
+    const enabledPoolCount = pools.filter(pool => (pool.status ?? 1) !== 0).length;
+
     const currentMeta = metaList.find(m => m.id === selectedMetaId);
     const currentSchema = currentMeta?.formSchema || [];
 
@@ -607,64 +680,144 @@ const DataSourceManager: React.FC = () => {
     };
 
     return (
-        <div className="min-h-full bg-slate-50 p-6">
-            <Card variant="borderless" className="shadow-sm">
-                <div className="flex justify-between items-center mb-4">
-                    <div className="flex items-center gap-3">
-                        <h2 className="text-lg font-bold flex items-center gap-2">
-                            <DatabaseOutlined className="text-blue-600" />
-                            数据源管理
-                        </h2>
-                        <div className="inline-flex rounded-lg border border-slate-200 bg-slate-50 p-0.5">
-                            <button
-                                type="button"
-                                onClick={() => setActiveTab('source')}
-                                className={`rounded-md px-3 py-1 text-sm ${activeTab === 'source' ? 'bg-white text-blue-700 shadow-sm' : 'text-slate-500'}`}
-                            >
-                                数据源配置
-                            </button>
-                            <button
-                                type="button"
-                                onClick={() => setActiveTab('pool')}
-                                className={`rounded-md px-3 py-1 text-sm ${activeTab === 'pool' ? 'bg-white text-blue-700 shadow-sm' : 'text-slate-500'}`}
-                            >
-                                数据池
-                            </button>
+        <div className="data-source-manager-page min-h-full min-w-0 bg-slate-50 p-6">
+            <Card variant="borderless" className="data-source-manager-card shadow-sm">
+                <div className="data-source-manager-header">
+                    <div className="min-w-0">
+                        <div className="flex min-w-0 items-center gap-3">
+                            <span className="data-source-manager-icon"><DatabaseOutlined /></span>
+                            <div className="min-w-0">
+                                <h2 className="data-source-manager-title">数据源管理</h2>
+                                <p className="data-source-manager-description">统一维护连接配置，并通过数据池为任务调度提供可复用执行资源</p>
+                            </div>
                         </div>
                     </div>
-                    {activeTab === 'source' ? (
-                        <Button type="primary" icon={<PlusOutlined />} onClick={() => handleOpenModal()}>
-                            新增数据源
+                    <Space wrap className="data-source-manager-actions">
+                        <Button icon={<ReloadOutlined />} loading={refreshing} onClick={() => void handleRefresh()}>
+                            刷新
                         </Button>
-                    ) : (
-                        <Button type="primary" icon={<PlusOutlined />} onClick={() => handleOpenPoolModal()}>
-                            新增数据池
+                        <Button type="primary" icon={<PlusOutlined />} onClick={() => activeTab === 'source' ? handleOpenModal() : handleOpenPoolModal()}>
+                            {activeTab === 'source' ? '新增数据源' : '新增数据池'}
                         </Button>
-                    )}
+                    </Space>
+                </div>
+
+                <div className="data-source-manager-summary" aria-label="数据源概览">
+                    <div className="data-source-stat">
+                        <span>数据源配置</span>
+                        <strong>{sources.length}</strong>
+                        <small>已启用 {enabledSourceCount} 个</small>
+                    </div>
+                    <div className="data-source-stat">
+                        <span>数据池</span>
+                        <strong>{pools.length}</strong>
+                        <small>已启用 {enabledPoolCount} 个</small>
+                    </div>
+                    <div className="data-source-stat data-source-stat-muted">
+                        <span>当前视图</span>
+                        <strong>{activeTab === 'source' ? filteredSources.length : filteredPools.length}</strong>
+                        <small>{activeTab === 'source' ? '条数据源配置' : '个数据池'}</small>
+                    </div>
+                </div>
+
+                <div className="data-source-manager-tabs" role="tablist" aria-label="数据源管理分类">
+                    <button
+                        type="button"
+                        role="tab"
+                        aria-selected={activeTab === 'source'}
+                        onClick={() => setActiveTab('source')}
+                        className={`data-source-manager-tab ${activeTab === 'source' ? 'is-active' : ''}`}
+                    >
+                        数据源配置
+                    </button>
+                    <button
+                        type="button"
+                        role="tab"
+                        aria-selected={activeTab === 'pool'}
+                        onClick={() => setActiveTab('pool')}
+                        className={`data-source-manager-tab ${activeTab === 'pool' ? 'is-active' : ''}`}
+                    >
+                        数据池
+                    </button>
+                </div>
+
+                <div className="data-source-manager-toolbar">
+                    <div className="data-source-manager-filters">
+                        <Input
+                            allowClear
+                            prefix={<SearchOutlined />}
+                            value={activeTab === 'source' ? sourceKeyword : poolKeyword}
+                            onChange={event => activeTab === 'source' ? setSourceKeyword(event.target.value) : setPoolKeyword(event.target.value)}
+                            placeholder={activeTab === 'source' ? '搜索名称、类型或归属' : '搜索数据池或池内数据源'}
+                            className="data-source-manager-search"
+                        />
+                        {activeTab === 'source' ? (
+                            <>
+                                <Select
+                                    allowClear
+                                    value={sourceCategoryFilter}
+                                    onChange={setSourceCategoryFilter}
+                                    options={sourceCategoryOptions}
+                                    placeholder="全部类型"
+                                    className="data-source-manager-filter"
+                                />
+                                <Select
+                                    allowClear
+                                    value={sourceStatusFilter}
+                                    onChange={setSourceStatusFilter}
+                                    options={[{ label: '启用', value: 1 }, { label: '停用', value: 0 }]}
+                                    placeholder="全部状态"
+                                    className="data-source-manager-filter data-source-status-filter"
+                                />
+                            </>
+                        ) : (
+                            <Select
+                                allowClear
+                                value={poolStatusFilter}
+                                onChange={setPoolStatusFilter}
+                                options={[{ label: '启用', value: 1 }, { label: '停用', value: 0 }]}
+                                placeholder="全部状态"
+                                className="data-source-manager-filter data-source-status-filter"
+                            />
+                        )}
+                    </div>
+                    <span className="data-source-manager-result-count">
+                        {activeTab === 'source' ? `显示 ${filteredSources.length} / ${sources.length}` : `显示 ${filteredPools.length} / ${pools.length}`}
+                    </span>
                 </div>
 
                 {activeTab === 'source' ? (
                     <Table
+                        className="data-source-manager-table"
+                        loading={dataLoading}
                         columns={columns}
-                        dataSource={sources}
+                        dataSource={filteredSources}
                         rowKey="id"
-                        pagination={{ pageSize: 10 }}
+                        scroll={{ x: 980 }}
+                        pagination={{ pageSize: 10, showSizeChanger: false, showTotal: total => `共 ${total} 条` }}
+                        locale={{ emptyText: sourceKeyword || sourceCategoryFilter || sourceStatusFilter !== undefined ? '没有匹配的数据源' : '暂无数据源配置' }}
                     />
                 ) : (
                     <Table
+                        className="data-source-manager-table"
+                        loading={dataLoading}
                         columns={poolColumns}
-                        dataSource={pools}
+                        dataSource={filteredPools}
                         rowKey="id"
-                        pagination={{ pageSize: 10 }}
+                        scroll={{ x: 840 }}
+                        pagination={{ pageSize: 10, showSizeChanger: false, showTotal: total => `共 ${total} 个` }}
+                        locale={{ emptyText: poolKeyword || poolStatusFilter !== undefined ? '没有匹配的数据池' : '暂无数据池' }}
                     />
                 )}
             </Card>
 
             <Modal
+                rootClassName="data-source-config-modal"
+                className="data-source-config-dialog"
                 title={editingId ? "编辑数据源" : "新建数据源"}
                 open={isModalOpen}
                 onCancel={() => setIsModalOpen(false)}
-                width={600}
+                width={640}
                 footer={[
                     <Button key="cancel" onClick={() => setIsModalOpen(false)}>
                         取消
@@ -691,7 +844,7 @@ const DataSourceManager: React.FC = () => {
                     form={form}
                     layout="vertical"
                 >
-                    <div className="grid grid-cols-2 gap-4">
+                    <div className="data-source-form-grid grid grid-cols-1 gap-4 md:grid-cols-2">
                         <Form.Item
                             name="name"
                             label="显示名称"
@@ -765,6 +918,8 @@ const DataSourceManager: React.FC = () => {
             </Modal>
 
             <Modal
+                rootClassName="data-source-pool-modal"
+                className="data-source-pool-dialog"
                 title={editingPoolId ? '编辑数据池' : '新建数据池'}
                 open={isPoolModalOpen}
                 onCancel={() => setIsPoolModalOpen(false)}
@@ -779,7 +934,7 @@ const DataSourceManager: React.FC = () => {
                 ]}
             >
                 <Form form={poolForm} layout="vertical">
-                    <div className="grid grid-cols-2 gap-4">
+                    <div className="data-source-form-grid grid grid-cols-1 gap-4 md:grid-cols-2">
                         <Form.Item
                             name="name"
                             label="数据池名称"
@@ -830,7 +985,7 @@ const DataSourceManager: React.FC = () => {
                         {(fields, { add, remove }, { errors }) => (
                             <div className="space-y-3">
                                 {fields.map(({ key, name, ...restField }) => (
-                                    <div key={key} className="grid grid-cols-[minmax(220px,1fr)_80px_90px_110px_90px_40px] items-end gap-2 rounded-lg border border-slate-100 bg-slate-50 p-3">
+                                    <div key={key} className="data-source-pool-member-row items-end gap-2 rounded-lg border border-slate-100 bg-slate-50 p-3">
                                         <Form.Item
                                             {...restField}
                                             name={[name, 'datasourceId']}

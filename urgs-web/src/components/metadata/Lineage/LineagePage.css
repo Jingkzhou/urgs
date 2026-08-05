@@ -2,6 +2,7 @@
     height: 100% !important;
 }
 .lineage-page-toolbar {
+    width: 100%;
     display: flex;
     align-items: center;
     justify-content: space-between;
@@ -11,7 +12,8 @@
 }
 .lineage-page-toolbar-brand {
     flex: 0 0 auto;
-    min-width: 116px;
+    min-width: 0;
+    max-width: 100%;
 }
 .lineage-page-toolbar > .lineage-quick-search-section {
     flex: 1 1 520px;
@@ -29,6 +31,7 @@
 }
 .lineage-page-toolbar > .lineage-action-bar {
     flex: 0 0 auto;
+    max-width: 100%;
     min-width: 0;
 }
 .lineage-action-bar {
@@ -95,6 +98,7 @@
 }
 .lineage-quick-search-section {
     flex: 0 0 auto;
+    min-width: 0;
     padding: 10px 24px;
     border-bottom: 1px solid #e8eef7;
     background: #fff;
@@ -105,6 +109,7 @@
     justify-content: space-between;
     gap: 12px;
     flex-wrap: nowrap;
+    min-width: 0;
 }
 .lineage-quick-filter-row .ant-input-affix-wrapper {
     min-width: 220px;
@@ -116,6 +121,237 @@
     gap: 12px;
     flex: 0 0 auto;
 }
+
+/* Tauri WebView fallback: keep the quick-search controls visible if AntD's
+   CSS variables are not available during the first desktop paint. */
+.desktop-runtime .lineage-quick-filter-row .ant-input-affix-wrapper {
+    display: inline-flex;
+    align-items: center;
+    box-sizing: border-box;
+    min-height: 40px;
+    padding: 0 12px;
+    color: #1f2937;
+    background: #fff;
+    border: 1px solid #d8e1ee;
+    border-radius: 8px;
+    box-shadow: none;
+}
+
+.desktop-runtime .lineage-quick-filter-row .ant-input-affix-wrapper:focus-within {
+    border-color: #1677ff;
+    box-shadow: 0 0 0 2px rgba(22, 119, 255, 0.12);
+}
+
+.desktop-runtime .lineage-quick-filter-row .ant-input-affix-wrapper .ant-input {
+    min-width: 0;
+    height: 38px;
+    padding: 0;
+    color: inherit;
+    font-size: 14px;
+    line-height: 38px;
+    background: transparent;
+    border: 0;
+    outline: 0;
+    box-shadow: none;
+}
+
+.desktop-runtime .lineage-quick-filter-row .ant-btn.ant-btn-primary {
+    display: inline-flex;
+    align-items: center;
+    justify-content: center;
+    min-height: 40px;
+    padding: 0 16px;
+    color: #fff;
+    font-size: 14px;
+    line-height: 1.5;
+    background: #1677ff;
+    border: 1px solid #1677ff;
+    border-radius: 8px;
+    box-shadow: 0 4px 10px rgba(22, 119, 255, 0.2);
+    cursor: pointer;
+}
+
+.desktop-runtime .lineage-quick-filter-row .ant-btn.ant-btn-primary:hover {
+    background: #4096ff;
+    border-color: #4096ff;
+}
+
+.desktop-runtime .lineage-quick-filter-row .ant-checkbox-wrapper,
+.desktop-runtime .lineage-direction-filter .ant-checkbox-wrapper {
+    display: inline-flex;
+    align-items: center;
+    min-height: 32px;
+    color: #334155;
+    font-size: 14px;
+    line-height: 20px;
+    cursor: pointer;
+}
+
+.desktop-runtime .lineage-quick-filter-row .ant-checkbox,
+.desktop-runtime .lineage-direction-filter .ant-checkbox {
+    display: block;
+    box-sizing: border-box;
+    width: 16px;
+    height: 16px;
+    flex: 0 0 16px;
+    background: #fff;
+    border: 1px solid #b8c5d6;
+    border-radius: 4px;
+}
+
+.desktop-runtime .lineage-quick-filter-row .ant-checkbox:hover,
+.desktop-runtime .lineage-direction-filter .ant-checkbox:hover {
+    border-color: #1677ff;
+}
+
+.desktop-runtime .lineage-quick-filter-row .ant-checkbox.ant-checkbox-checked,
+.desktop-runtime .lineage-direction-filter .ant-checkbox.ant-checkbox-checked {
+    background: #1677ff;
+    border-color: #1677ff;
+}
+
+.desktop-runtime .lineage-quick-filter-row .ant-checkbox.ant-checkbox-checked::after,
+.desktop-runtime .lineage-direction-filter .ant-checkbox.ant-checkbox-checked::after {
+    position: absolute;
+    top: 50%;
+    inset-inline-start: 50%;
+    display: block;
+    width: 5px;
+    height: 9px;
+    border: 2px solid #fff;
+    border-top: 0;
+    border-inline-start: 0;
+    transform: translate(-50%, -60%) rotate(45deg);
+    opacity: 1;
+    content: "";
+}
+
+.desktop-runtime .lineage-quick-filter-row .ant-checkbox + span,
+.desktop-runtime .lineage-direction-filter .ant-checkbox + span {
+    padding-inline: 6px 0;
+}
+
+.desktop-runtime .lineage-action-bar > .ant-segmented {
+    display: inline-flex;
+    align-items: center;
+    box-sizing: border-box;
+    min-height: 40px;
+    padding: 3px;
+    color: #475569;
+    background: #f8fafc;
+    border: 1px solid #d8e1ee;
+    border-radius: 8px;
+}
+
+.desktop-runtime .lineage-display-mode-filter > .ant-segmented {
+    display: inline-flex;
+    align-items: center;
+    box-sizing: border-box;
+    min-height: 32px;
+    padding: 2px;
+    color: #475569;
+    background: transparent;
+    border: 0;
+    border-radius: 6px;
+}
+
+.desktop-runtime .lineage-action-bar .ant-segmented-group {
+    display: flex;
+    align-items: stretch;
+    width: 100%;
+}
+
+.desktop-runtime .lineage-action-bar .ant-segmented-item {
+    position: relative;
+    display: inline-flex;
+    align-items: center;
+    justify-content: center;
+    min-height: 32px;
+    color: #475569;
+    border-radius: 6px;
+    cursor: pointer;
+}
+
+.desktop-runtime .lineage-action-bar .ant-segmented-item:hover {
+    color: #1677ff;
+}
+
+.desktop-runtime .lineage-action-bar .ant-segmented-item-selected {
+    color: #1f2937;
+    background: #fff;
+    box-shadow: 0 1px 3px rgba(15, 23, 42, 0.12);
+}
+
+.desktop-runtime .lineage-action-bar .ant-segmented-item-label {
+    display: inline-flex;
+    align-items: center;
+    min-height: 32px;
+    padding: 0 10px;
+    font-size: 14px;
+    line-height: 32px;
+    white-space: nowrap;
+}
+
+.desktop-runtime .lineage-action-bar .ant-segmented-item-icon {
+    display: inline-flex;
+    align-items: center;
+    line-height: 0;
+}
+
+.desktop-runtime .lineage-action-bar .ant-segmented-item-icon + * {
+    margin-inline-start: 6px;
+}
+
+.desktop-runtime .lineage-action-bar .ant-segmented-thumb {
+    display: none;
+}
+
+.desktop-runtime .lineage-action-bar .ant-btn {
+    display: inline-flex;
+    align-items: center;
+    justify-content: center;
+    box-sizing: border-box;
+    min-height: 40px;
+    padding: 0 14px;
+    color: #334155;
+    font-size: 14px;
+    line-height: 1.5;
+    background: #fff;
+    border: 1px solid #d8e1ee;
+    border-radius: 8px;
+    box-shadow: 0 1px 2px rgba(15, 23, 42, 0.04);
+    cursor: pointer;
+}
+
+.desktop-runtime .lineage-action-bar .ant-btn:hover {
+    color: #1677ff;
+    border-color: #1677ff;
+}
+
+.desktop-runtime .lineage-action-bar .ant-btn.ant-btn-primary {
+    color: #fff;
+    background: #1677ff;
+    border-color: #1677ff;
+}
+
+.desktop-runtime .lineage-action-bar .ant-btn.ant-btn-primary:hover {
+    color: #fff;
+    background: #4096ff;
+    border-color: #4096ff;
+}
+
+.desktop-runtime .lineage-action-bar .ant-btn.ant-btn-dangerous {
+    color: #ff4d4f;
+    border-color: #ffccc7;
+}
+
+.desktop-runtime .lineage-action-bar .ant-btn[disabled] {
+    color: #94a3b8;
+    background: #f8fafc;
+    border-color: #e2e8f0;
+    cursor: not-allowed;
+}
+
 .lineage-quick-result-count {
     margin-left: auto;
     color: #64748b;
@@ -505,6 +741,17 @@
         border-left: 0;
         padding: 14px 16px;
     }
+}
+.desktop-runtime .lineage-page-toolbar {
+    flex-wrap: wrap;
+}
+.desktop-runtime .lineage-page-toolbar > .lineage-quick-search-section {
+    order: 3;
+    flex-basis: 100%;
+    min-width: 0;
+}
+.desktop-runtime .lineage-page-toolbar > .lineage-quick-search-section .lineage-quick-filter-row {
+    flex-wrap: wrap;
 }
 .lineage-search-panel-drawer .lineage-catalog-layout {
     grid-template-columns: 1fr;

@@ -347,6 +347,10 @@ const findTodoCollection = (value: unknown, visited = new Set<object>()): unknow
 };
 
 const parseTodoPlan = (value: unknown): ArkDesktopPlanStep[] | null => {
+    if (value && typeof value === 'object' && !Array.isArray(value)) {
+        const directPlan = parsePlanSteps((value as Record<string, unknown>).entries);
+        if (directPlan.length) return directPlan;
+    }
     const todos = findTodoCollection(value);
     if (!todos || typeof todos !== 'object') return null;
 
@@ -476,6 +480,7 @@ export const useArkDesktopRuntime = () => {
     const mountedSessionIdsRef = useRef(new Set<string>());
     const subagentBySessionIdRef = useRef(new Map<string, string>());
     const activePromptCountsRef = useRef(new Map<string, number>());
+    const planByTaskIdRef = useRef(new Map<string, ArkDesktopPlanStep[]>());
     const snapshotRef = useRef(snapshot);
     const capabilityRequestIdRef = useRef(0);
     const remoteSessionRequestIdRef = useRef(0);
@@ -486,6 +491,7 @@ export const useArkDesktopRuntime = () => {
         snapshot.tasks.forEach((task) => {
             if (task.runtimeProcessId) taskByProcessIdRef.current.set(task.runtimeProcessId, task.id);
             if (task.sessionId) taskBySessionIdRef.current.set(task.sessionId, task.id);
+            if (task.plan?.length) planByTaskIdRef.current.set(task.id, task.plan);
         });
     }, [snapshot]);
 
@@ -793,6 +799,7 @@ export const useArkDesktopRuntime = () => {
                 && !String(params?._meta?.eventId || '').trim();
             const todoPlan = isTransientPlanCleanup ? null : parseTodoPlan(update);
             if (todoPlan) {
+                planByTaskIdRef.current.set(taskId, todoPlan);
                 updateTask(taskId, (task) => ({ ...task, plan: todoPlan, updatedAt: Date.now() }));
             }
             if (updateType === 'available_commands_update') {
@@ -1253,12 +1260,15 @@ export const useArkDesktopRuntime = () => {
         }
 
         if (event.eventType === 'plan_approval_request' && taskId && sessionId) {
+            const taskPlan = planByTaskIdRef.current.get(taskId)
+                || snapshotRef.current.tasks.find((task) => task.id === taskId)?.plan;
             const request: ArkDesktopPlanApprovalRequest = {
                 taskId,
                 sessionId,
                 requestId: event.payload?.requestId,
                 toolCallId: typeof event.payload?.toolCallId === 'string' ? event.payload.toolCallId : undefined,
                 planContent: typeof event.payload?.planContent === 'string' ? event.payload.planContent : undefined,
+                ...(taskPlan?.length ? { planSteps: taskPlan } : {}),
             };
             if (request.requestId === undefined || request.requestId === null) {
                 updateTask(taskId, (task) => ({ ...task, error: '收到的计划审批格式无效', updatedAt: Date.now() }));

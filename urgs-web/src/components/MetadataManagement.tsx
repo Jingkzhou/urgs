@@ -38,10 +38,10 @@ const MetadataManagement: React.FC = () => {
     ];
 
     return (
-        <div className="flex h-full min-h-[720px] min-w-0 max-w-[1600px] mx-auto animate-fade-in flex-col gap-6 px-2">
+        <div className="flex h-full min-h-[720px] min-w-0 w-full max-w-[1600px] mx-auto animate-fade-in flex-col gap-6 px-2">
             {/* Header & Navigation */}
-            <div className="flex flex-col md:flex-row justify-between items-end gap-6 pb-6 border-b border-slate-200/60">
-                <div>
+            <div className="flex min-w-0 w-full flex-col md:flex-row md:items-end md:justify-between gap-6 pb-6 border-b border-slate-200/60">
+                <div className="min-w-0 shrink-0">
                     <h1 className="text-3xl font-bold text-slate-900 tracking-tight flex items-center gap-3">
                         数据管理
                     </h1>
@@ -50,7 +50,7 @@ const MetadataManagement: React.FC = () => {
                     </p>
                 </div>
 
-                <div className="bg-slate-100/80 p-1.5 rounded-xl flex items-center gap-1 overflow-x-auto max-w-full backdrop-blur-sm shadow-inner">
+                <div className="flex min-w-0 max-w-full shrink items-center gap-1 overflow-x-auto rounded-xl bg-slate-100/80 p-1.5 backdrop-blur-sm shadow-inner md:ml-6 md:flex-1 md:justify-end">
                     {tabs.map((tab) => (
                         <Auth key={tab.id} code={tab.code}>
                             <button

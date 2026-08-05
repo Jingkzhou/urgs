@@ -131,26 +131,30 @@ const WorkspaceSessionSidebar: React.FC<WorkspaceSessionSidebarProps> = ({
                     : view === 'running'
                         ? !task.archivedAt && isBusyTask(task)
                         : !task.archivedAt)
-                .sort((left, right) => {
-                    if (Boolean(left.pinnedAt) !== Boolean(right.pinnedAt)) return left.pinnedAt ? -1 : 1;
-                    if (isBusyTask(left) !== isBusyTask(right)) return isBusyTask(left) ? -1 : 1;
-                    return right.updatedAt - left.updatedAt;
-                });
-            const latestAt = workspaceTasks.reduce((latest, task) => Math.max(latest, task.updatedAt), 0);
+                // Keep the task array order stable while ACP events update updatedAt.
+                // Reordering on every streamed chunk makes parallel sessions jump
+                // between rows and can make the active session look like it changed.
+                .reduce<ArkDesktopTask[][]>((result, task) => {
+                    result[task.pinnedAt ? 0 : 1].push(task);
+                    return result;
+                }, [[], []])
+                .flat();
+            const busyCount = workspaceTasks.filter((task) => !task.archivedAt && isBusyTask(task)).length;
             return {
                 workspace,
                 label: workspace.split(/[\\/]/).filter(Boolean).pop() || workspace,
                 tasks: filtered,
-                latestAt,
                 default: workspace === defaultWorkspace,
-                busy: workspaceTasks.some((task) => !task.archivedAt && isBusyTask(task)),
+                busyCount,
             };
         }).filter((group) => {
             if (query || view !== 'active') return group.tasks.length > 0;
             return true;
         }).sort((left, right) => {
             if (left.default !== right.default) return left.default ? -1 : 1;
-            return right.latestAt - left.latestAt;
+            // Preserve the user's workspace order. Task updates must not move
+            // an entire workspace while several jobs are running.
+            return 0;
         });
     }, [defaultWorkspace, query, tasks, view, workspaces]);
 
@@ -317,7 +321,9 @@ const WorkspaceSessionSidebar: React.FC<WorkspaceSessionSidebarProps> = ({
                                 : <FolderOpen size={17} strokeWidth={1.7} className="shrink-0 text-slate-600" />}
                             <span className="min-w-0 flex-1 truncate text-[13px] font-medium text-[#47484e]">{group.label}</span>
                             {group.default && <span className="rounded bg-[#e8e4ff] px-1 py-0.5 text-[9px] font-medium text-[#6657d9]">默认</span>}
-                            {group.busy && <LoaderCircle size={14} strokeWidth={2} className="shrink-0 animate-spin text-slate-500" aria-label={`${group.label} 中有进行中的会话`} />}
+                            {view !== 'archived' && group.busyCount > 0 && <span className="shrink-0 rounded-full bg-[#eeeaff] px-1.5 py-0.5 text-[9px] font-medium text-[#6657d9]" aria-label={`${group.label} 中有 ${group.busyCount} 个进行中的会话`}>
+                                {group.busyCount} 运行
+                            </span>}
                             <span className="text-[10px] text-slate-400">{group.tasks.length}</span>
                         </button>
                         <div className="mr-1 flex items-center opacity-0 transition group-hover/workspace:opacity-100 focus-within:opacity-100">
@@ -350,6 +356,18 @@ const WorkspaceSessionSidebar: React.FC<WorkspaceSessionSidebarProps> = ({
                         {visibleTasks.map((task) => {
                             const active = task.id === activeTaskId;
                             const busy = isBusyTask(task);
+                            const statusLabel = task.status === 'running'
+                                ? '运行中'
+                                : task.status === 'waiting_authorization'
+                                    ? '待授权'
+                                    : task.status === 'failed'
+                                        ? '失败'
+                                        : undefined;
+                            const statusClassName = task.status === 'failed'
+                                ? 'bg-red-50 text-red-600'
+                                : task.status === 'waiting_authorization'
+                                    ? 'bg-amber-50 text-amber-700'
+                                    : 'bg-emerald-50 text-emerald-600';
                             return <div key={task.id} className={`group/task relative flex items-center rounded-lg transition ${active ? 'bg-[#e8e8ea] text-[#25262b]' : 'text-[#55565c] hover:bg-[#eeeeef]'}`}>
                                 {renamingTaskId === task.id ? <div className="flex min-w-0 flex-1 items-center gap-1.5 px-2 py-1.5">
                                     <input
@@ -374,7 +392,10 @@ const WorkspaceSessionSidebar: React.FC<WorkspaceSessionSidebarProps> = ({
                                         <span className="flex items-center gap-1.5">
                                             <span className="min-w-0 flex-1 truncate text-[12px] font-medium">{task.title}</span>
                                             {task.pinnedAt && <Pin size={11} className="shrink-0 fill-current text-[#6657d9]" />}
-                                            {task.status === 'running' && <LoaderCircle size={14} strokeWidth={2} className="shrink-0 animate-spin text-slate-500" aria-label="任务进行中" />}
+                                            {statusLabel && <span className={`shrink-0 rounded-full px-1.5 py-0.5 text-[9px] font-medium ${statusClassName}`}>
+                                                {task.status === 'running' && <LoaderCircle size={10} strokeWidth={2} className="mr-0.5 inline animate-spin" />}
+                                                {statusLabel}
+                                            </span>}
                                         </span>
                                     </button>
                                     <button type="button" onClick={() => setOpenMenu((current) => current?.kind === 'task' && current.id === task.id ? null : { kind: 'task', id: task.id })} className="mr-1 rounded-md p-1.5 text-slate-400 opacity-0 transition hover:bg-white hover:text-slate-700 group-hover/task:opacity-100 focus:opacity-100" title={`${task.title} 会话操作`} aria-label={`${task.title} 会话操作`}><Ellipsis size={14} /></button>

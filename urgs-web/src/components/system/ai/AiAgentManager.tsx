@@ -212,9 +212,9 @@ const AiAgentManager: React.FC = () => {
     };
 
     return (
-        <div className="p-6 bg-slate-50 min-h-[500px]">
-            <Card variant="borderless" className="shadow-sm">
-                <div className="flex justify-between items-center mb-6">
+        <div className="ai-agent-manager-page min-w-0 p-6 bg-slate-50 min-h-[500px]">
+            <Card variant="borderless" className="ai-agent-manager-card shadow-sm">
+                <div className="ai-agent-manager-header flex min-w-0 flex-wrap justify-between items-center gap-4 mb-6">
                     <div>
                         <h3 className="text-lg font-bold text-slate-800 flex items-center gap-2">
                             <RobotOutlined className="text-purple-600" /> 智能体助手管理
@@ -223,6 +223,7 @@ const AiAgentManager: React.FC = () => {
                     </div>
                     <Button
                         type="primary"
+                        className="ai-agent-manager-create shrink-0"
                         icon={<PlusOutlined />}
                         onClick={() => {
                             setEditingId(null);
@@ -235,11 +236,12 @@ const AiAgentManager: React.FC = () => {
                     </Button>
                 </div>
 
-                <div className="mb-4 flex gap-2">
-                    <Input prefix={<SearchOutlined className="text-slate-400" />} placeholder="搜索助手名称或描述" className="w-64" />
+                <div className="ai-agent-manager-search mb-4 flex min-w-0 flex-wrap gap-2">
+                    <Input prefix={<SearchOutlined className="text-slate-400" />} placeholder="搜索助手名称或描述" className="ai-agent-manager-search-input w-64" />
                 </div>
 
                 <Table
+                    className="ai-agent-manager-table"
                     columns={columns}
                     dataSource={agents}
                     rowKey="id"
@@ -249,6 +251,7 @@ const AiAgentManager: React.FC = () => {
 
             <Modal
                 title={editingId ? "编辑助手" : "新建助手"}
+                rootClassName="ai-agent-manager-modal"
                 open={isModalOpen}
                 onCancel={() => setIsModalOpen(false)}
                 onOk={handleSave}

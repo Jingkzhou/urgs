@@ -374,9 +374,9 @@ const AiApiManager: React.FC = () => {
     const currentProvider = providers.find(p => p.code === selectedProvider);
 
     return (
-        <div className="min-h-full bg-slate-50 p-6">
-            <Card variant="borderless" className="shadow-sm">
-                <div className="flex justify-between items-center mb-4">
+        <div className="ai-api-manager-page min-h-full min-w-0 max-w-full bg-slate-50 p-6">
+            <Card variant="borderless" className="ai-api-manager-card shadow-sm">
+                <div className="ai-api-manager-header flex min-w-0 flex-wrap justify-between items-center gap-4 mb-4">
                     <h2 className="text-lg font-bold flex items-center gap-2">
                         <ApiOutlined className="text-blue-600" />
                         AI API 配置管理
@@ -395,6 +395,8 @@ const AiApiManager: React.FC = () => {
             </Card>
 
             <Modal
+                rootClassName="ai-api-manager-modal"
+                className="ai-api-manager-dialog"
                 title={editingId ? "编辑 AI API 配置" : "新增 AI API 配置"}
                 open={isModalOpen}
                 onCancel={() => setIsModalOpen(false)}

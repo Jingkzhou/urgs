@@ -64,7 +64,7 @@ const startApplication = async () => {
 
   root.render(
     <React.StrictMode>
-      <ConfigProvider theme={{ cssVar: { key: 'urgs' } }}>
+      <ConfigProvider theme={{ zeroRuntime: false }}>
         {desktopRuntime && (!getApiBaseUrl() || editDesktopConnection) ? <DesktopConnectionSetup /> : <App />}
         <DesktopAutoUpdater />
       </ConfigProvider>

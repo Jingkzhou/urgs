@@ -8,6 +8,7 @@ import GitRepoManagement from './version/git-repo/GitRepoManagement';
 import AiManagement from './system/ai/AiManagement';
 import DataSourceManager from './DataSourceManager';
 import Auth from './Auth';
+import './system/SystemManagement.css';
 
 type SubModule = 'org' | 'role' | 'user' | 'menu' | 'system' | 'repo' | 'sso' | 'datasource' | 'ai';
 
@@ -21,12 +22,12 @@ const SystemManagement: React.FC = () => {
     { id: 'menu', label: '菜单功能', permission: 'sys:menu' },
     { id: 'system', label: '监管系统', permission: 'sys:system' },
     { id: 'repo', label: 'Git 仓库管理', permission: 'sys:repo' },
-    { id: 'datasource', label: '数据源配置', permission: 'sys:datasource' },
+    { id: 'datasource', label: '数据源管理', permission: 'sys:datasource' },
     { id: 'ai', label: 'AI 管理', permission: 'sys:ai' },
   ];
 
   return (
-    <div className="p-6 max-w-7xl mx-auto animate-fade-in">
+    <div className="system-management-page min-w-0 w-full max-w-7xl p-6 mx-auto animate-fade-in">
       <div className="mb-6 flex items-center justify-between">
         <div>
           <h2 className="text-2xl font-bold text-slate-800">系统管理</h2>

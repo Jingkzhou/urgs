@@ -1,0 +1,2107 @@
+/* Ant Design v6 uses runtime CSS variables for many component styles. Keep this
+   compatibility layer limited to the system-management pages in the desktop
+   WebView so the regular web theme remains unchanged. */
+
+.desktop-runtime .system-management-page,
+.desktop-runtime .ai-management-page,
+.desktop-runtime .ai-agent-manager-page {
+  min-width: 0;
+  max-width: 100%;
+  box-sizing: border-box;
+}
+
+.desktop-runtime .system-management-page {
+  overflow-x: hidden;
+}
+
+/* Data source configuration and execution pools share one compact, responsive
+   surface. Keep these rules page-scoped so the rest of the system pages keep
+   their existing Ant Design behavior. */
+.data-source-manager-page {
+  box-sizing: border-box;
+  min-width: 0;
+  max-width: 100%;
+}
+
+.data-source-manager-card {
+  min-width: 0;
+  overflow: hidden;
+  color: #334155;
+  background: #fff;
+  border: 1px solid #e8edf5;
+  border-radius: 14px;
+  box-shadow: 0 4px 16px rgba(15, 23, 42, 0.04);
+}
+
+.data-source-manager-card .ant-card-body {
+  min-width: 0;
+  padding: 24px;
+}
+
+.data-source-manager-header {
+  display: flex;
+  align-items: flex-start;
+  justify-content: space-between;
+  gap: 16px;
+  min-width: 0;
+  margin-bottom: 20px;
+}
+
+.data-source-manager-icon {
+  display: inline-flex;
+  flex: 0 0 auto;
+  align-items: center;
+  justify-content: center;
+  width: 40px;
+  height: 40px;
+  color: #2563eb;
+  background: #eff6ff;
+  border-radius: 11px;
+  font-size: 20px;
+}
+
+.data-source-manager-title {
+  margin: 0;
+  color: #1e293b;
+  font-size: 18px;
+  font-weight: 700;
+  line-height: 26px;
+}
+
+.data-source-manager-description {
+  max-width: 720px;
+  margin: 3px 0 0;
+  color: #94a3b8;
+  font-size: 13px;
+  line-height: 20px;
+}
+
+.data-source-manager-actions {
+  flex: 0 0 auto;
+}
+
+.data-source-manager-summary {
+  display: grid;
+  grid-template-columns: repeat(3, minmax(0, 1fr));
+  gap: 12px;
+  min-width: 0;
+  margin-bottom: 20px;
+}
+
+.data-source-stat {
+  display: grid;
+  grid-template-columns: minmax(0, 1fr) auto;
+  gap: 2px 12px;
+  min-width: 0;
+  padding: 14px 16px;
+  background: #f8fbff;
+  border: 1px solid #e4eefb;
+  border-radius: 10px;
+}
+
+.data-source-stat > span {
+  min-width: 0;
+  overflow: hidden;
+  color: #64748b;
+  font-size: 13px;
+  line-height: 20px;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.data-source-stat > strong {
+  color: #1e3a8a;
+  font-size: 22px;
+  font-weight: 700;
+  line-height: 26px;
+}
+
+.data-source-stat > small {
+  grid-column: 1 / -1;
+  color: #94a3b8;
+  font-size: 12px;
+  line-height: 18px;
+}
+
+.data-source-stat-muted {
+  background: #fafafa;
+  border-color: #edf0f5;
+}
+
+.data-source-stat-muted > strong {
+  color: #475569;
+}
+
+.data-source-manager-tabs {
+  display: inline-flex;
+  align-items: center;
+  max-width: 100%;
+  margin-bottom: 16px;
+  padding: 3px;
+  background: #f1f5f9;
+  border-radius: 9px;
+}
+
+.data-source-manager-tab {
+  min-width: 104px;
+  padding: 7px 14px;
+  color: #64748b;
+  font-size: 13px;
+  line-height: 20px;
+  background: transparent;
+  border: 0;
+  border-radius: 7px;
+  cursor: pointer;
+  white-space: nowrap;
+}
+
+.data-source-manager-tab:hover {
+  color: #2563eb;
+}
+
+.data-source-manager-tab.is-active {
+  color: #1d4ed8;
+  font-weight: 600;
+  background: #fff;
+  box-shadow: 0 1px 4px rgba(15, 23, 42, 0.1);
+}
+
+.data-source-manager-toolbar {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 12px;
+  min-width: 0;
+  margin-bottom: 12px;
+}
+
+.data-source-manager-filters {
+  display: flex;
+  flex: 1 1 auto;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 8px;
+  min-width: 0;
+}
+
+.data-source-manager-search {
+  width: min(340px, 100%);
+  min-width: 200px;
+}
+
+.data-source-manager-filter {
+  width: 132px;
+  min-width: 116px;
+}
+
+.data-source-status-filter {
+  width: 112px;
+}
+
+.data-source-manager-result-count {
+  flex: 0 0 auto;
+  color: #94a3b8;
+  font-size: 12px;
+  line-height: 20px;
+  white-space: nowrap;
+}
+
+.data-source-manager-table {
+  min-width: 0;
+}
+
+.data-source-connection {
+  display: inline-block;
+  max-width: 100%;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  vertical-align: bottom;
+  white-space: nowrap;
+}
+
+.data-source-pool-member-row {
+  display: grid;
+  grid-template-columns: minmax(220px, 1fr) 80px 90px 110px 90px 40px;
+  min-width: 0;
+}
+
+.data-source-pool-member-row .ant-form-item {
+  min-width: 0;
+}
+
+.data-source-pool-member-row .ant-form-item-control,
+.data-source-pool-member-row .ant-form-item-control-input,
+.data-source-pool-member-row .ant-form-item-control-input-content {
+  min-width: 0;
+}
+
+@media (max-width: 900px) {
+  .data-source-manager-header {
+    flex-wrap: wrap;
+  }
+
+  .data-source-manager-actions {
+    width: 100%;
+    justify-content: flex-end;
+  }
+
+  .data-source-manager-search {
+    flex: 1 1 240px;
+    width: auto;
+  }
+
+  .data-source-pool-member-row {
+    grid-template-columns: minmax(180px, 1fr) 72px 82px 96px 78px 36px;
+  }
+}
+
+@media (max-width: 680px) {
+  .data-source-manager-card .ant-card-body {
+    padding: 16px;
+  }
+
+  .data-source-manager-summary {
+    grid-template-columns: 1fr;
+  }
+
+  .data-source-manager-toolbar {
+    align-items: flex-start;
+    flex-direction: column;
+  }
+
+  .data-source-manager-filters {
+    width: 100%;
+  }
+
+  .data-source-manager-search,
+  .data-source-manager-filter,
+  .data-source-status-filter {
+    flex: 1 1 160px;
+    width: auto;
+  }
+
+  .data-source-manager-result-count {
+    align-self: flex-end;
+  }
+
+  .data-source-pool-member-row {
+    grid-template-columns: minmax(0, 1fr) minmax(90px, 0.75fr) 36px;
+  }
+
+  .data-source-pool-member-row .ant-form-item:first-child {
+    grid-column: 1 / -1;
+  }
+
+  .data-source-pool-member-row .ant-form-item:nth-child(2) {
+    grid-column: 1 / 2;
+  }
+
+  .data-source-pool-member-row .ant-form-item:nth-child(3) {
+    grid-column: 2 / 3;
+  }
+
+  .data-source-pool-member-row .ant-form-item:nth-child(4) {
+    grid-column: 1 / 2;
+  }
+
+  .data-source-pool-member-row .ant-form-item:nth-child(5) {
+    grid-column: 2 / 3;
+  }
+
+  .data-source-pool-member-row > .ant-btn {
+    grid-column: 3 / 4;
+    grid-row: 2 / span 2;
+  }
+}
+
+/* Ant Design runtime fallback for the Tauri WebView. */
+.desktop-runtime .data-source-manager-page .ant-btn {
+  box-sizing: border-box;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  min-height: 32px;
+  padding: 4px 14px;
+  color: #334155;
+  font-size: 14px;
+  line-height: 22px;
+  background: #fff;
+  border: 1px solid #d8e1ee;
+  border-radius: 7px;
+  cursor: pointer;
+  transition: color 0.2s, border-color 0.2s, background-color 0.2s, box-shadow 0.2s;
+}
+
+.desktop-runtime .data-source-manager-page .ant-btn:hover {
+  color: #1677ff;
+  border-color: #1677ff;
+}
+
+.desktop-runtime .data-source-manager-page .ant-btn.ant-btn-primary {
+  color: #fff;
+  background: #1677ff;
+  border-color: #1677ff;
+  box-shadow: 0 4px 10px rgba(22, 119, 255, 0.16);
+}
+
+.desktop-runtime .data-source-manager-page .ant-btn.ant-btn-primary:hover {
+  color: #fff;
+  background: #4096ff;
+  border-color: #4096ff;
+}
+
+.desktop-runtime .data-source-manager-page .ant-btn.ant-btn-text {
+  padding: 4px 8px;
+  background: transparent;
+  border-color: transparent;
+  box-shadow: none;
+}
+
+.desktop-runtime .data-source-manager-page .ant-btn.ant-btn-text.text-blue-600 {
+  color: #2563eb !important;
+}
+
+.desktop-runtime .data-source-manager-page .ant-btn.ant-btn-text.text-red-500 {
+  color: #ef4444 !important;
+}
+
+.desktop-runtime .data-source-manager-page .ant-btn .anticon {
+  display: inline-flex;
+  align-items: center;
+  line-height: 1;
+}
+
+.desktop-runtime .data-source-manager-page .ant-input-affix-wrapper,
+.desktop-runtime .data-source-manager-page .ant-input,
+.desktop-runtime .data-source-manager-page .ant-input-number,
+.desktop-runtime .data-source-manager-page .ant-select-selector {
+  box-sizing: border-box;
+  color: #1f2937;
+  background: #fff;
+  border: 1px solid #d8e1ee;
+  border-radius: 7px;
+}
+
+.desktop-runtime .data-source-manager-page .ant-input-affix-wrapper,
+.desktop-runtime .data-source-manager-page .ant-input {
+  min-height: 32px;
+}
+
+.desktop-runtime .data-source-manager-page .ant-input-affix-wrapper {
+  display: inline-flex;
+  align-items: center;
+  width: 100%;
+  padding: 4px 11px;
+}
+
+.desktop-runtime .data-source-manager-page .ant-input-affix-wrapper:focus-within,
+.desktop-runtime .data-source-manager-page .ant-input-affix-wrapper:hover,
+.desktop-runtime .data-source-manager-page .ant-input:focus,
+.desktop-runtime .data-source-manager-page .ant-input:hover,
+.desktop-runtime .data-source-manager-page .ant-input-number:focus-within,
+.desktop-runtime .data-source-manager-page .ant-input-number:hover,
+.desktop-runtime .data-source-manager-page .ant-select-focused .ant-select-selector,
+.desktop-runtime .data-source-manager-page .ant-select-selector:hover {
+  border-color: #1677ff;
+}
+
+.desktop-runtime .data-source-manager-page .ant-input-affix-wrapper:focus-within,
+.desktop-runtime .data-source-manager-page .ant-input:focus,
+.desktop-runtime .data-source-manager-page .ant-input-number:focus-within,
+.desktop-runtime .data-source-manager-page .ant-select-focused .ant-select-selector {
+  box-shadow: 0 0 0 2px rgba(22, 119, 255, 0.12);
+}
+
+.desktop-runtime .data-source-manager-page .ant-input-prefix {
+  display: inline-flex;
+  align-items: center;
+  margin-inline-end: 8px;
+  color: #94a3b8;
+}
+
+.desktop-runtime .data-source-manager-page .ant-input-affix-wrapper .ant-input {
+  width: 100%;
+  min-width: 0;
+  padding: 0;
+  color: #1f2937;
+  background: transparent;
+  border: 0;
+  outline: 0;
+}
+
+.desktop-runtime .data-source-manager-page .ant-form .ant-input {
+  padding: 4px 11px;
+}
+
+.desktop-runtime .data-source-manager-page .ant-input::placeholder,
+.desktop-runtime .data-source-manager-page .ant-select-selection-placeholder {
+  color: #94a3b8;
+}
+
+.desktop-runtime .data-source-manager-page .ant-select {
+  min-width: 0;
+  color: #334155;
+}
+
+.desktop-runtime .data-source-manager-page .ant-select-selector {
+  display: flex;
+  align-items: center;
+  min-height: 32px;
+  padding: 0 11px;
+}
+
+.desktop-runtime .data-source-manager-page .ant-select-selection-item,
+.desktop-runtime .data-source-manager-page .ant-select-selection-placeholder {
+  overflow: hidden;
+  line-height: 30px;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.desktop-runtime .data-source-manager-page .ant-select-arrow {
+  color: #94a3b8;
+}
+
+.desktop-runtime .data-source-manager-page .ant-input-number {
+  display: inline-flex;
+  align-items: center;
+  width: 100%;
+  min-height: 32px;
+}
+
+.desktop-runtime .data-source-manager-page .ant-input-number-input {
+  min-width: 0;
+  padding: 4px 11px;
+  color: #1f2937;
+  background: transparent;
+  border: 0;
+  outline: 0;
+}
+
+.desktop-runtime .data-source-manager-page .ant-switch {
+  display: inline-flex;
+  align-items: center;
+  width: 44px;
+  height: 22px;
+  padding: 0;
+  background: #94a3b8;
+  border: 0;
+  border-radius: 999px;
+}
+
+.desktop-runtime .data-source-manager-page .ant-switch-checked {
+  background: #1677ff;
+}
+
+.desktop-runtime .data-source-manager-page .ant-switch-handle {
+  width: 18px;
+  height: 18px;
+}
+
+.desktop-runtime .data-source-manager-page .ant-form-item-label > label {
+  color: #475569;
+  font-size: 14px;
+  line-height: 22px;
+}
+
+.desktop-runtime .data-source-manager-page .ant-form-item-explain-error {
+  color: #dc2626;
+  font-size: 12px;
+  line-height: 18px;
+}
+
+.desktop-runtime .data-source-manager-page .ant-table-wrapper {
+  width: 100%;
+  min-width: 0;
+  overflow-x: auto;
+}
+
+.desktop-runtime .data-source-manager-page .ant-table {
+  min-width: 840px;
+  color: #334155;
+  font-size: 14px;
+  background: #fff;
+}
+
+.desktop-runtime .data-source-manager-page .ant-table-container {
+  overflow: hidden;
+  border: 1px solid #e2e8f0;
+  border-radius: 8px;
+}
+
+.desktop-runtime .data-source-manager-page .ant-table-content > table {
+  width: 100%;
+  border-collapse: separate;
+  border-spacing: 0;
+}
+
+.desktop-runtime .data-source-manager-page .ant-table-thead > tr > th {
+  box-sizing: border-box;
+  padding: 12px 16px;
+  color: #475569;
+  font-weight: 600;
+  line-height: 22px;
+  text-align: start;
+  white-space: nowrap;
+  background: #f8fafc;
+  border-bottom: 1px solid #e2e8f0;
+}
+
+.desktop-runtime .data-source-manager-page .ant-table-tbody > tr > td {
+  box-sizing: border-box;
+  padding: 12px 16px;
+  color: #334155;
+  line-height: 22px;
+  vertical-align: middle;
+  background: #fff;
+  border-bottom: 1px solid #eef2f7;
+}
+
+.desktop-runtime .data-source-manager-page .ant-table-tbody > tr:last-child > td {
+  border-bottom: 0;
+}
+
+.desktop-runtime .data-source-manager-page .ant-table-tbody > tr:hover > td {
+  background: #f8fbff;
+}
+
+.desktop-runtime .data-source-manager-page .ant-table-cell-ellipsis {
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.desktop-runtime .data-source-manager-page .ant-tag {
+  display: inline-flex;
+  align-items: center;
+  box-sizing: border-box;
+  min-height: 22px;
+  margin-inline-end: 0;
+  padding: 0 7px;
+  color: #475569;
+  font-size: 12px;
+  line-height: 20px;
+  background: #f8fafc;
+  border: 1px solid #d8e1ee;
+  border-radius: 4px;
+}
+
+.desktop-runtime .data-source-manager-page .ant-tag-green,
+.desktop-runtime .data-source-manager-page .ant-tag-success {
+  color: #15803d;
+  background: #f0fdf4;
+  border-color: #bbf7d0;
+}
+
+.desktop-runtime .data-source-manager-page .ant-tag-blue {
+  color: #1d4ed8;
+  background: #eff6ff;
+  border-color: #bfdbfe;
+}
+
+.desktop-runtime .data-source-manager-page .ant-tag-orange {
+  color: #c2410c;
+  background: #fff7ed;
+  border-color: #fed7aa;
+}
+
+.desktop-runtime .data-source-manager-page .ant-tag-purple {
+  color: #7e22ce;
+  background: #faf5ff;
+  border-color: #e9d5ff;
+}
+
+.desktop-runtime .data-source-manager-page .ant-tag-cyan {
+  color: #0e7490;
+  background: #ecfeff;
+  border-color: #a5f3fc;
+}
+
+.desktop-runtime .data-source-manager-page .ant-pagination {
+  display: flex;
+  align-items: center;
+  gap: 4px;
+  margin: 16px 0 0;
+  padding: 0;
+  list-style: none;
+}
+
+.desktop-runtime .data-source-manager-page .ant-pagination-item,
+.desktop-runtime .data-source-manager-page .ant-pagination-prev,
+.desktop-runtime .data-source-manager-page .ant-pagination-next {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  min-width: 32px;
+  height: 32px;
+  margin: 0;
+  color: #475569;
+  line-height: 30px;
+  text-align: center;
+  background: #fff;
+  border: 1px solid #d8e1ee;
+  border-radius: 6px;
+}
+
+.desktop-runtime .data-source-manager-page .ant-pagination-item a,
+.desktop-runtime .data-source-manager-page .ant-pagination-prev button,
+.desktop-runtime .data-source-manager-page .ant-pagination-next button {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  width: 100%;
+  height: 100%;
+  padding: 0;
+  color: inherit;
+  background: transparent;
+  border: 0;
+}
+
+.desktop-runtime .data-source-manager-page .ant-pagination-item-active {
+  color: #1677ff;
+  border-color: #1677ff;
+}
+
+.desktop-runtime .data-source-manager-page .ant-pagination-item:hover,
+.desktop-runtime .data-source-manager-page .ant-pagination-prev:hover,
+.desktop-runtime .data-source-manager-page .ant-pagination-next:hover {
+  color: #1677ff;
+  border-color: #1677ff;
+}
+
+.desktop-runtime .data-source-manager-page .ant-pagination-disabled {
+  color: #cbd5e1;
+  background: #f8fafc;
+  border-color: #e2e8f0;
+}
+
+.desktop-runtime .data-source-config-modal,
+.desktop-runtime .data-source-pool-modal {
+  position: fixed;
+  inset: 0;
+  z-index: 1000;
+}
+
+.desktop-runtime .data-source-config-modal .ant-modal-mask:not([style*="display: none"]),
+.desktop-runtime .data-source-pool-modal .ant-modal-mask:not([style*="display: none"]) {
+  position: fixed;
+  inset: 0;
+  z-index: 1000;
+  display: block !important;
+  visibility: visible !important;
+  opacity: 1 !important;
+  background: rgba(15, 23, 42, 0.45) !important;
+}
+
+.desktop-runtime .data-source-config-modal .ant-modal-wrap:not([style*="display: none"]),
+.desktop-runtime .data-source-pool-modal .ant-modal-wrap:not([style*="display: none"]) {
+  position: fixed;
+  inset: 0;
+  z-index: 1001;
+  display: flex !important;
+  align-items: center;
+  justify-content: center;
+  box-sizing: border-box;
+  padding: 24px;
+  overflow: auto;
+}
+
+.desktop-runtime .data-source-config-modal .ant-modal,
+.desktop-runtime .data-source-pool-modal .ant-modal {
+  position: relative;
+  box-sizing: border-box;
+  max-width: calc(100vw - 32px);
+  margin: auto;
+  visibility: visible !important;
+  opacity: 1 !important;
+  transform: none !important;
+}
+
+.desktop-runtime .data-source-config-modal .ant-modal-content,
+.desktop-runtime .data-source-pool-modal .ant-modal-content {
+  display: block;
+  padding: 24px;
+  color: #334155;
+  background: #fff;
+  border-radius: 12px;
+  box-shadow: 0 24px 60px rgba(15, 23, 42, 0.2);
+}
+
+.desktop-runtime .data-source-config-modal .ant-modal-container,
+.desktop-runtime .data-source-pool-modal .ant-modal-container {
+  display: block;
+  padding: 24px;
+  color: #334155;
+  background: #fff;
+  border-radius: 12px;
+  box-shadow: 0 24px 60px rgba(15, 23, 42, 0.2);
+}
+
+.desktop-runtime .data-source-config-modal .ant-modal-header,
+.desktop-runtime .data-source-pool-modal .ant-modal-header {
+  background: transparent;
+}
+
+.desktop-runtime .data-source-config-modal .ant-modal-title,
+.desktop-runtime .data-source-pool-modal .ant-modal-title {
+  color: #1e293b;
+  font-size: 18px;
+  font-weight: 600;
+}
+
+.desktop-runtime .data-source-config-modal .ant-modal-body,
+.desktop-runtime .data-source-pool-modal .ant-modal-body {
+  max-height: min(70vh, 680px);
+  overflow-y: auto;
+}
+
+.desktop-runtime .data-source-config-modal .ant-modal-footer,
+.desktop-runtime .data-source-pool-modal .ant-modal-footer {
+  display: flex;
+  justify-content: flex-end;
+  gap: 8px;
+  margin-top: 20px;
+}
+
+.desktop-runtime .data-source-config-modal .ant-modal-close,
+.desktop-runtime .data-source-pool-modal .ant-modal-close {
+  position: absolute;
+  top: 16px;
+  right: 16px;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  width: 32px;
+  height: 32px;
+  color: #64748b;
+  background: transparent;
+  border: 0;
+  border-radius: 6px;
+  cursor: pointer;
+}
+
+.desktop-runtime .data-source-config-modal .ant-modal-close:hover,
+.desktop-runtime .data-source-pool-modal .ant-modal-close:hover {
+  color: #1e293b;
+  background: #f1f5f9;
+}
+
+.desktop-runtime .data-source-config-modal .ant-modal .ant-btn,
+.desktop-runtime .data-source-pool-modal .ant-modal .ant-btn {
+  box-sizing: border-box;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  min-height: 32px;
+  padding: 4px 15px;
+  color: #334155;
+  font-size: 14px;
+  line-height: 22px;
+  background: #fff;
+  border: 1px solid #d8e1ee;
+  border-radius: 7px;
+}
+
+.desktop-runtime .data-source-config-modal .ant-modal .ant-btn.ant-btn-primary,
+.desktop-runtime .data-source-pool-modal .ant-modal .ant-btn.ant-btn-primary {
+  color: #fff;
+  background: #1677ff;
+  border-color: #1677ff;
+}
+
+.desktop-runtime .ai-management-page {
+  overflow: hidden;
+}
+
+.desktop-runtime .ai-management-tabs {
+  min-width: 0;
+  max-width: 100%;
+}
+
+.desktop-runtime .ai-management-page .ant-tabs {
+  width: 100%;
+  min-width: 0;
+  color: #334155;
+}
+
+.desktop-runtime .ai-management-page .ant-tabs-nav {
+  display: flex;
+  align-items: flex-end;
+  min-width: 0;
+  margin: 0;
+  border-bottom: 1px solid #e2e8f0;
+}
+
+.desktop-runtime .ai-management-page .ant-tabs-nav::before {
+  border-bottom: 0;
+}
+
+.desktop-runtime .ai-management-page .ant-tabs-nav-wrap {
+  min-width: 0;
+  overflow-x: auto;
+}
+
+.desktop-runtime .ai-management-page .ant-tabs-nav-list {
+  display: flex;
+  align-items: flex-end;
+  min-width: max-content;
+  gap: 4px;
+}
+
+.desktop-runtime .ai-management-page .ant-tabs-tab {
+  display: inline-flex;
+  align-items: center;
+  min-height: 42px;
+  margin: 0;
+  padding: 9px 14px;
+  color: #475569;
+  background: #f8fafc;
+  border: 1px solid #e2e8f0;
+  border-bottom: 0;
+  border-radius: 8px 8px 0 0;
+  cursor: pointer;
+}
+
+.desktop-runtime .ai-management-page .ant-tabs-tab:hover {
+  color: #1677ff;
+}
+
+.desktop-runtime .ai-management-page .ant-tabs-tab-btn {
+  display: inline-flex;
+  align-items: center;
+  color: inherit;
+  line-height: 22px;
+  white-space: nowrap;
+}
+
+.desktop-runtime .ai-management-page .ant-tabs-tab-active {
+  color: #1e293b;
+  background: #fff;
+  border-color: #e2e8f0;
+}
+
+.desktop-runtime .ai-management-page .ant-tabs-tab-active .ant-tabs-tab-btn {
+  color: #1e293b;
+  font-weight: 600;
+}
+
+.desktop-runtime .ai-management-page .ant-tabs-ink-bar {
+  display: none;
+}
+
+.desktop-runtime .ai-management-page .ant-tabs-content-holder,
+.desktop-runtime .ai-management-page .ant-tabs-content,
+.desktop-runtime .ai-management-page .ant-tabs-tabpane {
+  min-width: 0;
+  max-width: 100%;
+}
+
+.desktop-runtime .ai-management-page .ant-tabs-tabpane {
+  padding: 0;
+}
+
+.desktop-runtime .ai-agent-manager-page {
+  overflow: hidden;
+}
+
+.desktop-runtime .ai-agent-manager-card {
+  display: flex;
+  flex-direction: column;
+  min-width: 0;
+  color: #334155;
+  background: #fff;
+  border: 1px solid #e8edf5;
+  border-radius: 12px;
+  box-shadow: 0 4px 16px rgba(15, 23, 42, 0.04);
+}
+
+.desktop-runtime .ai-agent-manager-card .ant-card-body {
+  min-width: 0;
+  padding: 24px;
+}
+
+.desktop-runtime .ai-agent-manager-header > div:first-child {
+  min-width: 0;
+}
+
+.desktop-runtime .ai-agent-manager-header h3 {
+  min-width: 0;
+  overflow-wrap: anywhere;
+}
+
+.desktop-runtime .ai-agent-manager-search {
+  min-width: 0;
+}
+
+.desktop-runtime .ai-agent-manager-search-input {
+  max-width: 100%;
+}
+
+.desktop-runtime .ai-agent-manager-page .ant-btn {
+  box-sizing: border-box;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  min-height: 32px;
+  padding: 4px 15px;
+  color: #334155;
+  font-size: 14px;
+  line-height: 22px;
+  background: #fff;
+  border: 1px solid #d8e1ee;
+  border-radius: 7px;
+  cursor: pointer;
+  transition: color 0.2s, border-color 0.2s, background-color 0.2s, box-shadow 0.2s;
+}
+
+.desktop-runtime .ai-agent-manager-page .ant-btn:hover {
+  color: #1677ff;
+  border-color: #1677ff;
+}
+
+.desktop-runtime .ai-agent-manager-page .ant-btn.ant-btn-primary,
+.desktop-runtime .ai-agent-manager-page .ai-agent-manager-create {
+  color: #fff;
+  background: #1677ff;
+  border-color: #1677ff;
+  box-shadow: 0 4px 10px rgba(22, 119, 255, 0.16);
+}
+
+.desktop-runtime .ai-agent-manager-page .ant-btn.ant-btn-primary:hover,
+.desktop-runtime .ai-agent-manager-page .ai-agent-manager-create:hover {
+  color: #fff;
+  background: #4096ff;
+  border-color: #4096ff;
+}
+
+.desktop-runtime .ai-agent-manager-page .ant-btn.ant-btn-text {
+  padding: 4px 8px;
+  background: transparent;
+  border-color: transparent;
+  box-shadow: none;
+}
+
+.desktop-runtime .ai-agent-manager-page .ant-btn.ant-btn-text.text-blue-600 {
+  color: #2563eb !important;
+}
+
+.desktop-runtime .ai-agent-manager-page .ant-btn.ant-btn-text.text-red-500 {
+  color: #ef4444 !important;
+}
+
+.desktop-runtime .ai-agent-manager-page .ant-btn .anticon {
+  display: inline-flex;
+  align-items: center;
+  line-height: 1;
+}
+
+.desktop-runtime .ai-agent-manager-page .ant-input-affix-wrapper {
+  display: inline-flex;
+  align-items: center;
+  box-sizing: border-box;
+  min-height: 32px;
+  padding: 4px 11px;
+  color: #1f2937;
+  background: #fff;
+  border: 1px solid #d8e1ee;
+  border-radius: 7px;
+  transition: border-color 0.2s, box-shadow 0.2s;
+}
+
+.desktop-runtime .ai-agent-manager-page .ant-input-affix-wrapper:hover,
+.desktop-runtime .ai-agent-manager-page .ant-input-affix-wrapper:focus-within {
+  border-color: #1677ff;
+}
+
+.desktop-runtime .ai-agent-manager-page .ant-input-affix-wrapper:focus-within {
+  box-shadow: 0 0 0 2px rgba(22, 119, 255, 0.12);
+}
+
+.desktop-runtime .ai-agent-manager-page .ant-input-prefix {
+  display: inline-flex;
+  align-items: center;
+  margin-inline-end: 8px;
+  color: #94a3b8;
+}
+
+.desktop-runtime .ai-agent-manager-page .ant-input {
+  box-sizing: border-box;
+  width: 100%;
+  min-width: 0;
+  padding: 0;
+  color: #1f2937;
+  font-size: 14px;
+  line-height: 22px;
+  background: transparent;
+  border: 0;
+  outline: 0;
+}
+
+.desktop-runtime .ai-agent-manager-page .ant-input::placeholder {
+  color: #94a3b8;
+}
+
+.desktop-runtime .ai-agent-manager-page .ant-table-wrapper {
+  width: 100%;
+  min-width: 0;
+  overflow-x: auto;
+}
+
+.desktop-runtime .ai-agent-manager-page .ant-table {
+  min-width: 760px;
+  color: #334155;
+  font-size: 14px;
+  background: #fff;
+}
+
+.desktop-runtime .ai-agent-manager-page .ant-table-container {
+  overflow: hidden;
+  border: 1px solid #e2e8f0;
+  border-radius: 8px;
+}
+
+.desktop-runtime .ai-agent-manager-page .ant-table-content > table {
+  width: 100%;
+  border-collapse: separate;
+  border-spacing: 0;
+}
+
+.desktop-runtime .ai-agent-manager-page .ant-table-thead > tr > th {
+  padding: 12px 16px;
+  color: #475569;
+  font-weight: 600;
+  line-height: 22px;
+  text-align: start;
+  background: #f8fafc;
+  border-bottom: 1px solid #e2e8f0;
+}
+
+.desktop-runtime .ai-agent-manager-page .ant-table-tbody > tr > td {
+  padding: 12px 16px;
+  color: #334155;
+  line-height: 22px;
+  background: #fff;
+  border-bottom: 1px solid #eef2f7;
+}
+
+.desktop-runtime .ai-agent-manager-page .ant-table-tbody > tr:last-child > td {
+  border-bottom: 0;
+}
+
+.desktop-runtime .ai-agent-manager-page .ant-table-tbody > tr:hover > td {
+  background: #f8fbff;
+}
+
+.desktop-runtime .ai-agent-manager-page .ant-table-cell-ellipsis {
+  overflow: hidden;
+  white-space: nowrap;
+  text-overflow: ellipsis;
+}
+
+.desktop-runtime .ai-agent-manager-page .ant-tag {
+  display: inline-flex;
+  align-items: center;
+  box-sizing: border-box;
+  min-height: 22px;
+  padding: 0 7px;
+  color: #475569;
+  font-size: 12px;
+  line-height: 20px;
+  background: #f8fafc;
+  border: 1px solid #d8e1ee;
+  border-radius: 4px;
+}
+
+.desktop-runtime .ai-agent-manager-page .ant-tag-green,
+.desktop-runtime .ai-agent-manager-page .ant-tag-success {
+  color: #15803d;
+  background: #f0fdf4;
+  border-color: #bbf7d0;
+}
+
+.desktop-runtime .ai-agent-manager-page .ant-tag-blue {
+  color: #1d4ed8;
+  background: #eff6ff;
+  border-color: #bfdbfe;
+}
+
+.desktop-runtime .ai-agent-manager-page .ant-tag-purple {
+  color: #7e22ce;
+  background: #faf5ff;
+  border-color: #e9d5ff;
+}
+
+.desktop-runtime .ai-agent-manager-page .ant-space {
+  display: inline-flex;
+  align-items: center;
+}
+
+.desktop-runtime .ai-agent-manager-page .ant-space-item {
+  display: inline-flex;
+  align-items: center;
+}
+
+.desktop-runtime .ai-agent-manager-page .ant-pagination {
+  display: flex;
+  align-items: center;
+  gap: 4px;
+  margin: 16px 0 0;
+  padding: 0;
+  list-style: none;
+}
+
+.desktop-runtime .ai-agent-manager-page .ant-pagination-item,
+.desktop-runtime .ai-agent-manager-page .ant-pagination-prev,
+.desktop-runtime .ai-agent-manager-page .ant-pagination-next {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  min-width: 32px;
+  height: 32px;
+  margin: 0;
+  color: #475569;
+  line-height: 30px;
+  text-align: center;
+  background: #fff;
+  border: 1px solid #d8e1ee;
+  border-radius: 6px;
+}
+
+.desktop-runtime .ai-agent-manager-page .ant-pagination-item a,
+.desktop-runtime .ai-agent-manager-page .ant-pagination-prev button,
+.desktop-runtime .ai-agent-manager-page .ant-pagination-next button {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  width: 100%;
+  height: 100%;
+  color: inherit;
+  background: transparent;
+  border: 0;
+}
+
+.desktop-runtime .ai-agent-manager-page .ant-pagination-item-active {
+  color: #1677ff;
+  border-color: #1677ff;
+}
+
+.desktop-runtime .ai-agent-manager-page .ant-pagination-item:hover,
+.desktop-runtime .ai-agent-manager-page .ant-pagination-prev:hover,
+.desktop-runtime .ai-agent-manager-page .ant-pagination-next:hover {
+  color: #1677ff;
+  border-color: #1677ff;
+}
+
+.desktop-runtime .ai-agent-manager-page .ant-pagination-disabled {
+  color: #cbd5e1;
+  background: #f8fafc;
+  border-color: #e2e8f0;
+}
+
+.desktop-runtime .ai-agent-manager-modal .ant-modal {
+  position: relative;
+  width: min(600px, 100%);
+  margin: auto;
+  box-sizing: border-box;
+  color: #334155;
+  background: #fff;
+  border-radius: 12px;
+  box-shadow: 0 24px 60px rgba(15, 23, 42, 0.2);
+}
+
+.desktop-runtime .ai-agent-manager-modal {
+  position: fixed;
+  inset: 0;
+  z-index: 1000;
+  display: block !important;
+}
+
+.desktop-runtime .ai-agent-manager-modal .ant-modal-mask {
+  position: fixed;
+  inset: 0;
+  z-index: 1000;
+  display: block !important;
+  visibility: visible !important;
+  opacity: 1 !important;
+  background: rgba(15, 23, 42, 0.45) !important;
+}
+
+.desktop-runtime .ai-agent-manager-modal .ant-modal-wrap {
+  position: fixed;
+  inset: 0;
+  z-index: 1001;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  box-sizing: border-box;
+  padding: 24px;
+  overflow: auto;
+  display: flex !important;
+  visibility: visible !important;
+  opacity: 1 !important;
+}
+
+.desktop-runtime .ai-agent-manager-modal .ant-modal-container {
+  display: block;
+  padding: 24px;
+  background: #fff;
+  border-radius: 12px;
+}
+
+.desktop-runtime .ai-agent-manager-modal .ant-modal,
+.desktop-runtime .ai-agent-manager-modal .ant-modal[class*='-enter'],
+.desktop-runtime .ai-agent-manager-modal .ant-modal[class*='-appear'],
+.desktop-runtime .ai-agent-manager-modal .ant-modal[class*='-leave'] {
+  visibility: visible !important;
+  opacity: 1 !important;
+  transform: none !important;
+}
+
+.desktop-runtime .ai-agent-manager-modal .ant-modal-header {
+  margin-bottom: 20px;
+  padding: 0;
+  background: transparent;
+}
+
+.desktop-runtime .ai-agent-manager-modal .ant-modal-title {
+  color: #1e293b;
+  font-size: 18px;
+  font-weight: 600;
+  line-height: 26px;
+}
+
+.desktop-runtime .ai-agent-manager-modal .ant-modal-close {
+  position: absolute;
+  top: 16px;
+  right: 16px;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  width: 32px;
+  height: 32px;
+  color: #64748b;
+  background: transparent;
+  border: 0;
+  border-radius: 6px;
+  cursor: pointer;
+}
+
+.desktop-runtime .ai-agent-manager-modal .ant-modal-close:hover {
+  color: #1e293b;
+  background: #f1f5f9;
+}
+
+.desktop-runtime .ai-agent-manager-modal .ant-modal-body {
+  max-height: min(70vh, 680px);
+  overflow-y: auto;
+}
+
+.desktop-runtime .ai-agent-manager-modal .ant-modal-footer {
+  display: flex;
+  justify-content: flex-end;
+  gap: 8px;
+  margin-top: 20px;
+}
+
+.desktop-runtime .ai-agent-manager-modal .ant-btn {
+  box-sizing: border-box;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  min-height: 32px;
+  padding: 4px 15px;
+  color: #334155;
+  font-size: 14px;
+  line-height: 22px;
+  background: #fff;
+  border: 1px solid #d8e1ee;
+  border-radius: 7px;
+  cursor: pointer;
+}
+
+.desktop-runtime .ai-agent-manager-modal .ant-btn:hover {
+  color: #1677ff;
+  border-color: #1677ff;
+}
+
+.desktop-runtime .ai-agent-manager-modal .ant-btn.ant-btn-primary {
+  color: #fff;
+  background: #1677ff;
+  border-color: #1677ff;
+}
+
+.desktop-runtime .ai-agent-manager-modal .ant-btn.ant-btn-primary:hover {
+  color: #fff;
+  background: #4096ff;
+  border-color: #4096ff;
+}
+
+.desktop-runtime .ai-agent-manager-modal .ant-form-item-label > label {
+  color: #475569;
+  font-size: 14px;
+  line-height: 22px;
+}
+
+.desktop-runtime .ai-agent-manager-modal .ant-input,
+.desktop-runtime .ai-agent-manager-modal .ant-input-affix-wrapper,
+.desktop-runtime .ai-agent-manager-modal .ant-input-textarea {
+  box-sizing: border-box;
+  width: 100%;
+  color: #1f2937;
+  background: #fff;
+  border: 1px solid #d8e1ee;
+  border-radius: 7px;
+}
+
+.desktop-runtime .ai-agent-manager-modal .ant-input {
+  min-height: 32px;
+  padding: 4px 11px;
+}
+
+.desktop-runtime .ai-agent-manager-modal textarea.ant-input {
+  min-height: 80px;
+  padding: 8px 11px;
+  resize: vertical;
+}
+
+.desktop-runtime .ai-agent-manager-modal .ant-segmented {
+  display: inline-flex;
+  align-items: center;
+  box-sizing: border-box;
+  width: 100%;
+  min-height: 36px;
+  padding: 3px;
+  color: #475569;
+  background: #f1f5f9;
+  border-radius: 8px;
+}
+
+.desktop-runtime .ai-agent-manager-modal .ant-segmented-group {
+  display: flex;
+  width: 100%;
+}
+
+.desktop-runtime .ai-agent-manager-modal .ant-segmented-item {
+  display: inline-flex;
+  flex: 1;
+  align-items: center;
+  justify-content: center;
+  min-height: 30px;
+  color: #475569;
+  border-radius: 6px;
+  cursor: pointer;
+}
+
+.desktop-runtime .ai-agent-manager-modal .ant-segmented-item-selected {
+  color: #1e293b;
+  background: #fff;
+  box-shadow: 0 1px 3px rgba(15, 23, 42, 0.12);
+}
+
+.desktop-runtime .ai-agent-manager-modal .ant-checkbox-group {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 12px;
+}
+
+.desktop-runtime .ai-agent-manager-modal .ant-checkbox-wrapper {
+  display: inline-flex;
+  align-items: center;
+  min-height: 28px;
+  color: #334155;
+  cursor: pointer;
+}
+
+.desktop-runtime .ai-agent-manager-modal .ant-checkbox {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  width: 16px;
+  height: 16px;
+  margin-inline-end: 8px;
+  background: #fff;
+  border: 1px solid #b8c5d6;
+  border-radius: 4px;
+}
+
+.desktop-runtime .ai-agent-manager-modal .ant-switch {
+  display: inline-flex;
+  align-items: center;
+  width: 44px;
+  height: 22px;
+  padding: 0;
+  background: #94a3b8;
+  border: 0;
+  border-radius: 999px;
+}
+
+.desktop-runtime .ai-agent-manager-modal .ant-switch-checked {
+  background: #1677ff;
+}
+
+/* AI API configuration uses Ant Design Table/Card controls. Keep its
+   desktop fallback separate from the native table used by UserManagement. */
+.desktop-runtime .ai-api-manager-page {
+  min-width: 0;
+  max-width: 100%;
+  overflow: hidden;
+  box-sizing: border-box;
+}
+
+.desktop-runtime .ai-api-manager-card {
+  display: flex;
+  flex-direction: column;
+  min-width: 0;
+  color: #334155;
+  background: #fff;
+  border: 1px solid #e8edf5;
+  border-radius: 12px;
+  box-shadow: 0 4px 16px rgba(15, 23, 42, 0.04);
+}
+
+.desktop-runtime .ai-api-manager-card .ant-card-body {
+  min-width: 0;
+  padding: 24px;
+}
+
+.desktop-runtime .ai-api-manager-header {
+  min-width: 0;
+}
+
+.desktop-runtime .ai-api-manager-header h2 {
+  min-width: 0;
+  overflow-wrap: anywhere;
+}
+
+.desktop-runtime .ai-api-manager-page .ant-btn {
+  box-sizing: border-box;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  min-height: 32px;
+  padding: 4px 15px;
+  color: #334155;
+  font-size: 14px;
+  line-height: 22px;
+  background: #fff;
+  border: 1px solid #d8e1ee;
+  border-radius: 7px;
+  cursor: pointer;
+  transition: color 0.2s, border-color 0.2s, background-color 0.2s, box-shadow 0.2s;
+}
+
+.desktop-runtime .ai-api-manager-page .ant-btn:hover {
+  color: #1677ff;
+  border-color: #1677ff;
+}
+
+.desktop-runtime .ai-api-manager-page .ant-btn.ant-btn-primary {
+  color: #fff;
+  background: #1677ff;
+  border-color: #1677ff;
+  box-shadow: 0 4px 10px rgba(22, 119, 255, 0.16);
+}
+
+.desktop-runtime .ai-api-manager-page .ant-btn.ant-btn-primary:hover {
+  color: #fff;
+  background: #4096ff;
+  border-color: #4096ff;
+}
+
+.desktop-runtime .ai-api-manager-page .ant-btn.ant-btn-text {
+  padding: 4px 8px;
+  background: transparent;
+  border-color: transparent;
+  box-shadow: none;
+}
+
+.desktop-runtime .ai-api-manager-page .ant-btn.ant-btn-text.text-yellow-500 {
+  color: #eab308 !important;
+}
+
+.desktop-runtime .ai-api-manager-page .ant-btn.ant-btn-text.text-blue-600 {
+  color: #2563eb !important;
+}
+
+.desktop-runtime .ai-api-manager-page .ant-btn.ant-btn-text.text-red-500 {
+  color: #ef4444 !important;
+}
+
+.desktop-runtime .ai-api-manager-page .ant-btn.ant-btn-text.text-yellow-500:hover {
+  color: #ca8a04 !important;
+}
+
+.desktop-runtime .ai-api-manager-page .ant-btn.ant-btn-text.text-blue-600:hover {
+  color: #1d4ed8 !important;
+}
+
+.desktop-runtime .ai-api-manager-page .ant-btn.ant-btn-text.text-red-500:hover {
+  color: #b91c1c !important;
+}
+
+.desktop-runtime .ai-api-manager-page .ant-btn.ant-btn-sm {
+  min-height: 24px;
+  padding: 0 7px;
+}
+
+.desktop-runtime .ai-api-manager-page .ant-btn .anticon {
+  display: inline-flex;
+  align-items: center;
+  line-height: 1;
+}
+
+.desktop-runtime .ai-api-manager-page .ant-table-wrapper {
+  width: 100%;
+  min-width: 0;
+  overflow-x: auto;
+}
+
+.desktop-runtime .ai-api-manager-page .ant-table {
+  min-width: 1200px;
+  color: #334155;
+  font-size: 14px;
+  background: #fff;
+}
+
+.desktop-runtime .ai-api-manager-page .ant-table-container {
+  overflow: hidden;
+  border: 1px solid #e2e8f0;
+  border-radius: 8px;
+}
+
+.desktop-runtime .ai-api-manager-page .ant-table-content {
+  overflow-x: visible;
+}
+
+.desktop-runtime .ai-api-manager-page .ant-table-content > table {
+  width: 100%;
+  min-width: 1200px;
+  border-collapse: separate;
+  border-spacing: 0;
+}
+
+.desktop-runtime .ai-api-manager-page .ant-table-thead > tr > th {
+  box-sizing: border-box;
+  padding: 12px 16px;
+  color: #475569;
+  font-weight: 600;
+  line-height: 22px;
+  text-align: start;
+  white-space: nowrap;
+  background: #f8fafc;
+  border-bottom: 1px solid #e2e8f0;
+}
+
+.desktop-runtime .ai-api-manager-page .ant-table-tbody > tr > td {
+  box-sizing: border-box;
+  padding: 12px 16px;
+  color: #334155;
+  line-height: 22px;
+  vertical-align: middle;
+  white-space: nowrap;
+  background: #fff;
+  border-bottom: 1px solid #eef2f7;
+}
+
+.desktop-runtime .ai-api-manager-page .ant-table-tbody > tr:last-child > td {
+  border-bottom: 0;
+}
+
+.desktop-runtime .ai-api-manager-page .ant-table-tbody > tr:hover > td {
+  background: #f8fbff;
+}
+
+.desktop-runtime .ai-api-manager-page .ant-table-cell-ellipsis {
+  overflow: hidden;
+  white-space: nowrap;
+  text-overflow: ellipsis;
+}
+
+.desktop-runtime .ai-api-manager-page .ant-table-tbody code {
+  display: inline-block;
+  max-width: 100%;
+  color: #475569;
+  font-family: ui-monospace, SFMono-Regular, Menlo, Monaco, Consolas, "Liberation Mono", "Courier New", monospace;
+  line-height: 20px;
+  white-space: nowrap;
+}
+
+.desktop-runtime .ai-api-manager-page .ant-tag {
+  display: inline-flex;
+  align-items: center;
+  box-sizing: border-box;
+  min-height: 22px;
+  margin-inline-end: 0;
+  padding: 0 7px;
+  color: #475569;
+  font-size: 12px;
+  line-height: 20px;
+  background: #f8fafc;
+  border: 1px solid #d8e1ee;
+  border-radius: 4px;
+}
+
+.desktop-runtime .ai-api-manager-page .ant-tag-gold {
+  color: #a16207;
+  background: #fefce8;
+  border-color: #fde68a;
+}
+
+.desktop-runtime .ai-api-manager-page .ant-tag-cyan {
+  color: #0e7490;
+  background: #ecfeff;
+  border-color: #a5f3fc;
+}
+
+.desktop-runtime .ai-api-manager-page .ant-tag-magenta {
+  color: #be185d;
+  background: #fdf2f8;
+  border-color: #f9a8d4;
+}
+
+.desktop-runtime .ai-api-manager-page .ant-tag-purple {
+  color: #7e22ce;
+  background: #faf5ff;
+  border-color: #e9d5ff;
+}
+
+.desktop-runtime .ai-api-manager-page .ant-tag-blue,
+.desktop-runtime .ai-api-manager-page .ant-tag-geekblue {
+  color: #1d4ed8;
+  background: #eff6ff;
+  border-color: #bfdbfe;
+}
+
+.desktop-runtime .ai-api-manager-page .ant-tag-red,
+.desktop-runtime .ai-api-manager-page .ant-tag-volcano {
+  color: #dc2626;
+  background: #fef2f2;
+  border-color: #fecaca;
+}
+
+.desktop-runtime .ai-api-manager-page .ant-tag-green,
+.desktop-runtime .ai-api-manager-page .ant-tag-success {
+  color: #15803d;
+  background: #f0fdf4;
+  border-color: #bbf7d0;
+}
+
+.desktop-runtime .ai-api-manager-page .ant-space {
+  display: inline-flex;
+  align-items: center;
+  gap: 4px;
+}
+
+.desktop-runtime .ai-api-manager-page .ant-space-item {
+  display: inline-flex;
+  align-items: center;
+}
+
+.desktop-runtime .ai-api-manager-page .ant-pagination {
+  display: flex;
+  align-items: center;
+  gap: 4px;
+  margin: 16px 0 0;
+  padding: 0;
+  list-style: none;
+}
+
+.desktop-runtime .ai-api-manager-page .ant-pagination-item,
+.desktop-runtime .ai-api-manager-page .ant-pagination-prev,
+.desktop-runtime .ai-api-manager-page .ant-pagination-next {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  min-width: 32px;
+  height: 32px;
+  margin: 0;
+  color: #475569;
+  line-height: 30px;
+  text-align: center;
+  background: #fff;
+  border: 1px solid #d8e1ee;
+  border-radius: 6px;
+}
+
+.desktop-runtime .ai-api-manager-page .ant-pagination-item a,
+.desktop-runtime .ai-api-manager-page .ant-pagination-prev button,
+.desktop-runtime .ai-api-manager-page .ant-pagination-next button {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  width: 100%;
+  height: 100%;
+  padding: 0;
+  color: inherit;
+  background: transparent;
+  border: 0;
+}
+
+.desktop-runtime .ai-api-manager-page .ant-pagination-item-active {
+  color: #1677ff;
+  border-color: #1677ff;
+}
+
+.desktop-runtime .ai-api-manager-page .ant-pagination-item-active a {
+  color: #1677ff;
+}
+
+.desktop-runtime .ai-api-manager-page .ant-pagination-item:hover,
+.desktop-runtime .ai-api-manager-page .ant-pagination-prev:hover,
+.desktop-runtime .ai-api-manager-page .ant-pagination-next:hover {
+  color: #1677ff;
+  border-color: #1677ff;
+}
+
+.desktop-runtime .ai-api-manager-page .ant-pagination-disabled {
+  color: #cbd5e1;
+  background: #f8fafc;
+  border-color: #e2e8f0;
+}
+
+.desktop-runtime .ai-api-manager-modal {
+  position: fixed;
+  inset: 0;
+  z-index: 1000;
+  display: block !important;
+}
+
+.desktop-runtime .ai-api-manager-modal .ant-modal-mask {
+  position: fixed;
+  inset: 0;
+  z-index: 1000;
+  display: block !important;
+  visibility: visible !important;
+  opacity: 1 !important;
+  background: rgba(15, 23, 42, 0.45) !important;
+}
+
+.desktop-runtime .ai-api-manager-modal .ant-modal-wrap {
+  position: fixed;
+  inset: 0;
+  z-index: 1001;
+  display: flex !important;
+  align-items: center;
+  justify-content: center;
+  box-sizing: border-box;
+  padding: 24px;
+  overflow: auto;
+  visibility: visible !important;
+  opacity: 1 !important;
+}
+
+.desktop-runtime .ai-api-manager-modal .ant-modal {
+  position: relative;
+  width: min(640px, 100%);
+  margin: auto;
+  box-sizing: border-box;
+  color: #334155;
+  background: #fff;
+  border-radius: 12px;
+  box-shadow: 0 24px 60px rgba(15, 23, 42, 0.2);
+  visibility: visible !important;
+  opacity: 1 !important;
+  transform: none !important;
+}
+
+.desktop-runtime .ai-api-manager-dialog {
+  position: relative;
+  width: min(640px, 100%);
+  margin: auto;
+  box-sizing: border-box;
+  color: #334155;
+  background: #fff;
+  border-radius: 12px;
+  box-shadow: 0 24px 60px rgba(15, 23, 42, 0.2);
+  visibility: visible !important;
+  opacity: 1 !important;
+  transform: none !important;
+}
+
+.desktop-runtime .ai-api-manager-modal .ant-modal-content,
+.desktop-runtime .ai-api-manager-modal .ant-modal-container {
+  padding: 24px;
+  background: #fff;
+  border-radius: 12px;
+}
+
+.desktop-runtime .ai-api-manager-modal .ant-modal-header {
+  margin-bottom: 20px;
+  padding: 0;
+  background: transparent;
+}
+
+.desktop-runtime .ai-api-manager-modal .ant-modal-title {
+  color: #1e293b;
+  font-size: 18px;
+  font-weight: 600;
+  line-height: 26px;
+}
+
+.desktop-runtime .ai-api-manager-modal .ant-modal-close {
+  position: absolute;
+  top: 16px;
+  right: 16px;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  width: 32px;
+  height: 32px;
+  color: #64748b;
+  background: transparent;
+  border: 0;
+  border-radius: 6px;
+  cursor: pointer;
+}
+
+.desktop-runtime .ai-api-manager-modal .ant-modal-close:hover {
+  color: #1e293b;
+  background: #f1f5f9;
+}
+
+.desktop-runtime .ai-api-manager-modal .ant-modal-body {
+  max-height: min(70vh, 680px);
+  overflow-y: auto;
+}
+
+.desktop-runtime .ai-api-manager-modal .ant-form {
+  color: #334155;
+}
+
+.desktop-runtime .ai-api-manager-modal .ant-form-item {
+  display: block;
+  min-width: 0;
+  margin-bottom: 16px;
+}
+
+.desktop-runtime .ai-api-manager-modal .ant-form-item-row,
+.desktop-runtime .ai-api-manager-modal .ant-form-vertical .ant-form-item-row {
+  display: block;
+  min-width: 0;
+}
+
+.desktop-runtime .ai-api-manager-modal .ant-form-item-label {
+  display: block;
+  padding: 0 0 4px;
+  text-align: left;
+}
+
+.desktop-runtime .ai-api-manager-modal .ant-form-item-control,
+.desktop-runtime .ai-api-manager-modal .ant-form-item-control-input,
+.desktop-runtime .ai-api-manager-modal .ant-form-item-control-input-content {
+  min-width: 0;
+  width: 100%;
+}
+
+.desktop-runtime .ai-api-manager-modal .ant-form-item-control-input {
+  min-height: 32px;
+}
+
+.desktop-runtime .ai-api-manager-modal .ant-form-item-extra,
+.desktop-runtime .ai-api-manager-modal .ant-form-item-explain {
+  margin-top: 4px;
+  color: #94a3b8;
+  font-size: 12px;
+  line-height: 18px;
+}
+
+.desktop-runtime .ai-api-manager-modal .ant-modal-footer {
+  display: flex;
+  justify-content: flex-end;
+  gap: 8px;
+  margin-top: 20px;
+}
+
+.desktop-runtime .ai-api-manager-modal .ant-form-item-label > label {
+  color: #475569;
+  font-size: 14px;
+  line-height: 22px;
+}
+
+.desktop-runtime .ai-api-manager-modal .ant-input,
+.desktop-runtime .ai-api-manager-modal .ant-input-affix-wrapper,
+.desktop-runtime .ai-api-manager-modal .ant-input-number,
+.desktop-runtime .ai-api-manager-modal .ant-select-selector {
+  box-sizing: border-box;
+  width: 100%;
+  min-height: 32px;
+  color: #1f2937;
+  background: #fff;
+  border: 1px solid #d8e1ee;
+  border-radius: 7px;
+}
+
+.desktop-runtime .ai-api-manager-modal .ant-input,
+.desktop-runtime .ai-api-manager-modal .ant-input-affix-wrapper {
+  padding: 4px 11px;
+}
+
+.desktop-runtime .ai-api-manager-modal .ant-input-affix-wrapper {
+  display: flex;
+  align-items: center;
+}
+
+.desktop-runtime .ai-api-manager-modal .ant-input-affix-wrapper .ant-input {
+  min-height: 0;
+  padding: 0;
+  border: 0;
+}
+
+.desktop-runtime .ai-api-manager-modal textarea.ant-input {
+  min-height: 80px;
+  padding: 8px 11px;
+  resize: vertical;
+}
+
+.desktop-runtime .ai-api-manager-modal .ant-input-number {
+  display: inline-flex;
+  align-items: center;
+}
+
+.desktop-runtime .ai-api-manager-modal .ant-input-number-input-wrap,
+.desktop-runtime .ai-api-manager-modal .ant-input-number-input {
+  width: 100%;
+}
+
+.desktop-runtime .ai-api-manager-modal .ant-input-number-input {
+  min-height: 30px;
+  padding: 3px 11px;
+  color: #1f2937;
+  background: transparent;
+  border: 0;
+  outline: 0;
+}
+
+.desktop-runtime .ai-api-manager-modal .ant-input-number-handler-wrap {
+  display: flex;
+  flex-direction: column;
+  align-self: stretch;
+  width: 22px;
+  border-inline-start: 1px solid #e2e8f0;
+}
+
+.desktop-runtime .ai-api-manager-modal .ant-input-number-handler {
+  display: flex;
+  flex: 1;
+  align-items: center;
+  justify-content: center;
+  color: #64748b;
+  cursor: pointer;
+}
+
+.desktop-runtime .ai-api-manager-modal .ant-input-number-handler:hover {
+  color: #1677ff;
+}
+
+.desktop-runtime .ai-api-manager-modal .ant-select {
+  width: 100%;
+}
+
+.desktop-runtime .ai-api-manager-modal .ant-select-selector {
+  display: flex;
+  align-items: center;
+  padding: 4px 11px;
+}
+
+.desktop-runtime .ai-api-manager-modal .ant-select-selection-item,
+.desktop-runtime .ai-api-manager-modal .ant-select-selection-placeholder {
+  line-height: 22px;
+}
+
+.desktop-runtime .ai-api-manager-modal .ant-switch {
+  position: relative;
+  display: inline-flex;
+  align-items: center;
+  width: 44px;
+  height: 22px;
+  padding: 0;
+  background: #94a3b8;
+  border: 0;
+  border-radius: 999px;
+}
+
+.desktop-runtime .ai-api-manager-modal .ant-switch-handle {
+  position: absolute;
+  top: 2px;
+  inset-inline-start: 2px;
+  width: 18px;
+  height: 18px;
+  background: #fff;
+  border-radius: 50%;
+  box-shadow: 0 1px 3px rgba(15, 23, 42, 0.2);
+  transition: inset-inline-start 0.2s;
+}
+
+.desktop-runtime .ai-api-manager-modal .ant-switch-checked {
+  background: #1677ff;
+}
+
+.desktop-runtime .ai-api-manager-modal .ant-switch-checked .ant-switch-handle {
+  inset-inline-start: 24px;
+}
+
+.desktop-runtime .ai-api-manager-modal .ant-btn {
+  box-sizing: border-box;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  min-height: 32px;
+  padding: 4px 15px;
+  color: #334155;
+  font-size: 14px;
+  line-height: 22px;
+  background: #fff;
+  border: 1px solid #d8e1ee;
+  border-radius: 7px;
+  cursor: pointer;
+}
+
+.desktop-runtime .ai-api-manager-modal .ant-btn.ant-btn-primary {
+  color: #fff;
+  background: #1677ff;
+  border-color: #1677ff;
+}
+
+.desktop-runtime .ai-api-manager-modal .ant-btn.ant-btn-primary:hover {
+  color: #fff;
+  background: #4096ff;
+  border-color: #4096ff;
+}
+
+@media (max-width: 900px) {
+  .desktop-runtime .system-management-page {
+    padding: 16px;
+  }
+
+  .desktop-runtime .ai-agent-manager-card .ant-card-body {
+    padding: 16px;
+  }
+
+  .desktop-runtime .ai-agent-manager-header {
+    align-items: flex-start;
+  }
+
+  .desktop-runtime .ai-agent-manager-create {
+    width: 100%;
+  }
+
+  .desktop-runtime .ai-api-manager-page {
+    padding: 16px;
+  }
+
+  .desktop-runtime .ai-api-manager-card .ant-card-body {
+    padding: 16px;
+  }
+
+  .desktop-runtime .ai-api-manager-header {
+    align-items: flex-start;
+  }
+
+  .desktop-runtime .ai-api-manager-header .ant-btn.ant-btn-primary {
+    width: 100%;
+  }
+
+  .desktop-runtime .ai-api-manager-modal .ant-modal-wrap {
+    padding: 16px;
+  }
+}
