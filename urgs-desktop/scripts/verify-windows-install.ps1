@@ -49,13 +49,23 @@ try {
         -NoNewWindow `
         -RedirectStandardOutput $stdoutPath `
         -RedirectStandardError $stderrPath
-    $versionOutput = (Get-Content -LiteralPath $stdoutPath -Raw).Trim()
-    $errorOutput = (Get-Content -LiteralPath $stderrPath -Raw).Trim()
+    $versionOutput = if (Test-Path -LiteralPath $stdoutPath) {
+        [string](Get-Content -LiteralPath $stdoutPath -Raw -ErrorAction SilentlyContinue)
+    } else {
+        ""
+    }
+    $errorOutput = if (Test-Path -LiteralPath $stderrPath) {
+        [string](Get-Content -LiteralPath $stderrPath -Raw -ErrorAction SilentlyContinue)
+    } else {
+        ""
+    }
+    $versionOutput = $versionOutput.Trim()
+    $errorOutput = $errorOutput.Trim()
     if ($grokProcess.ExitCode -ne 0) {
         throw "安装后的 Grok 无法启动，退出码 $($grokProcess.ExitCode)：$errorOutput"
     }
     if ([string]::IsNullOrWhiteSpace($versionOutput)) {
-        throw "安装后的 Grok 未返回版本信息"
+        throw "安装后的 Grok 未返回版本信息；stderr：$errorOutput"
     }
     if ($ExpectedVersion -and $versionOutput -notmatch [regex]::Escape($ExpectedVersion)) {
         throw "安装后的 Grok 版本不匹配：期望 $ExpectedVersion，实际 $versionOutput"
