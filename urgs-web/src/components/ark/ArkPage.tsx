@@ -103,6 +103,7 @@ const ArkPage: React.FC<ArkPageProps> = ({ launchTask, onLaunchTaskHandled }) =>
                 minWidth: 1100,
                 minHeight: 700,
                 center: true,
+                maximized: true,
                 resizable: true,
                 visible: true,
                 focus: true,
