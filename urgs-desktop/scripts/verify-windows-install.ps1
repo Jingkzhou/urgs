@@ -59,8 +59,8 @@ try {
     } else {
         ""
     }
-    $versionOutput = $versionOutput.Trim()
-    $errorOutput = $errorOutput.Trim()
+    $versionOutput = "$versionOutput".Trim()
+    $errorOutput = "$errorOutput".Trim()
     if ($grokProcess.ExitCode -ne 0) {
         throw "安装后的 Grok 无法启动，退出码 $($grokProcess.ExitCode)：$errorOutput"
     }
