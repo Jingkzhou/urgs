@@ -30,6 +30,7 @@ toml = "0.8"
 url = "2.5"
 uuid = { version = "1", features = ["v4"] }
 keyring = { version = "3", default-features = false, features = ["apple-native", "windows-native", "linux-native"] }
+reqwest = { version = "0.13.4", default-features = false, features = ["json", "rustls"] }
 
 [target.'cfg(target_os = "macos")'.dependencies]
 security-framework = "3.7"

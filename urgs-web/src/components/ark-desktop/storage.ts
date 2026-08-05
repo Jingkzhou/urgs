@@ -36,6 +36,7 @@ export const createDefaultArkDesktopSnapshot = (): ArkDesktopSnapshot => ({
         defaultSkillIds: [],
         execution: {
             engine: 'acp',
+            gitMode: 'worktree',
             reasoningEffort: '',
             permissionMode: 'default',
             sandboxProfile: '',
@@ -142,7 +143,7 @@ export const loadArkDesktopSnapshot = (): ArkDesktopSnapshot => {
         const workspacePaths = Array.from(new Set(
             (Array.isArray(stored.settings?.workspacePaths)
                 ? stored.settings.workspacePaths
-                : [stored.settings?.workspace, ...tasks.map((task) => task.workspace)])
+                : [stored.settings?.workspace, ...tasks.map((task) => task.sourceWorkspace || task.workspace)])
                 .map((workspace) => workspace?.trim())
                 .filter((workspace): workspace is string => Boolean(workspace)),
         ));
@@ -163,6 +164,7 @@ export const loadArkDesktopSnapshot = (): ArkDesktopSnapshot => {
                 execution: {
                     ...defaults.settings.execution,
                     ...(stored.settings?.execution || {}),
+                    gitMode: stored.settings?.execution?.gitMode || defaults.settings.execution.gitMode,
                     permissionMode: stored.settings?.execution?.alwaysApprove || stored.settings?.execution?.permissionMode === 'bypassPermissions'
                         ? 'bypassPermissions'
                         : defaults.settings.execution.permissionMode,

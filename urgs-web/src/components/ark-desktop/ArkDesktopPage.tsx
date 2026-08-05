@@ -7,7 +7,7 @@ import { oneDark } from 'react-syntax-highlighter/dist/esm/styles/prism';
 import {
     AlertCircle, BriefcaseBusiness, Check, CheckCircle2, CheckSquare,
     ChevronDown, ChevronUp, CircleStop, Code2, Copy, Cpu, FileText, Folder, FolderOpen,
-    Hand, KeyRound, Lightbulb, LoaderCircle, Paperclip, Pencil, Plus, RefreshCw,
+    Hand, KeyRound, Lightbulb, LoaderCircle, Paperclip, PanelRight, Pencil, Plus, RefreshCw,
     Puzzle, Search, Send, Settings, ShieldAlert, Trash2, Workflow, Wrench, X,
 } from 'lucide-react';
 import { copyToClipboard } from '@/utils/clipboard';
@@ -30,6 +30,7 @@ import UserQuestionDialog from './UserQuestionDialog';
 import WorkspaceSessionSidebar from './WorkspaceSessionSidebar';
 import WorkflowCenter from './WorkflowCenter';
 import WorkflowRunControls from './WorkflowRunControls';
+import GitReviewPanel from './GitReviewPanel';
 import type {
     ArkDesktopAutomation, ArkDesktopSection,
     ArkDesktopModelProvider, ArkDesktopTask, ArkDesktopTaskStatus, AutomationSchedule, GrokExecutionSettings,
@@ -127,6 +128,7 @@ const ArkDesktopPage: React.FC = () => {
     const [draftWorkspace, setDraftWorkspace] = useState(runtime.snapshot.settings.workspace);
     const [latestMessageTaskId, setLatestMessageTaskId] = useState<string | null>(null);
     const [isSidebarCollapsed, setIsSidebarCollapsed] = useState(false);
+    const [gitReviewOpen, setGitReviewOpen] = useState(false);
     const [settingsTab, setSettingsTab] = useState<SettingsTab>('general');
 
     const [editor, setEditor] = useState<{ type: 'automation'; id?: string } | null>(null);
@@ -192,6 +194,10 @@ const ArkDesktopPage: React.FC = () => {
             setDraftWorkspace(runtime.snapshot.settings.workspace);
         }
     }, [runtime.snapshot.settings.workspace]);
+
+    useEffect(() => {
+        setGitReviewOpen(false);
+    }, [runtime.activeTaskId]);
 
     const openNewTask = (workspace?: string) => {
         const nextWorkspace = workspace || runtime.snapshot.settings.workspace;
@@ -307,17 +313,20 @@ const ArkDesktopPage: React.FC = () => {
     const headerStatus = runtime.activeTask ? taskStatus[runtime.activeTask.status] : undefined;
     const headerMeta = runtime.activeTask
         ? [
-            runtime.activeTask.workspace.split(/[\\/]/).filter(Boolean).pop(),
+            workspaceName(runtime.activeTask.sourceWorkspace || runtime.activeTask.gitContext?.repoRoot || runtime.activeTask.workspace),
+            runtime.activeTask.gitContext?.branch,
             runtime.snapshot.settings.modelProviders.find((provider) => provider.id === runtime.activeTask?.model)?.name || runtime.activeTask.model,
             runtime.activeTask.engine === 'headless' ? '后台模式' : '实时会话',
+            runtime.activeTask.gitContext?.status?.isDirty ? `${runtime.activeTask.gitContext.status.files.length} 项变更` : '工作区干净',
         ].filter(Boolean).join(' · ')
         : undefined;
     const workspaceOptions = useMemo(() => {
         const latestByWorkspace = new Map<string, number>();
         runtime.snapshot.settings.workspacePaths.forEach((workspace) => latestByWorkspace.set(workspace, 0));
         runtime.snapshot.tasks.forEach((task) => {
-            if (!latestByWorkspace.has(task.workspace)) return;
-            latestByWorkspace.set(task.workspace, Math.max(latestByWorkspace.get(task.workspace) || 0, task.updatedAt));
+            const sourceWorkspace = task.sourceWorkspace || task.gitContext?.repoRoot || task.workspace;
+            if (!latestByWorkspace.has(sourceWorkspace)) return;
+            latestByWorkspace.set(sourceWorkspace, Math.max(latestByWorkspace.get(sourceWorkspace) || 0, task.updatedAt));
         });
         [draftWorkspace].filter(Boolean).forEach((workspace) => {
             if (!latestByWorkspace.has(workspace)) latestByWorkspace.set(workspace, 0);
@@ -352,6 +361,7 @@ const ArkDesktopPage: React.FC = () => {
                         ? <TaskPlanPanel plan={runtime.activeTask.plan} taskStatus={runtime.activeTask.status} />
                         : undefined}
                 />
+                {runtime.activeTask && <button type="button" onClick={() => setGitReviewOpen((current) => !current)} className={`mr-3 flex h-8 w-8 shrink-0 items-center justify-center transition ${gitReviewOpen ? 'text-indigo-700' : 'text-slate-600 hover:text-indigo-700'}`} title="打开 Git 变更审查" aria-label="打开 Git 变更审查"><PanelRight size={14} /></button>}
             </header>
             <aside className={`${isSidebarCollapsed ? 'hidden' : 'hidden w-[270px] shrink-0 flex-col border-r border-[#e5e5e7] bg-[#f8f8f9] px-3 py-4 lg:flex'}`}>
                 <div className="mb-3 flex h-10 items-center gap-2 px-2">
@@ -431,6 +441,8 @@ const ArkDesktopPage: React.FC = () => {
                     ) : <SettingsView runtime={runtime} chooseWorkspace={chooseDefaultWorkspace} initialTab={settingsTab} />}
                 </main>
             </section>
+
+            {runtime.activeTask && gitReviewOpen && <GitReviewPanel task={runtime.activeTask} runtime={runtime} onClose={() => setGitReviewOpen(false)} />}
 
             {editor?.type === 'automation' && <AutomationEditor id={editor.id} runtime={runtime} onClose={() => setEditor(null)} />}
             {runtime.permission && <Modal title={`允许“${runtime.permission.taskTitle}”执行本地操作？`} onClose={() => void runtime.answerPermission()}><p className="mb-5 text-sm leading-6 text-slate-600">{runtime.permission.title}</p><div className="flex flex-wrap justify-end gap-2"><button type="button" onClick={() => void runtime.answerPermission()} className="rounded-lg border border-slate-200 px-4 py-2 text-sm text-slate-600">拒绝</button>{runtime.permission.options.map((option) => <button key={option.optionId} type="button" onClick={() => void runtime.answerPermission(option.optionId)} className="rounded-lg bg-slate-900 px-4 py-2 text-sm text-white">{option.name}</button>)}</div></Modal>}

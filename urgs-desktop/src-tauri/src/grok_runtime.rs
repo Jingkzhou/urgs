@@ -1,5 +1,7 @@
 use base64::{engine::general_purpose::STANDARD as BASE64_STANDARD, Engine as _};
 use keyring::Entry;
+use reqwest::header::{HeaderMap, HeaderValue, AUTHORIZATION, CONTENT_TYPE};
+use reqwest::Client;
 use serde::{Deserialize, Serialize};
 use serde_json::{json, Value};
 use std::collections::{HashMap, HashSet};
@@ -34,6 +36,9 @@ const MAX_PROMPT_ATTACHMENTS_TOTAL_BYTES: u64 = 25 * 1024 * 1024;
 const PROMPT_ATTACHMENT_GRANT_TTL_SECONDS: u64 = 60 * 60;
 const MAX_PROMPT_ATTACHMENT_GRANTS: usize = 64;
 const MAX_WORKFLOW_SOURCE_BYTES: u64 = 1024 * 1024;
+const MAX_LLM_PROMPT_BYTES: usize = 512 * 1024;
+const MAX_LLM_RESPONSE_BYTES: usize = 4 * 1024 * 1024;
+const LLM_REQUEST_TIMEOUT: Duration = Duration::from_secs(120);
 static PROCESS_SEQUENCE: AtomicU64 = AtomicU64::new(1);
 static MODEL_API_KEY_CACHE: OnceLock<Mutex<HashMap<String, String>>> = OnceLock::new();
 #[cfg(target_os = "macos")]
@@ -257,6 +262,21 @@ pub struct GrokModelProviderInput {
     pub context_window: u64,
     pub enabled: bool,
     pub api_key: Option<String>,
+}
+
+#[derive(Debug, Deserialize)]
+#[serde(rename_all = "camelCase")]
+pub struct LlmTextGenerationInput {
+    pub provider_id: String,
+    pub prompt: String,
+}
+
+#[derive(Debug, Serialize)]
+#[serde(rename_all = "camelCase")]
+pub struct LlmTextGenerationResult {
+    pub provider_id: String,
+    pub model: String,
+    pub text: String,
 }
 
 #[derive(Debug, Clone, Serialize)]
@@ -3720,6 +3740,216 @@ fn normalize_model_id(model: &str) -> Result<String, String> {
     Ok(model.to_string())
 }
 
+fn direct_model_api_endpoint(provider: &GrokModelProvider) -> Result<String, String> {
+    let mut endpoint =
+        url::Url::parse(&provider.base_url).map_err(|_| "模型服务地址格式不正确".to_string())?;
+    if !matches!(endpoint.scheme(), "http" | "https") || endpoint.host_str().is_none() {
+        return Err("模型服务地址必须是有效的 HTTP 或 HTTPS 地址".to_string());
+    }
+    let suffix = match provider.api_backend.as_str() {
+        "chat_completions" => "/chat/completions",
+        "responses" => "/responses",
+        "messages" => "/messages",
+        _ => return Err("暂不支持该模型 API 协议".to_string()),
+    };
+    let current_path = endpoint.path().trim_end_matches('/');
+    if !current_path.ends_with(suffix) {
+        let path = if current_path.is_empty() {
+            suffix.to_string()
+        } else {
+            format!("{current_path}{suffix}")
+        };
+        endpoint.set_path(&path);
+    }
+    Ok(endpoint.to_string())
+}
+
+fn direct_model_api_payload(provider: &GrokModelProvider, prompt: &str) -> Value {
+    let mut payload = match provider.api_backend.as_str() {
+        "responses" => json!({
+            "model": provider.model,
+            "input": prompt,
+            "max_output_tokens": 256,
+        }),
+        "messages" => json!({
+            "model": provider.model,
+            "max_tokens": 256,
+            "messages": [{ "role": "user", "content": prompt }],
+        }),
+        _ => json!({
+            "model": provider.model,
+            "temperature": 0.2,
+            "max_tokens": 256,
+            "messages": [{ "role": "user", "content": prompt }],
+        }),
+    };
+    if provider.api_backend == "chat_completions"
+        && provider.model.to_ascii_lowercase().contains("deepseek")
+    {
+        payload["thinking"] = json!({ "type": "disabled" });
+    }
+    payload
+}
+
+fn text_from_model_value(value: &Value) -> Option<String> {
+    match value {
+        Value::String(text) if !text.trim().is_empty() => Some(text.trim().to_string()),
+        Value::Array(items) => {
+            let text = items
+                .iter()
+                .filter_map(text_from_model_value)
+                .collect::<Vec<_>>()
+                .join("");
+            (!text.trim().is_empty()).then_some(text)
+        }
+        Value::Object(object) => [
+            "text",
+            "content",
+            "output_text",
+            "message",
+            "completion",
+            "delta",
+            "choices",
+            "output",
+            "response",
+            "result",
+            "data",
+        ]
+        .into_iter()
+        .find_map(|key| object.get(key).and_then(text_from_model_value)),
+        _ => None,
+    }
+}
+
+fn direct_model_api_response_text(provider: &GrokModelProvider, body: &Value) -> Option<String> {
+    let candidates = match provider.api_backend.as_str() {
+        "responses" => vec![
+            body.get("output_text"),
+            body.pointer("/output/0/content"),
+            body.get("output"),
+        ],
+        "messages" => vec![body.get("content"), body.get("completion")],
+        _ => vec![
+            body.pointer("/choices/0/message/content"),
+            body.pointer("/choices/0/text"),
+            body.get("content"),
+        ],
+    };
+    candidates
+        .into_iter()
+        .flatten()
+        .find_map(text_from_model_value)
+        .or_else(|| text_from_model_value(body))
+}
+
+fn direct_model_api_error(body: &str) -> String {
+    let detail = serde_json::from_str::<Value>(body)
+        .ok()
+        .and_then(|value| {
+            value
+                .get("error")
+                .and_then(text_from_model_value)
+                .or_else(|| value.get("message").and_then(text_from_model_value))
+        })
+        .unwrap_or_else(|| body.trim().to_string());
+    let detail = detail.chars().take(1_000).collect::<String>();
+    if detail.is_empty() {
+        "未返回错误详情".to_string()
+    } else {
+        detail
+    }
+}
+
+#[tauri::command]
+pub async fn llm_generate_text(
+    app: AppHandle,
+    input: LlmTextGenerationInput,
+) -> Result<LlmTextGenerationResult, String> {
+    let provider_id = normalize_provider_id(&input.provider_id)?;
+    let prompt = input.prompt.trim();
+    if prompt.is_empty() {
+        return Err("请输入要发送给模型的内容".to_string());
+    }
+    if prompt.as_bytes().len() > MAX_LLM_PROMPT_BYTES {
+        return Err("模型请求内容过大，请缩小 Diff 后重试".to_string());
+    }
+
+    let mut providers = read_model_providers(&app)?;
+    let provider_index = providers
+        .iter()
+        .position(|provider| provider.id == provider_id)
+        .ok_or_else(|| format!("模型连接“{provider_id}”不存在"))?;
+    let provider = providers[provider_index].clone();
+    if !provider.enabled {
+        return Err(format!(
+            "模型连接“{}”已停用，请在设置中启用后再使用",
+            provider.name
+        ));
+    }
+    let api_key = read_provider_api_key(&provider.id, true)?
+        .ok_or_else(|| format!("模型连接“{}”尚未配置 API Key", provider.name))?;
+    if !provider.has_api_key {
+        providers[provider_index].has_api_key = true;
+        let _ = write_model_providers(&app, &providers);
+    }
+
+    let endpoint = direct_model_api_endpoint(&provider)?;
+    let mut headers = HeaderMap::new();
+    headers.insert(CONTENT_TYPE, HeaderValue::from_static("application/json"));
+    match provider.auth_scheme.as_str() {
+        "bearer" => {
+            let value = HeaderValue::from_str(&format!("Bearer {api_key}"))
+                .map_err(|_| "模型 API Key 包含非法字符".to_string())?;
+            headers.insert(AUTHORIZATION, value);
+        }
+        "x_api_key" => {
+            let value = HeaderValue::from_str(&api_key)
+                .map_err(|_| "模型 API Key 包含非法字符".to_string())?;
+            headers.insert("x-api-key", value);
+        }
+        _ => return Err("暂不支持该认证方案".to_string()),
+    }
+    if provider.api_backend == "messages" {
+        headers.insert("anthropic-version", HeaderValue::from_static("2023-06-01"));
+    }
+
+    let client = Client::builder()
+        .timeout(LLM_REQUEST_TIMEOUT)
+        .build()
+        .map_err(|error| format!("初始化模型 API 客户端失败: {error}"))?;
+    let response = client
+        .post(endpoint)
+        .headers(headers)
+        .json(&direct_model_api_payload(&provider, prompt))
+        .send()
+        .await
+        .map_err(|error| format!("调用模型 API 失败: {error}"))?;
+    let status = response.status();
+    let body = response
+        .text()
+        .await
+        .map_err(|error| format!("读取模型 API 响应失败: {error}"))?;
+    if body.as_bytes().len() > MAX_LLM_RESPONSE_BYTES {
+        return Err("模型 API 响应过大，未读取其内容".to_string());
+    }
+    if !status.is_success() {
+        return Err(format!(
+            "模型 API 请求失败（HTTP {}）：{}",
+            status.as_u16(),
+            direct_model_api_error(&body)
+        ));
+    }
+    let response_json = serde_json::from_str::<Value>(&body)
+        .map_err(|error| format!("模型 API 返回不是有效 JSON: {error}"))?;
+    let text = direct_model_api_response_text(&provider, &response_json)
+        .ok_or_else(|| "模型 API 返回中没有可用文本".to_string())?;
+    Ok(LlmTextGenerationResult {
+        provider_id: provider.id,
+        model: provider.model,
+        text,
+    })
+}
+
 #[tauri::command]
 pub fn grok_model_apply(app: AppHandle, model: String) -> Result<(), String> {
     let model = normalize_model_id(&model)?;
@@ -4795,16 +5025,17 @@ mod tests {
     use super::{
         apply_offline_config, authorize_prompt_attachments, available_commands_from_initialize,
         available_commands_from_list, available_commands_from_session_update, build_prompt_content,
-        cache_provider_api_key, consume_prompt_attachment_grants, forget_cached_provider_api_key,
+        cache_provider_api_key, consume_prompt_attachment_grants, direct_model_api_endpoint,
+        direct_model_api_payload, direct_model_api_response_text, forget_cached_provider_api_key,
         format_rpc_error, grok_agent_arguments, model_key_env_name, normalize_model_id,
         normalize_model_provider, normalized_interjection_params, normalized_queue_changed_params,
         normalized_session_update_message, parse_grok_toml, plan_approval_params,
         process_launch_key, read_provider_api_key, request_timeout, scheduled_prompt_injection,
         select_auth_method, serialize_grok_toml, user_question_params, validate_cli_arguments,
         validate_service_arguments, workflow_listings_from_response, GrokAcpOptions,
-        GrokCliService, GrokModelProviderInput, GrokRuntimeState, PromptAttachmentGrant,
-        AUTHENTICATE_TIMEOUT, GROK_INTERJECT_METHOD, GROK_RECAP_METHOD, INITIALIZE_TIMEOUT,
-        MAX_PROMPT_ATTACHMENT_BYTES, REQUEST_TIMEOUT, SESSION_START_TIMEOUT,
+        GrokCliService, GrokModelProvider, GrokModelProviderInput, GrokRuntimeState,
+        PromptAttachmentGrant, AUTHENTICATE_TIMEOUT, GROK_INTERJECT_METHOD, GROK_RECAP_METHOD,
+        INITIALIZE_TIMEOUT, MAX_PROMPT_ATTACHMENT_BYTES, REQUEST_TIMEOUT, SESSION_START_TIMEOUT,
     };
     use serde_json::json;
     use std::fs;
@@ -5450,6 +5681,92 @@ mod tests {
             "URGS_GROK_MODEL_QWEN_PLUS"
         );
         assert_eq!(api_key.as_deref(), Some("secret"));
+    }
+
+    fn test_model_provider(api_backend: &str, base_url: &str) -> GrokModelProvider {
+        GrokModelProvider {
+            id: "test-provider".into(),
+            name: "测试连接".into(),
+            model: "test-model".into(),
+            base_url: base_url.into(),
+            api_backend: api_backend.into(),
+            auth_scheme: "bearer".into(),
+            context_window: 128_000,
+            enabled: true,
+            has_api_key: true,
+        }
+    }
+
+    #[test]
+    fn builds_direct_model_api_endpoints_and_protocol_payloads() {
+        let chat = test_model_provider("chat_completions", "https://example.test/v1/");
+        assert_eq!(
+            direct_model_api_endpoint(&chat).unwrap(),
+            "https://example.test/v1/chat/completions"
+        );
+        assert_eq!(
+            direct_model_api_payload(&chat, "生成提交信息")["messages"][0]["content"],
+            "生成提交信息"
+        );
+        let mut deepseek = chat.clone();
+        deepseek.model = "deepseek-v4-flash".into();
+        assert_eq!(
+            direct_model_api_payload(&deepseek, "生成提交信息")["thinking"]["type"],
+            "disabled"
+        );
+
+        let responses = test_model_provider("responses", "https://example.test/v1/responses");
+        assert_eq!(
+            direct_model_api_endpoint(&responses).unwrap(),
+            "https://example.test/v1/responses"
+        );
+        assert_eq!(
+            direct_model_api_payload(&responses, "生成提交信息")["input"],
+            "生成提交信息"
+        );
+
+        let messages = test_model_provider("messages", "https://example.test/v1");
+        assert_eq!(
+            direct_model_api_endpoint(&messages).unwrap(),
+            "https://example.test/v1/messages"
+        );
+        assert_eq!(
+            direct_model_api_payload(&messages, "生成提交信息")["messages"][0]["content"],
+            "生成提交信息"
+        );
+    }
+
+    #[test]
+    fn extracts_text_from_supported_direct_model_api_responses() {
+        let chat = test_model_provider("chat_completions", "https://example.test/v1");
+        assert_eq!(
+            direct_model_api_response_text(
+                &chat,
+                &json!({ "choices": [{ "message": { "content": "feat: update" } }] }),
+            )
+            .as_deref(),
+            Some("feat: update")
+        );
+
+        let responses = test_model_provider("responses", "https://example.test/v1");
+        assert_eq!(
+            direct_model_api_response_text(
+                &responses,
+                &json!({ "output_text": "fix: handle diff" }),
+            )
+            .as_deref(),
+            Some("fix: handle diff")
+        );
+
+        let messages = test_model_provider("messages", "https://example.test/v1");
+        assert_eq!(
+            direct_model_api_response_text(
+                &messages,
+                &json!({ "content": [{ "type": "text", "text": "chore: refresh" }] }),
+            )
+            .as_deref(),
+            Some("chore: refresh")
+        );
     }
 
     #[test]

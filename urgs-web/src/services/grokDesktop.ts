@@ -175,6 +175,110 @@ export interface GrokAcpOptions {
     leaderSocket?: string;
 }
 
+export type GrokGitMode = 'worktree' | 'workspace' | 'readonly';
+
+export interface GrokGitFile {
+    path: string;
+    indexStatus: string;
+    worktreeStatus: string;
+    additions: number;
+    deletions: number;
+    staged: boolean;
+    modified: boolean;
+    untracked: boolean;
+    conflicted: boolean;
+}
+
+export interface GrokGitStatus {
+    repoRoot: string;
+    workspacePath: string;
+    branch?: string | null;
+    upstream?: string | null;
+    ahead: number;
+    behind: number;
+    headCommit?: string | null;
+    isDirty: boolean;
+    isDetached: boolean;
+    stagedCount: number;
+    modifiedCount: number;
+    untrackedCount: number;
+    conflictCount: number;
+    additions: number;
+    deletions: number;
+    files: GrokGitFile[];
+}
+
+export interface GrokGitTaskWorkspace {
+    taskId: string;
+    mode: GrokGitMode;
+    repoRoot: string;
+    workspacePath: string;
+    worktreeId?: string | null;
+    branch?: string | null;
+    baseRef?: string | null;
+    baseCommit?: string | null;
+    headCommit?: string | null;
+    status: GrokGitStatus;
+}
+
+export interface GrokGitDiff {
+    workspacePath: string;
+    path?: string | null;
+    staged: boolean;
+    patch: string;
+    truncated: boolean;
+    files: GrokGitFile[];
+}
+
+export interface GrokGitMutationResult {
+    success: boolean;
+    operation: string;
+    message: string;
+    output?: string | null;
+    auditId: string;
+    status: GrokGitStatus;
+}
+
+export interface GrokGitWorktree {
+    path: string;
+    headCommit?: string | null;
+    branch?: string | null;
+    detached: boolean;
+    locked: boolean;
+    prunable: boolean;
+}
+
+export interface GrokGitRemote {
+    name: string;
+    fetchUrl?: string | null;
+    pushUrl?: string | null;
+    provider: string;
+    host?: string | null;
+    repository?: string | null;
+    webUrl?: string | null;
+    capabilities: string[];
+}
+
+export interface GrokGitAuditEntry {
+    id: string;
+    taskId?: string | null;
+    operation: string;
+    workspace: string;
+    target?: string | null;
+    summary: string;
+    success: boolean;
+    createdAt: number;
+}
+
+export interface GrokGitApplyResult {
+    success: boolean;
+    message: string;
+    conflictPaths: string[];
+    auditId: string;
+    sourceStatus: GrokGitStatus;
+    targetStatus: GrokGitStatus;
+}
+
 export interface GrokBridgeEvent {
     eventType: string;
     payload: Record<string, any>;
@@ -286,6 +390,17 @@ export interface GrokModelProvider {
 
 export interface GrokModelProviderInput extends Omit<GrokModelProvider, 'hasApiKey'> {
     apiKey?: string;
+}
+
+export interface LlmTextGenerationInput {
+    providerId: string;
+    prompt: string;
+}
+
+export interface LlmTextGenerationResult {
+    providerId: string;
+    model: string;
+    text: string;
 }
 
 const assertDesktopRuntime = () => {
@@ -452,6 +567,142 @@ export const runGrokCli = (arguments_: string[], workspace?: string, timeoutSeco
         workspace: workspace || null,
         timeoutSeconds,
     });
+
+export const prepareGrokGitTask = (
+    workspace: string,
+    taskId: string,
+    mode: GrokGitMode,
+    worktreeName?: string,
+    worktreeRef?: string,
+) => invokeGrok<GrokGitTaskWorkspace>('grok_git_prepare_task', {
+    workspace,
+    taskId,
+    mode,
+    worktreeName: worktreeName?.trim() || null,
+    worktreeRef: worktreeRef?.trim() || null,
+});
+
+export const getGrokGitStatus = (workspace: string) =>
+    invokeGrok<GrokGitStatus>('grok_git_status', { workspace });
+
+export const getGrokGitDiff = (workspace: string, path?: string, staged = false) =>
+    invokeGrok<GrokGitDiff>('grok_git_diff', { workspace, path: path || null, staged });
+
+export const stageGrokGit = (workspace: string, paths: string[] = [], all = false, taskId?: string) =>
+    invokeGrok<GrokGitMutationResult>('grok_git_stage', { workspace, paths, all, taskId: taskId || null });
+
+export const unstageGrokGit = (workspace: string, paths: string[] = [], all = false, taskId?: string) =>
+    invokeGrok<GrokGitMutationResult>('grok_git_unstage', { workspace, paths, all, taskId: taskId || null });
+
+export const stashGrokGit = (workspace: string, message?: string, includeUntracked = false, taskId?: string) =>
+    invokeGrok<GrokGitMutationResult>('grok_git_stash', {
+        workspace,
+        message: message?.trim() || null,
+        includeUntracked,
+        taskId: taskId || null,
+    });
+
+export const discardGrokGit = (
+    workspace: string,
+    paths: string[],
+    includeUntracked: boolean,
+    confirmed: boolean,
+    taskId?: string,
+) => invokeGrok<GrokGitMutationResult>('grok_git_discard', {
+    workspace,
+    paths,
+    includeUntracked,
+    confirmed,
+    taskId: taskId || null,
+});
+
+export const commitGrokGit = (
+    workspace: string,
+    message: string,
+    options: { amend?: boolean; signoff?: boolean; stageAll?: boolean; expectedBranch?: string; taskId?: string } = {},
+) => invokeGrok<GrokGitMutationResult>('grok_git_commit', {
+    workspace,
+    message,
+    amend: Boolean(options.amend),
+    signoff: Boolean(options.signoff),
+    stageAll: Boolean(options.stageAll),
+    expectedBranch: options.expectedBranch || null,
+    taskId: options.taskId || null,
+});
+
+export const fetchGrokGit = (workspace: string, taskId?: string) =>
+    invokeGrok<GrokGitMutationResult>('grok_git_fetch', { workspace, taskId: taskId || null });
+
+export const syncGrokGitBase = (
+    workspace: string,
+    baseRef: string,
+    options: { expectedBranch?: string; taskId?: string } = {},
+) => invokeGrok<GrokGitMutationResult>('grok_git_sync_base', {
+    workspace,
+    baseRef,
+    expectedBranch: options.expectedBranch || null,
+    taskId: options.taskId || null,
+});
+
+export const abortGrokGitOperation = (
+    workspace: string,
+    operation: 'rebase' | 'merge',
+    confirmed: boolean,
+    taskId?: string,
+) => invokeGrok<GrokGitMutationResult>('grok_git_abort_operation', {
+    workspace,
+    operation,
+    confirmed,
+    taskId: taskId || null,
+});
+
+export const pushGrokGit = (
+    workspace: string,
+    options: { setUpstream?: boolean; expectedBranch?: string; taskId?: string } = {},
+) => invokeGrok<GrokGitMutationResult>('grok_git_push', {
+    workspace,
+    setUpstream: Boolean(options.setUpstream),
+    expectedBranch: options.expectedBranch || null,
+    taskId: options.taskId || null,
+});
+
+export const listGrokGitRemotes = (workspace: string) =>
+    invokeGrok<GrokGitRemote[]>('grok_git_remote_list', { workspace });
+
+export const listGrokGitWorktrees = (workspace: string) =>
+    invokeGrok<GrokGitWorktree[]>('grok_git_worktree_list', { workspace });
+
+export const removeGrokGitWorktree = (
+    workspace: string,
+    worktreePath: string,
+    force: boolean,
+    confirmed: boolean,
+    taskId?: string,
+) => invokeGrok<GrokGitMutationResult>('grok_git_worktree_remove', {
+    workspace,
+    worktreePath,
+    force,
+    confirmed,
+    taskId: taskId || null,
+});
+
+export const gcGrokGitWorktrees = (workspace: string, taskId?: string) =>
+    invokeGrok<GrokGitMutationResult>('grok_git_worktree_gc', { workspace, taskId: taskId || null });
+
+export const applyGrokGitWorktree = (
+    sourceWorkspace: string,
+    targetWorkspace: string,
+    options: { expectedSourceBranch?: string; expectedTargetBranch?: string; taskId?: string } = {},
+) => invokeGrok<GrokGitApplyResult>('grok_git_apply_worktree', {
+    sourceWorkspace,
+    targetWorkspace,
+    expectedSourceBranch: options.expectedSourceBranch || null,
+    expectedTargetBranch: options.expectedTargetBranch || null,
+    taskId: options.taskId || null,
+});
+
+export const listGrokGitAudit = (workspace?: string) =>
+    invokeGrok<GrokGitAuditEntry[]>('grok_git_audit_list', { workspace: workspace || null });
 
 export const openGrokWorkspace = async (workspace: string) => {
     assertDesktopRuntime();
@@ -754,6 +1005,9 @@ export const saveGrokModelProvider = (input: GrokModelProviderInput) =>
 
 export const deleteGrokModelProvider = (providerId: string) =>
     invokeGrok<void>('grok_model_provider_delete', { providerId });
+
+export const generateLlmText = (input: LlmTextGenerationInput) =>
+    invokeGrok<LlmTextGenerationResult>('llm_generate_text', { input });
 
 export const createGrokSession = (workspace: string, rules?: string, model?: string, options?: GrokAcpOptions) =>
     invokeGrok<GrokSession>('grok_create_session', { workspace, rules: rules || null, model: model || null, options: options || null });

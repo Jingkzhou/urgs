@@ -1,3 +1,4 @@
+mod grok_git;
 mod grok_runtime;
 
 use serde::{Deserialize, Serialize};
@@ -295,6 +296,7 @@ pub fn run() {
             grok_runtime::grok_model_provider_authorize,
             grok_runtime::grok_model_provider_save,
             grok_runtime::grok_model_provider_delete,
+            grok_runtime::llm_generate_text,
             grok_runtime::grok_create_session,
             grok_runtime::grok_load_session,
             grok_runtime::grok_pick_prompt_attachments,
@@ -311,7 +313,25 @@ pub fn run() {
             grok_runtime::grok_respond_plan_approval,
             grok_runtime::grok_runtime_invalidate_prepared,
             grok_runtime::grok_shutdown,
-            grok_runtime::grok_start_login
+            grok_runtime::grok_start_login,
+            grok_git::grok_git_prepare_task,
+            grok_git::grok_git_status,
+            grok_git::grok_git_diff,
+            grok_git::grok_git_stage,
+            grok_git::grok_git_unstage,
+            grok_git::grok_git_stash,
+            grok_git::grok_git_discard,
+            grok_git::grok_git_commit,
+            grok_git::grok_git_fetch,
+            grok_git::grok_git_sync_base,
+            grok_git::grok_git_abort_operation,
+            grok_git::grok_git_push,
+            grok_git::grok_git_remote_list,
+            grok_git::grok_git_worktree_list,
+            grok_git::grok_git_worktree_remove,
+            grok_git::grok_git_worktree_gc,
+            grok_git::grok_git_apply_worktree,
+            grok_git::grok_git_audit_list
         ])
         .setup(|app| {
             write_startup_log("Tauri setup started.");

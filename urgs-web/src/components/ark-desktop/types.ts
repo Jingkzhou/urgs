@@ -192,6 +192,54 @@ export interface ArkDesktopModelKeyAuthorization {
     prompt?: string;
 }
 
+export type ArkDesktopGitMode = 'worktree' | 'workspace' | 'readonly';
+
+export interface ArkDesktopGitFile {
+    path: string;
+    indexStatus: string;
+    worktreeStatus: string;
+    additions: number;
+    deletions: number;
+    staged: boolean;
+    modified: boolean;
+    untracked: boolean;
+    conflicted: boolean;
+}
+
+export interface ArkDesktopGitStatus {
+    repoRoot: string;
+    workspacePath: string;
+    branch?: string | null;
+    upstream?: string | null;
+    ahead: number;
+    behind: number;
+    headCommit?: string | null;
+    isDirty: boolean;
+    isDetached: boolean;
+    stagedCount: number;
+    modifiedCount: number;
+    untrackedCount: number;
+    conflictCount: number;
+    additions: number;
+    deletions: number;
+    files: ArkDesktopGitFile[];
+}
+
+export interface ArkDesktopGitContext {
+    taskId: string;
+    mode: ArkDesktopGitMode;
+    repoRoot: string;
+    sourceWorkspace: string;
+    workspacePath: string;
+    worktreeId?: string | null;
+    branch?: string | null;
+    baseRef?: string | null;
+    baseCommit?: string | null;
+    headCommit?: string | null;
+    status?: ArkDesktopGitStatus;
+    updatedAt: number;
+}
+
 export interface ArkDesktopTask {
     id: string;
     title: string;
@@ -199,6 +247,8 @@ export interface ArkDesktopTask {
     agentId: string;
     skillIds: string[];
     workspace: string;
+    sourceWorkspace?: string;
+    gitContext?: ArkDesktopGitContext;
     attachmentPaths: string[];
     attachmentGrantIds?: string[];
     engine?: 'acp' | 'headless';
@@ -258,6 +308,7 @@ export interface ArkDesktopModelProvider {
 
 export interface GrokExecutionSettings {
     engine: 'acp' | 'headless';
+    gitMode: ArkDesktopGitMode;
     reasoningEffort: string;
     permissionMode: 'default' | 'bypassPermissions';
     sandboxProfile: string;

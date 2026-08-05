@@ -2,6 +2,7 @@ import React, { useEffect, useMemo, useRef, useState } from 'react';
 import {
     Archive, ArchiveRestore, Check, Copy, Ellipsis, Folder,
     FolderOpen, History, LoaderCircle, Pencil, Pin, PinOff, Plus, RefreshCw, Trash2, X,
+    GitBranch,
 } from 'lucide-react';
 import { copyToClipboard } from '@/utils/clipboard';
 import type { GrokSessionSummary } from '@/services/grokDesktop';
@@ -35,6 +36,7 @@ interface WorkspaceSessionSidebarProps {
 
 const isBusyTask = (task: ArkDesktopTask) => task.status === 'running' || task.status === 'waiting_authorization';
 const DEFAULT_VISIBLE_TASK_COUNT = 5;
+const taskWorkspace = (task: ArkDesktopTask) => task.sourceWorkspace || task.gitContext?.repoRoot || task.workspace;
 
 const remoteSessionTime = (value?: string | null) => {
     if (!value) return '';
@@ -123,9 +125,9 @@ const WorkspaceSessionSidebar: React.FC<WorkspaceSessionSidebarProps> = ({
     const query = searchValue.trim().toLowerCase();
     const groups = useMemo(() => {
         return workspaces.map((workspace) => {
-            const workspaceTasks = tasks.filter((task) => task.workspace === workspace);
+            const workspaceTasks = tasks.filter((task) => taskWorkspace(task) === workspace);
             const filtered = workspaceTasks
-                .filter((task) => !query || `${task.title} ${task.prompt} ${task.workspace}`.toLowerCase().includes(query))
+                .filter((task) => !query || `${task.title} ${task.prompt} ${task.workspace} ${task.gitContext?.branch || ''}`.toLowerCase().includes(query))
                 .filter((task) => view === 'archived'
                     ? Boolean(task.archivedAt)
                     : view === 'running'
@@ -300,7 +302,7 @@ const WorkspaceSessionSidebar: React.FC<WorkspaceSessionSidebarProps> = ({
                 const visibleTasks = query || expandedTasks
                     ? group.tasks
                     : group.tasks.slice(0, DEFAULT_VISIBLE_TASK_COUNT);
-                const selectedWorkspace = tasks.find((task) => task.id === activeTaskId)?.workspace === group.workspace;
+                const selectedWorkspace = taskWorkspace(tasks.find((task) => task.id === activeTaskId) || ({} as ArkDesktopTask)) === group.workspace;
                 return <section key={group.workspace} className="group/workspace relative">
                     <div className={`relative flex items-center rounded-lg transition ${selectedWorkspace ? 'bg-[#efedff]' : 'hover:bg-[#eeeeef]'}`}>
                         <button
@@ -391,12 +393,15 @@ const WorkspaceSessionSidebar: React.FC<WorkspaceSessionSidebarProps> = ({
                                     <button type="button" onClick={() => onOpenTask(task.id)} className="min-w-0 flex-1 px-2 py-2.5 text-left">
                                         <span className="flex items-center gap-1.5">
                                             <span className="min-w-0 flex-1 truncate text-[12px] font-medium">{task.title}</span>
+                                            {task.gitContext?.mode === 'worktree' && <span className="flex shrink-0 items-center gap-0.5 rounded-full bg-indigo-50 px-1.5 py-0.5 text-[9px] font-medium text-indigo-600" title={task.workspace}><GitBranch size={9} />WT</span>}
+                                            {task.gitContext?.mode === 'readonly' && <span className="flex shrink-0 items-center gap-0.5 rounded-full bg-slate-100 px-1.5 py-0.5 text-[9px] font-medium text-slate-500" title={task.workspace}>RO</span>}
                                             {task.pinnedAt && <Pin size={11} className="shrink-0 fill-current text-[#6657d9]" />}
                                             {statusLabel && <span className={`shrink-0 rounded-full px-1.5 py-0.5 text-[9px] font-medium ${statusClassName}`}>
                                                 {task.status === 'running' && <LoaderCircle size={10} strokeWidth={2} className="mr-0.5 inline animate-spin" />}
                                                 {statusLabel}
                                             </span>}
                                         </span>
+                                        {task.gitContext && <span className="mt-1 flex items-center gap-1 truncate pl-0.5 text-[10px] text-slate-400"><GitBranch size={10} className="shrink-0" />{task.gitContext.branch || (task.gitContext.mode === 'readonly' ? 'Detached 快照' : '当前工作区')}{task.gitContext.status?.isDirty ? <span className="text-amber-600">· {task.gitContext.status.files.length} 项变更</span> : <span className="text-emerald-600">· 干净</span>}</span>}
                                     </button>
                                     <button type="button" onClick={() => setOpenMenu((current) => current?.kind === 'task' && current.id === task.id ? null : { kind: 'task', id: task.id })} className="mr-1 rounded-md p-1.5 text-slate-400 opacity-0 transition hover:bg-white hover:text-slate-700 group-hover/task:opacity-100 focus:opacity-100" title={`${task.title} 会话操作`} aria-label={`${task.title} 会话操作`}><Ellipsis size={14} /></button>
                                 </>}

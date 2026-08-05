@@ -34,6 +34,24 @@ const GrokExecutionSettingsPanel: React.FC<GrokExecutionSettingsPanelProps> = ({
             {dangerous && <div className="mt-4 flex items-start gap-2 rounded-xl border border-red-200 bg-red-50 px-3 py-2.5 text-xs leading-5 text-red-700"><AlertTriangle size={15} className="mt-0.5 shrink-0" />当前配置允许智能体无需逐次确认执行本地操作，发起任务时会再次确认。</div>}
         </div>
 
+        <div className="rounded-2xl border border-indigo-200 bg-indigo-50/40 p-5">
+            <div className="mb-3 flex items-center gap-2"><SlidersHorizontal size={17} className="text-indigo-600" /><h3 className="font-semibold text-slate-900">代码隔离与 Git</h3></div>
+            <div className="grid gap-4 sm:grid-cols-2">
+                <Field label="任务代码位置" hint="默认每个任务使用独立 Worktree，多个任务可并行修改同一仓库而不互相覆盖；只读分析使用独立 detached 快照，不回写源仓库。">
+                    <select className={inputClass} value={value.gitMode} onChange={(event) => { const gitMode = event.target.value as GrokExecutionSettings['gitMode']; onChange({ ...value, gitMode, useWorktree: gitMode === 'worktree' }); }}>
+                        <option value="worktree">独立 Worktree（推荐）</option>
+                        <option value="workspace">当前工作区</option>
+                        <option value="readonly">只读分析</option>
+                    </select>
+                </Field>
+                {value.gitMode === 'worktree' && <>
+                    <Field label="Worktree 名称" hint="会生成任务分支，留空使用任务标题。"><input className={inputClass} value={value.worktreeName} onChange={(event) => set('worktreeName', event.target.value)} placeholder="例如：报表校验" /></Field>
+                    <Field label="Worktree 基准" hint="留空从当前 HEAD 创建，也可以填 main、origin/main 或提交号。"><input className={inputClass} value={value.worktreeRef} onChange={(event) => set('worktreeRef', event.target.value)} placeholder="HEAD" /></Field>
+                </>}
+            </div>
+            <p className="mt-3 text-[11px] leading-5 text-indigo-700">智能体实际运行目录、会话 cwd、Git 状态和后续审查对象保持一致；应用 Worktree 前必须先完成审查与提交。只读分析不会把源仓库切换到 detached 状态。</p>
+        </div>
+
         {isHeadless && <><details className="rounded-2xl border border-slate-200 p-5" open>
             <summary className="cursor-pointer text-sm font-semibold text-slate-900">工具、权限与记忆</summary>
             <div className="mt-4 grid gap-4 sm:grid-cols-2">
@@ -71,8 +89,6 @@ const GrokExecutionSettingsPanel: React.FC<GrokExecutionSettingsPanelProps> = ({
                 {value.promptMode === 'json' && <Field label="Prompt JSON"><textarea className={inputClass} rows={4} value={value.promptJson} onChange={(event) => set('promptJson', event.target.value)} /></Field>}
                 <Toggle checked={value.forkSession} label="恢复时创建分支会话" onChange={(checked) => set('forkSession', checked)} />
                 <Toggle checked={value.restoreCode} label="恢复会话原始代码" onChange={(checked) => set('restoreCode', checked)} />
-                <Toggle checked={value.useWorktree} label="在新 Worktree 中执行" onChange={(checked) => set('useWorktree', checked)} />
-                {value.useWorktree && <><Field label="Worktree 名称"><input className={inputClass} value={value.worktreeName} onChange={(event) => set('worktreeName', event.target.value)} /></Field><Field label="Worktree 基准"><input className={inputClass} value={value.worktreeRef} onChange={(event) => set('worktreeRef', event.target.value)} /></Field></>}
             </div>
         </details></>}
 
