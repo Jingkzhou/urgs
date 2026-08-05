@@ -40,7 +40,7 @@ const GitReviewPanel: React.FC<GitReviewPanelProps> = ({ task, runtime, onClose 
     const [busy, setBusy] = useState<string | null>(null);
     const [error, setError] = useState('');
     const [notice, setNotice] = useState('');
-    const [confirmation, setConfirmation] = useState<{ title: string; body: string; confirmLabel: string; action: () => Promise<void>; refreshAfter?: boolean } | null>(null);
+    const [confirmation, setConfirmation] = useState<{ title: string; body: string; confirmLabel: string; action: () => Promise<void>; refreshAfter?: boolean; busyLabel?: string } | null>(null);
     const [worktreeRemoved, setWorktreeRemoved] = useState(false);
     const [panelWidth, setPanelWidth] = useState(DEFAULT_PANEL_WIDTH);
     const [isResizing, setIsResizing] = useState(false);
@@ -50,6 +50,10 @@ const GitReviewPanel: React.FC<GitReviewPanelProps> = ({ task, runtime, onClose 
 
     const currentStatus = status || task.gitContext?.status;
     const files = currentStatus?.files || [];
+    const aheadCount = currentStatus?.ahead || 0;
+    const behindCount = currentStatus?.behind || 0;
+    const isFetching = busy === 'fetch';
+    const isPushing = busy === 'push';
     const selectedFileSet = useMemo(() => new Set(selectedPaths), [selectedPaths]);
     const isReadonly = task.gitContext?.mode === 'readonly';
     const isWorktree = task.gitContext?.mode === 'worktree';
@@ -177,15 +181,15 @@ const GitReviewPanel: React.FC<GitReviewPanelProps> = ({ task, runtime, onClose 
         }
     };
 
-    const askApproval = (title: string, body: string, confirmLabel: string, action: () => Promise<void>, refreshAfter = true) => {
-        setConfirmation({ title, body, confirmLabel, action, refreshAfter });
+    const askApproval = (title: string, body: string, confirmLabel: string, action: () => Promise<void>, refreshAfter = true, busyLabel?: string) => {
+        setConfirmation({ title, body, confirmLabel, action, refreshAfter, busyLabel });
     };
 
     const confirmAction = async () => {
         if (!confirmation) return;
         const action = confirmation.action;
         setConfirmation(null);
-        await runSafe('confirm', action, confirmation.refreshAfter !== false);
+        await runSafe(confirmation.busyLabel || 'confirm', action, confirmation.refreshAfter !== false);
     };
 
     const togglePath = (path: string) => setSelectedPaths((current) => current.includes(path) ? current.filter((item) => item !== path) : [...current, path]);
@@ -275,6 +279,8 @@ const GitReviewPanel: React.FC<GitReviewPanelProps> = ({ task, runtime, onClose 
             `${workspaceName(task.workspace)} 的 ${branch} 将推送到远端。推送只影响远程仓库，不会自动创建 PR/MR。`,
             '推送分支',
             async () => { await runtime.pushTaskGit(task.id, !currentStatus?.upstream); },
+            true,
+            'push',
         );
     };
 
@@ -373,7 +379,7 @@ const GitReviewPanel: React.FC<GitReviewPanelProps> = ({ task, runtime, onClose 
                 <div className="flex items-center gap-1.5">
                     <button type="button" onClick={() => void refresh()} disabled={busy !== null} className="flex items-center gap-1.5 rounded-lg border border-slate-200 bg-white px-2.5 py-2 text-[11px] font-medium text-slate-600 hover:bg-slate-50 disabled:opacity-50"><RefreshCw size={13} className={busy === 'refresh' ? 'animate-spin' : ''} />刷新</button>
                     <button type="button" onClick={stageAllChanges} disabled={isReadonly || busy !== null || files.length === 0} className="rounded-lg bg-slate-900 px-2.5 py-2 text-[11px] font-medium text-white hover:bg-slate-700 disabled:opacity-40">暂存全部</button>
-                    <button type="button" onClick={() => void runSafe('fetch', () => runtime.fetchTaskGit(task.id))} disabled={isReadonly || busy !== null} className="ml-auto flex items-center gap-1 rounded-lg px-2 py-2 text-[11px] text-slate-500 hover:bg-slate-100 disabled:opacity-40"><Download size={13} />Fetch</button>
+                    <button type="button" onClick={() => void runSafe('fetch', () => runtime.fetchTaskGit(task.id))} disabled={isReadonly || busy !== null} className="ml-auto flex items-center gap-1 rounded-lg px-2 py-2 text-[11px] text-slate-500 hover:bg-slate-100 disabled:opacity-40">{isFetching ? <LoaderCircle size={13} className="animate-spin" /> : <Download size={13} />}{isFetching ? '正在拉取…' : `拉取 ${behindCount}`}</button>
                 </div>
                 {isReadonly && <div className="flex items-start gap-2 rounded-xl border border-slate-200 bg-slate-50 px-3 py-2.5 text-[11px] leading-5 text-slate-500"><Eye size={14} className="mt-0.5 shrink-0" />只读分析任务只提供状态和 Diff，不允许修改仓库。</div>}
                 <GitFileTree files={files} selectedFile={selectedFile} selectedPaths={selectedFileSet} onTogglePath={togglePath} onSelectFile={setSelectedFile} onOpenDiff={() => setTab('diff')} />
@@ -399,7 +405,7 @@ const GitReviewPanel: React.FC<GitReviewPanelProps> = ({ task, runtime, onClose 
                 <div className="rounded-xl border border-slate-200 bg-white p-3"><div className="mb-2 flex items-center justify-between gap-2"><label htmlFor="git-commit-message" className="text-xs font-semibold text-slate-700">Commit message</label><button type="button" onClick={() => void generateCommitMessage()} disabled={isReadonly || busy !== null || files.length === 0} className="flex h-7 w-7 items-center justify-center rounded-lg border border-indigo-100 bg-indigo-50 text-indigo-600 hover:bg-indigo-100 disabled:opacity-40" title="根据当前 Diff 生成 Commit message" aria-label="根据当前 Diff 生成 Commit message">{busy === 'commit-message-ai' ? <LoaderCircle size={14} className="animate-spin" /> : <Sparkles size={14} />}</button></div><textarea id="git-commit-message" value={commitMessage} onChange={(event) => setCommitMessage(event.target.value)} rows={4} placeholder="Commit message" className="w-full resize-y rounded-lg border border-slate-200 bg-white px-3 py-2.5 text-sm text-slate-800 outline-none focus:border-indigo-300 focus:ring-2 focus:ring-indigo-100" /></div>
                 <div className="space-y-2 rounded-xl border border-slate-200 bg-white p-3 text-[11px] text-slate-600"><label className="flex items-center gap-2"><input type="checkbox" checked={stageAll} onChange={(event) => setStageAll(event.target.checked)} />提交前暂存全部变更</label><label className="flex items-center gap-2"><input type="checkbox" checked={amend} onChange={(event) => setAmend(event.target.checked)} />修改最近一次提交（Amend）</label><label className="flex items-center gap-2"><input type="checkbox" checked={signoff} onChange={(event) => setSignoff(event.target.checked)} />追加 Signed-off-by</label></div>
                 <button type="button" onClick={submitCommit} disabled={isReadonly || busy !== null || !commitMessage.trim()} className="flex w-full items-center justify-center gap-2 rounded-xl bg-slate-900 px-3 py-2.5 text-xs font-medium text-white hover:bg-slate-700 disabled:opacity-40"><GitCommitHorizontal size={14} />创建提交</button>
-                <div className="flex gap-2"><button type="button" onClick={() => void runSafe('fetch', () => runtime.fetchTaskGit(task.id))} disabled={isReadonly || busy !== null} className="flex flex-1 items-center justify-center gap-1.5 rounded-lg border border-slate-200 bg-white px-2.5 py-2 text-[11px] text-slate-600 hover:bg-slate-50 disabled:opacity-40"><Download size={13} />Fetch</button><button type="button" onClick={push} disabled={isReadonly || busy !== null || !currentStatus?.headCommit} className="flex flex-1 items-center justify-center gap-1.5 rounded-lg border border-indigo-200 bg-indigo-50 px-2.5 py-2 text-[11px] text-indigo-700 hover:bg-indigo-100 disabled:opacity-40"><Upload size={13} />Push</button></div>
+                <div className="flex gap-2"><button type="button" onClick={() => void runSafe('fetch', () => runtime.fetchTaskGit(task.id))} disabled={isReadonly || busy !== null} className="flex flex-1 items-center justify-center gap-1.5 rounded-lg border border-slate-200 bg-white px-2.5 py-2 text-[11px] text-slate-600 hover:bg-slate-50 disabled:opacity-40" aria-label={isFetching ? '正在拉取' : `拉取 ${behindCount} 个提交`}>{isFetching ? <LoaderCircle size={13} className="animate-spin" /> : <Download size={13} />}{isFetching ? '正在拉取…' : `拉取 ${behindCount}`}</button><button type="button" onClick={push} disabled={isReadonly || busy !== null || !currentStatus?.headCommit} className="flex flex-1 items-center justify-center gap-1.5 rounded-lg border border-indigo-200 bg-indigo-50 text-[11px] text-indigo-700 hover:bg-indigo-100 disabled:opacity-40" aria-label={isPushing ? '正在推送' : `推送 ${aheadCount} 个提交`}>{isPushing ? <LoaderCircle size={13} className="animate-spin" /> : <Upload size={13} />}{isPushing ? '正在推送…' : `推送 ${aheadCount}`}</button></div>
                 <button type="button" onClick={stash} disabled={isReadonly || busy !== null || !currentStatus?.isDirty} className="flex w-full items-center justify-center gap-1.5 rounded-lg border border-slate-200 bg-white px-2.5 py-2 text-[11px] text-slate-600 hover:bg-slate-50 disabled:opacity-40"><Archive size={13} />Stash 当前变更</button>
                 <div className="rounded-xl border border-amber-200 bg-amber-50 px-3 py-2.5 text-[11px] leading-5 text-amber-800"><ShieldCheck size={13} className="mr-1 inline" />提交、推送和丢弃都会弹出明确审批，并记录操作者、任务、分支和目标路径。</div>
             </section>}
