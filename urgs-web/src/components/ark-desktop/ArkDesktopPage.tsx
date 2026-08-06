@@ -7,7 +7,7 @@ import { oneDark } from 'react-syntax-highlighter/dist/esm/styles/prism';
 import {
     AlertCircle, BriefcaseBusiness, Check, CheckCircle2, CheckSquare,
     ChevronDown, ChevronUp, CircleStop, Code2, Copy, Cpu, FileText, Folder, FolderOpen,
-    Hand, KeyRound, Lightbulb, LoaderCircle, Paperclip, PanelBottom, PanelBottomOpen, PanelRight, Pencil, Plus, RefreshCw,
+    Hand, KeyRound, Lightbulb, LoaderCircle, Paperclip, PanelBottom, PanelRight, Pencil, Plus, RefreshCw,
     Puzzle, Search, Send, Settings, ShieldAlert, Trash2, Workflow, Wrench, X,
 } from 'lucide-react';
 import { copyToClipboard } from '@/utils/clipboard';
@@ -65,6 +65,14 @@ const taskStatus: Record<ArkDesktopTaskStatus, { label: string; className: strin
     failed: { label: '失败', className: 'bg-red-50 text-red-600' },
     cancelled: { label: '已停止', className: 'bg-slate-100 text-slate-500' },
 };
+
+const panelToggleClass = (active: boolean) => [
+    'flex h-8 w-8 shrink-0 items-center justify-center rounded-md border border-transparent bg-transparent transition-colors duration-150',
+    'focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-slate-300 focus-visible:ring-offset-1',
+    active
+        ? 'text-slate-900 hover:bg-slate-50'
+        : 'text-slate-400 hover:bg-slate-50 hover:text-slate-700',
+].join(' ');
 
 const workflowStatusPresentation = (status: string) => {
     switch (status.toLowerCase()) {
@@ -363,8 +371,14 @@ const ArkDesktopPage: React.FC = () => {
                         ? <TaskPlanPanel plan={runtime.activeTask.plan} taskStatus={runtime.activeTask.status} />
                         : undefined}
                 />
-                <button type="button" onClick={() => setTerminalPanelOpen((current) => !current)} className={`mr-1 flex h-8 w-8 shrink-0 items-center justify-center rounded-md transition ${terminalPanelOpen ? 'bg-slate-100 text-slate-800' : 'text-slate-600 hover:bg-slate-100 hover:text-slate-800'}`} title={terminalPanelOpen ? '关闭底部终端面板' : '打开底部终端面板'} aria-label={terminalPanelOpen ? '关闭底部终端面板' : '打开底部终端面板'}>{terminalPanelOpen ? <PanelBottomOpen size={15} /> : <PanelBottom size={15} />}</button>
-                {runtime.activeTask && <button type="button" onClick={() => setGitReviewOpen((current) => !current)} className={`mr-3 flex h-8 w-8 shrink-0 items-center justify-center transition ${gitReviewOpen ? 'text-indigo-700' : 'text-slate-600 hover:text-indigo-700'}`} title="打开 Git 变更审查" aria-label="打开 Git 变更审查"><PanelRight size={14} /></button>}
+                <div className="mr-3 flex items-center gap-1">
+                    <button type="button" onClick={() => setTerminalPanelOpen((current) => !current)} className={panelToggleClass(terminalPanelOpen)} title={terminalPanelOpen ? '关闭底部终端面板' : '打开底部终端面板'} aria-label={terminalPanelOpen ? '关闭底部终端面板' : '打开底部终端面板'} aria-pressed={terminalPanelOpen}>
+                        <PanelBottom size={16} strokeWidth={1.8} />
+                    </button>
+                    {runtime.activeTask && <button type="button" onClick={() => setGitReviewOpen((current) => !current)} className={panelToggleClass(gitReviewOpen)} title={gitReviewOpen ? '关闭 Git 变更审查' : '打开 Git 变更审查'} aria-label={gitReviewOpen ? '关闭 Git 变更审查' : '打开 Git 变更审查'} aria-pressed={gitReviewOpen}>
+                        <PanelRight size={16} strokeWidth={1.8} />
+                    </button>}
+                </div>
             </header>
             <aside className={`${isSidebarCollapsed ? 'hidden' : 'hidden w-[270px] shrink-0 flex-col border-r border-[#e5e5e7] bg-[#f8f8f9] px-3 py-4 lg:flex'}`}>
                 <div className="mb-3 flex h-10 items-center gap-2 px-2">

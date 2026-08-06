@@ -37,10 +37,10 @@ const GrokExecutionSettingsPanel: React.FC<GrokExecutionSettingsPanelProps> = ({
         <div className="rounded-2xl border border-indigo-200 bg-indigo-50/40 p-5">
             <div className="mb-3 flex items-center gap-2"><SlidersHorizontal size={17} className="text-indigo-600" /><h3 className="font-semibold text-slate-900">代码隔离与 Git</h3></div>
             <div className="grid gap-4 sm:grid-cols-2">
-                <Field label="任务代码位置" hint="默认每个任务使用独立 Worktree，多个任务可并行修改同一仓库而不互相覆盖；只读分析使用独立 detached 快照，不回写源仓库。">
+                <Field label="任务代码位置" hint="默认直接使用当前工作区，行为与 VS Code 等本地开发工具一致；需要并行隔离时再选择独立 Worktree。只读分析使用独立 detached 快照，不回写源仓库。">
                     <select className={inputClass} value={value.gitMode} onChange={(event) => { const gitMode = event.target.value as GrokExecutionSettings['gitMode']; onChange({ ...value, gitMode, useWorktree: gitMode === 'worktree' }); }}>
-                        <option value="worktree">独立 Worktree（推荐）</option>
-                        <option value="workspace">当前工作区</option>
+                        <option value="workspace">当前工作区（推荐）</option>
+                        <option value="worktree">独立 Worktree</option>
                         <option value="readonly">只读分析</option>
                     </select>
                 </Field>

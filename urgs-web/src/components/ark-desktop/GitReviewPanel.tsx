@@ -22,6 +22,33 @@ const workspaceName = (value: string) => value.split(/[\\/]/).filter(Boolean).po
 const DEFAULT_PANEL_WIDTH = 430;
 const MIN_PANEL_WIDTH = 320;
 const MAX_PANEL_WIDTH = 720;
+const PANEL_WIDTH_STORAGE_KEY = 'urgs_ark_desktop_git_review_panel_width_v1';
+
+const clampPanelWidthValue = (value: number) => {
+    const viewportMax = typeof window === 'undefined' ? MAX_PANEL_WIDTH : Math.floor(window.innerWidth * 0.65);
+    return Math.min(Math.max(MIN_PANEL_WIDTH, value), Math.max(MIN_PANEL_WIDTH, Math.min(MAX_PANEL_WIDTH, viewportMax)));
+};
+
+const readStoredPanelWidth = () => {
+    if (typeof window === 'undefined') return DEFAULT_PANEL_WIDTH;
+    try {
+        const stored = localStorage.getItem(PANEL_WIDTH_STORAGE_KEY);
+        if (!stored) return DEFAULT_PANEL_WIDTH;
+        const value = Number(stored);
+        return Number.isFinite(value) ? clampPanelWidthValue(value) : DEFAULT_PANEL_WIDTH;
+    } catch {
+        return DEFAULT_PANEL_WIDTH;
+    }
+};
+
+const persistPanelWidth = (value: number) => {
+    if (typeof window === 'undefined') return;
+    try {
+        localStorage.setItem(PANEL_WIDTH_STORAGE_KEY, String(value));
+    } catch {
+        // 本地偏好写入失败不应影响审查面板使用。
+    }
+};
 
 const GitReviewPanel: React.FC<GitReviewPanelProps> = ({ task, runtime, onClose }) => {
     const [tab, setTab] = useState<ReviewTab>('diff');
@@ -42,7 +69,7 @@ const GitReviewPanel: React.FC<GitReviewPanelProps> = ({ task, runtime, onClose 
     const [notice, setNotice] = useState('');
     const [confirmation, setConfirmation] = useState<{ title: string; body: string; confirmLabel: string; action: () => Promise<void>; refreshAfter?: boolean; busyLabel?: string } | null>(null);
     const [worktreeRemoved, setWorktreeRemoved] = useState(false);
-    const [panelWidth, setPanelWidth] = useState(DEFAULT_PANEL_WIDTH);
+    const [panelWidth, setPanelWidth] = useState(readStoredPanelWidth);
     const [isResizing, setIsResizing] = useState(false);
     const resizeStartRef = useRef<{ startX: number; startWidth: number } | null>(null);
 
@@ -60,9 +87,12 @@ const GitReviewPanel: React.FC<GitReviewPanelProps> = ({ task, runtime, onClose 
     const repoRoot = task.gitContext?.repoRoot || task.sourceWorkspace || task.workspace;
 
     const clampPanelWidth = useCallback((value: number) => {
-        const viewportMax = typeof window === 'undefined' ? MAX_PANEL_WIDTH : Math.floor(window.innerWidth * 0.65);
-        return Math.min(Math.max(MIN_PANEL_WIDTH, value), Math.max(MIN_PANEL_WIDTH, Math.min(MAX_PANEL_WIDTH, viewportMax)));
+        return clampPanelWidthValue(value);
     }, []);
+
+    useEffect(() => {
+        persistPanelWidth(panelWidth);
+    }, [panelWidth]);
 
     const handleResizePointerDown = (event: React.PointerEvent<HTMLDivElement>) => {
         event.preventDefault();
@@ -387,17 +417,20 @@ const GitReviewPanel: React.FC<GitReviewPanelProps> = ({ task, runtime, onClose 
             </section>}
 
             {tab === 'diff' && <section className="space-y-3">
-                <div className="flex items-center gap-3 rounded-xl border border-slate-200 bg-white px-3 py-2.5">
-                    <div className="min-w-0 flex-1">
-                        <div className="text-xs font-semibold text-slate-800">全部变更</div>
-                        <div className="mt-0.5 text-[10px] text-slate-400">按文件连续展示当前工作区的完整 Diff</div>
-                    </div>
-                    <span className="shrink-0 text-[10px] text-slate-500">{files.length} 个文件</span>
-                    <span className="shrink-0 text-[11px] font-medium text-emerald-600">+{currentStatus?.additions || 0}</span>
-                    <span className="shrink-0 text-[11px] font-medium text-red-500">-{currentStatus?.deletions || 0}</span>
-                    <label className="flex shrink-0 items-center gap-1 text-[10px] text-slate-500"><input type="checkbox" checked={showStagedDiff} onChange={(event) => setShowStagedDiff(event.target.checked)} />已暂存</label>
-                </div>
-                {diff?.patch ? <GitDiffViewer patch={diff.patch} filePath="当前工作区" truncated={diff.truncated} /> : <EmptyState text={busy === 'diff' ? '正在读取全部 Diff…' : '当前工作区没有可展示的 Diff'} />}
+                {diff?.patch ? <GitDiffViewer
+                    patch={diff.patch}
+                    filePath="当前工作区"
+                    truncated={diff.truncated}
+                    summary={{
+                        title: '全部变更',
+                        subtitle: '按文件连续展示当前工作区的完整 Diff',
+                        fileCount: files.length,
+                        additions: currentStatus?.additions || 0,
+                        deletions: currentStatus?.deletions || 0,
+                        staged: showStagedDiff,
+                        onStagedChange: setShowStagedDiff,
+                    }}
+                /> : <EmptyState text={busy === 'diff' ? '正在读取全部 Diff…' : '当前工作区没有可展示的 Diff'} />}
             </section>}
 
             {tab === 'commit' && <section className="space-y-3">

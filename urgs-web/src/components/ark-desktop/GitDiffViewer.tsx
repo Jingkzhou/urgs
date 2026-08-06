@@ -1,5 +1,5 @@
 import React, { useMemo, useState } from 'react';
-import { ChevronDown, ChevronUp, FileCode2 } from 'lucide-react';
+import { ChevronDown, ChevronUp, FileCode2, ListCollapse } from 'lucide-react';
 import { Prism as SyntaxHighlighter } from 'react-syntax-highlighter';
 import { oneDark } from 'react-syntax-highlighter/dist/esm/styles/prism';
 
@@ -34,6 +34,15 @@ interface GitDiffViewerProps {
     additions?: number;
     deletions?: number;
     truncated?: boolean;
+    summary?: {
+        title: string;
+        subtitle: string;
+        fileCount: number;
+        additions: number;
+        deletions: number;
+        staged: boolean;
+        onStagedChange: (checked: boolean) => void;
+    };
 }
 
 const normalizePath = (value: string) => value.replace(/^\.[\/]/, '').replace(/^[ab][\/]/, '');
@@ -186,21 +195,29 @@ const DiffFile: React.FC<DiffFileProps> = ({ file, additions, deletions, fileId,
     </section>;
 };
 
-const GitDiffViewer: React.FC<GitDiffViewerProps> = ({ patch, filePath = '变更文件', additions, deletions, truncated }) => {
+const GitDiffViewer: React.FC<GitDiffViewerProps> = ({ patch, filePath = '变更文件', additions, deletions, truncated, summary }) => {
     const files = useMemo(() => parsePatch(patch, filePath), [filePath, patch]);
     const fileIds = useMemo(() => files.map((file, index) => `git-diff-file-${index}-${file.path.replace(/[^a-zA-Z0-9_-]/g, '-')}`), [files]);
     const [collapsedFiles, setCollapsedFiles] = useState<Set<string>>(new Set());
     if (files.length === 0) return null;
     const allCollapsed = files.every((_, index) => collapsedFiles.has(fileIds[index]));
+    const toggleAllFiles = () => setCollapsedFiles(allCollapsed ? new Set() : new Set(fileIds));
+    const collapseActionLabel = allCollapsed ? '全部展开' : '全部折叠';
     return <div className="space-y-2">
         {truncated && <div className="rounded-lg border border-amber-200 bg-amber-50 px-3 py-2 text-[10px] text-amber-700">Diff 内容较大，当前仅展示截断后的变更。</div>}
-        <div className="flex items-center justify-between gap-2 rounded-xl border border-[#303030] bg-[#232323] px-3 py-2">
-            <span className="text-[11px] text-[#b5b5b5]">{files.length} 个文件</span>
-            <div className="flex items-center gap-1.5">
-                <button type="button" onClick={() => setCollapsedFiles(new Set())} disabled={!allCollapsed} className="rounded-md px-2 py-1 text-[10px] text-[#d4d4d4] hover:bg-[#343434] disabled:cursor-default disabled:opacity-40" aria-label="全部展开">全部展开</button>
-                <button type="button" onClick={() => setCollapsedFiles(new Set(fileIds))} disabled={allCollapsed} className="rounded-md px-2 py-1 text-[10px] text-[#d4d4d4] hover:bg-[#343434] disabled:cursor-default disabled:opacity-40" aria-label="全部折叠">全部折叠</button>
+        {summary && <div className="min-w-0 rounded-xl border border-slate-200 bg-white px-3 py-2.5">
+            <div className="min-w-0">
+                <div className="text-xs font-semibold text-slate-800">{summary.title}</div>
+                <div className="mt-0.5 text-[10px] text-slate-400">{summary.subtitle}</div>
             </div>
-        </div>
+            <div className="mt-2 flex min-w-0 flex-wrap items-center justify-start gap-x-3 gap-y-1">
+                <span className="shrink-0 text-[10px] text-slate-500">{summary.fileCount} 个文件</span>
+                <span className="shrink-0 text-[11px] font-medium text-emerald-600">+{summary.additions}</span>
+                <span className="shrink-0 text-[11px] font-medium text-red-500">-{summary.deletions}</span>
+                <label className="flex shrink-0 items-center gap-1 text-[10px] text-slate-500"><input type="checkbox" checked={summary.staged} onChange={(event) => summary.onStagedChange(event.target.checked)} />已暂存</label>
+                <button type="button" onClick={toggleAllFiles} className="flex h-8 w-8 shrink-0 items-center justify-center rounded-lg bg-slate-100 text-slate-500 transition hover:bg-slate-200 hover:text-slate-700 focus:outline-none focus:ring-2 focus:ring-slate-300" aria-label={collapseActionLabel} title={collapseActionLabel}><ListCollapse size={16} strokeWidth={1.8} /></button>
+            </div>
+        </div>}
         {files.map((file, index) => {
             const fileId = fileIds[index];
             return <DiffFile

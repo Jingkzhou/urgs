@@ -5,8 +5,11 @@ import {
 } from './catalog';
 import type { ArkDesktopSnapshot } from './types';
 
-const STORAGE_KEY = 'urgs_ark_desktop_grok_snapshot_v3';
-const LEGACY_STORAGE_KEY = 'urgs_ark_desktop_grok_snapshot_v2';
+const STORAGE_KEY = 'urgs_ark_desktop_grok_snapshot_v4';
+const LEGACY_STORAGE_KEYS = [
+    'urgs_ark_desktop_grok_snapshot_v3',
+    'urgs_ark_desktop_grok_snapshot_v2',
+];
 const MAX_TASK_HISTORY = 50;
 const settledActivityPattern = /已完成|完成|成功|失败|取消|不可用|未生成|退出码|completed|success|failed|cancelled|canceled|unavailable|done/i;
 const MAX_PERSISTED_TEXT = 4_000;
@@ -36,7 +39,7 @@ export const createDefaultArkDesktopSnapshot = (): ArkDesktopSnapshot => ({
         defaultSkillIds: [],
         execution: {
             engine: 'acp',
-            gitMode: 'worktree',
+            gitMode: 'workspace',
             reasoningEffort: '',
             permissionMode: 'default',
             sandboxProfile: '',
@@ -89,7 +92,9 @@ export const loadArkDesktopSnapshot = (): ArkDesktopSnapshot => {
     if (typeof window === 'undefined') return defaults;
     try {
         const currentRaw = localStorage.getItem(STORAGE_KEY);
-        const raw = currentRaw || localStorage.getItem(LEGACY_STORAGE_KEY);
+        const raw = currentRaw || LEGACY_STORAGE_KEYS
+            .map((key) => localStorage.getItem(key))
+            .find((value): value is string => Boolean(value));
         if (!raw) return defaults;
         const stored = JSON.parse(raw) as Partial<ArkDesktopSnapshot>;
         const isLegacy = !currentRaw;
@@ -147,6 +152,15 @@ export const loadArkDesktopSnapshot = (): ArkDesktopSnapshot => {
                 .map((workspace) => workspace?.trim())
                 .filter((workspace): workspace is string => Boolean(workspace)),
         ));
+        const storedGitMode = stored.settings?.execution?.gitMode;
+        const gitMode = storedGitMode === 'readonly' || storedGitMode === 'workspace'
+            ? storedGitMode
+            // v3 introduced Worktree with that mode as its implicit default.
+            // Migrate that legacy implicit choice to the safer current-workspace
+            // default, while preserving an explicit choice made in v4.
+            : storedGitMode === 'worktree' && !isLegacy
+                ? storedGitMode
+            : defaults.settings.execution.gitMode;
         const snapshot: ArkDesktopSnapshot = {
             agents,
             skills,
@@ -164,7 +178,7 @@ export const loadArkDesktopSnapshot = (): ArkDesktopSnapshot => {
                 execution: {
                     ...defaults.settings.execution,
                     ...(stored.settings?.execution || {}),
-                    gitMode: stored.settings?.execution?.gitMode || defaults.settings.execution.gitMode,
+                    gitMode,
                     permissionMode: stored.settings?.execution?.alwaysApprove || stored.settings?.execution?.permissionMode === 'bypassPermissions'
                         ? 'bypassPermissions'
                         : defaults.settings.execution.permissionMode,
@@ -227,7 +241,7 @@ export const saveArkDesktopSnapshot = (snapshot: ArkDesktopSnapshot) => {
 export const resetArkDesktopSnapshot = () => {
     if (typeof window !== 'undefined') {
         localStorage.removeItem(STORAGE_KEY);
-        localStorage.removeItem(LEGACY_STORAGE_KEY);
+        LEGACY_STORAGE_KEYS.forEach((key) => localStorage.removeItem(key));
     }
     return createDefaultArkDesktopSnapshot();
 };

@@ -4,7 +4,7 @@ import { FitAddon } from '@xterm/addon-fit';
 import { WebglAddon } from '@xterm/addon-webgl';
 import { Terminal as XtermTerminal } from '@xterm/xterm';
 import '@xterm/xterm/css/xterm.css';
-import { Check, Copy, GripHorizontal, Plus, Terminal as TerminalIcon, X } from 'lucide-react';
+import { Check, Copy, Plus, Terminal as TerminalIcon, X } from 'lucide-react';
 import {
     closeTerminalSession,
     createTerminalSession,
@@ -471,10 +471,8 @@ const TaskTerminalPanel: React.FC<TaskTerminalPanelProps> = ({ workspace, onClos
                 resizeStartRef.current = { y: event.clientY, height: panelHeight };
                 setIsResizing(true);
             }}
-            className={`absolute inset-x-0 top-0 z-20 flex h-2 -translate-y-1/2 cursor-row-resize items-center justify-center text-slate-400 transition hover:text-slate-600 ${isResizing ? 'text-slate-600' : ''}`}
-        >
-            <GripHorizontal size={18} />
-        </button>
+            className={`absolute inset-x-0 top-0 z-20 flex h-2 -translate-y-1/2 cursor-row-resize items-center justify-center text-transparent transition ${isResizing ? 'text-transparent' : ''}`}
+        />
         <div className="flex h-10 shrink-0 items-center justify-between border-b border-[#e7edf5] bg-white px-3">
             <div className="flex h-full min-w-0 items-center gap-1">
                 {tabs.map((tab) => (
