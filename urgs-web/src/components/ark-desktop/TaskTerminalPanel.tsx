@@ -34,6 +34,13 @@ interface TerminalTab {
     status: 'connecting' | 'ready' | 'closed' | 'error';
 }
 
+interface TerminalScrollState {
+    tabId: string;
+    baseY: number;
+    ydisp: number;
+    rows: number;
+}
+
 const MIN_PANEL_HEIGHT = 160;
 const MAX_PANEL_HEIGHT = 560;
 const TERMINAL_THEME = {
@@ -83,6 +90,12 @@ const TaskTerminalPanel: React.FC<TaskTerminalPanelProps> = ({ workspace, onClos
     ]);
     const [selectedTabId, setSelectedTabId] = useState<string | null>(null);
     const [copyFeedback, setCopyFeedback] = useState(false);
+    const [terminalScroll, setTerminalScroll] = useState<TerminalScrollState>({
+        tabId: 'terminal-1',
+        baseY: 0,
+        ydisp: 0,
+        rows: 0,
+    });
     const resizeStartRef = useRef<{ y: number; height: number } | null>(null);
     const panelContentRef = useRef<HTMLDivElement | null>(null);
     const tabContainerRefs = useRef<Map<string, HTMLDivElement>>(new Map());
@@ -96,6 +109,7 @@ const TaskTerminalPanel: React.FC<TaskTerminalPanelProps> = ({ workspace, onClos
     const isMountedRef = useRef(true);
     const tabsRef = useRef(tabs);
     const copyFeedbackTimeoutRef = useRef<number | null>(null);
+    const scrollbarDragRef = useRef<{ tabId: string; pointerId: number } | null>(null);
 
     useEffect(() => {
         tabsRef.current = tabs;
@@ -148,6 +162,75 @@ const TaskTerminalPanel: React.FC<TaskTerminalPanelProps> = ({ workspace, onClos
             copyFeedbackTimeoutRef.current = null;
         }, 1600);
     }, []);
+
+    const syncTerminalScroll = useCallback((tabId: string, terminal: XtermTerminal) => {
+        const buffer = terminal.buffer.active;
+        const nextState = {
+            tabId,
+            baseY: buffer.baseY,
+            ydisp: buffer.viewportY,
+            rows: terminal.rows,
+        };
+        setTerminalScroll((current) => (
+            current.tabId === nextState.tabId
+                && current.baseY === nextState.baseY
+                && current.ydisp === nextState.ydisp
+                && current.rows === nextState.rows
+                ? current
+                : nextState
+        ));
+    }, []);
+
+    const scrollTerminalToPointer = useCallback((event: React.PointerEvent<HTMLDivElement>) => {
+        const terminal = terminalsRef.current.get(terminalScroll.tabId);
+        if (!terminal || terminalScroll.baseY <= 0 || terminalScroll.rows <= 0) return;
+
+        const track = event.currentTarget.getBoundingClientRect();
+        const thumbHeight = Math.max(24, track.height * terminalScroll.rows / (terminalScroll.rows + terminalScroll.baseY));
+        const maxThumbTop = Math.max(0, track.height - thumbHeight);
+        const nextThumbTop = Math.max(0, Math.min(maxThumbTop, event.clientY - track.top - thumbHeight / 2));
+        const nextLine = maxThumbTop === 0
+            ? 0
+            : Math.round(nextThumbTop / maxThumbTop * terminalScroll.baseY);
+        terminal.scrollToLine(nextLine);
+    }, [terminalScroll]);
+
+    const handleScrollbarPointerDown = useCallback((event: React.PointerEvent<HTMLDivElement>) => {
+        if (event.button !== 0 || terminalScroll.baseY <= 0) return;
+        event.preventDefault();
+        event.currentTarget.setPointerCapture(event.pointerId);
+        scrollbarDragRef.current = { tabId: terminalScroll.tabId, pointerId: event.pointerId };
+        scrollTerminalToPointer(event);
+    }, [scrollTerminalToPointer, terminalScroll.baseY, terminalScroll.tabId]);
+
+    const handleScrollbarPointerMove = useCallback((event: React.PointerEvent<HTMLDivElement>) => {
+        const drag = scrollbarDragRef.current;
+        if (!drag || drag.pointerId !== event.pointerId || drag.tabId !== terminalScroll.tabId) return;
+        event.preventDefault();
+        scrollTerminalToPointer(event);
+    }, [scrollTerminalToPointer, terminalScroll.tabId]);
+
+    const handleScrollbarPointerUp = useCallback((event: React.PointerEvent<HTMLDivElement>) => {
+        const drag = scrollbarDragRef.current;
+        if (!drag || drag.pointerId !== event.pointerId) return;
+        scrollbarDragRef.current = null;
+        event.currentTarget.releasePointerCapture(event.pointerId);
+    }, []);
+
+    const handleScrollbarKeyDown = useCallback((event: React.KeyboardEvent<HTMLDivElement>) => {
+        const terminal = terminalsRef.current.get(terminalScroll.tabId);
+        if (!terminal) return;
+        const amount = event.key === 'ArrowUp' ? -1
+            : event.key === 'ArrowDown' ? 1
+                : event.key === 'PageUp' ? -terminal.rows
+                    : event.key === 'PageDown' ? terminal.rows
+                        : event.key === 'Home' ? -terminalScroll.baseY
+                            : event.key === 'End' ? terminalScroll.baseY
+                                : 0;
+        if (!amount) return;
+        event.preventDefault();
+        terminal.scrollLines(amount);
+    }, [terminalScroll.baseY, terminalScroll.tabId]);
 
     useEffect(() => {
         return () => {
@@ -266,7 +349,9 @@ const TaskTerminalPanel: React.FC<TaskTerminalPanelProps> = ({ workspace, onClos
                         if (sessionId) {
                             void resizeTerminalSession(sessionId, cols, rows);
                         }
+                        syncTerminalScroll(tab.id, terminal);
                     });
+                    const scrollDisposable = terminal.onScroll(() => syncTerminalScroll(tab.id, terminal));
                     const selectionDisposable = terminal.onSelectionChange(() => {
                         const hasSelection = terminal.hasSelection();
                         selectionStateRef.current.set(tab.id, hasSelection);
@@ -289,8 +374,9 @@ const TaskTerminalPanel: React.FC<TaskTerminalPanelProps> = ({ workspace, onClos
                         }
                         return true;
                     });
-                    disposableRefs.current.set(tab.id, [dataDisposable, resizeDisposable, selectionDisposable]);
+                    disposableRefs.current.set(tab.id, [dataDisposable, resizeDisposable, scrollDisposable, selectionDisposable]);
                     fitAddon.fit();
+                    syncTerminalScroll(tab.id, terminal);
                     terminal.focus();
                 } catch (error) {
                     terminal.write(`\r\n[终端启动失败] ${error instanceof Error ? error.message : String(error)}\r\n`);
@@ -300,7 +386,7 @@ const TaskTerminalPanel: React.FC<TaskTerminalPanelProps> = ({ workspace, onClos
         };
 
         void initializeTabs();
-    }, [copyTerminalSelection, tabs, workspace]);
+    }, [copyTerminalSelection, syncTerminalScroll, tabs, workspace]);
 
     useEffect(() => {
         const fitActiveTerminal = () => {
@@ -323,7 +409,11 @@ const TaskTerminalPanel: React.FC<TaskTerminalPanelProps> = ({ workspace, onClos
         setCopyFeedback(false);
         window.setTimeout(() => {
             fitTerminal(tabId);
-            terminalsRef.current.get(tabId)?.focus();
+            const terminal = terminalsRef.current.get(tabId);
+            if (terminal) {
+                syncTerminalScroll(tabId, terminal);
+                terminal.focus();
+            }
         }, 0);
     };
 
@@ -448,6 +538,31 @@ const TaskTerminalPanel: React.FC<TaskTerminalPanelProps> = ({ workspace, onClos
                     aria-hidden={tab.id === activeTabId ? undefined : true}
                 />
             ))}
+            {terminalScroll.tabId === activeTabId && terminalScroll.baseY > 0 && terminalScroll.rows > 0 && (
+                <div
+                    className="ark-terminal-scrollbar"
+                    role="scrollbar"
+                    aria-label="终端滚动条"
+                    aria-orientation="vertical"
+                    aria-valuemin={0}
+                    aria-valuemax={terminalScroll.baseY}
+                    aria-valuenow={terminalScroll.ydisp}
+                    tabIndex={0}
+                    onKeyDown={handleScrollbarKeyDown}
+                    onPointerDown={handleScrollbarPointerDown}
+                    onPointerMove={handleScrollbarPointerMove}
+                    onPointerUp={handleScrollbarPointerUp}
+                    onPointerCancel={handleScrollbarPointerUp}
+                >
+                    <div
+                        className="ark-terminal-scrollbar-thumb"
+                        style={{
+                            height: `${Math.max(12, Math.min(100, terminalScroll.rows / (terminalScroll.rows + terminalScroll.baseY) * 100))}%`,
+                            top: `${terminalScroll.baseY === 0 ? 0 : terminalScroll.ydisp / terminalScroll.baseY * (100 - Math.max(12, Math.min(100, terminalScroll.rows / (terminalScroll.rows + terminalScroll.baseY) * 100)))}%`,
+                        }}
+                    />
+                </div>
+            )}
         </div>
     </section>;
 };

@@ -11,10 +11,31 @@
 
 .ark-terminal-panel .xterm .xterm-viewport {
     background: #fbfcfe !important;
-    overflow-y: auto;
+    /* xterm 官方 CSS 在 macOS 上要求使用 scroll，才能让滚动条保持可见。 */
+    overflow-y: scroll;
+    overflow-x: hidden;
     cursor: text;
     scrollbar-color: #cbd5e1 transparent;
     scrollbar-width: thin;
+}
+
+.ark-terminal-panel .xterm .xterm-viewport::-webkit-scrollbar {
+    width: 8px;
+}
+
+.ark-terminal-panel .xterm .xterm-viewport::-webkit-scrollbar-track {
+    background: #eef2f7;
+}
+
+.ark-terminal-panel .xterm .xterm-viewport::-webkit-scrollbar-thumb {
+    min-height: 28px;
+    background: #b8c4d3;
+    border: 2px solid #eef2f7;
+    border-radius: 999px;
+}
+
+.ark-terminal-panel .xterm .xterm-viewport::-webkit-scrollbar-thumb:hover {
+    background: #8f9daf;
 }
 
 .ark-terminal-panel .xterm .xterm-screen {
@@ -60,4 +81,46 @@
 
 .ark-terminal-panel .xterm .xterm-rows .xterm-cursor-bar {
     box-shadow: 2px 0 0 #7664ed inset;
+}
+
+.ark-terminal-scrollbar {
+    position: absolute;
+    top: 10px;
+    right: 4px;
+    bottom: 10px;
+    z-index: 30;
+    width: 10px;
+    box-sizing: border-box;
+    padding: 1px 2px;
+    border: 1px solid rgba(203, 213, 225, 0.82);
+    border-radius: 999px;
+    background: rgba(226, 232, 240, 0.66);
+    cursor: grab;
+    touch-action: none;
+}
+
+.ark-terminal-scrollbar:focus-visible {
+    outline: 2px solid rgba(118, 100, 237, 0.55);
+    outline-offset: 2px;
+}
+
+.ark-terminal-scrollbar:active {
+    cursor: grabbing;
+}
+
+.ark-terminal-scrollbar-thumb {
+    position: absolute;
+    right: 1px;
+    left: 1px;
+    min-height: 24px;
+    border-radius: 999px;
+    background: #94a3b8;
+    box-shadow: inset 0 0 0 1px rgba(255, 255, 255, 0.4);
+    transition: background-color 120ms ease;
+}
+
+.ark-terminal-scrollbar:hover .ark-terminal-scrollbar-thumb,
+.ark-terminal-scrollbar:focus-visible .ark-terminal-scrollbar-thumb,
+.ark-terminal-scrollbar:active .ark-terminal-scrollbar-thumb {
+    background: #64748b;
 }
