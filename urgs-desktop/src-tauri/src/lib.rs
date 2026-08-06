@@ -256,6 +256,7 @@ pub fn run() {
             None,
         ))
         .manage(grok_runtime::GrokRuntimeState::default())
+        .manage(grok_runtime::TerminalState::default())
         .invoke_handler(tauri::generate_handler![
             load_desktop_runtime_config,
             save_desktop_runtime_config,
@@ -286,6 +287,11 @@ pub fn run() {
             grok_runtime::grok_runtime_diagnostics,
             grok_runtime::grok_runtime_prepare,
             grok_runtime::grok_cli_run,
+            grok_runtime::terminal_run_command,
+            grok_runtime::terminal_create_session,
+            grok_runtime::terminal_write,
+            grok_runtime::terminal_resize,
+            grok_runtime::terminal_close,
             grok_runtime::grok_cli_service_start,
             grok_runtime::grok_cli_service_list,
             grok_runtime::grok_cli_service_stop,

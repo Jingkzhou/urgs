@@ -1,0 +1,63 @@
+.ark-terminal-panel .xterm {
+    width: 100%;
+    height: 100%;
+    box-sizing: border-box;
+    background: #fbfcfe;
+    font-variant-ligatures: none;
+    -webkit-font-smoothing: antialiased;
+    user-select: none;
+    -webkit-user-select: none;
+}
+
+.ark-terminal-panel .xterm .xterm-viewport {
+    background: #fbfcfe !important;
+    overflow-y: auto;
+    cursor: text;
+    scrollbar-color: #cbd5e1 transparent;
+    scrollbar-width: thin;
+}
+
+.ark-terminal-panel .xterm .xterm-screen {
+    cursor: text;
+}
+
+.ark-terminal-panel .xterm .xterm-screen canvas {
+    image-rendering: auto;
+}
+
+/* xterm 的 DOM renderer 会动态注入以下字符网格样式，但 Tauri 的运行时
+   CSP 可能拒绝该 style 节点。保留静态 fallback，WebGL 不可用或丢失上下文时
+   仍能保证空格、换行、选择与复制落在同一终端单元格网格。 */
+.ark-terminal-panel .xterm .xterm-rows {
+    color: #27364d;
+    font-family: "SFMono-Regular", "Cascadia Mono", "Cascadia Code", Menlo, Monaco, Consolas, "Liberation Mono", monospace;
+    font-size: 14px;
+    font-kerning: none;
+    white-space: pre;
+}
+
+.ark-terminal-panel .xterm .xterm-rows span {
+    display: inline-block;
+    height: 100%;
+    vertical-align: top;
+}
+
+.ark-terminal-panel .xterm .xterm-selection {
+    position: absolute;
+    inset: 0 auto auto 0;
+    z-index: 1;
+    pointer-events: none;
+}
+
+.ark-terminal-panel .xterm .xterm-selection div {
+    position: absolute;
+    background-color: rgba(65, 137, 214, 0.28);
+}
+
+.ark-terminal-panel .xterm.focus .xterm-selection div {
+    background-color: rgba(65, 137, 214, 0.48);
+}
+
+.ark-terminal-panel .xterm .xterm-rows .xterm-cursor-bar {
+    box-shadow: 2px 0 0 #7664ed inset;
+}

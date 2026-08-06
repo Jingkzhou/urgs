@@ -308,6 +308,22 @@ export interface GrokCliResult {
     stderr: string;
 }
 
+export interface TerminalCommandResult {
+    shell: string;
+    cwd: string;
+    command: string;
+    success: boolean;
+    exitCode?: number | null;
+    stdout: string;
+    stderr: string;
+}
+
+export interface TerminalSessionInfo {
+    sessionId: string;
+    shell: string;
+    cwd: string;
+}
+
 export interface GrokDiscoveredPlugin {
     id: string;
     name: string;
@@ -567,6 +583,31 @@ export const runGrokCli = (arguments_: string[], workspace?: string, timeoutSeco
         workspace: workspace || null,
         timeoutSeconds,
     });
+
+export const runTerminalCommand = (command: string, workspace?: string) =>
+    invokeGrok<TerminalCommandResult>('terminal_run_command', {
+        command,
+        workspace: workspace || null,
+    });
+
+export const createTerminalSession = (
+    workspace?: string,
+    cols?: number,
+    rows?: number,
+) => invokeGrok<TerminalSessionInfo>('terminal_create_session', {
+    workspace: workspace || null,
+    cols: cols || null,
+    rows: rows || null,
+});
+
+export const writeTerminalSession = (sessionId: string, data: string) =>
+    invokeGrok<void>('terminal_write', { sessionId, data });
+
+export const resizeTerminalSession = (sessionId: string, cols: number, rows: number) =>
+    invokeGrok<void>('terminal_resize', { sessionId, cols, rows });
+
+export const closeTerminalSession = (sessionId: string) =>
+    invokeGrok<void>('terminal_close', { sessionId });
 
 export const prepareGrokGitTask = (
     workspace: string,

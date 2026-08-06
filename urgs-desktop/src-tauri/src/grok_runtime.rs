@@ -1,11 +1,13 @@
 use base64::{engine::general_purpose::STANDARD as BASE64_STANDARD, Engine as _};
 use keyring::Entry;
+use portable_pty::{native_pty_system, Child as PtyChild, CommandBuilder, MasterPty, PtySize};
 use reqwest::header::{HeaderMap, HeaderValue, AUTHORIZATION, CONTENT_TYPE};
 use reqwest::Client;
 use serde::{Deserialize, Serialize};
 use serde_json::{json, Value};
 use std::collections::{HashMap, HashSet};
 use std::fs;
+use std::io::{Read, Write};
 use std::path::{Path, PathBuf};
 use std::sync::atomic::{AtomicBool, AtomicU64, Ordering};
 use std::sync::{Arc, Mutex, OnceLock};
@@ -14,6 +16,7 @@ use tauri::{AppHandle, Emitter, Manager, State};
 use tauri_plugin_dialog::DialogExt;
 use tauri_plugin_shell::process::{CommandChild, CommandEvent};
 use tauri_plugin_shell::ShellExt;
+use tokio::process::Command as TokioCommand;
 use tokio::sync::{oneshot, Mutex as AsyncMutex};
 use uuid::Uuid;
 
@@ -39,6 +42,7 @@ const MAX_WORKFLOW_SOURCE_BYTES: u64 = 1024 * 1024;
 const MAX_LLM_PROMPT_BYTES: usize = 512 * 1024;
 const MAX_LLM_RESPONSE_BYTES: usize = 4 * 1024 * 1024;
 const LLM_REQUEST_TIMEOUT: Duration = Duration::from_secs(120);
+const TERMINAL_COMMAND_TIMEOUT: Duration = Duration::from_secs(120);
 static PROCESS_SEQUENCE: AtomicU64 = AtomicU64::new(1);
 static MODEL_API_KEY_CACHE: OnceLock<Mutex<HashMap<String, String>>> = OnceLock::new();
 #[cfg(target_os = "macos")]
@@ -210,6 +214,50 @@ pub struct GrokCliResult {
     pub exit_code: Option<i32>,
     pub stdout: String,
     pub stderr: String,
+}
+
+#[derive(Debug, Clone, Serialize)]
+#[serde(rename_all = "camelCase")]
+pub struct TerminalCommandResult {
+    pub shell: String,
+    pub cwd: String,
+    pub command: String,
+    pub success: bool,
+    pub exit_code: Option<i32>,
+    pub stdout: String,
+    pub stderr: String,
+}
+
+#[derive(Debug, Clone, Serialize)]
+#[serde(rename_all = "camelCase")]
+pub struct TerminalSessionInfo {
+    pub session_id: String,
+    pub shell: String,
+    pub cwd: String,
+}
+
+#[derive(Debug, Clone, Serialize)]
+#[serde(rename_all = "camelCase")]
+struct TerminalOutputEvent {
+    session_id: String,
+    data_base64: String,
+}
+
+#[derive(Debug, Clone, Serialize)]
+#[serde(rename_all = "camelCase")]
+struct TerminalExitEvent {
+    session_id: String,
+}
+
+struct TerminalSession {
+    master: Mutex<Box<dyn MasterPty + Send>>,
+    writer: Mutex<Box<dyn Write + Send>>,
+    child: Mutex<Box<dyn PtyChild + Send + Sync>>,
+}
+
+#[derive(Clone, Default)]
+pub struct TerminalState {
+    sessions: Arc<Mutex<HashMap<String, Arc<TerminalSession>>>>,
 }
 
 #[derive(Debug, Clone, Serialize)]
@@ -3663,6 +3711,274 @@ pub async fn grok_cli_run(
         stdout: String::from_utf8_lossy(&output.stdout).trim().to_string(),
         stderr: String::from_utf8_lossy(&output.stderr).trim().to_string(),
     })
+}
+
+#[tauri::command]
+pub async fn terminal_run_command(
+    workspace: Option<String>,
+    command: String,
+) -> Result<TerminalCommandResult, String> {
+    let command = command.trim().to_string();
+    if command.is_empty() {
+        return Err("请输入要执行的命令".to_string());
+    }
+
+    let current_dir = match workspace.filter(|value| !value.trim().is_empty()) {
+        Some(workspace) => validate_workspace(&workspace)?,
+        None => {
+            std::env::current_dir().map_err(|error| format!("无法获取终端工作目录: {error}"))?
+        }
+    };
+
+    #[cfg(windows)]
+    let (shell, mut process) = {
+        let mut process = TokioCommand::new("powershell.exe");
+        process.args([
+            "-NoLogo",
+            "-NoProfile",
+            "-NonInteractive",
+            "-ExecutionPolicy",
+            "Bypass",
+            "-Command",
+            &command,
+        ]);
+        ("PowerShell".to_string(), process)
+    };
+
+    #[cfg(not(windows))]
+    let (shell, mut process) = {
+        let mut process = TokioCommand::new("/bin/sh");
+        process.args(["-lc", &command]);
+        ("Shell".to_string(), process)
+    };
+
+    process.current_dir(&current_dir);
+    let output = tokio::time::timeout(TERMINAL_COMMAND_TIMEOUT, process.output())
+        .await
+        .map_err(|_| {
+            format!(
+                "终端命令执行超过 {} 秒，已停止等待",
+                TERMINAL_COMMAND_TIMEOUT.as_secs()
+            )
+        })?
+        .map_err(|error| format!("启动终端命令失败: {error}"))?;
+
+    Ok(TerminalCommandResult {
+        shell,
+        cwd: current_dir.to_string_lossy().to_string(),
+        command,
+        success: output.status.success(),
+        exit_code: output.status.code(),
+        stdout: String::from_utf8_lossy(&output.stdout).to_string(),
+        stderr: String::from_utf8_lossy(&output.stderr).to_string(),
+    })
+}
+
+fn terminal_shell_command() -> (String, String) {
+    #[cfg(windows)]
+    {
+        ("PowerShell".to_string(), "powershell.exe".to_string())
+    }
+
+    #[cfg(not(windows))]
+    {
+        let command = std::env::var("SHELL")
+            .ok()
+            .filter(|value| !value.trim().is_empty())
+            .unwrap_or_else(|| "/bin/sh".to_string());
+        let label = Path::new(&command)
+            .file_name()
+            .and_then(|value| value.to_str())
+            .unwrap_or("Shell")
+            .to_string();
+        (label, command)
+    }
+}
+
+fn terminal_pty_size(cols: Option<u16>, rows: Option<u16>) -> PtySize {
+    PtySize {
+        cols: cols.unwrap_or(100).clamp(20, 400),
+        rows: rows.unwrap_or(24).clamp(4, 200),
+        pixel_width: 0,
+        pixel_height: 0,
+    }
+}
+
+fn get_terminal_session(
+    state: &TerminalState,
+    session_id: &str,
+) -> Result<Arc<TerminalSession>, String> {
+    state
+        .sessions
+        .lock()
+        .map_err(|_| "终端会话锁不可用".to_string())?
+        .get(session_id)
+        .cloned()
+        .ok_or_else(|| "终端会话已关闭".to_string())
+}
+
+#[tauri::command]
+pub fn terminal_create_session(
+    app: AppHandle,
+    state: State<'_, TerminalState>,
+    workspace: Option<String>,
+    cols: Option<u16>,
+    rows: Option<u16>,
+) -> Result<TerminalSessionInfo, String> {
+    let current_dir = match workspace.filter(|value| !value.trim().is_empty()) {
+        Some(workspace) => validate_workspace(&workspace)?,
+        None => {
+            std::env::current_dir().map_err(|error| format!("无法获取终端工作目录: {error}"))?
+        }
+    };
+    let (shell, shell_command) = terminal_shell_command();
+    let pty_system = native_pty_system();
+    let pair = pty_system
+        .openpty(terminal_pty_size(cols, rows))
+        .map_err(|error| format!("创建终端会话失败: {error}"))?;
+
+    let mut command = CommandBuilder::new(shell_command);
+    command.cwd(&current_dir);
+    command.env("TERM", "xterm-256color");
+    command.env("COLORTERM", "truecolor");
+    command.env("CLICOLOR", "1");
+    #[cfg(windows)]
+    command.arg("-NoLogo");
+    #[cfg(not(windows))]
+    command.arg("-i");
+
+    let child = pair
+        .slave
+        .spawn_command(command)
+        .map_err(|error| format!("启动终端 Shell 失败: {error}"))?;
+    drop(pair.slave);
+
+    let reader = pair
+        .master
+        .try_clone_reader()
+        .map_err(|error| format!("连接终端输出失败: {error}"))?;
+    let writer = pair
+        .master
+        .take_writer()
+        .map_err(|error| format!("连接终端输入失败: {error}"))?;
+    let session_id = Uuid::new_v4().to_string();
+    let session = Arc::new(TerminalSession {
+        master: Mutex::new(pair.master),
+        writer: Mutex::new(writer),
+        child: Mutex::new(child),
+    });
+    state
+        .sessions
+        .lock()
+        .map_err(|_| "终端会话锁不可用".to_string())?
+        .insert(session_id.clone(), session);
+
+    let reader_session_id = session_id.clone();
+    let reader_sessions = state.sessions.clone();
+    let reader_app = app.clone();
+    if std::thread::Builder::new()
+        .name(format!("urgs-terminal-{reader_session_id}"))
+        .spawn(move || {
+            let mut reader = reader;
+            let mut buffer = [0_u8; 8192];
+            loop {
+                match reader.read(&mut buffer) {
+                    Ok(0) => break,
+                    Ok(length) => {
+                        let _ = reader_app.emit(
+                            "terminal-output",
+                            TerminalOutputEvent {
+                                session_id: reader_session_id.clone(),
+                                data_base64: BASE64_STANDARD.encode(&buffer[..length]),
+                            },
+                        );
+                    }
+                    Err(error) if error.kind() == std::io::ErrorKind::Interrupted => continue,
+                    Err(_) => break,
+                }
+            }
+
+            let _ = reader_app.emit(
+                "terminal-exit",
+                TerminalExitEvent {
+                    session_id: reader_session_id.clone(),
+                },
+            );
+            if let Ok(mut sessions) = reader_sessions.lock() {
+                sessions.remove(&reader_session_id);
+            }
+        })
+        .is_err()
+    {
+        let session = state
+            .sessions
+            .lock()
+            .ok()
+            .and_then(|mut sessions| sessions.remove(&session_id));
+        if let Some(session) = session {
+            if let Ok(mut child) = session.child.lock() {
+                let _ = child.kill();
+            }
+        }
+        return Err("启动终端输出线程失败".to_string());
+    }
+
+    Ok(TerminalSessionInfo {
+        session_id,
+        shell,
+        cwd: current_dir.to_string_lossy().to_string(),
+    })
+}
+
+#[tauri::command]
+pub fn terminal_write(
+    state: State<'_, TerminalState>,
+    session_id: String,
+    data: String,
+) -> Result<(), String> {
+    let session = get_terminal_session(&state, &session_id)?;
+    let mut writer = session
+        .writer
+        .lock()
+        .map_err(|_| "终端输入锁不可用".to_string())?;
+    writer
+        .write_all(data.as_bytes())
+        .map_err(|error| format!("写入终端失败: {error}"))?;
+    writer
+        .flush()
+        .map_err(|error| format!("刷新终端输入失败: {error}"))
+}
+
+#[tauri::command]
+pub fn terminal_resize(
+    state: State<'_, TerminalState>,
+    session_id: String,
+    cols: u16,
+    rows: u16,
+) -> Result<(), String> {
+    let session = get_terminal_session(&state, &session_id)?;
+    let result = session
+        .master
+        .lock()
+        .map_err(|_| "终端窗口锁不可用".to_string())?
+        .resize(terminal_pty_size(Some(cols), Some(rows)))
+        .map_err(|error| format!("调整终端窗口失败: {error}"));
+    result
+}
+
+#[tauri::command]
+pub fn terminal_close(state: State<'_, TerminalState>, session_id: String) -> Result<(), String> {
+    let session = state
+        .sessions
+        .lock()
+        .map_err(|_| "终端会话锁不可用".to_string())?
+        .remove(&session_id);
+    if let Some(session) = session {
+        if let Ok(mut child) = session.child.lock() {
+            let _ = child.kill();
+        }
+    }
+    Ok(())
 }
 
 #[tauri::command]
