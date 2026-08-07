@@ -77,9 +77,10 @@ const ArkPage: React.FC<ArkPageProps> = ({ launchTask, onLaunchTaskHandled }) =>
     const openingGrokTaskCenterRef = useRef<Promise<void> | null>(null);
 
     const focusGrokTaskCenter = async (window: WebviewWindow) => {
+        await window.setFullscreen(false);
         await window.unminimize();
+        await window.maximize();
         await window.show();
-        await window.setFullscreen(true);
         await window.setFocus();
     };
 
@@ -95,6 +96,7 @@ const ArkPage: React.FC<ArkPageProps> = ({ launchTask, onLaunchTaskHandled }) =>
         }
 
         const opening = (async () => {
+            const isWindows = /Windows/i.test(navigator.userAgent);
             const existingWindow = await WebviewWindow.getByLabel('grok-task-center');
             if (existingWindow) {
                 await focusGrokTaskCenter(existingWindow);
@@ -109,12 +111,12 @@ const ArkPage: React.FC<ArkPageProps> = ({ launchTask, onLaunchTaskHandled }) =>
                 minWidth: 1100,
                 minHeight: 700,
                 center: true,
-                fullscreen: true,
+                maximized: true,
+                decorations: true,
                 resizable: true,
-                visible: true,
+                visible: false,
                 focus: true,
-                titleBarStyle: 'overlay',
-                hiddenTitle: true,
+                ...(isWindows ? {} : { titleBarStyle: 'overlay' as const, hiddenTitle: true }),
             });
 
             await new Promise<void>((resolve, reject) => {
