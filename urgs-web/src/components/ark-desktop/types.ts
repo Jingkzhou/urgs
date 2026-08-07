@@ -53,6 +53,7 @@ export interface ArkDesktopToolActivity {
     title: string;
     status: string;
     kind?: string;
+    readOnly?: boolean;
     input?: string;
     output?: string;
     fileChanges?: ArkDesktopFileChange[];

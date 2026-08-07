@@ -114,7 +114,7 @@ const GrokCliCenter: React.FC<GrokCliCenterProps> = ({ workspace, onError }) => 
 
     const executeArguments = async (arguments_: string[], timeoutSeconds = 120, confirmation?: string) => {
         if (confirmation && !window.confirm(confirmation)) return;
-        if (!workspace && !['version', 'models', 'doctor', 'update', 'setup', 'logout', 'completions', 'help'].includes(arguments_[0])) {
+        if (!workspace && !['version', 'models', 'doctor', 'du', 'update', 'setup', 'logout', 'completions', 'help'].includes(arguments_[0])) {
             onError('该 CLI 功能需要工作区，请先在设置中选择本地目录');
             return;
         }

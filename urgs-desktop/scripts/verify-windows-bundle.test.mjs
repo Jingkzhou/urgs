@@ -63,7 +63,7 @@ test('验收内置 Grok sidecar 的目标、版本、大小和 SHA-256', async (
     const sidecarDigest = createHash('sha256').update('grok-sidecar-content').digest('hex');
     await writeFile(sidecarManifestPath, JSON.stringify({
         target: 'x86_64-pc-windows-msvc',
-        version: 'grok 0.2.119 (test)',
+        version: 'grok 0.2.121 (test)',
         sha256: sidecarDigest,
         sizeBytes: 20,
     }), 'utf8');
@@ -77,6 +77,6 @@ test('验收内置 Grok sidecar 的目标、版本、大小和 SHA-256', async (
         sidecarTarget: 'x86_64-pc-windows-msvc',
     });
 
-    assert.equal(result.manifest.grokSidecar.version, 'grok 0.2.119 (test)');
+    assert.equal(result.manifest.grokSidecar.version, 'grok 0.2.121 (test)');
     assert.equal(result.manifest.grokSidecar.sha256, sidecarDigest);
 });

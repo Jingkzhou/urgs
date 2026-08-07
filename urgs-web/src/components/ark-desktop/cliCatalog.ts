@@ -58,6 +58,7 @@ export const GROK_CLI_ACTIONS: GrokCliAction[] = [
     { id: 'inspect', category: 'runtime', title: '检查生效配置', description: '检查当前工作区发现的规则、配置、插件和 MCP。', baseArguments: ['inspect', '--json'] },
     { id: 'doctor', category: 'runtime', title: '运行环境诊断', description: '检查终端、剪贴板、颜色和输入支持并输出结构化报告。', baseArguments: ['doctor', '--json'] },
     { id: 'doctor-fix', category: 'runtime', title: '修复运行环境', description: '执行内置诊断建议的自动修复。', baseArguments: ['doctor', 'fix'], confirmation: '这会修改本地运行环境配置，确认执行自动修复？' },
+    { id: 'disk-usage', category: 'developer', title: 'Grok 磁盘占用', description: '查看 Grok Home、会话和工作树占用的磁盘空间。', baseArguments: ['du', '--json'] },
 
     { id: 'session-list', category: 'sessions', title: '最近会话', description: '列出本地会话。', baseArguments: ['sessions', 'list'], fields: [{ key: 'limit', label: '数量', type: 'number', flag: '--limit', defaultValue: '20' }] },
     { id: 'session-search', category: 'sessions', title: '搜索会话', description: '按摘要和首条提示搜索会话。', baseArguments: ['sessions', 'search'], fields: [text('query', '关键词', { positional: true, required: true }), { key: 'limit', label: '数量', type: 'number', flag: '--limit', defaultValue: '20' }] },

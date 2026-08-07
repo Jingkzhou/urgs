@@ -1999,6 +1999,7 @@ fn validate_cli_arguments(arguments: &[String]) -> Result<(), String> {
         "completions",
         "dashboard",
         "doctor",
+        "du",
         "export",
         "help",
         "inspect",
@@ -3734,7 +3735,7 @@ pub async fn grok_cli_run(
         .sidecar("grok")
         .map_err(|error| format!("无法定位内置 Grok Build: {error}"))?
         .args(command_arguments)
-        // Grok 0.2.119 resolves its launch directory before dispatching the
+        // Grok resolves its launch directory before dispatching the
         // subcommand. Passing --cwd keeps Tauri's sidecar in the stable app
         // directory while still giving Grok the selected workspace.
         .env_clear()
@@ -6040,6 +6041,7 @@ mod tests {
         assert!(validate_cli_arguments(&["login".to_string()]).is_err());
         assert!(validate_cli_arguments(&["update".to_string()]).is_err());
         assert!(validate_cli_arguments(&["doctor".to_string(), "--json".to_string()]).is_ok());
+        assert!(validate_cli_arguments(&["du".to_string(), "--json".to_string()]).is_ok());
         assert!(validate_cli_arguments(&["mcp".to_string(), "list".to_string()]).is_ok());
         assert!(validate_cli_arguments(&[
             "--model".into(),

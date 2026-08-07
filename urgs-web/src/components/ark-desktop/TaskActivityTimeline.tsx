@@ -80,6 +80,7 @@ const ToolActivityItem: React.FC<{ tool: Tool }> = ({ tool }) => {
                 <span className={`shrink-0 text-[14px] font-medium ${state === 'failed' ? 'text-red-600' : 'text-slate-500'}`}>{getToolVerb(tool, state)}</span>
                 <span className="flex min-w-0 max-w-full items-center gap-1">
                     <span className="min-w-0 truncate text-[14px] text-slate-400" title={tool.title}>{tool.title}</span>
+                    {tool.readOnly && <span className="shrink-0 rounded bg-slate-100 px-1.5 py-0.5 text-[10px] text-slate-400">只读</span>}
                     {hasDetails && <ChevronRight size={15} className={`shrink-0 text-slate-300 opacity-0 transition-all group-hover:opacity-100 group-focus-visible:opacity-100 ${detailsOpen ? 'rotate-90' : ''}`} />}
                 </span>
             </button>

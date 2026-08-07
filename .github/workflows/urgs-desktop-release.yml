@@ -26,7 +26,7 @@ jobs:
     runs-on: windows-latest
     timeout-minutes: 60
     env:
-      GROK_BUILD_VERSION: "0.2.119"
+      GROK_BUILD_VERSION: "0.2.121"
       GROK_SIDECAR_TARGET: "x86_64-pc-windows-msvc"
       GROK_SIDECAR_LOCK_REQUIRED: "1"
 

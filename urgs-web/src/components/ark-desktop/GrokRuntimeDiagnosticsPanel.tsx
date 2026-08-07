@@ -33,9 +33,12 @@ const AgentCapabilitySummary: React.FC<{
 }> = ({ capabilities, meta, availableCommands }) => {
     const prompt = capabilities?.promptCapabilities || {};
     const mcp = capabilities?.mcpCapabilities || {};
+    const session = capabilities?.sessionCapabilities || {};
     const items = [
         ['工作流', availableCommands.some((command) => command.name === 'workflow')],
         ['历史会话恢复', capabilities?.loadSession === true],
+        ['会话续接', session.resume !== undefined],
+        ['显式关闭', session.close !== undefined],
         ['上下文注入', prompt.embeddedContext === true],
         ['图片输入', prompt.image === true],
         ['音频输入', prompt.audio === true],
@@ -44,7 +47,7 @@ const AgentCapabilitySummary: React.FC<{
         ['MCP Apps', meta?.mcpApps === true],
         ['语音模式', meta?.voiceMode === true],
     ];
-    return <div className="rounded-lg bg-white px-3 py-2 text-xs"><div className="flex flex-wrap items-center justify-between gap-2"><span className="font-medium text-slate-700">0.2.119 能力声明</span><span className="text-[10px] text-slate-400">{String(meta?.agentVersion || '版本未知')}</span></div><div className="mt-2 flex flex-wrap gap-1.5">{items.map(([label, enabled]) => <span key={label as string} className={`flex items-center gap-1 rounded-full px-2 py-1 text-[10px] ${enabled ? 'bg-emerald-50 text-emerald-700' : 'bg-slate-100 text-slate-400'}`}>{enabled ? <CheckCircle2 size={11} /> : <CircleOff size={11} />}{label as string}{enabled ? '' : '未声明'}</span>)}</div><p className="mt-2 text-[10px] leading-4 text-slate-400">这些状态直接来自 ACP initialize，不代表静态配置中存在同名功能；未声明的输入类型不会被 Desktop 强行展示为可用。</p></div>;
+    return <div className="rounded-lg bg-white px-3 py-2 text-xs"><div className="flex flex-wrap items-center justify-between gap-2"><span className="font-medium text-slate-700">Grok Build 能力声明</span><span className="text-[10px] text-slate-400">{String(meta?.agentVersion || '版本未知')}</span></div><div className="mt-2 flex flex-wrap gap-1.5">{items.map(([label, enabled]) => <span key={label as string} className={`flex items-center gap-1 rounded-full px-2 py-1 text-[10px] ${enabled ? 'bg-emerald-50 text-emerald-700' : 'bg-slate-100 text-slate-400'}`}>{enabled ? <CheckCircle2 size={11} /> : <CircleOff size={11} />}{label as string}{enabled ? '' : '未声明'}</span>)}</div><p className="mt-2 text-[10px] leading-4 text-slate-400">这些状态直接来自 ACP initialize，不代表静态配置中存在同名功能；未声明的输入类型不会被 Desktop 强行展示为可用。</p></div>;
 };
 
 const GrokRuntimeDiagnosticsPanel: React.FC<GrokRuntimeDiagnosticsPanelProps> = ({ diagnostics, onRefresh, onError }) => {

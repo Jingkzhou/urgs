@@ -987,11 +987,17 @@ export const useArkDesktopRuntime = () => {
                     const output = formatToolDetail(
                         update.rawOutput ?? update.raw_output ?? (fileChanges.length > 0 ? undefined : structuredContent),
                     );
+                    const readOnlyValue = update.isReadOnly
+                        ?? update.is_read_only
+                        ?? update.toolCall?.isReadOnly
+                        ?? update.toolCall?.is_read_only;
+                    const readOnly = typeof readOnlyValue === 'boolean' ? readOnlyValue : undefined;
                     const nextTool = {
                         id,
                         title: formatDisplayToolTitle(update.title || update.toolCall?.title),
                         status: statusLabel(update.status),
                         kind: update.kind || update.toolCall?.kind,
+                        ...(readOnly === undefined ? {} : { readOnly }),
                         ...(input ? { input } : {}),
                         ...(output ? { output } : {}),
                         ...(fileChanges.length > 0 ? { fileChanges } : {}),

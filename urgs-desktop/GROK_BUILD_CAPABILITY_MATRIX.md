@@ -1,16 +1,16 @@
 # Grok Build Desktop 能力矩阵
 
-更新时间：2026-08-05
+更新时间：2026-08-07
 
 ## 现场基线
 
-- URGS 随包二进制：`grok 0.2.119 (e5478ef)`，当前开发机为 `aarch64-apple-darwin`
-- Windows 发布锁定：`0.2.119`，目标为 `x86_64-pc-windows-msvc`，哈希见 `grok-sidecar.lock.json`
+- URGS 随包二进制：`grok 0.2.121 (393430e)`，当前开发机为 `aarch64-apple-darwin`
+- Windows 发布锁定：`0.2.121`，目标为 `x86_64-pc-windows-msvc`，哈希见 `grok-sidecar.lock.json`
 - 随包清单：`src-tauri/binaries/grok-sidecar-manifest.json`
-- 官方公开仓库最新提交：`5da6962e4adb9c857f3def762542b52b4ec3e522`
+- 官方公开仓库最新提交：`393430ee4934bc791b0d538f304a21691c517433`
 - 发现方式：随包二进制 `--version`、根命令和全部顶级子命令 `--help`、真实 ACP `initialize`、扩展方法探测、官方同提交源码与用户指南
 
-随包二进制的构建哈希不是官方公开仓库中的可达提交，因此能力判断以随包二进制的真实响应为准，公开源码只用于识别后续候选。
+能力判断以本轮随包二进制的真实响应为准；本轮 ACP `initialize` 宣告了 `sessionCapabilities.list/resume/close`、Hooks、`sessionRecap`、`cancelRewind` 和 `voiceMode`，图片/音频输入仍未宣告。
 
 ## 能力矩阵
 
@@ -34,10 +34,10 @@
 | Agent/Leader 后台服务 | `agent headless/serve/leader`、`leader *` | 设置 → CLI 与诊断 → Agent 服务 | Tauri 后台进程 | 通用桥接 | Rust 服务 allowlist 测试 | 服务 PID、输出和停止可见 | ACP stdio 由新建任务托管 |
 | 导出、Trace、Doctor、Inspect | 顶级 CLI 命令 | 设置 → CLI 与诊断 | 受控 CLI | 仅 CLI 中心 | CLI allowlist 测试 | 输出可查看和复制 | Trace 默认仅本地 |
 | 登录、托管配置、在线模型、自更新 | `login/logout/setup/models/update` | 无 | 禁止接入 | 缺失 | CLI allowlist 拒绝测试 | 设置页显示内网隔离 | 产品安全策略明确禁止 xAI 与组件自更新 |
-| 会话 Recap | ACP `initialize` 宣告 `sessionRecap=true` | 无 | 扩展探测 | 上游不支持 | `x.ai/recap` 返回 `-32601 Method not found` | 无 | 当前二进制声明与实际方法不一致，升级后重验 |
-| 会话 Rewind | ACP `initialize` 宣告 `cancelRewind=true` | 无 | 扩展探测 | 上游不支持 | `x.ai/rewind/points` 返回 `-32601 Method not found` | 无 | 不创建不可用入口；升级后优先接入 |
-| 图片、音频提示 | `promptCapabilities.image=false`、`audio=false` | 无 | ACP 能力门禁 | 上游不支持 | ACP initialize 探测 | 无 | `voiceMode=true` 不能替代 ACP 图片/音频提示能力 |
-| Hooks 管理 | ACP 宣告 `x.ai/hooks` 能力；官方新源码含管理扩展 | 无 | 未接入 | 缺失 | 仅完成 initialize 探测 | 无 | 当前随包版本没有可验证管理方法；升级后再接入 |
+| 会话 Recap | ACP `initialize` 宣告 `sessionRecap=true` | 无 | 扩展探测 | 待验证 | 0.2.121 initialize 已宣告，尚未完成真实会话方法探测 | 无 | 不创建不可验证入口 |
+| 会话 Rewind | ACP `initialize` 宣告 `cancelRewind=true` | 无 | 扩展探测 | 待验证 | 0.2.121 initialize 已宣告，尚未完成真实会话方法探测 | 无 | 不创建不可验证入口 |
+| 图片、音频提示 | `promptCapabilities.image=false`、`audio=false` | 无 | ACP 能力门禁 | 上游不支持 | 0.2.121 ACP initialize | 无 | `voiceMode=true` 不能替代 ACP 图片/音频提示能力 |
+| Hooks 管理 | ACP 宣告 `x.ai/hooks` 能力 | 无 | 通用桥接未产品化 | 缺失 | 0.2.121 ACP initialize 已宣告 Hooks | 无 | 当前仍无用户可操作的 Hooks 管理入口 |
 
 ## 下一阶段优先级
 
