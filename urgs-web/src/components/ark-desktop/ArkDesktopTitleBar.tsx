@@ -8,11 +8,11 @@ export const ArkDesktopSidebarToggle: React.FC<{
     <button
         type="button"
         onClick={onToggle}
-        className="absolute left-[80px] top-[16px] flex h-7 w-7 -translate-y-1/2 items-center justify-center rounded-md text-[#8b8e92] transition hover:bg-slate-100 hover:text-slate-700"
+        className="flex h-8 w-8 shrink-0 items-center justify-center rounded-md border border-transparent bg-transparent text-slate-400 transition-colors duration-150 hover:bg-slate-50 hover:text-slate-700 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-slate-300 focus-visible:ring-offset-1"
         title={collapsed ? '展开左侧工具栏' : '折叠左侧工具栏'}
         aria-label={collapsed ? '展开左侧工具栏' : '折叠左侧工具栏'}
     >
-        <PanelLeft className="h-4 w-4" strokeWidth={1.6} />
+        <PanelLeft size={16} strokeWidth={1.8} />
     </button>
 );
 

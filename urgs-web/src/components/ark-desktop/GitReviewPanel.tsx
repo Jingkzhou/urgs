@@ -22,7 +22,12 @@ const workspaceName = (value: string) => value.split(/[\\/]/).filter(Boolean).po
 const NON_GIT_REPOSITORY_NOTICE = '当前工作区不是 Git 仓库，代码变更审查仅适用于 Git 仓库。';
 const isNonGitRepositoryError = (message: string) => {
     const normalized = message.toLowerCase();
-    return normalized.includes('not a git repository') || /不是(?:一个)?\s*git\s*仓库/.test(message);
+    return normalized.includes('not a git repository')
+        || normalized.includes('无法启动 git')
+        || normalized.includes('program not found')
+        || normalized.includes('executable file not found')
+        || normalized.includes('os error 2')
+        || /不是(?:一个)?\s*git\s*仓库/.test(message);
 };
 const DEFAULT_PANEL_WIDTH = 430;
 const MIN_PANEL_WIDTH = 320;

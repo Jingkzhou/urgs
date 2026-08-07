@@ -138,7 +138,12 @@ const createId = (prefix: string) => `${prefix}-${Date.now()}-${Math.random().to
 
 const isGitRepositoryUnavailable = (error: unknown) => {
     const message = runtimeErrorText(error).toLowerCase();
-    return message.includes('not a git repository') || /不是.*git.*仓库/.test(message);
+    return message.includes('not a git repository')
+        || message.includes('无法启动 git')
+        || message.includes('program not found')
+        || message.includes('executable file not found')
+        || message.includes('os error 2')
+        || /不是.*git.*仓库/.test(message);
 };
 
 const isWorkspacePathUnavailable = (error: unknown) => {

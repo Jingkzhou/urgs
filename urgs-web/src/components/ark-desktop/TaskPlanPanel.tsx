@@ -30,6 +30,18 @@ const stepLabel: Record<ArkDesktopPlanStep['status'], string> = {
     cancelled: '已跳过',
 };
 
+const getDisplayStepStatus = (status: ArkDesktopPlanStep['status'], taskStatus: ArkDesktopTaskStatus) => {
+    if (taskStatus !== 'running' && taskStatus !== 'waiting_authorization' && status !== 'completed') return 'cancelled' as const;
+    return status;
+};
+
+const getDisplayStepLabel = (status: ArkDesktopPlanStep['status'], taskStatus: ArkDesktopTaskStatus) => {
+    if (taskStatus === 'cancelled' && status !== 'completed') return '已停止';
+    if (taskStatus === 'failed' && status !== 'completed') return '未完成';
+    if (taskStatus === 'completed' && status !== 'completed') return '未完成';
+    return stepLabel[status];
+};
+
 const TaskPlanPanel: React.FC<TaskPlanPanelProps> = ({ plan, taskStatus, trigger }) => {
     const [open, setOpen] = useState(false);
     const [followCurrentStep, setFollowCurrentStep] = useState(true);
@@ -40,10 +52,18 @@ const TaskPlanPanel: React.FC<TaskPlanPanelProps> = ({ plan, taskStatus, trigger
     const activeStepRef = useRef<HTMLDivElement>(null);
     const autoScrollingRef = useRef(false);
     const panelId = `task-plan-panel-${useId().replace(/:/g, '')}`;
-    const completedCount = plan.filter((step) => step.status === 'completed' || step.status === 'cancelled').length;
+    const completedCount = plan.filter((step) => step.status === 'completed').length;
     const progress = plan.length ? Math.round((completedCount / plan.length) * 100) : 0;
-    const statusText = plan.length ? `${completedCount} / ${plan.length} 已完成` : taskStatus === 'running' ? '正在制定计划' : '暂无执行计划';
-    const activeStepIndex = plan.findIndex((step) => step.status === 'in_progress');
+    const statusText = plan.length
+        ? taskStatus === 'cancelled'
+            ? `已停止 · ${completedCount} / ${plan.length} 已完成`
+            : taskStatus === 'failed'
+                ? `执行未完成 · ${completedCount} / ${plan.length} 已完成`
+                : `${completedCount} / ${plan.length} 已完成`
+        : taskStatus === 'running' ? '正在制定计划' : '暂无执行计划';
+    const activeStepIndex = taskStatus === 'running' || taskStatus === 'waiting_authorization'
+        ? plan.findIndex((step) => step.status === 'in_progress')
+        : -1;
 
     useLayoutEffect(() => {
         if (!open) return undefined;
@@ -140,7 +160,7 @@ const TaskPlanPanel: React.FC<TaskPlanPanelProps> = ({ plan, taskStatus, trigger
             </div>
             <div className="shrink-0 border-b border-slate-100 px-4 py-3"><div className="h-1.5 overflow-hidden rounded-full bg-slate-100"><div className="h-full rounded-full bg-slate-800 transition-all duration-300" style={{ width: `${progress}%` }} /></div></div>
             <div className="flex shrink-0 items-center justify-between gap-3 border-b border-slate-100 px-4 py-2 text-xs"><span className={followCurrentStep ? 'text-blue-600' : 'text-slate-400'}>{activeStepIndex >= 0 ? followCurrentStep ? '已锁定当前执行阶段' : '已解除阶段锁定' : '等待执行阶段更新'}</span>{activeStepIndex >= 0 && !followCurrentStep && <button type="button" onClick={() => setFollowCurrentStep(true)} className="flex shrink-0 items-center gap-1 rounded-md px-1.5 py-1 font-medium text-slate-600 hover:bg-slate-100 hover:text-slate-900"><LocateFixed size={13} />定位当前阶段</button>}</div>
-            <div ref={planListRef} className="min-h-0 flex-1 overflow-y-auto overscroll-contain px-2 py-2" aria-label="执行计划步骤" onScroll={() => { if (!autoScrollingRef.current) setFollowCurrentStep(false); }}>{plan.length ? plan.map((step, index) => <div key={`${step.content}-${index}`} ref={index === activeStepIndex ? activeStepRef : undefined} className={`flex gap-2.5 rounded-xl px-2.5 py-2.5 ${index === activeStepIndex ? 'bg-blue-50/80' : ''}`}><span className="mt-0.5 shrink-0">{stepIcon(step.status)}</span><div className="min-w-0 flex-1"><div className={`text-sm leading-5 ${step.status === 'completed' || step.status === 'cancelled' ? 'text-slate-400 line-through' : 'text-slate-700'}`}>{step.content}</div><div className="mt-0.5 text-[11px] text-slate-400">{stepLabel[step.status]}{step.priority ? ` · ${step.priority === 'high' ? '高优先级' : step.priority === 'low' ? '低优先级' : '中优先级'}` : ''}</div></div></div>) : <div className="px-3 py-8 text-center text-sm text-slate-400">{taskStatus === 'running' ? '智能体正在梳理任务，计划生成后会实时显示在这里。' : '本次任务没有生成执行计划。'}</div>}</div>
+            <div ref={planListRef} className="min-h-0 flex-1 overflow-y-auto overscroll-contain px-2 py-2" aria-label="执行计划步骤" onScroll={() => { if (!autoScrollingRef.current) setFollowCurrentStep(false); }}>{plan.length ? plan.map((step, index) => { const displayStatus = getDisplayStepStatus(step.status, taskStatus); return <div key={`${step.content}-${index}`} ref={index === activeStepIndex ? activeStepRef : undefined} className={`flex gap-2.5 rounded-xl px-2.5 py-2.5 ${index === activeStepIndex ? 'bg-blue-50/80' : ''}`}><span className="mt-0.5 shrink-0">{stepIcon(displayStatus)}</span><div className="min-w-0 flex-1"><div className={`text-sm leading-5 ${displayStatus === 'completed' || displayStatus === 'cancelled' ? 'text-slate-400 line-through' : 'text-slate-700'}`}>{step.content}</div><div className="mt-0.5 text-[11px] text-slate-400">{getDisplayStepLabel(step.status, taskStatus)}{step.priority ? ` · ${step.priority === 'high' ? '高优先级' : step.priority === 'low' ? '低优先级' : '中优先级'}` : ''}</div></div></div>; }) : <div className="px-3 py-8 text-center text-sm text-slate-400">{taskStatus === 'running' ? '智能体正在梳理任务，计划生成后会实时显示在这里。' : '本次任务没有生成执行计划。'}</div>}</div>
         </div>
     </>, document.body) : null;
 

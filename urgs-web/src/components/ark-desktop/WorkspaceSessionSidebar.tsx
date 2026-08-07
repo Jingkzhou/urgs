@@ -1,7 +1,7 @@
 import React, { useEffect, useMemo, useRef, useState } from 'react';
 import {
     Archive, ArchiveRestore, Check, Copy, Ellipsis, Folder,
-    FolderOpen, LoaderCircle, Pencil, Pin, PinOff, Plus, Trash2, X,
+    FolderOpen, GitBranch, LoaderCircle, Pencil, Pin, PinOff, Plus, Trash2, X,
 } from 'lucide-react';
 import { copyToClipboard } from '@/utils/clipboard';
 import type { ArkDesktopTask } from './types';
@@ -30,7 +30,31 @@ interface WorkspaceSessionSidebarProps {
 
 const isBusyTask = (task: ArkDesktopTask) => task.status === 'running' || task.status === 'waiting_authorization';
 const DEFAULT_VISIBLE_TASK_COUNT = 5;
+const TASK_PREVIEW_WIDTH = 300;
+const TASK_PREVIEW_HEIGHT = 112;
 const taskWorkspace = (task: ArkDesktopTask) => task.sourceWorkspace || task.gitContext?.repoRoot || task.workspace;
+const workspaceBasename = (workspace: string) => workspace.split(/[\\/]/).filter(Boolean).pop() || workspace;
+const formatTaskAge = (timestamp: number) => {
+    const elapsed = Math.max(0, Date.now() - timestamp);
+    const minutes = Math.floor(elapsed / 60_000);
+    if (minutes < 1) return '刚刚';
+    if (minutes < 60) return `${minutes} 分钟前`;
+    const hours = Math.floor(minutes / 60);
+    if (hours < 24) return `${hours} 小时前`;
+    const days = Math.floor(hours / 24);
+    if (days < 7) return `${days} 天前`;
+    const weeks = Math.floor(days / 7);
+    if (weeks < 5) return `${weeks} 周前`;
+    const months = Math.floor(days / 30);
+    if (months < 12) return `${months} 个月前`;
+    return `${Math.floor(months / 12)} 年前`;
+};
+const taskMatchesView = (task: ArkDesktopTask, query: string, view: SessionView) => {
+    if (query && !`${task.title} ${task.prompt} ${task.workspace} ${task.gitContext?.branch || ''}`.toLowerCase().includes(query)) return false;
+    if (view === 'archived') return Boolean(task.archivedAt);
+    if (view === 'running') return !task.archivedAt && isBusyTask(task);
+    return !task.archivedAt;
+};
 
 const MenuButton: React.FC<{
     icon: React.ElementType;
@@ -74,6 +98,7 @@ const WorkspaceSessionSidebar: React.FC<WorkspaceSessionSidebarProps> = ({
     const [collapsedWorkspaceKeys, setCollapsedWorkspaceKeys] = useState<Set<string>>(() => new Set());
     const [expandedTaskWorkspaceKeys, setExpandedTaskWorkspaceKeys] = useState<Set<string>>(() => new Set());
     const [openMenu, setOpenMenu] = useState<{ kind: 'workspace' | 'task'; id: string } | null>(null);
+    const [taskPreview, setTaskPreview] = useState<{ taskId: string; left: number; top: number } | null>(null);
     const [renamingTaskId, setRenamingTaskId] = useState<string | null>(null);
     const [renameValue, setRenameValue] = useState('');
     const [deleteTarget, setDeleteTarget] = useState<ArkDesktopTask | null>(null);
@@ -106,35 +131,26 @@ const WorkspaceSessionSidebar: React.FC<WorkspaceSessionSidebarProps> = ({
     }, [toast]);
 
     const query = searchValue.trim().toLowerCase();
+    const pinnedTasks = useMemo(() => tasks.filter((task) => Boolean(task.pinnedAt) && taskMatchesView(task, query, view)), [query, tasks, view]);
     const groups = useMemo(() => {
         return workspaces.map((workspace) => {
             const workspaceTasks = tasks.filter((task) => taskWorkspace(task) === workspace);
             const filtered = workspaceTasks
-                .filter((task) => !query || `${task.title} ${task.prompt} ${task.workspace} ${task.gitContext?.branch || ''}`.toLowerCase().includes(query))
-                .filter((task) => view === 'archived'
-                    ? Boolean(task.archivedAt)
-                    : view === 'running'
-                        ? !task.archivedAt && isBusyTask(task)
-                        : !task.archivedAt)
-                // Keep the task array order stable while ACP events update updatedAt.
-                // Reordering on every streamed chunk makes parallel sessions jump
-                // between rows and can make the active session look like it changed.
-                .reduce<ArkDesktopTask[][]>((result, task) => {
-                    result[task.pinnedAt ? 0 : 1].push(task);
-                    return result;
-                }, [[], []])
-                .flat();
+                .filter((task) => taskMatchesView(task, query, view))
+                // Pinned sessions are rendered once in the global top section.
+                .filter((task) => !task.pinnedAt);
             const busyCount = workspaceTasks.filter((task) => !task.archivedAt && isBusyTask(task)).length;
             return {
                 workspace,
                 label: workspace.split(/[\\/]/).filter(Boolean).pop() || workspace,
                 tasks: filtered,
+                visibleTaskCount: workspaceTasks.filter((task) => taskMatchesView(task, query, view)).length,
                 default: workspace === defaultWorkspace,
                 busyCount,
             };
         }).filter((group) => {
             if (query || view !== 'active') return group.tasks.length > 0;
-            return true;
+            return group.tasks.length > 0 || group.visibleTaskCount === 0;
         }).sort((left, right) => {
             if (left.default !== right.default) return left.default ? -1 : 1;
             // Preserve the user's workspace order. Task updates must not move
@@ -221,6 +237,106 @@ const WorkspaceSessionSidebar: React.FC<WorkspaceSessionSidebarProps> = ({
         setToast({ message: `已从列表移除“${label}”` });
     };
 
+    const showTaskPreview = (event: React.MouseEvent<HTMLDivElement>, taskId: string) => {
+        const rect = event.currentTarget.getBoundingClientRect();
+        const previewWidth = Math.min(TASK_PREVIEW_WIDTH, Math.max(0, window.innerWidth - 24));
+        const left = rect.right + 10 + previewWidth <= window.innerWidth - 12
+            ? rect.right + 10
+            : Math.max(12, rect.left - previewWidth - 10);
+        const top = Math.min(Math.max(12, rect.top), Math.max(12, window.innerHeight - TASK_PREVIEW_HEIGHT - 12));
+        setTaskPreview({ taskId, left, top });
+    };
+
+    const hideTaskPreview = (taskId: string) => {
+        setTaskPreview((current) => current?.taskId === taskId ? null : current);
+    };
+
+    const renderTaskRow = (task: ArkDesktopTask): React.ReactNode => {
+        const active = task.id === activeTaskId;
+        const busy = isBusyTask(task);
+        const workspacePath = taskWorkspace(task);
+        const workspaceLabel = workspaceBasename(workspacePath);
+        const branchLabel = task.gitContext?.branch || task.gitContext?.baseRef || '';
+        const statusLabel = task.status === 'running'
+            ? '运行中'
+            : task.status === 'waiting_authorization'
+                ? '待授权'
+                : task.status === 'failed'
+                    ? '失败'
+                    : undefined;
+        const statusClassName = task.status === 'failed'
+            ? 'bg-red-50 text-red-600'
+            : task.status === 'waiting_authorization'
+                ? 'bg-amber-50 text-amber-700'
+                : 'bg-emerald-50 text-emerald-600';
+
+        return <div
+            key={task.id}
+            className={`group/task relative flex items-center rounded-lg transition ${active ? 'bg-[#e8e8ea] text-[#25262b]' : 'text-[#55565c] hover:bg-[#eeeeef]'}`}
+            onMouseEnter={(event) => showTaskPreview(event, task.id)}
+            onMouseLeave={() => hideTaskPreview(task.id)}
+        >
+            {renamingTaskId === task.id ? <div className="flex min-w-0 flex-1 items-center gap-1.5 px-2 py-1.5">
+                <input
+                    autoFocus
+                    value={renameValue}
+                    maxLength={80}
+                    onChange={(event) => setRenameValue(event.target.value)}
+                    onKeyDown={(event) => {
+                        if (event.key === 'Enter') commitRename(task.id);
+                        if (event.key === 'Escape') setRenamingTaskId(null);
+                    }}
+                    onBlur={() => {
+                        setRenamingTaskId(null);
+                        setRenameValue('');
+                    }}
+                    className="min-w-0 flex-1 rounded-md border border-[#8a7cf0] bg-white px-2 py-1 text-xs text-slate-700 outline-none ring-2 ring-[#ece9ff]"
+                    aria-label="会话名称"
+                />
+                <button type="button" onMouseDown={(event) => event.preventDefault()} onClick={() => setRenamingTaskId(null)} className="rounded p-1 text-slate-400 hover:bg-white" aria-label="取消重命名"><X size={12} /></button>
+            </div> : <>
+                <button type="button" onClick={() => onOpenTask(task.id)} aria-label={`${task.title}，所在文件夹：${workspaceLabel}`} className="min-w-0 flex-1 px-2 py-2.5 text-left">
+                    <span className="flex items-center gap-1.5">
+                        <span className="min-w-0 flex-1 truncate text-[12px] font-medium">{task.title}</span>
+                        {task.pinnedAt && <Pin size={11} className="shrink-0 fill-current text-[#6657d9]" />}
+                        {statusLabel && <span className={`shrink-0 rounded-full px-1.5 py-0.5 text-[9px] font-medium ${statusClassName}`}>
+                            {task.status === 'running' && <LoaderCircle size={10} strokeWidth={2} className="mr-0.5 inline animate-spin" />}
+                            {statusLabel}
+                        </span>}
+                    </span>
+                </button>
+                <button type="button" onClick={() => setOpenMenu((current) => current?.kind === 'task' && current.id === task.id ? null : { kind: 'task', id: task.id })} className="mr-1 rounded-md p-1.5 text-slate-400 opacity-0 transition hover:bg-white hover:text-slate-700 group-hover/task:opacity-100 focus:opacity-100" title={`${task.title} 会话操作`} aria-label={`${task.title} 会话操作`}><Ellipsis size={14} /></button>
+            </>}
+            {openMenu?.kind === 'task' && openMenu.id === task.id && <div ref={menuRef} role="menu" className="absolute right-1 top-9 z-50 w-44 rounded-xl border border-slate-200 bg-white p-1.5 shadow-[0_16px_45px_rgba(15,23,42,0.16)]">
+                <MenuButton icon={task.pinnedAt ? PinOff : Pin} label={task.pinnedAt ? '取消固定' : '固定到顶部'} onClick={() => runAction(() => onToggleTaskPin(task.id))} />
+                <MenuButton icon={Pencil} label="重命名" onClick={() => beginRename(task)} />
+                {task.archivedAt
+                    ? <MenuButton icon={ArchiveRestore} label="恢复到最近会话" onClick={() => restoreTask(task)} />
+                    : <MenuButton icon={Archive} label="归档会话" disabled={busy} onClick={() => archiveTask(task)} />}
+                <div className="my-1 border-t border-slate-100" />
+                <MenuButton icon={Trash2} label={busy ? '请先停止会话' : '永久删除'} disabled={busy} dangerous onClick={() => { setOpenMenu(null); setDeleteTarget(task); }} />
+            </div>}
+            {taskPreview?.taskId === task.id && !openMenu && <div
+                role="tooltip"
+                className="pointer-events-none fixed z-[120] w-[300px] max-w-[calc(100vw-24px)] rounded-xl border border-slate-200 bg-white px-4 py-3 font-sans antialiased text-slate-800 shadow-[0_12px_32px_rgba(15,23,42,0.14)]"
+                style={{ left: taskPreview.left, top: taskPreview.top }}
+            >
+                <div className="flex items-start justify-between gap-4">
+                    <span className="min-w-0 truncate text-[16px] font-semibold leading-6 tracking-tight text-slate-800">{task.title}</span>
+                    <span className="shrink-0 pt-0.5 text-[13px] font-normal leading-6 text-slate-400">{formatTaskAge(task.updatedAt)}</span>
+                </div>
+                <div className="mt-2.5 flex min-w-0 items-center gap-2.5 text-[14px] font-normal leading-5 text-slate-700">
+                    <Folder size={20} strokeWidth={1.7} className="shrink-0 text-slate-400" />
+                    <span className="min-w-0 truncate">{workspaceLabel}</span>
+                </div>
+                {branchLabel && <div className="mt-1 flex min-w-0 items-center gap-2.5 text-[14px] font-normal leading-5 text-slate-700">
+                    <GitBranch size={20} strokeWidth={1.7} className="shrink-0 text-slate-400" />
+                    <span className="min-w-0 truncate">{branchLabel}</span>
+                </div>}
+            </div>}
+        </div>;
+    };
+
     return <div className="relative mt-5 flex min-h-0 flex-1 flex-col">
         <div className="flex items-center justify-between px-2">
             <span className="text-[11px] font-medium text-slate-400">工作空间</span>
@@ -255,6 +371,17 @@ const WorkspaceSessionSidebar: React.FC<WorkspaceSessionSidebarProps> = ({
         </div>
 
         <div className="custom-scrollbar mt-3 min-h-0 flex-1 space-y-3 overflow-y-auto pr-1">
+            {pinnedTasks.length > 0 && <section className="relative">
+                <div className="flex items-center gap-2 px-2 py-2 text-[13px] font-medium text-[#47484e]">
+                    <Pin size={16} strokeWidth={1.8} className="shrink-0 fill-current text-[#6657d9]" />
+                    <span className="min-w-0 flex-1 truncate">置顶</span>
+                    <span className="text-[10px] text-slate-400">{pinnedTasks.length}</span>
+                </div>
+                <div className="space-y-0.5 pl-2">
+                    {pinnedTasks.map(renderTaskRow)}
+                </div>
+            </section>}
+
             {groups.map((group) => {
                 const collapsed = collapsedWorkspaceKeys.has(group.workspace);
                 const expandedTasks = expandedTaskWorkspaceKeys.has(group.workspace);
@@ -314,64 +441,7 @@ const WorkspaceSessionSidebar: React.FC<WorkspaceSessionSidebarProps> = ({
                     </div>
 
                     {!collapsed && <div className="mt-0.5 space-y-0.5 pl-2">
-                        {visibleTasks.map((task) => {
-                            const active = task.id === activeTaskId;
-                            const busy = isBusyTask(task);
-                            const statusLabel = task.status === 'running'
-                                ? '运行中'
-                                : task.status === 'waiting_authorization'
-                                    ? '待授权'
-                                    : task.status === 'failed'
-                                        ? '失败'
-                                        : undefined;
-                            const statusClassName = task.status === 'failed'
-                                ? 'bg-red-50 text-red-600'
-                                : task.status === 'waiting_authorization'
-                                    ? 'bg-amber-50 text-amber-700'
-                                    : 'bg-emerald-50 text-emerald-600';
-                            return <div key={task.id} className={`group/task relative flex items-center rounded-lg transition ${active ? 'bg-[#e8e8ea] text-[#25262b]' : 'text-[#55565c] hover:bg-[#eeeeef]'}`}>
-                                {renamingTaskId === task.id ? <div className="flex min-w-0 flex-1 items-center gap-1.5 px-2 py-1.5">
-                                    <input
-                                        autoFocus
-                                        value={renameValue}
-                                        maxLength={80}
-                                        onChange={(event) => setRenameValue(event.target.value)}
-                                        onKeyDown={(event) => {
-                                            if (event.key === 'Enter') commitRename(task.id);
-                                            if (event.key === 'Escape') setRenamingTaskId(null);
-                                        }}
-                                        onBlur={() => {
-                                            setRenamingTaskId(null);
-                                            setRenameValue('');
-                                        }}
-                                        className="min-w-0 flex-1 rounded-md border border-[#8a7cf0] bg-white px-2 py-1 text-xs text-slate-700 outline-none ring-2 ring-[#ece9ff]"
-                                        aria-label="会话名称"
-                                    />
-                                    <button type="button" onMouseDown={(event) => event.preventDefault()} onClick={() => setRenamingTaskId(null)} className="rounded p-1 text-slate-400 hover:bg-white" aria-label="取消重命名"><X size={12} /></button>
-                                </div> : <>
-                                    <button type="button" onClick={() => onOpenTask(task.id)} className="min-w-0 flex-1 px-2 py-2.5 text-left">
-                                        <span className="flex items-center gap-1.5">
-                                            <span className="min-w-0 flex-1 truncate text-[12px] font-medium">{task.title}</span>
-                                            {task.pinnedAt && <Pin size={11} className="shrink-0 fill-current text-[#6657d9]" />}
-                                            {statusLabel && <span className={`shrink-0 rounded-full px-1.5 py-0.5 text-[9px] font-medium ${statusClassName}`}>
-                                                {task.status === 'running' && <LoaderCircle size={10} strokeWidth={2} className="mr-0.5 inline animate-spin" />}
-                                                {statusLabel}
-                                            </span>}
-                                        </span>
-                                    </button>
-                                    <button type="button" onClick={() => setOpenMenu((current) => current?.kind === 'task' && current.id === task.id ? null : { kind: 'task', id: task.id })} className="mr-1 rounded-md p-1.5 text-slate-400 opacity-0 transition hover:bg-white hover:text-slate-700 group-hover/task:opacity-100 focus:opacity-100" title={`${task.title} 会话操作`} aria-label={`${task.title} 会话操作`}><Ellipsis size={14} /></button>
-                                </>}
-                                {openMenu?.kind === 'task' && openMenu.id === task.id && <div ref={menuRef} role="menu" className="absolute right-1 top-9 z-50 w-44 rounded-xl border border-slate-200 bg-white p-1.5 shadow-[0_16px_45px_rgba(15,23,42,0.16)]">
-                                    <MenuButton icon={task.pinnedAt ? PinOff : Pin} label={task.pinnedAt ? '取消固定' : '固定到顶部'} onClick={() => runAction(() => onToggleTaskPin(task.id))} />
-                                    <MenuButton icon={Pencil} label="重命名" onClick={() => beginRename(task)} />
-                                    {task.archivedAt
-                                        ? <MenuButton icon={ArchiveRestore} label="恢复到最近会话" onClick={() => restoreTask(task)} />
-                                        : <MenuButton icon={Archive} label="归档会话" disabled={busy} onClick={() => archiveTask(task)} />}
-                                    <div className="my-1 border-t border-slate-100" />
-                                    <MenuButton icon={Trash2} label={busy ? '请先停止会话' : '永久删除'} disabled={busy} dangerous onClick={() => { setOpenMenu(null); setDeleteTarget(task); }} />
-                                </div>}
-                            </div>;
-                        })}
+                        {visibleTasks.map(renderTaskRow)}
                         {group.tasks.length === 0 && <div className="px-3 py-3 text-[11px] text-slate-400">该工作区暂无会话，点击文件夹旁的 + 开始。</div>}
                         {!query && group.tasks.length > DEFAULT_VISIBLE_TASK_COUNT && <button
                             type="button"

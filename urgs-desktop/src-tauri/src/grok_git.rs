@@ -268,6 +268,15 @@ fn is_not_git_repository_error(message: &str) -> bool {
         || message.contains("不是一个 git 仓库")
 }
 
+fn is_git_unavailable_error(message: &str) -> bool {
+    let normalized = message.to_ascii_lowercase();
+    message.contains("无法启动 git")
+        || normalized.contains("program not found")
+        || normalized.contains("executable file not found")
+        || normalized.contains("os error 2")
+        || message.contains("系统找不到指定的文件")
+}
+
 fn non_repository_status(workspace: &Path) -> GrokGitStatus {
     let workspace_path = workspace.to_string_lossy().to_string();
     GrokGitStatus {
@@ -863,7 +872,9 @@ pub fn grok_git_status(workspace: String) -> Result<GrokGitStatus, String> {
     let workspace = canonical_directory(&workspace)?;
     match git_root(&workspace) {
         Ok(_) => git_status_at(&workspace),
-        Err(error) if is_not_git_repository_error(&error) => Ok(non_repository_status(&workspace)),
+        Err(error) if is_not_git_repository_error(&error) || is_git_unavailable_error(&error) => {
+            Ok(non_repository_status(&workspace))
+        }
         Err(error) => Err(error),
     }
 }
@@ -877,7 +888,7 @@ pub fn grok_git_diff(
     let workspace = canonical_directory(&workspace)?;
     let relative = path.map(|value| relative_path(&value)).transpose()?;
     if let Err(error) = git_root(&workspace) {
-        if is_not_git_repository_error(&error) {
+        if is_not_git_repository_error(&error) || is_git_unavailable_error(&error) {
             return Ok(GrokGitDiff {
                 workspace_path: workspace.to_string_lossy().to_string(),
                 path: relative,
@@ -1793,7 +1804,9 @@ pub fn grok_git_audit_list(
 
 #[cfg(test)]
 mod tests {
-    use super::{parse_remotes, parse_tracking, parse_worktrees, relative_path};
+    use super::{
+        is_git_unavailable_error, parse_remotes, parse_tracking, parse_worktrees, relative_path,
+    };
 
     #[test]
     fn parses_branch_tracking_counts() {
@@ -1801,6 +1814,15 @@ mod tests {
         assert_eq!(tracking.as_deref(), Some("main...origin/main"));
         assert_eq!(ahead, 2);
         assert_eq!(behind, 1);
+    }
+
+    #[test]
+    fn treats_missing_git_executable_as_optional_integration() {
+        assert!(is_git_unavailable_error(
+            "无法启动 git，请确认已安装 Git: program not found"
+        ));
+        assert!(is_git_unavailable_error("系统找不到指定的文件。 (os error 2)"));
+        assert!(!is_git_unavailable_error("fatal: not a git repository"));
     }
 
     #[test]

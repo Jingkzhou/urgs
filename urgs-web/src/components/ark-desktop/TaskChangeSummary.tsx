@@ -64,7 +64,7 @@ const RunningChangeProgress: React.FC<{
     const hasFiles = files.length > 0;
     const additions = files.reduce((total, file) => total + file.additions, 0);
     const deletions = files.reduce((total, file) => total + file.deletions, 0);
-    const completedPlanCount = plan?.filter((step) => step.status === 'completed' || step.status === 'cancelled').length || 0;
+    const completedPlanCount = plan?.filter((step) => step.status === 'completed').length || 0;
     const activePlanIndex = plan?.findIndex((step) => step.status === 'in_progress') ?? -1;
     const currentPlanStep = plan?.length
         ? activePlanIndex >= 0 ? activePlanIndex + 1 : Math.min(completedPlanCount + 1, plan.length)
@@ -91,8 +91,13 @@ const CompletedPlanProgress: React.FC<{
     plan: ArkDesktopPlanStep[];
     taskStatus: ArkDesktopTaskStatus;
 }> = ({ plan, taskStatus }) => {
-    const completedCount = plan.filter((step) => step.status === 'completed' || step.status === 'cancelled').length;
+    const completedCount = plan.filter((step) => step.status === 'completed').length;
     const completed = completedCount === plan.length && taskStatus === 'completed';
+    const progressLabel = taskStatus === 'cancelled'
+        ? `计划已停止 · ${completedCount} / ${plan.length} 完成`
+        : taskStatus === 'failed'
+            ? `计划未完成 · ${completedCount} / ${plan.length} 完成`
+            : `计划 ${completedCount} / ${plan.length} 已完成`;
     return <section className="my-3 flex justify-center" aria-label="执行计划进度">
         <TaskPlanPanel
             plan={plan}
@@ -100,7 +105,7 @@ const CompletedPlanProgress: React.FC<{
             trigger={<>{completed
                 ? <CheckCircle2 size={17} className="shrink-0 text-emerald-500" />
                 : <AlertTriangle size={17} className="shrink-0 text-amber-500" />}
-            <span className="shrink-0 font-medium text-slate-700">计划 {completedCount} / {plan.length} 已完成</span></>}
+            <span className="shrink-0 font-medium text-slate-700">{progressLabel}</span></>}
         />
     </section>;
 };

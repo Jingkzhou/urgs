@@ -320,6 +320,10 @@ const ArkDesktopPage: React.FC = () => {
     };
     const headerTitle = runtime.activeTask?.title || (section === 'settings' ? '设置' : sectionItems.find((item) => item.id === section)?.label || '新建任务');
     const headerStatus = runtime.activeTask ? taskStatus[runtime.activeTask.status] : undefined;
+    const showGitReview = Boolean(
+        runtime.activeTask?.gitContext
+        && runtime.activeTask.gitContext.status?.isRepository !== false,
+    );
     const headerMeta = runtime.activeTask
         ? [
             workspaceName(runtime.activeTask.sourceWorkspace || runtime.activeTask.gitContext?.repoRoot || runtime.activeTask.workspace),
@@ -354,7 +358,6 @@ const ArkDesktopPage: React.FC = () => {
         <div className="relative flex h-screen min-h-[680px] overflow-hidden bg-white pt-[52px] text-[#292a2e]">
             <header className="absolute inset-x-0 top-0 z-10 flex h-[52px] items-center border-b border-[#e9e9ea] bg-white/95">
                 <div data-tauri-drag-region className={`${isSidebarCollapsed ? 'w-[126px]' : 'w-[270px]'} h-full shrink-0 transition-[width] duration-200`} />
-                <ArkDesktopSidebarToggle collapsed={isSidebarCollapsed} onToggle={() => setIsSidebarCollapsed((current) => !current)} />
                 <ArkDesktopTitleContent
                     title={headerTitle}
                     meta={headerMeta}
@@ -364,16 +367,18 @@ const ArkDesktopPage: React.FC = () => {
                     status={headerStatus ? <span className={`shrink-0 rounded-full px-2 py-0.5 text-[10px] font-medium ${headerStatus.className}`}>{headerStatus.label}</span> : undefined}
                 />
                 <div className="mr-3 flex items-center gap-1">
+                    <ArkDesktopSidebarToggle collapsed={isSidebarCollapsed} onToggle={() => setIsSidebarCollapsed((current) => !current)} />
                     <button type="button" onClick={() => setTerminalPanelOpen((current) => !current)} className={panelToggleClass(terminalPanelOpen)} title={terminalPanelOpen ? '关闭底部终端面板' : '打开底部终端面板'} aria-label={terminalPanelOpen ? '关闭底部终端面板' : '打开底部终端面板'} aria-pressed={terminalPanelOpen}>
                         <PanelBottom size={16} strokeWidth={1.8} />
                     </button>
-                    {runtime.activeTask && <button type="button" onClick={() => setGitReviewOpen((current) => !current)} className={panelToggleClass(gitReviewOpen)} title={gitReviewOpen ? '关闭 Git 变更审查' : '打开 Git 变更审查'} aria-label={gitReviewOpen ? '关闭 Git 变更审查' : '打开 Git 变更审查'} aria-pressed={gitReviewOpen}>
+                    {showGitReview && <button type="button" onClick={() => setGitReviewOpen((current) => !current)} className={panelToggleClass(gitReviewOpen)} title={gitReviewOpen ? '关闭 Git 变更审查' : '打开 Git 变更审查'} aria-label={gitReviewOpen ? '关闭 Git 变更审查' : '打开 Git 变更审查'} aria-pressed={gitReviewOpen}>
                         <PanelRight size={16} strokeWidth={1.8} />
                     </button>}
                 </div>
             </header>
-            <aside className={`${isSidebarCollapsed ? 'hidden' : 'hidden w-[270px] shrink-0 flex-col border-r border-[#e5e5e7] bg-[#f8f8f9] px-3 py-4 lg:flex'}`}>
+            <aside className={`${isSidebarCollapsed ? 'hidden' : 'relative z-20 -mt-[52px] hidden h-[calc(100%+52px)] w-[270px] shrink-0 flex-col border-r border-[#e5e5e7] bg-[#f8f8f9] px-3 py-4 lg:flex'}`}>
                 <div className="mb-3 flex h-10 items-center gap-2 px-2">
+                    <img src="/jlbank_logo_transparent.png" alt="URGS" className="h-7 w-7 shrink-0 object-contain" />
                     <span className="text-[18px] font-semibold tracking-[-0.03em] text-[#303136]">URGS</span>
                     <span className="truncate text-[11px] font-medium text-slate-400">智能任务中心</span>
                 </div>
@@ -448,7 +453,7 @@ const ArkDesktopPage: React.FC = () => {
                 {terminalPanelOpen && <TaskTerminalPanel workspace={runtime.activeTask?.workspace || runtime.snapshot.settings.workspace} onClose={() => setTerminalPanelOpen(false)} />}
             </section>
 
-            {runtime.activeTask && gitReviewOpen && <GitReviewPanel task={runtime.activeTask} runtime={runtime} onClose={() => setGitReviewOpen(false)} />}
+            {showGitReview && runtime.activeTask && gitReviewOpen && <GitReviewPanel task={runtime.activeTask} runtime={runtime} onClose={() => setGitReviewOpen(false)} />}
 
             {editor?.type === 'automation' && <AutomationEditor id={editor.id} runtime={runtime} onClose={() => setEditor(null)} />}
             {runtime.permission && <Modal title={`允许“${runtime.permission.taskTitle}”执行本地操作？`} onClose={() => void runtime.answerPermission()}><p className="mb-5 text-sm leading-6 text-slate-600">{runtime.permission.title}</p><div className="flex flex-wrap justify-end gap-2"><button type="button" onClick={() => void runtime.answerPermission()} className="rounded-lg border border-slate-200 px-4 py-2 text-sm text-slate-600">拒绝</button>{runtime.permission.options.map((option) => <button key={option.optionId} type="button" onClick={() => void runtime.answerPermission(option.optionId)} className="rounded-lg bg-slate-900 px-4 py-2 text-sm text-white">{option.name}</button>)}</div></Modal>}
