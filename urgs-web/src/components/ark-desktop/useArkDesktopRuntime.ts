@@ -179,6 +179,8 @@ const toTaskGitContext = (
 const resolveModelProvider = (snapshot: ArkDesktopSnapshot, modelValue?: string) => {
     const value = modelValue?.trim();
     if (!value) return undefined;
+    // task.model stores the selected provider connection. Session info reports the
+    // runtime-resolved physical model, so it must not be written back to task.model.
     return snapshot.settings.modelProviders.find((provider) => provider.id === value)
         || snapshot.settings.modelProviders.find((provider) => provider.model === value);
 };
@@ -1886,7 +1888,6 @@ export const useArkDesktopRuntime = () => {
                     const info = await getGrokSessionInfo(session.sessionId).catch(() => null);
                     if (info) updateTask(taskId, (value) => ({
                         ...value,
-                        model: info.model || value.model,
                         contextInfo: info.context,
                         updatedAt: Date.now(),
                     }));
@@ -2333,7 +2334,6 @@ export const useArkDesktopRuntime = () => {
             const info = await getGrokSessionInfo(session.sessionId).catch(() => null);
             if (info) updateTask(taskId, (value) => ({
                 ...value,
-                model: info.model || value.model,
                 contextInfo: info.context,
                 updatedAt: Date.now(),
             }));
@@ -2449,8 +2449,11 @@ export const useArkDesktopRuntime = () => {
             }));
             if (task.engine === 'headless') {
                 const model = task.model || current.settings.grokModel;
+                const permissionMode = task.permissionMode || current.settings.execution.permissionMode;
                 const headlessArguments = [
                     ...(model.trim() ? ['--model', model.trim()] : []),
+                    '--permission-mode', permissionMode,
+                    ...(permissionMode === 'bypassPermissions' ? ['--always-approve'] : []),
                     '--resume', sessionId,
                     '--output-format', current.settings.execution.outputFormat,
                     '--single', prompt,
@@ -2486,7 +2489,6 @@ export const useArkDesktopRuntime = () => {
                     const info = await getGrokSessionInfo(sessionId).catch(() => null);
                     if (info) updateTask(taskId, (value) => ({
                         ...value,
-                        model: info.model || value.model,
                         contextInfo: info.context,
                         updatedAt: Date.now(),
                     }));
@@ -2647,7 +2649,6 @@ export const useArkDesktopRuntime = () => {
         }
         updateTask(taskId, (value) => ({
             ...value,
-            model: info.model || value.model,
             contextInfo: info.context,
             updatedAt: Date.now(),
         }));
@@ -3143,7 +3144,7 @@ export const useArkDesktopRuntime = () => {
         if (task.engine === 'headless') throw new Error('后台模式会话仅支持在发起新任务时切换模型');
         const modelId = model.trim();
         if (!modelId) throw new Error('请选择模型');
-        try {
+        const switchSessionModel = async () => {
             const current = snapshotRef.current;
             const agent = current.agents.find((item) => item.id === task.agentId)
                 || current.agents.find((item) => item.enabled);
@@ -3154,8 +3155,8 @@ export const useArkDesktopRuntime = () => {
                 permissionMode: task.permissionMode || current.settings.execution.permissionMode,
                 alwaysApprove: false,
             };
-            const modelProvider = resolveModelProvider(current, task.model || current.settings.grokModel);
-            if (!modelProvider) throw new Error(`历史会话使用的模型连接“${task.model || current.settings.grokModel}”不存在，请在设置中配置对应连接`);
+            const modelProvider = resolveModelProvider(current, modelId);
+            if (!modelProvider) throw new Error(`模型连接“${modelId}”不存在，请在设置中配置对应连接`);
             if (!modelProvider.enabled) throw new Error(`模型连接“${modelProvider.name}”已停用`);
             const session = await loadGrokSession(
                 task.sessionId,
@@ -3176,20 +3177,121 @@ export const useArkDesktopRuntime = () => {
                 error: undefined,
                 updatedAt: Date.now(),
             }));
+        };
+        try {
+            await switchSessionModel();
         } catch (error) {
-            const message = redactRuntimeText(error instanceof Error ? error.message : String(error));
+            let finalError = error;
+            const providerId = modelKeyAuthorizationProviderId(error);
+            if (providerId) {
+                try {
+                    const provider = await authorizeGrokModelProvider(providerId);
+                    setSnapshot((current) => ({
+                        ...current,
+                        settings: {
+                            ...current.settings,
+                            modelProviders: current.settings.modelProviders.map((item) => item.id === provider.id
+                                ? provider as ArkDesktopModelProvider
+                                : item),
+                        },
+                    }));
+                    await switchSessionModel();
+                    return;
+                } catch (authorizationError) {
+                    finalError = authorizationError;
+                }
+            }
+            const message = redactRuntimeText(finalError instanceof Error ? finalError.message : String(finalError));
             updateTask(taskId, (value) => ({ ...value, error: message, updatedAt: Date.now() }));
-            throw error;
+            throw finalError;
         }
     }, [updateTask]);
 
-    const setTaskPermissionMode = useCallback((taskId: string, permissionMode: GrokExecutionSettings['permissionMode']) => {
-        updateTask(taskId, (task) => ({
-            ...task,
-            permissionMode,
-            alwaysApprove: false,
-            updatedAt: Date.now(),
-        }));
+    const setTaskPermissionMode = useCallback(async (taskId: string, permissionMode: GrokExecutionSettings['permissionMode']) => {
+        const task = snapshotRef.current.tasks.find((item) => item.id === taskId);
+        if (!task) throw new Error('会话不存在');
+        if ((task.permissionMode || snapshotRef.current.settings.execution.permissionMode) === permissionMode) return;
+        if (task.status === 'running' || task.status === 'waiting_authorization') {
+            throw new Error('请先等待当前任务结束或停止任务');
+        }
+        if (task.engine === 'headless' || !task.sessionId) {
+            updateTask(taskId, (value) => ({
+                ...value,
+                permissionMode,
+                alwaysApprove: false,
+                error: undefined,
+                updatedAt: Date.now(),
+            }));
+            return;
+        }
+
+        const reloadSessionWithPermission = async () => {
+            const current = snapshotRef.current;
+            const agent = current.agents.find((item) => item.id === task.agentId)
+                || current.agents.find((item) => item.enabled);
+            if (!agent) throw new Error('该历史任务使用的 Agent 已不存在');
+            const modelProvider = resolveModelProvider(current, task.model || current.settings.grokModel);
+            if (!modelProvider) throw new Error(`历史会话使用的模型连接“${task.model || current.settings.grokModel}”不存在，请在设置中配置对应连接`);
+            if (!modelProvider.enabled) throw new Error(`模型连接“${modelProvider.name}”已停用`);
+            const skills = current.skills.filter((skill) => task.skillIds.includes(skill.id) && skill.enabled);
+            const execution = {
+                ...current.settings.execution,
+                permissionMode,
+                alwaysApprove: false,
+            };
+            const attachMode = task.messages.length > 0 ? 'resume' : 'load';
+            const session = await loadGrokSession(
+                task.sessionId,
+                task.workspace,
+                buildSessionRules(agent, skills),
+                modelProvider.id,
+                buildAcpOptions(execution),
+                attachMode,
+            );
+            if (task.runtimeProcessId && task.runtimeProcessId !== session.processId) {
+                taskByProcessIdRef.current.delete(task.runtimeProcessId);
+            }
+            mountedSessionIdsRef.current.add(session.sessionId);
+            taskByProcessIdRef.current.set(session.processId, taskId);
+            taskBySessionIdRef.current.set(session.sessionId, taskId);
+            updateTask(taskId, (value) => ({
+                ...value,
+                permissionMode,
+                alwaysApprove: false,
+                runtimeProcessId: session.processId,
+                availableCommands: session.availableCommands,
+                error: undefined,
+                updatedAt: Date.now(),
+            }));
+        };
+        try {
+            await reloadSessionWithPermission();
+        } catch (error) {
+            mountedSessionIdsRef.current.delete(task.sessionId);
+            let finalError = error;
+            const providerId = modelKeyAuthorizationProviderId(error);
+            if (providerId) {
+                try {
+                    const provider = await authorizeGrokModelProvider(providerId);
+                    setSnapshot((current) => ({
+                        ...current,
+                        settings: {
+                            ...current.settings,
+                            modelProviders: current.settings.modelProviders.map((item) => item.id === provider.id
+                                ? provider as ArkDesktopModelProvider
+                                : item),
+                        },
+                    }));
+                    await reloadSessionWithPermission();
+                    return;
+                } catch (authorizationError) {
+                    finalError = authorizationError;
+                }
+            }
+            const message = redactRuntimeText(finalError instanceof Error ? finalError.message : String(finalError));
+            updateTask(taskId, (value) => ({ ...value, error: message, updatedAt: Date.now() }));
+            throw finalError;
+        }
     }, [updateTask]);
 
     const renameTask = useCallback(async (taskId: string, title: string) => {
