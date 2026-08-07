@@ -23,8 +23,7 @@ export const ArkDesktopTitleContent: React.FC<{
     onOpenSettings: () => void;
     icon: React.ReactNode;
     status?: React.ReactNode;
-    planControl?: React.ReactNode;
-}> = ({ title, meta, settingsActive, onOpenSettings, icon, status, planControl }) => (
+}> = ({ title, meta, settingsActive, onOpenSettings, icon, status }) => (
     <div className="flex min-w-0 flex-1 items-center justify-between gap-4 px-4">
         <div data-tauri-drag-region className="flex min-w-0 items-center gap-2.5">
             <span className="shrink-0 text-[#44454a]">{icon}</span>
@@ -37,7 +36,6 @@ export const ArkDesktopTitleContent: React.FC<{
             </div>
         </div>
         <div className="flex shrink-0 items-center gap-1">
-            {planControl}
             <button
                 type="button"
                 onClick={onOpenSettings}

@@ -2349,7 +2349,17 @@ export const useArkDesktopRuntime = () => {
         const task = snapshotRef.current.tasks.find((item) => item.id === taskId);
         if (!task) throw new Error('历史任务不存在');
         const activePromptCount = activePromptCountsRef.current.get(taskId) || 0;
+        const startsNewPrompt = activePromptCount === 0;
+        const clearPromptPlan = () => {
+            planByTaskIdRef.current.delete(taskId);
+            updateTask(taskId, (value) => ({
+                ...value,
+                plan: undefined,
+                updatedAt: Date.now(),
+            }));
+        };
         activePromptCountsRef.current.set(taskId, activePromptCount + 1);
+        if (startsNewPrompt) clearPromptPlan();
         try {
             const current = snapshotRef.current;
             const sessionId = task.sessionId
@@ -2412,6 +2422,9 @@ export const useArkDesktopRuntime = () => {
                         updatedAt: Date.now(),
                     }));
                 }
+            }
+            if (startsNewPrompt) {
+                clearPromptPlan();
             }
             cancelledTaskIdsRef.current.delete(taskId);
             const shouldQueue = task.engine !== 'headless' && task.status === 'running';

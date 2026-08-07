@@ -24,7 +24,6 @@ import { ConversationPromptInput } from './SlashCommandMenu';
 import SessionCommandBar from './SessionCommandBar';
 import TaskActivityTimeline from './TaskActivityTimeline';
 import TaskChangeSummary from './TaskChangeSummary';
-import TaskPlanPanel from './TaskPlanPanel';
 import PlanApprovalDialog from './PlanApprovalDialog';
 import UserQuestionDialog from './UserQuestionDialog';
 import WorkspaceSessionSidebar from './WorkspaceSessionSidebar';
@@ -367,9 +366,6 @@ const ArkDesktopPage: React.FC = () => {
                     onOpenSettings={() => openSettings()}
                     icon={runtime.activeTask ? <Cpu size={16} strokeWidth={1.8} /> : section === 'settings' ? <Settings size={16} strokeWidth={1.8} /> : section === 'workflows' ? <Workflow size={16} strokeWidth={1.8} /> : <CheckSquare size={16} strokeWidth={1.8} />}
                     status={headerStatus ? <span className={`shrink-0 rounded-full px-2 py-0.5 text-[10px] font-medium ${headerStatus.className}`}>{headerStatus.label}</span> : undefined}
-                    planControl={runtime.activeTask?.plan?.length
-                        ? <TaskPlanPanel plan={runtime.activeTask.plan} taskStatus={runtime.activeTask.status} />
-                        : undefined}
                 />
                 <div className="mr-3 flex items-center gap-1">
                     <button type="button" onClick={() => setTerminalPanelOpen((current) => !current)} className={panelToggleClass(terminalPanelOpen)} title={terminalPanelOpen ? '关闭底部终端面板' : '打开底部终端面板'} aria-label={terminalPanelOpen ? '关闭底部终端面板' : '打开底部终端面板'} aria-pressed={terminalPanelOpen}>
@@ -1156,8 +1152,6 @@ const TaskView: React.FC<{ task?: ArkDesktopTask; runtime: ReturnType<typeof use
 
     const latestMessage = task?.messages[task.messages.length - 1];
     const latestTool = task?.tools[task.tools.length - 1];
-    const latestUserPrompt = task?.messages.slice().reverse().find((message) => message.role === 'user');
-
     useEffect(() => {
         const container = scrollContainerRef.current;
         if (!container) return undefined;
@@ -1211,7 +1205,41 @@ const TaskView: React.FC<{ task?: ArkDesktopTask; runtime: ReturnType<typeof use
 
     return <div className="mx-auto flex min-h-full w-full max-w-[960px] flex-col px-4 py-5 font-sans sm:px-5 lg:px-0">
         {task && <TaskSessionUtilityBar task={task} runtime={runtime} />}
-        <div className="flex-1">{isNewTask ? <div className="flex min-h-[300px] flex-col items-center justify-center py-8 text-center"><img src="/ark/ark-agents-robot-cropped.png" alt="URGS 智能任务中心" className="mb-3 h-20 w-20 object-contain mix-blend-multiply" /><h2 className="text-2xl font-semibold tracking-[-0.035em] text-[#303136]">让智能体把想法变成现实</h2><p className="mt-2 text-sm text-slate-500">输入第一条消息，即可在当前会话中开始执行</p><div className="mt-5 flex w-full flex-wrap justify-center gap-2">{taskTags.map((tag) => { const Icon = tag.icon; const active = newTask?.selectedSkillIds.includes(tag.skillId); return <button key={tag.label} type="button" onClick={() => { setFollowUp(tag.prompt); newTask?.setSelectedSkillIds((current) => active ? current.filter((id) => id !== tag.skillId) : [...current, tag.skillId]); }} className={`flex items-center gap-2 rounded-full px-4 py-2.5 text-sm font-medium transition hover:-translate-y-0.5 ${active ? 'bg-slate-900 text-white' : 'bg-[#e9e9eb] text-[#494a4f] hover:bg-[#dedee1]'}`}><Icon size={17} />{tag.label}{active && <Check size={14} />}</button>; })}</div></div> : <>{turns.map((turn, index) => <div key={`${task!.id}-${turn.user?.id || `turn-${index}`}`} className="border-b border-slate-100 py-2 last:border-b-0">{turn.user && <TaskMessage message={turn.user} attachments={index === 0 ? task!.attachmentPaths : undefined} scrollTarget={turn.user.id === task!.messages[task!.messages.length - 1]?.id ? lastMessageRef : undefined} />}{turn.stages.map((stage, stageIndex) => <React.Fragment key={stage.message?.id || `${task!.id}-stage-${index}-${stageIndex}`} >{stage.message && <TaskMessage message={stage.message} scrollTarget={stage.message.id === task!.messages[task!.messages.length - 1]?.id ? lastMessageRef : undefined} />}{stage.tools.length > 0 && <TaskActivityTimeline tools={stage.tools} taskStatus={task.status} execution={task.execution} runStartedAt={turn.user?.createdAt} isActive={task.status === 'running' && stage.tools.some((tool) => tool.id === latestTool?.id)} />}</React.Fragment>)}<TaskChangeSummary taskId={task!.id} workspace={task!.workspace} promptIndex={index} tools={turn.stages.flatMap((stage) => stage.tools)} onRewind={runtime.rewindTaskFiles} /></div>)}{task.status === 'running' && task.tools.length === 0 && <TaskActivityTimeline tools={[]} taskStatus={task.status} execution={task.execution} runStartedAt={latestUserPrompt?.createdAt} isActive />}{task?.modelKeyAuthorization && <div className="my-5 flex flex-wrap items-center gap-3 rounded-xl border border-amber-200 bg-amber-50 px-4 py-3 text-sm text-amber-900"><span className="flex h-8 w-8 shrink-0 items-center justify-center rounded-lg bg-white text-amber-700 shadow-sm"><KeyRound size={16} /></span><div className="min-w-0 flex-1"><div className="font-medium">解锁本地模型密钥</div><div className="mt-0.5 text-xs leading-5 text-amber-700">仅从本机 macOS 钥匙串读取，不连接 xAI。解锁后将继续当前任务。</div></div><div className="flex items-center gap-2"><button type="button" disabled={authorizing} onClick={() => void runtime.cancelTask(task.id)} className="h-8 rounded-lg px-2.5 text-xs font-medium text-amber-800 hover:bg-amber-100 disabled:opacity-60">取消任务</button><button type="button" disabled={authorizing} onClick={() => void authorizeModelKey()} className="flex h-8 items-center gap-1.5 rounded-lg bg-amber-700 px-3 text-xs font-medium text-white hover:bg-amber-800 disabled:opacity-60">{authorizing ? <LoaderCircle size={14} className="animate-spin" /> : <KeyRound size={14} />}解锁密钥</button></div></div>}{task?.error && <div className="my-5 flex gap-2 rounded-xl border border-red-200 bg-red-50 px-4 py-3 text-sm leading-6 text-red-700"><AlertCircle size={16} className="mt-0.5 shrink-0" /><span className="flex-1">{task.error}</span><button type="button" onClick={() => runtime.dismissTaskError(task.id)} className="shrink-0 text-red-500 hover:text-red-700" title="关闭提示" aria-label="关闭提示"><X size={16} /></button></div>}</>}</div>
+        <div className="flex-1">{isNewTask ? <div className="flex min-h-[300px] flex-col items-center justify-center py-8 text-center"><img src="/ark/ark-agents-robot-cropped.png" alt="URGS 智能任务中心" className="mb-3 h-20 w-20 object-contain mix-blend-multiply" /><h2 className="text-2xl font-semibold tracking-[-0.035em] text-[#303136]">让智能体把想法变成现实</h2><p className="mt-2 text-sm text-slate-500">输入第一条消息，即可在当前会话中开始执行</p><div className="mt-5 flex w-full flex-wrap justify-center gap-2">{taskTags.map((tag) => { const Icon = tag.icon; const active = newTask?.selectedSkillIds.includes(tag.skillId); return <button key={tag.label} type="button" onClick={() => { setFollowUp(tag.prompt); newTask?.setSelectedSkillIds((current) => active ? current.filter((id) => id !== tag.skillId) : [...current, tag.skillId]); }} className={`flex items-center gap-2 rounded-full px-4 py-2.5 text-sm font-medium transition hover:-translate-y-0.5 ${active ? 'bg-slate-900 text-white' : 'bg-[#e9e9eb] text-[#494a4f] hover:bg-[#dedee1]'}`}><Icon size={17} />{tag.label}{active && <Check size={14} />}</button>; })}</div></div> : <>{turns.map((turn, index) => {
+            const isCurrentTurn = index === turns.length - 1;
+            const turnIsActive = isCurrentTurn && (task!.status === 'running' || task!.status === 'waiting_authorization');
+            const finalStageIndex = turnIsActive ? -1 : turn.stages.reduce((last, stage, stageIndex) => stage.message ? stageIndex : last, -1);
+            const finalMessage = finalStageIndex >= 0 ? turn.stages[finalStageIndex].message : undefined;
+            const turnTools = turn.stages.flatMap((stage) => stage.tools);
+            const toolStartedAt = turnTools.reduce((earliest, tool) => Math.min(earliest, tool.startedAt || tool.updatedAt), Number.POSITIVE_INFINITY);
+            const turnStartedAt = Number.isFinite(toolStartedAt)
+                ? toolStartedAt
+                : turnIsActive ? task!.execution?.startedAt || turn.user?.createdAt : turn.user?.createdAt;
+            const inferredCompletedAt = Math.max(
+                turnStartedAt || 0,
+                ...turn.stages.flatMap((stage) => [stage.message?.createdAt || 0, ...stage.tools.map((tool) => tool.updatedAt || tool.startedAt || 0)]),
+            );
+            const turnCompletedAt = turnIsActive ? undefined : inferredCompletedAt;
+            const turnStatus = isCurrentTurn ? task!.status : 'completed';
+            return <div key={`${task!.id}-${turn.user?.id || `turn-${index}`}`} className="py-2">
+                {turn.user && <TaskMessage message={turn.user} attachments={index === 0 ? task!.attachmentPaths : undefined} scrollTarget={turn.user.id === task!.messages[task!.messages.length - 1]?.id ? lastMessageRef : undefined} />}
+                <TaskActivityTimeline
+                    tools={turnTools}
+                    taskStatus={turnStatus}
+                    execution={isCurrentTurn ? task!.execution : undefined}
+                    runStartedAt={turnStartedAt}
+                    runCompletedAt={turnCompletedAt || undefined}
+                    isActive={turnIsActive}
+                    summaryOnly
+                >
+                    {turn.stages.map((stage, stageIndex) => stage.message && stageIndex !== finalStageIndex
+                        ? <TaskMessage key={stage.message.id} message={stage.message} />
+                        : null)}
+                    <TaskChangeSummary taskId={task!.id} workspace={task!.workspace} promptIndex={index} tools={turnTools} taskStatus={turnStatus} plan={task!.plan} onRewind={runtime.rewindTaskFiles} />
+                </TaskActivityTimeline>
+                {finalMessage && <TaskMessage message={finalMessage} scrollTarget={finalMessage.id === task!.messages[task!.messages.length - 1]?.id ? lastMessageRef : undefined} />}
+            </div>;
+        })}{task?.modelKeyAuthorization && <div className="my-5 flex flex-wrap items-center gap-3 rounded-xl border border-amber-200 bg-amber-50 px-4 py-3 text-sm text-amber-900"><span className="flex h-8 w-8 shrink-0 items-center justify-center rounded-lg bg-white text-amber-700 shadow-sm"><KeyRound size={16} /></span><div className="min-w-0 flex-1"><div className="font-medium">解锁本地模型密钥</div><div className="mt-0.5 text-xs leading-5 text-amber-700">仅从本机 macOS 钥匙串读取，不连接 xAI。解锁后将继续当前任务。</div></div><div className="flex items-center gap-2"><button type="button" disabled={authorizing} onClick={() => void runtime.cancelTask(task.id)} className="h-8 rounded-lg px-2.5 text-xs font-medium text-amber-800 hover:bg-amber-100 disabled:opacity-60">取消任务</button><button type="button" disabled={authorizing} onClick={() => void authorizeModelKey()} className="flex h-8 items-center gap-1.5 rounded-lg bg-amber-700 px-3 text-xs font-medium text-white hover:bg-amber-800 disabled:opacity-60">{authorizing ? <LoaderCircle size={14} className="animate-spin" /> : <KeyRound size={14} />}解锁密钥</button></div></div>}{task?.error && <div className="my-5 flex gap-2 rounded-xl border border-red-200 bg-red-50 px-4 py-3 text-sm leading-6 text-red-700"><AlertCircle size={16} className="mt-0.5 shrink-0" /><span className="flex-1">{task.error}</span><button type="button" onClick={() => runtime.dismissTaskError(task.id)} className="shrink-0 text-red-500 hover:text-red-700" title="关闭提示" aria-label="关闭提示"><X size={16} /></button></div>}</>}</div>
         {task && <QueuePanel task={task} runtime={runtime} />}
         <TaskComposer task={task} runtime={runtime} value={followUp} onChange={setFollowUp} onSubmit={submit} onCancel={task ? () => runtime.cancelTask(task.id) : undefined} sending={isNewTask ? newTask?.actionPending || false : sending} newTask={newTask} />
     </div>;

@@ -1,13 +1,16 @@
 import React, { useMemo, useState } from 'react';
 import { AlertTriangle, CheckCircle2, ChevronDown, FileDiff, LoaderCircle, RotateCcw, X } from 'lucide-react';
 import { mergeFileChanges } from './fileChanges';
-import type { ArkDesktopTask } from './types';
+import TaskPlanPanel from './TaskPlanPanel';
+import type { ArkDesktopPlanStep, ArkDesktopTask, ArkDesktopTaskStatus } from './types';
 
 interface TaskChangeSummaryProps {
     taskId: string;
     workspace: string;
     promptIndex: number;
     tools: ArkDesktopTask['tools'];
+    taskStatus: ArkDesktopTaskStatus;
+    plan?: ArkDesktopPlanStep[];
     onRewind: (taskId: string, promptIndex: number, force?: boolean) => Promise<{ requiresConfirmation: boolean; conflicts: Array<{ path: string; conflictType: string }> }>;
 }
 
@@ -53,13 +56,47 @@ const DiffReview: React.FC<{
     </div>;
 };
 
-const TaskChangeSummary: React.FC<TaskChangeSummaryProps> = ({ taskId, workspace, promptIndex, tools, onRewind }) => {
+const RunningChangeProgress: React.FC<{
+    files: ReturnType<typeof mergeFileChanges>;
+    taskStatus: ArkDesktopTaskStatus;
+    plan?: ArkDesktopPlanStep[];
+}> = ({ files, taskStatus, plan }) => {
+    const hasFiles = files.length > 0;
+    const additions = files.reduce((total, file) => total + file.additions, 0);
+    const deletions = files.reduce((total, file) => total + file.deletions, 0);
+    const completedPlanCount = plan?.filter((step) => step.status === 'completed' || step.status === 'cancelled').length || 0;
+    const activePlanIndex = plan?.findIndex((step) => step.status === 'in_progress') ?? -1;
+    const currentPlanStep = plan?.length
+        ? activePlanIndex >= 0 ? activePlanIndex + 1 : Math.min(completedPlanCount + 1, plan.length)
+        : 0;
+
+    const progressIconClass = taskStatus === 'running' ? 'animate-spin text-blue-500' : 'text-amber-500';
+    return <section className="my-3 flex flex-wrap justify-center gap-2" aria-label="当前执行进度">
+        {plan?.length ? <TaskPlanPanel
+            plan={plan}
+            taskStatus={taskStatus}
+            trigger={<><LoaderCircle size={17} className={`shrink-0 ${progressIconClass}`} />{taskStatus === 'waiting_authorization' ? <span className="shrink-0 font-medium text-slate-700">等待授权</span> : <span className="shrink-0 font-medium text-slate-700">第 {currentPlanStep} / {plan.length} 步</span>}</>}
+        /> : null}
+        {hasFiles ? <div className="inline-flex max-w-full items-center gap-2 rounded-full border border-slate-200 bg-white px-4 py-2.5 text-sm text-slate-600 shadow-[0_1px_3px_rgba(15,23,42,0.05)]" aria-label="当前文件变更">
+            <FileDiff size={17} className="shrink-0 text-slate-500" />
+            <span className="shrink-0 font-medium text-slate-700">{taskStatus === 'waiting_authorization' ? '等待授权' : '正在执行'}</span>
+            <span className="text-slate-300">·</span>
+            <span className="truncate">{files.length} 个文件已更改</span>
+            <span className="shrink-0 whitespace-nowrap"><span className="text-emerald-600">+{additions}</span><span className="ml-2 text-red-500">-{deletions}</span></span>
+        </div> : null}
+    </section>;
+};
+
+const TaskChangeSummary: React.FC<TaskChangeSummaryProps> = ({ taskId, workspace, promptIndex, tools, taskStatus, plan, onRewind }) => {
     const files = useMemo(() => mergeFileChanges(tools.flatMap((tool) => tool.fileChanges || [])), [tools]);
     const [expanded, setExpanded] = useState(false);
     const [reviewing, setReviewing] = useState(false);
     const [undoing, setUndoing] = useState(false);
     const [error, setError] = useState('');
     const [conflicts, setConflicts] = useState<Array<{ path: string; conflictType: string }> | null>(null);
+    const activeTask = taskStatus === 'running' || taskStatus === 'waiting_authorization';
+    if (activeTask && files.length === 0 && !plan?.length) return null;
+    if (activeTask) return <RunningChangeProgress files={files} taskStatus={taskStatus} plan={plan} />;
     if (files.length === 0) return null;
     const additions = files.reduce((total, file) => total + file.additions, 0);
     const deletions = files.reduce((total, file) => total + file.deletions, 0);
