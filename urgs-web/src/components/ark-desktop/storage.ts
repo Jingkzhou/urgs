@@ -120,9 +120,23 @@ export const loadArkDesktopSnapshot = (): ArkDesktopSnapshot => {
             const taskIsTerminal = ['completed', 'failed', 'cancelled'].includes(taskStatus);
             const bypassPermissions = task.alwaysApprove || task.permissionMode === 'bypassPermissions';
             const terminalToolStatus = taskStatus === 'failed' ? '失败' : taskStatus === 'cancelled' ? '已取消' : '已完成';
+            const executionStatus = taskStatus === 'waiting_authorization'
+                ? 'waiting_user' as const
+                : taskStatus === 'cancelled'
+                ? 'stopped' as const
+                : taskStatus === 'completed'
+                    ? 'completed' as const
+                    : 'failed' as const;
             return {
                 ...task,
                 ...(interrupted ? { status: 'failed' as const, error: '桌面客户端已重新启动，本次执行已中断', updatedAt: Date.now() } : {}),
+                execution: task.execution || {
+                    status: executionStatus,
+                    currentStage: taskStatus === 'waiting_authorization' ? '等待你的操作' : taskStatus === 'completed' ? '已完成任务' : taskStatus === 'cancelled' ? '已停止任务' : '执行未完成',
+                    startedAt: task.createdAt,
+                    completedAt: task.updatedAt,
+                    lastActivityAt: task.updatedAt,
+                },
                 tools: (task.tools || []).map((tool) => taskIsTerminal
                     && !settledActivityPattern.test(tool.status)
                     && !['background_task', 'monitor', 'goal'].includes(tool.kind || '')

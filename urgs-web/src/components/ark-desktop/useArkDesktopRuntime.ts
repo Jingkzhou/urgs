@@ -91,6 +91,7 @@ import { loadArkDesktopSnapshot, resetArkDesktopSnapshot, saveArkDesktopSnapshot
 import { extractFileChanges } from './fileChanges';
 import type {
     ArkDesktopAgent,
+    ArkDesktopExecutionState,
     ArkDesktopQueueEntry,
     ArkDesktopAutomation,
     ArkDesktopPermissionRequest,
@@ -242,6 +243,28 @@ const statusLabel = (status?: string) => {
     }
 };
 
+const hiddenActivityKinds = new Set(['diagnostic', 'context', 'memory', 'recovery', 'inference']);
+
+const semanticStageForActivity = (kind?: string, title?: string) => {
+    const hint = `${kind || ''} ${title || ''}`.toLowerCase();
+    if (/reason|thought|分析|思考/.test(hint)) return '正在分析需求';
+    if (/plan|todo|规划|计划/.test(hint)) return '正在制定执行计划';
+    if (/write|edit|patch|file_change|写入|编辑|修改/.test(hint)) return '正在修改代码';
+    if (/read|file|读取|文件|config|配置/.test(hint)) return '正在检查项目文件';
+    if (/search|find|grep|检索|搜索|代码关系|codegraph|引用/.test(hint)) return '正在搜索相关代码';
+    if (/shell|terminal|command|compile|test|lint|build|验证|测试|编译|运行/.test(hint)) return '正在运行验证';
+    if (/git|diff|branch|提交|变更/.test(hint)) return '正在检查代码变更';
+    if (/browser|网页|页面/.test(hint)) return '正在检查页面表现';
+    if (/workflow|工作流/.test(hint)) return '正在执行工作流';
+    if (/subagent|agent|智能体/.test(hint)) return '正在协同智能体';
+    return '正在执行任务';
+};
+
+const activityVisibilityForKind = (kind?: string): ArkDesktopToolActivity['visibility'] =>
+    hiddenActivityKinds.has(String(kind || '').toLowerCase()) ? 'diagnostic' : 'summary';
+
+const activityIsRunning = (status: string) => /运行中|等待中|分析中|后台运行中|running|pending|in_progress|retry/i.test(status);
+
 const workflowText = (value: unknown) => {
     const text = typeof value === 'string' ? value.trim() : '';
     return text ? redactRuntimeText(text) : undefined;
@@ -325,16 +348,30 @@ const upsertTaskActivity = (
     const output = options.appendOutput && existing?.output && activity.output
         ? `${existing.output}${activity.output}`.slice(-12_000)
         : activity.output ?? existing?.output;
+    const now = Date.now();
+    const semanticStage = activity.semanticStage || existing?.semanticStage || semanticStageForActivity(activity.kind, activity.title);
+    const visibility = activity.visibility || existing?.visibility || activityVisibilityForKind(activity.kind);
     const next: ArkDesktopToolActivity = {
         ...existing,
         ...activity,
+        visibility,
+        semanticStage,
         ...(output ? { output } : {}),
-        startedAt: existing?.startedAt || existing?.updatedAt || Date.now(),
-        updatedAt: Date.now(),
+        startedAt: existing?.startedAt || existing?.updatedAt || now,
+        updatedAt: now,
     };
     if (existingIndex >= 0) tools[existingIndex] = next;
     else tools.push(next);
-    return { ...task, tools: tools.slice(-200), updatedAt: Date.now() };
+    const execution: ArkDesktopTask['execution'] = visibility === 'summary'
+        ? {
+            ...task.execution,
+            status: task.status === 'running' ? 'running' as const : task.execution?.status || 'running' as const,
+            lastActivityAt: now,
+            startedAt: task.execution?.startedAt || next.startedAt || now,
+            ...(activityIsRunning(next.status) ? { currentStage: semanticStage } : {}),
+        }
+        : task.execution;
+    return { ...task, tools: tools.slice(-200), execution, updatedAt: now };
 };
 
 const applyCompactedContextInfo = (
@@ -360,14 +397,31 @@ const settleForegroundActivities = (
     task: ArkDesktopTask,
     terminalStatus: ArkDesktopTaskStatus,
 ) => {
+    const now = Date.now();
+    const executionStatus: ArkDesktopExecutionState['status'] = terminalStatus === 'failed'
+        ? 'failed'
+        : terminalStatus === 'cancelled'
+            ? 'stopped'
+            : 'completed';
     const nextStatus = terminalStatus === 'failed' ? '失败' : terminalStatus === 'cancelled' ? '已取消' : '已完成';
     const tools = task.tools.map((tool) => {
         // Recap is queued asynchronously by the sidecar. A foreground turn can
         // finish before its session_recap/session_recap_unavailable event arrives.
         if (tool.id === 'session-recap' || isSettledActivity(tool.status) || ['background_task', 'monitor', 'goal', 'workflow'].includes(tool.kind || '')) return tool;
-        return { ...tool, status: nextStatus, updatedAt: Date.now() };
+        return { ...tool, status: nextStatus, updatedAt: now };
     });
-    return { ...task, status: terminalStatus, tools, updatedAt: Date.now() };
+    return {
+        ...task,
+        status: terminalStatus,
+        tools,
+        execution: {
+            ...task.execution,
+            status: executionStatus,
+            completedAt: now,
+            lastActivityAt: now,
+        },
+        updatedAt: now,
+    };
 };
 
 const parsePlanSteps = (entries: unknown): ArkDesktopPlanStep[] => Array.isArray(entries)
@@ -878,9 +932,35 @@ export const useArkDesktopRuntime = () => {
             const isTransientPlanCleanup = updateType === 'plan'
                 && !String(params?._meta?.eventId || '').trim();
             const todoPlan = isTransientPlanCleanup ? null : parseTodoPlan(update);
+            const eventAt = Date.now();
+            updateTask(taskId, (task) => ({
+                ...task,
+                execution: {
+                    ...task.execution,
+                    status: task.status === 'running'
+                        ? 'running'
+                        : task.status === 'waiting_authorization'
+                            ? 'waiting_user'
+                            : task.execution?.status || 'running',
+                    lastActivityAt: eventAt,
+                    startedAt: task.execution?.startedAt || task.createdAt,
+                },
+                updatedAt: eventAt,
+            }));
             if (todoPlan) {
                 planByTaskIdRef.current.set(taskId, todoPlan);
-                updateTask(taskId, (task) => ({ ...task, plan: todoPlan, updatedAt: Date.now() }));
+                updateTask(taskId, (task) => ({
+                    ...task,
+                    plan: todoPlan,
+                    execution: {
+                        ...task.execution,
+                        status: task.status === 'running' ? 'running' : task.execution?.status || 'running',
+                        currentStage: todoPlan.find((step) => step.status === 'in_progress')?.content || task.execution?.currentStage,
+                        lastActivityAt: eventAt,
+                        startedAt: task.execution?.startedAt || task.createdAt,
+                    },
+                    updatedAt: eventAt,
+                }));
             }
             if (updateType === 'available_commands_update') {
                 const availableCommands = Array.isArray(update.availableCommands)
@@ -969,8 +1049,21 @@ export const useArkDesktopRuntime = () => {
                     title: '分析过程',
                     status: '分析中',
                     kind: 'reasoning',
+                    semanticStage: '正在分析需求',
+                    visibility: 'diagnostic',
                     output: redactRuntimeText(chunk),
                 }, { appendOutput: true }));
+                updateTask(taskId, (value) => ({
+                    ...value,
+                    execution: {
+                        ...value.execution,
+                        status: value.status === 'running' ? 'running' : value.execution?.status || 'running',
+                        currentStage: '正在分析需求',
+                        lastActivityAt: Date.now(),
+                        startedAt: value.execution?.startedAt || value.createdAt,
+                    },
+                    updatedAt: Date.now(),
+                }));
                 return;
             }
             if (updateType === 'plan') {
@@ -982,8 +1075,7 @@ export const useArkDesktopRuntime = () => {
             if (updateType === 'tool_call' || updateType === 'tool_call_update') {
                 const id = String(update.toolCallId || update.tool_call_id || update.toolCall?.toolCallId || update.toolCall?.tool_call_id || createId('tool'));
                 updateTask(taskId, (task) => {
-                    const tools = task.tools.slice();
-                    const existingIndex = tools.findIndex((tool) => tool.id === id);
+                    const existing = task.tools.find((tool) => tool.id === id);
                     const input = formatToolDetail(update.rawInput ?? update.raw_input ?? update.toolCall?.rawInput ?? update.toolCall?.raw_input);
                     const structuredContent = update.content ?? update.toolCall?.content;
                     const fileChanges = extractFileChanges(structuredContent);
@@ -995,21 +1087,24 @@ export const useArkDesktopRuntime = () => {
                         ?? update.toolCall?.isReadOnly
                         ?? update.toolCall?.is_read_only;
                     const readOnly = typeof readOnlyValue === 'boolean' ? readOnlyValue : undefined;
-                    const nextTool = {
+                    const kind = update.kind || update.toolCall?.kind;
+                    const title = formatDisplayToolTitle(update.title || update.toolCall?.title);
+                    const nextStatus = statusLabel(update.status);
+                    const recovered = Boolean(existing && /失败|failed|error/i.test(existing.status) && /已完成|completed|success|done/i.test(nextStatus));
+                    return upsertTaskActivity(task, {
                         id,
-                        title: formatDisplayToolTitle(update.title || update.toolCall?.title),
-                        status: statusLabel(update.status),
-                        kind: update.kind || update.toolCall?.kind,
+                        title,
+                        status: nextStatus,
+                        kind,
+                        semanticStage: semanticStageForActivity(kind, title),
+                        visibility: /失败|failed|error/i.test(nextStatus) ? 'diagnostic' : activityVisibilityForKind(kind),
+                        severity: /失败|failed|error/i.test(nextStatus) ? 'warning' : 'info',
+                        ...(recovered ? { recovered: true } : {}),
                         ...(readOnly === undefined ? {} : { readOnly }),
                         ...(input ? { input } : {}),
                         ...(output ? { output } : {}),
                         ...(fileChanges.length > 0 ? { fileChanges } : {}),
-                        startedAt: existingIndex >= 0 ? tools[existingIndex].startedAt || tools[existingIndex].updatedAt : Date.now(),
-                        updatedAt: Date.now(),
-                    };
-                    if (existingIndex >= 0) tools[existingIndex] = { ...tools[existingIndex], ...nextTool };
-                    else tools.push(nextTool);
-                    return { ...task, tools, updatedAt: Date.now() };
+                    });
                 });
                 return;
             }
@@ -1021,6 +1116,8 @@ export const useArkDesktopRuntime = () => {
                     title: formatDisplayToolTitle(update.name, '正在准备工具调用'),
                     status: '运行中',
                     kind: update.name || 'tool',
+                    semanticStage: semanticStageForActivity(update.name, update.name),
+                    visibility: activityVisibilityForKind(update.name),
                     ...(chunk ? { input: `${task.tools.find((tool) => tool.id === id)?.input || ''}${chunk}`.slice(-12_000) } : {}),
                 }));
                 return;
@@ -1170,16 +1267,27 @@ export const useArkDesktopRuntime = () => {
             if (updateType?.startsWith('auto_recovery_')) {
                 const exhausted = updateType === 'auto_recovery_exhausted';
                 const detail = redactRuntimeText(String(update.error || '正在恢复会话'));
-                updateTask(taskId, (task) => ({
-                    ...upsertTaskActivity(task, {
+                updateTask(taskId, (task) => {
+                    const next = upsertTaskActivity(task, {
                         id: 'auto-recovery',
                         title: exhausted ? '会话自动恢复失败' : `正在自动恢复 ${Number(update.attempt || 1)}/${Number(update.max_retries || 1)}`,
                         status: exhausted ? '失败' : '运行中',
                         kind: 'recovery',
+                        visibility: 'diagnostic',
                         output: detail,
-                    }),
-                    ...(exhausted ? { status: 'failed' as const, error: detail } : {}),
-                }));
+                    });
+                    return {
+                        ...next,
+                        execution: {
+                            ...next.execution,
+                            status: exhausted ? 'failed' : 'recovering',
+                            currentStage: exhausted ? next.execution?.currentStage : '正在恢复执行状态',
+                            lastActivityAt: Date.now(),
+                            ...(exhausted ? { completedAt: Date.now() } : {}),
+                        },
+                        ...(exhausted ? { status: 'failed' as const, error: detail } : {}),
+                    };
+                });
                 return;
             }
             if (updateType?.startsWith('memory_')) {
@@ -1369,6 +1477,16 @@ export const useArkDesktopRuntime = () => {
                 ...current.filter((item) => item.sessionId !== sessionId || JSON.stringify(item.requestId) !== requestKey),
                 request,
             ]);
+            updateTask(taskId, (task) => ({
+                ...task,
+                execution: {
+                    ...task.execution,
+                    status: 'waiting_user',
+                    currentStage: '等待你的确认',
+                    lastActivityAt: Date.now(),
+                },
+                updatedAt: Date.now(),
+            }));
             return;
         }
 
@@ -1400,6 +1518,16 @@ export const useArkDesktopRuntime = () => {
                 ...current.filter((item) => item.sessionId !== sessionId || JSON.stringify(item.requestId) !== requestKey),
                 request,
             ]);
+            updateTask(taskId, (task) => ({
+                ...task,
+                execution: {
+                    ...task.execution,
+                    status: 'waiting_user',
+                    currentStage: '等待你的选择',
+                    lastActivityAt: Date.now(),
+                },
+                updatedAt: Date.now(),
+            }));
             return;
         }
 
@@ -1423,6 +1551,16 @@ export const useArkDesktopRuntime = () => {
                 ...current.filter((item) => item.sessionId !== sessionId || JSON.stringify(item.requestId) !== requestKey),
                 request,
             ]);
+            updateTask(taskId, (task) => ({
+                ...task,
+                execution: {
+                    ...task.execution,
+                    status: 'waiting_user',
+                    currentStage: '等待计划确认',
+                    lastActivityAt: Date.now(),
+                },
+                updatedAt: Date.now(),
+            }));
             return;
         }
 
@@ -1444,7 +1582,18 @@ export const useArkDesktopRuntime = () => {
         if (event.eventType === 'runtime_error') {
             const message = redactRuntimeText(event.payload?.message || '本地智能运行时发生错误');
             if (taskId) {
-                updateTask(taskId, (task) => ({ ...task, status: 'failed', error: message, updatedAt: Date.now() }));
+                updateTask(taskId, (task) => ({
+                    ...task,
+                    status: 'failed',
+                    error: message,
+                    execution: {
+                        ...task.execution,
+                        status: 'failed',
+                        completedAt: Date.now(),
+                        lastActivityAt: Date.now(),
+                    },
+                    updatedAt: Date.now(),
+                }));
             } else {
                 setRuntimeError(message);
             }
@@ -1460,7 +1609,18 @@ export const useArkDesktopRuntime = () => {
             setUserQuestions((current) => current.filter((item) => item.taskId !== taskId));
             setPlanApprovals((current) => current.filter((item) => item.taskId !== taskId));
             updateTask(taskId, (task) => task.runtimeProcessId === processId && task.status === 'running'
-                ? { ...task, status: 'failed', error: '本地任务进程已退出', updatedAt: Date.now() }
+                ? {
+                    ...task,
+                    status: 'failed',
+                    error: '本地任务进程已退出',
+                    execution: {
+                        ...task.execution,
+                        status: 'failed',
+                        completedAt: Date.now(),
+                        lastActivityAt: Date.now(),
+                    },
+                    updatedAt: Date.now(),
+                }
                 : task);
         }
 
@@ -1605,6 +1765,12 @@ export const useArkDesktopRuntime = () => {
             permissionMode: current.settings.execution.permissionMode,
             alwaysApprove: false,
             status: 'running',
+            execution: {
+                status: 'running',
+                currentStage: '正在理解需求',
+                startedAt: now,
+                lastActivityAt: now,
+            },
             messages: [{ id: createId('message'), role: 'user', content: effectivePrompt, createdAt: now }],
             tools: [],
             automationId,
@@ -1742,6 +1908,12 @@ export const useArkDesktopRuntime = () => {
                         updateTask(taskId, (value) => ({
                             ...value,
                             status: 'waiting_authorization',
+                            execution: {
+                                ...value.execution,
+                                status: 'waiting_user',
+                                currentStage: '等待本地模型授权',
+                                lastActivityAt: Date.now(),
+                            },
                             error: undefined,
                             modelKeyAuthorization: { providerId, action: 'start' },
                             updatedAt: Date.now(),
@@ -2243,15 +2415,24 @@ export const useArkDesktopRuntime = () => {
             }
             cancelledTaskIdsRef.current.delete(taskId);
             const shouldQueue = task.engine !== 'headless' && task.status === 'running';
+            const promptStartedAt = Date.now();
             updateTask(taskId, (value) => ({
                 ...value,
                 status: 'running',
+                execution: {
+                    ...value.execution,
+                    status: 'running',
+                    currentStage: shouldQueue ? value.execution?.currentStage || '正在继续执行' : '正在继续执行',
+                    completedAt: undefined,
+                    lastActivityAt: promptStartedAt,
+                    startedAt: shouldQueue ? value.execution?.startedAt || promptStartedAt : promptStartedAt,
+                },
                 error: undefined,
                 modelKeyAuthorization: undefined,
                 messages: shouldQueue
                     ? value.messages
-                    : [...value.messages, { id: createId('message'), role: 'user', content: displayPrompt, createdAt: Date.now() }],
-                updatedAt: Date.now(),
+                    : [...value.messages, { id: createId('message'), role: 'user', content: displayPrompt, createdAt: promptStartedAt }],
+                updatedAt: promptStartedAt,
             }));
             if (task.engine === 'headless') {
                 const model = task.model || current.settings.grokModel;
@@ -2314,6 +2495,12 @@ export const useArkDesktopRuntime = () => {
                         return {
                             ...value,
                             status: 'waiting_authorization',
+                            execution: {
+                                ...value.execution,
+                                status: 'waiting_user',
+                                currentStage: '等待本地模型授权',
+                                lastActivityAt: Date.now(),
+                            },
                             error: undefined,
                             modelKeyAuthorization: { providerId, action: 'follow_up', prompt },
                             messages,
@@ -2799,6 +2986,20 @@ export const useArkDesktopRuntime = () => {
             setPermissions((current) => current.filter((item) => (
                 item.sessionId !== permission.sessionId || JSON.stringify(item.requestId) !== requestKey
             )));
+            const resumedAt = Date.now();
+            updateTask(permission.taskId, (task) => ({
+                ...task,
+                status: task.status === 'waiting_authorization' ? 'running' : task.status,
+                execution: {
+                    ...task.execution,
+                    status: 'running',
+                    currentStage: '正在继续执行',
+                    completedAt: undefined,
+                    startedAt: resumedAt,
+                    lastActivityAt: resumedAt,
+                },
+                updatedAt: resumedAt,
+            }));
         } catch (error) {
             const message = redactRuntimeText(error instanceof Error ? error.message : String(error));
             updateTask(permission.taskId, (task) => ({ ...task, error: message, updatedAt: Date.now() }));
@@ -2813,6 +3014,20 @@ export const useArkDesktopRuntime = () => {
             setUserQuestions((current) => current.filter((item) => (
                 item.sessionId !== userQuestion.sessionId || JSON.stringify(item.requestId) !== requestKey
             )));
+            const resumedAt = Date.now();
+            updateTask(userQuestion.taskId, (task) => ({
+                ...task,
+                status: task.status === 'waiting_authorization' ? 'running' : task.status,
+                execution: {
+                    ...task.execution,
+                    status: 'running',
+                    currentStage: '正在继续执行',
+                    completedAt: undefined,
+                    startedAt: resumedAt,
+                    lastActivityAt: resumedAt,
+                },
+                updatedAt: resumedAt,
+            }));
         } catch (error) {
             const message = redactRuntimeText(error instanceof Error ? error.message : String(error));
             updateTask(userQuestion.taskId, (task) => ({ ...task, error: message, updatedAt: Date.now() }));
@@ -2827,6 +3042,20 @@ export const useArkDesktopRuntime = () => {
             setPlanApprovals((current) => current.filter((item) => (
                 item.sessionId !== planApproval.sessionId || JSON.stringify(item.requestId) !== requestKey
             )));
+            const resumedAt = Date.now();
+            updateTask(planApproval.taskId, (task) => ({
+                ...task,
+                status: task.status === 'waiting_authorization' ? 'running' : task.status,
+                execution: {
+                    ...task.execution,
+                    status: 'running',
+                    currentStage: '正在执行已确认计划',
+                    completedAt: undefined,
+                    startedAt: resumedAt,
+                    lastActivityAt: resumedAt,
+                },
+                updatedAt: resumedAt,
+            }));
         } catch (error) {
             const message = redactRuntimeText(error instanceof Error ? error.message : String(error));
             updateTask(planApproval.taskId, (task) => ({ ...task, error: message, updatedAt: Date.now() }));

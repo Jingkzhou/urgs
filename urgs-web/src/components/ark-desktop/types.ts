@@ -53,6 +53,12 @@ export interface ArkDesktopToolActivity {
     title: string;
     status: string;
     kind?: string;
+    visibility?: 'summary' | 'diagnostic' | 'action';
+    semanticStage?: string;
+    severity?: 'info' | 'warning' | 'error';
+    blocking?: boolean;
+    recovered?: boolean;
+    attempt?: number;
     readOnly?: boolean;
     input?: string;
     output?: string;
@@ -60,6 +66,15 @@ export interface ArkDesktopToolActivity {
     changesRevertedAt?: number;
     startedAt?: number;
     updatedAt: number;
+}
+
+export interface ArkDesktopExecutionState {
+    status: 'running' | 'waiting_user' | 'recovering' | 'completed' | 'completed_limited' | 'failed' | 'stopped';
+    currentStage?: string;
+    lastActivityAt?: number;
+    startedAt?: number;
+    completedAt?: number;
+    resultLimitations?: string[];
 }
 
 export interface ArkDesktopDiffHunk {
@@ -261,6 +276,7 @@ export interface ArkDesktopTask {
     runtimeMode?: string;
     cliServiceId?: string;
     status: ArkDesktopTaskStatus;
+    execution?: ArkDesktopExecutionState;
     messages: ArkDesktopMessage[];
     tools: ArkDesktopToolActivity[];
     queueEntries?: ArkDesktopQueueEntry[];

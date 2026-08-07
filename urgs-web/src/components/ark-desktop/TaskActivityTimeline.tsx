@@ -1,53 +1,52 @@
-import React, { useState } from 'react';
+import React, { useEffect, useMemo, useState } from 'react';
 import {
-    AlertCircle, Brain, ChevronDown, ChevronRight, Circle, Eye, FileText, LoaderCircle, Search, SquareTerminal, Target, Workflow, Wrench,
+    AlertCircle, CheckCircle2, ChevronDown, ChevronRight, Circle, FileText, LoaderCircle, Search, ShieldAlert, SquareTerminal, Wrench,
 } from 'lucide-react';
-import type { ArkDesktopTask } from './types';
+import type { ArkDesktopExecutionState, ArkDesktopTask, ArkDesktopToolActivity } from './types';
 
-type Tool = ArkDesktopTask['tools'][number];
+type Tool = ArkDesktopToolActivity;
 
+const hiddenKinds = new Set(['diagnostic', 'context', 'memory', 'recovery', 'inference']);
+
+const isHidden = (tool: Tool) => tool.visibility === 'diagnostic' || hiddenKinds.has(String(tool.kind || '').toLowerCase());
 const isReasoning = (tool: Tool) => tool.kind === 'reasoning';
-const isGoal = (tool: Tool) => tool.kind === 'goal';
-const isWorkflow = (tool: Tool) => tool.kind === 'workflow';
-const isDiagnostic = (tool: Tool) => tool.kind === 'diagnostic';
 
 const getToolState = (status: string) => {
-    if (/已完成|已记录|完成|成功|取消|不可用|未生成|completed|recorded|success|cancelled|canceled|unavailable|done/i.test(status)) return 'completed';
     if (/失败|错误|退出码|failed|error/i.test(status)) return 'failed';
+    if (/已完成|已记录|完成|成功|取消|不可用|未生成|completed|recorded|success|cancelled|canceled|unavailable|done/i.test(status)) return 'completed';
     if (/等待|pending/i.test(status)) return 'pending';
     return 'running';
 };
 
-const getToolIcon = (tool: Tool) => {
-    if (isReasoning(tool)) return Brain;
-    if (isGoal(tool)) return Target;
-    if (isWorkflow(tool)) return Workflow;
+const getFallbackStage = (tool: Tool) => {
     const hint = `${tool.kind || ''} ${tool.title}`.toLowerCase();
-    if (/search|find|grep|检索|搜索/.test(hint)) return Search;
-    if (/read|读取/.test(hint)) return Eye;
-    if (/write|edit|patch|file|文件|写入|编辑|修改/.test(hint)) return FileText;
-    if (/code|shell|terminal|command|命令|运行/.test(hint)) return SquareTerminal;
-    return Wrench;
+    if (/write|edit|patch|写入|编辑|修改/.test(hint)) return '正在修改代码';
+    if (/read|file|读取|文件/.test(hint)) return '正在检查项目文件';
+    if (/search|find|grep|检索|搜索/.test(hint)) return '正在搜索相关代码';
+    if (/shell|terminal|command|命令|运行|compile|test|lint|build|编译|测试|验证/.test(hint)) return '正在运行验证';
+    if (/git|diff|branch|变更/.test(hint)) return '正在检查代码变更';
+    if (/browser|网页|页面/.test(hint)) return '正在检查页面表现';
+    return isReasoning(tool) ? '正在分析需求' : '正在执行任务';
 };
 
-const getToolVerb = (tool: Tool, state: ReturnType<typeof getToolState>) => {
-    if (isReasoning(tool)) return state === 'failed' ? '分析失败' : state === 'completed' ? '已完成分析' : '正在分析';
-    if (isGoal(tool)) return state === 'failed' ? '目标执行失败' : state === 'completed' ? '持续目标已结束' : '持续目标执行中';
-    if (isWorkflow(tool)) return state === 'failed' ? '工作流执行失败' : state === 'completed' ? '工作流已结束' : '工作流执行中';
-    const hint = `${tool.kind || ''} ${tool.title}`.toLowerCase();
-    const running = state === 'running' || state === 'pending';
-    if (/write|edit|patch|写入|编辑|修改/.test(hint)) return running ? '正在编辑' : '已编辑';
-    if (/read|file|读取|文件/.test(hint)) return running ? '正在读取' : '已读取';
-    if (/search|find|grep|检索|搜索/.test(hint)) return running ? '正在搜索' : '已搜索';
-    if (/code|shell|terminal|command|命令|运行/.test(hint)) return running ? '正在运行' : '已运行';
-    return running ? '正在使用' : '已使用';
+const getStage = (tool: Tool) => {
+    const value = tool.semanticStage || getFallbackStage(tool);
+    if (/^(正在|等待|已|执行)/.test(value)) return value;
+    return `正在${value}`;
 };
 
-const getStatusIcon = (state: ReturnType<typeof getToolState>) => {
-    if (state === 'failed') return AlertCircle;
-    if (state === 'running') return LoaderCircle;
-    if (state === 'pending') return Circle;
-    return null;
+const formatDuration = (milliseconds: number) => {
+    const seconds = Math.max(0, Math.round(milliseconds / 1000));
+    if (seconds < 60) return `${seconds} 秒`;
+    const minutes = Math.floor(seconds / 60);
+    return `${minutes} 分 ${seconds % 60} 秒`;
+};
+
+const formatActivityAge = (milliseconds: number) => {
+    const seconds = Math.max(0, Math.floor(milliseconds / 1000));
+    if (seconds <= 3) return '刚刚仍有活动';
+    if (seconds < 60) return `${seconds} 秒前仍有活动`;
+    return `${Math.floor(seconds / 60)} 分钟前有活动`;
 };
 
 const ToolDetail: React.FC<{ label: string; value: string }> = ({ label, value }) => (
@@ -57,72 +56,145 @@ const ToolDetail: React.FC<{ label: string; value: string }> = ({ label, value }
     </div>
 );
 
-const ToolActivityItem: React.FC<{ tool: Tool }> = ({ tool }) => {
-    const [detailsOpen, setDetailsOpen] = useState(false);
-    const hasDetails = Boolean(tool.input || tool.output);
-    const state = getToolState(tool.status);
-    const ToolIcon = getToolIcon(tool);
-    const StatusIcon = getStatusIcon(state);
-    const statusColor = state === 'failed' ? 'text-red-500' : 'text-slate-400';
-
+const ActivityDetail: React.FC<{ tool: Tool }> = ({ tool }) => {
+    const [open, setOpen] = useState(false);
+    const hasDetails = Boolean(tool.input || tool.output || tool.fileChanges?.length);
+    if (!hasDetails) return null;
     return (
-        <div className="py-1">
-            <button
-                type="button"
-                disabled={!hasDetails}
-                onClick={() => setDetailsOpen((open) => !open)}
-                className={`group flex w-full min-w-0 items-center gap-2 rounded-md px-1.5 py-1.5 text-left transition ${hasDetails ? 'hover:bg-slate-50' : 'cursor-default'}`}
-                aria-expanded={hasDetails ? detailsOpen : undefined}
-            >
-                <span className={`flex h-5 w-5 shrink-0 items-center justify-center ${statusColor}`}>
-                    {StatusIcon ? <StatusIcon size={16} className={state === 'running' ? 'animate-spin' : ''} /> : <ToolIcon size={17} strokeWidth={1.8} />}
-                </span>
-                <span className={`shrink-0 text-[14px] font-medium ${state === 'failed' ? 'text-red-600' : 'text-slate-500'}`}>{getToolVerb(tool, state)}</span>
-                <span className="flex min-w-0 max-w-full items-center gap-1">
-                    <span className="min-w-0 truncate text-[14px] text-slate-400" title={tool.title}>{tool.title}</span>
-                    {tool.readOnly && <span className="shrink-0 rounded bg-slate-100 px-1.5 py-0.5 text-[10px] text-slate-400">只读</span>}
-                    {hasDetails && <ChevronRight size={15} className={`shrink-0 text-slate-300 opacity-0 transition-all group-hover:opacity-100 group-focus-visible:opacity-100 ${detailsOpen ? 'rotate-90' : ''}`} />}
-                </span>
+        <div className="mt-1.5 ml-7">
+            <button type="button" onClick={() => setOpen((value) => !value)} className="flex items-center gap-1 text-[11px] text-slate-400 hover:text-slate-600" aria-expanded={open}>
+                <ChevronRight size={13} className={open ? 'rotate-90' : ''} />
+                查看执行数据
             </button>
-            {detailsOpen && hasDetails && <div className="ml-7 mr-1">{tool.input && <ToolDetail label="调用参数" value={tool.input} />}{tool.output && <ToolDetail label="返回结果" value={tool.output} />}</div>}
+            {open && <div className="mt-1.5">
+                {tool.input && <ToolDetail label="调用参数" value={tool.input} />}
+                {tool.output && <ToolDetail label="返回结果" value={tool.output} />}
+                {tool.fileChanges?.length ? <ToolDetail label="文件变更" value={tool.fileChanges.map((change) => `${change.path} (+${change.additions}/-${change.deletions})`).join('\n')} /> : null}
+            </div>}
         </div>
     );
 };
 
-const TaskActivityTimeline: React.FC<{ tools: ArkDesktopTask['tools'] }> = ({ tools }) => {
+const StageIcon: React.FC<{ state: ReturnType<typeof getToolState>; active: boolean }> = ({ state, active }) => {
+    if (state === 'failed') return <AlertCircle size={15} className="text-amber-500" />;
+    if (active) return <LoaderCircle size={15} className="animate-spin text-blue-500" />;
+    if (state === 'pending') return <Circle size={14} className="text-slate-300" />;
+    return <CheckCircle2 size={15} className="text-emerald-500" />;
+};
+
+const getSummaryIcon = (stage: string, active: boolean, failed: boolean) => {
+    if (failed) return ShieldAlert;
+    if (active) return LoaderCircle;
+    if (/检查|搜索/.test(stage)) return Search;
+    if (/修改/.test(stage)) return FileText;
+    if (/验证|运行/.test(stage)) return SquareTerminal;
+    return Wrench;
+};
+
+interface TaskActivityTimelineProps {
+    tools: ArkDesktopTask['tools'];
+    taskStatus?: ArkDesktopTask['status'];
+    execution?: ArkDesktopExecutionState;
+    runStartedAt?: number;
+    isActive?: boolean;
+}
+
+const TaskActivityTimeline: React.FC<TaskActivityTimelineProps> = ({ tools, taskStatus, execution, runStartedAt, isActive }) => {
     const [expanded, setExpanded] = useState(false);
-    const visibleTools = tools.filter((tool) => !isDiagnostic(tool));
-    if (visibleTools.length === 0) return null;
-    const latestTool = visibleTools[visibleTools.length - 1];
-    const hasFailure = visibleTools.some((tool) => getToolState(tool.status) === 'failed');
-    const isRunning = visibleTools.some((tool) => ['running', 'pending'].includes(getToolState(tool.status)));
-    const toolCalls = visibleTools.filter((tool) => !isReasoning(tool));
-    const onlyReasoning = toolCalls.length === 0;
-    const onlyGoals = toolCalls.length > 0 && toolCalls.every(isGoal);
-    const onlyWorkflows = toolCalls.length > 0 && toolCalls.every(isWorkflow);
-    const summary = hasFailure
-        ? (onlyReasoning ? '分析过程出现错误' : '工具调用存在失败')
+    const [diagnosticsOpen, setDiagnosticsOpen] = useState(false);
+    const [now, setNow] = useState(() => Date.now());
+    const summaryTools = useMemo(() => tools.filter((tool) => !isHidden(tool) && !isReasoning(tool)), [tools]);
+    const diagnosticTools = useMemo(() => tools.filter((tool) => isHidden(tool) && !isReasoning(tool)), [tools]);
+    const allWorkTools = useMemo(() => tools.filter((tool) => !isReasoning(tool)), [tools]);
+    const latestActivityAt = Math.max(
+        execution?.lastActivityAt || 0,
+        ...tools.map((tool) => tool.updatedAt || tool.startedAt || 0),
+    );
+    const activeTool = [...summaryTools].reverse().find((tool) => ['running', 'pending'].includes(getToolState(tool.status)));
+    const failedTool = summaryTools.some((tool) => getToolState(tool.status) === 'failed' && !tool.recovered);
+    const active = isActive ?? Boolean(activeTool);
+    const isRunning = active && (taskStatus === 'running' || execution?.status === 'running' || execution?.status === 'recovering' || Boolean(activeTool));
+    const isWaiting = active && (taskStatus === 'waiting_authorization' || execution?.status === 'waiting_user');
+    const currentStage = isWaiting && active
+        ? execution?.currentStage || '等待你的确认'
+        : active && activeTool
+            ? getStage(activeTool)
+            : active
+                ? execution?.currentStage || (summaryTools.length > 0 ? getStage(summaryTools[summaryTools.length - 1]) : '正在分析需求')
+                : summaryTools.length > 0 ? getStage(summaryTools[summaryTools.length - 1]) : '已完成执行步骤';
+    const SummaryIcon = getSummaryIcon(currentStage, isRunning, failedTool || taskStatus === 'failed');
+    const completedCount = allWorkTools.filter((tool) => getToolState(tool.status) === 'completed').length;
+    const totalCount = allWorkTools.length;
+    const elapsedStartAt = runStartedAt || execution?.startedAt;
+    const elapsed = elapsedStartAt ? Math.max(0, (execution?.completedAt || now) - elapsedStartAt) : 0;
+
+    useEffect(() => {
+        if (!isRunning && !isWaiting) return undefined;
+        const timer = window.setInterval(() => setNow(Date.now()), 1000);
+        return () => window.clearInterval(timer);
+    }, [isRunning, isWaiting]);
+
+    if (tools.length === 0 && !execution?.currentStage) return null;
+
+    const groupedStages = summaryTools.reduce<Array<{ label: string; tools: Tool[] }>>((groups, tool) => {
+        const label = getStage(tool);
+        const last = groups[groups.length - 1];
+        if (last?.label === label) last.tools.push(tool);
+        else groups.push({ label, tools: [tool] });
+        return groups;
+    }, []);
+
+    const statusText = isWaiting
+        ? '等待你的操作'
         : isRunning
-            ? (onlyReasoning ? '正在分析' : onlyGoals ? '持续目标执行中' : onlyWorkflows ? '工作流执行中' : '正在调用工具')
-            : onlyReasoning
-                ? '已完成分析'
-                : onlyGoals
-                    ? '持续目标已结束'
-                    : onlyWorkflows
-                        ? '工作流已结束'
-                : `已调用 ${toolCalls.length} 个工具`;
+            ? `${elapsed > 0 ? `已运行 ${formatDuration(elapsed)} · ` : ''}${formatActivityAge(now - latestActivityAt)}`
+            : taskStatus === 'failed' || execution?.status === 'failed'
+                ? '执行未完成'
+                : totalCount > 0
+                    ? `已完成 ${completedCount}/${totalCount} 项`
+                    : '已记录执行结果';
 
     return (
-        <section className="my-1.5" aria-label="工具调用记录">
-            <button type="button" onClick={() => setExpanded((value) => !value)} className={`group flex w-full min-w-0 items-center gap-2 rounded-md px-1.5 py-1.5 text-left transition hover:bg-slate-50 ${hasFailure ? 'text-red-600' : 'text-slate-500'}`} aria-expanded={expanded}>
-                {hasFailure ? <AlertCircle size={17} /> : isRunning ? <LoaderCircle size={17} className="animate-spin text-slate-400" /> : onlyReasoning ? <Brain size={17} className="text-slate-400" /> : onlyGoals ? <Target size={17} className="text-slate-400" /> : onlyWorkflows ? <Workflow size={17} className="text-slate-400" /> : <Wrench size={17} className="text-slate-400" />}
-                <span className="shrink-0 text-[14px] font-medium">{summary}</span>
-                <span className="flex min-w-0 max-w-full items-center gap-1">
-                    {latestTool && !isReasoning(latestTool) && <span className="min-w-0 truncate text-[13px] text-slate-400">{latestTool.title}</span>}
-                    <ChevronDown size={15} className={`shrink-0 text-slate-300 opacity-0 transition-all group-hover:opacity-100 group-focus-visible:opacity-100 ${expanded ? '' : '-rotate-90'}`} />
+        <section className="my-1.5" aria-label="执行过程">
+            <button type="button" onClick={() => setExpanded((value) => !value)} className={`group flex w-full min-w-0 items-center gap-2 rounded-lg px-2 py-2 text-left transition hover:bg-slate-50 ${failedTool || taskStatus === 'failed' ? 'text-amber-700' : 'text-slate-600'}`} aria-expanded={expanded}>
+                <span className="flex h-6 w-6 shrink-0 items-center justify-center rounded-md bg-slate-50">
+                    <SummaryIcon size={16} className={isRunning ? 'animate-spin text-blue-500' : failedTool || taskStatus === 'failed' ? 'text-amber-500' : 'text-slate-400'} />
+                </span>
+                <span className="min-w-0 flex-1">
+                    <span className="block truncate text-[14px] font-medium">{currentStage}</span>
+                    <span className="mt-0.5 block truncate text-[11px] text-slate-400">{statusText}</span>
+                </span>
+                <span className="flex shrink-0 items-center gap-1 text-[11px] text-slate-400">
+                    <ChevronDown size={15} className={`transition-transform ${expanded ? '' : '-rotate-90'}`} />
                 </span>
             </button>
-            {expanded && <div className="mt-1.5 space-y-0.5 border-l border-slate-200 pl-3">{visibleTools.map((tool) => <ToolActivityItem key={tool.id} tool={tool} />)}</div>}
+            {expanded && <div className="mt-1.5 space-y-2 border-l border-slate-200 pl-4">
+                {groupedStages.length > 0 ? groupedStages.map((group) => {
+                    const active = group.tools.some((tool) => ['running', 'pending'].includes(getToolState(tool.status)));
+                    const state = group.tools.some((tool) => getToolState(tool.status) === 'failed') ? 'failed' : active ? 'running' : 'completed';
+                    return <div key={`${group.label}-${group.tools[0]?.id}`} className="py-0.5">
+                        <div className="flex items-center gap-2 text-[12px] text-slate-600">
+                            <StageIcon state={state} active={active} />
+                            <span className="min-w-0 flex-1 truncate">{group.label}</span>
+                            <span className="shrink-0 text-[10px] text-slate-400">{group.tools.length} 项</span>
+                        </div>
+                        {group.tools.map((tool) => <ActivityDetail key={tool.id} tool={tool} />)}
+                    </div>;
+                }) : <div className="py-1 text-[12px] text-slate-400">{active ? '当前阶段正在准备中' : '已完成执行步骤'}</div>}
+                {diagnosticTools.length > 0 && <div className="pt-1">
+                    <button type="button" onClick={() => setDiagnosticsOpen((value) => !value)} className="flex items-center gap-1.5 text-[11px] text-slate-400 hover:text-slate-600" aria-expanded={diagnosticsOpen}>
+                        <ChevronRight size={13} className={diagnosticsOpen ? 'rotate-90' : ''} />
+                        {diagnosticsOpen ? '隐藏技术诊断' : `查看技术诊断（${diagnosticTools.length} 条）`}
+                    </button>
+                    {diagnosticsOpen && <div className="mt-1.5 space-y-2">
+                        {diagnosticTools.map((tool) => <div key={tool.id} className="rounded-lg bg-slate-50 px-2.5 py-2">
+                            <div className="flex items-center gap-2 text-[11px] text-slate-500"><AlertCircle size={13} className={tool.recovered ? 'text-emerald-500' : 'text-slate-400'} /><span className="min-w-0 flex-1 truncate">{tool.recovered ? '内部异常已自动恢复' : tool.title}</span><span className="shrink-0 text-[10px] text-slate-400">{tool.status}</span></div>
+                            {tool.input && <ToolDetail label="调用参数" value={tool.input} />}
+                            {tool.output && <ToolDetail label="返回结果" value={tool.output} />}
+                        </div>)}
+                    </div>}
+                </div>}
+            </div>}
         </section>
     );
 };
