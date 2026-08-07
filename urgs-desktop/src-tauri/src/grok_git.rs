@@ -7,6 +7,7 @@ use std::path::{Component, Path, PathBuf};
 use std::process::Command;
 use std::time::{SystemTime, UNIX_EPOCH};
 use tauri::{AppHandle, Manager};
+use tauri_plugin_opener::OpenerExt;
 
 const WORKTREE_RECORDS_FILE: &str = "grok-git-worktrees.json";
 const AUDIT_FILE: &str = "grok-git-audit.jsonl";
@@ -599,6 +600,58 @@ fn validate_git_paths(paths: &[String]) -> Result<Vec<String>, String> {
     paths.iter().map(|path| relative_path(path)).collect()
 }
 
+fn existing_workspace_file(workspace: &Path, relative: &str) -> Result<PathBuf, String> {
+    let candidate = workspace.join(Path::new(relative));
+    if !candidate.is_file() {
+        return Err(format!("工作区文件不存在: {relative}"));
+    }
+    let canonical =
+        fs::canonicalize(&candidate).map_err(|error| format!("无法解析工作区文件: {error}"))?;
+    if !canonical.starts_with(workspace) {
+        return Err("文件路径不能越过工作区根目录".to_string());
+    }
+    Ok(canonical)
+}
+
+fn materialize_head_file(
+    app: &AppHandle,
+    workspace: &Path,
+    repo_root: &Path,
+    relative: &str,
+) -> Result<PathBuf, String> {
+    let spec = format!("HEAD:{relative}");
+    let output = Command::new("git")
+        .arg("-C")
+        .arg(workspace)
+        .arg("show")
+        .arg(spec)
+        .output()
+        .map_err(|error| format!("无法读取 HEAD 文件，请确认已安装 Git: {error}"))?;
+    if !output.status.success() {
+        let detail = String::from_utf8_lossy(&output.stderr).trim().to_string();
+        return Err(if detail.is_empty() {
+            format!("HEAD 中不存在文件: {relative}")
+        } else {
+            format!("读取 HEAD 文件失败: {detail}")
+        });
+    }
+
+    let cache_root = app
+        .path()
+        .app_cache_dir()
+        .map_err(|error| format!("无法定位 HEAD 文件缓存目录: {error}"))?
+        .join("grok-git-head")
+        .join(repo_hash(repo_root));
+    let target = cache_root.join(Path::new(relative));
+    let parent = target
+        .parent()
+        .ok_or_else(|| "HEAD 文件缓存路径无效".to_string())?;
+    fs::create_dir_all(parent).map_err(|error| format!("创建 HEAD 文件缓存目录失败: {error}"))?;
+    fs::write(&target, output.stdout)
+        .map_err(|error| format!("写入 HEAD 文件缓存失败: {error}"))?;
+    Ok(target)
+}
+
 fn worktree_result(
     task_id: &str,
     mode: &str,
@@ -808,6 +861,102 @@ pub fn grok_git_diff(
         truncated,
         files: status.files,
     })
+}
+
+#[tauri::command]
+pub fn grok_git_open_file(
+    app: AppHandle,
+    workspace: String,
+    path: String,
+    revision: Option<String>,
+) -> Result<(), String> {
+    let workspace = canonical_directory(&workspace)?;
+    let repo_root = git_root(&workspace)?;
+    let relative = relative_path(&path)?;
+    let target = match revision.as_deref().map(str::trim) {
+        None => existing_workspace_file(&workspace, &relative)?,
+        Some("HEAD") => materialize_head_file(&app, &workspace, &repo_root, &relative)?,
+        Some(_) => return Err("只支持打开当前文件或 HEAD 版本".to_string()),
+    };
+    app.opener()
+        .open_path(target.to_string_lossy().to_string(), None::<String>)
+        .map_err(|error| format!("打开文件失败: {error}"))
+}
+
+#[tauri::command]
+pub fn grok_git_reveal_file(app: AppHandle, workspace: String, path: String) -> Result<(), String> {
+    let workspace = canonical_directory(&workspace)?;
+    git_root(&workspace)?;
+    let relative = relative_path(&path)?;
+    let candidate = workspace.join(Path::new(&relative));
+    let target = if candidate.is_file() {
+        existing_workspace_file(&workspace, &relative)?
+    } else {
+        candidate
+            .parent()
+            .map(Path::to_path_buf)
+            .unwrap_or_else(|| workspace.clone())
+    };
+    app.opener()
+        .reveal_item_in_dir(target)
+        .map_err(|error| format!("在查找器中显示文件失败: {error}"))
+}
+
+#[tauri::command]
+pub fn grok_git_add_to_ignore(
+    app: AppHandle,
+    workspace: String,
+    path: String,
+    task_id: Option<String>,
+) -> Result<GrokGitMutationResult, String> {
+    let workspace = canonical_directory(&workspace)?;
+    git_root(&workspace)?;
+    let relative = relative_path(&path)?;
+    let ignore_path = workspace.join(".gitignore");
+    if ignore_path.exists() {
+        let canonical_ignore = fs::canonicalize(&ignore_path)
+            .map_err(|error| format!("无法解析 .gitignore: {error}"))?;
+        if !canonical_ignore.starts_with(&workspace) {
+            return Err(".gitignore 路径不能越过工作区根目录".to_string());
+        }
+        if !canonical_ignore.is_file() {
+            return Err(".gitignore 不是文件".to_string());
+        }
+    }
+
+    let mut content = if ignore_path.exists() {
+        fs::read_to_string(&ignore_path)
+            .map_err(|error| format!("读取 .gitignore 失败: {error}"))?
+    } else {
+        String::new()
+    };
+    let rooted = format!("/{relative}");
+    let already_ignored = content
+        .lines()
+        .map(str::trim)
+        .any(|line| line == relative || line == rooted);
+    let message = if already_ignored {
+        format!("{relative} 已在 .gitignore 中")
+    } else {
+        if !content.is_empty() && !content.ends_with('\n') {
+            content.push('\n');
+        }
+        content.push_str(&relative);
+        content.push('\n');
+        fs::write(&ignore_path, content)
+            .map_err(|error| format!("写入 .gitignore 失败: {error}"))?;
+        format!("已将 {relative} 添加到 .gitignore")
+    };
+    mutation_result(
+        &app,
+        task_id.as_deref(),
+        "git.add_to_ignore",
+        &workspace,
+        Some(&relative),
+        message,
+        None,
+        true,
+    )
 }
 
 #[tauri::command]

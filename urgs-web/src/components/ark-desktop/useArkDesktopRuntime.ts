@@ -11,6 +11,9 @@ import {
     prepareGrokGitTask,
     getGrokGitStatus,
     getGrokGitDiff,
+    openGrokGitFile,
+    revealGrokGitFile,
+    addGrokGitToIgnore,
     stageGrokGit,
     unstageGrokGit,
     stashGrokGit,
@@ -1807,6 +1810,16 @@ export const useArkDesktopRuntime = () => {
         return getGrokGitDiff(task.workspace, path, staged);
     }, [taskForGit]);
 
+    const openTaskGitFile = useCallback((taskId: string, path: string, revision?: 'HEAD') => {
+        const task = taskForGit(taskId);
+        return openGrokGitFile(task.workspace, path, revision);
+    }, [taskForGit]);
+
+    const revealTaskGitFile = useCallback((taskId: string, path: string) => {
+        const task = taskForGit(taskId);
+        return revealGrokGitFile(task.workspace, path);
+    }, [taskForGit]);
+
     const generateTaskGitCommitMessage = useCallback(async (taskId: string) => {
         const task = taskForGit(taskId);
         const current = snapshotRef.current;
@@ -1885,6 +1898,11 @@ export const useArkDesktopRuntime = () => {
     const discardTaskGit = useCallback((taskId: string, paths: string[], includeUntracked: boolean, confirmed: boolean) => {
         const task = taskForGit(taskId);
         return applyTaskGitMutation(taskId, () => discardGrokGit(task.workspace, paths, includeUntracked, confirmed, taskId));
+    }, [applyTaskGitMutation, taskForGit]);
+
+    const addTaskGitToIgnore = useCallback((taskId: string, path: string) => {
+        const task = taskForGit(taskId);
+        return applyTaskGitMutation(taskId, () => addGrokGitToIgnore(task.workspace, path, taskId));
     }, [applyTaskGitMutation, taskForGit]);
 
     const commitTaskGit = useCallback((taskId: string, message: string, options: { amend?: boolean; signoff?: boolean; stageAll?: boolean } = {}) => {
@@ -3076,11 +3094,14 @@ export const useArkDesktopRuntime = () => {
         startTask,
         refreshTaskGitStatus,
         loadTaskGitDiff,
+        openTaskGitFile,
+        revealTaskGitFile,
         generateTaskGitCommitMessage,
         stageTaskGit,
         unstageTaskGit,
         stashTaskGit,
         discardTaskGit,
+        addTaskGitToIgnore,
         commitTaskGit,
         fetchTaskGit,
         listTaskGitRemotes,

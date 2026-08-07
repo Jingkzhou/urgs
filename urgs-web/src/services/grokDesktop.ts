@@ -631,6 +631,15 @@ export const getGrokGitStatus = (workspace: string) =>
 export const getGrokGitDiff = (workspace: string, path?: string, staged = false) =>
     invokeGrok<GrokGitDiff>('grok_git_diff', { workspace, path: path || null, staged });
 
+export const openGrokGitFile = (workspace: string, path: string, revision?: 'HEAD') =>
+    invokeGrok<void>('grok_git_open_file', { workspace, path, revision: revision || null });
+
+export const revealGrokGitFile = (workspace: string, path: string) =>
+    invokeGrok<void>('grok_git_reveal_file', { workspace, path });
+
+export const addGrokGitToIgnore = (workspace: string, path: string, taskId?: string) =>
+    invokeGrok<GrokGitMutationResult>('grok_git_add_to_ignore', { workspace, path, taskId: taskId || null });
+
 export const stageGrokGit = (workspace: string, paths: string[] = [], all = false, taskId?: string) =>
     invokeGrok<GrokGitMutationResult>('grok_git_stage', { workspace, paths, all, taskId: taskId || null });
 

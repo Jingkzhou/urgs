@@ -55,6 +55,7 @@ const GitReviewPanel: React.FC<GitReviewPanelProps> = ({ task, runtime, onClose 
     const [status, setStatus] = useState<GrokGitStatus | undefined>(task.gitContext?.status);
     const [diff, setDiff] = useState<GrokGitDiff | null>(null);
     const [selectedFile, setSelectedFile] = useState('');
+    const [diffPath, setDiffPath] = useState('');
     const [selectedPaths, setSelectedPaths] = useState<string[]>([]);
     const [showStagedDiff, setShowStagedDiff] = useState(false);
     const [worktrees, setWorktrees] = useState<GrokGitWorktree[]>([]);
@@ -155,6 +156,7 @@ const GitReviewPanel: React.FC<GitReviewPanelProps> = ({ task, runtime, onClose 
             setSelectedFile((current) => current && nextStatus.files.some((file) => file.path === current)
                 ? current
                 : nextStatus.files[0]?.path || '');
+            setDiffPath((current) => current && nextStatus.files.some((file) => file.path === current) ? current : '');
         } catch (nextError) {
             const message = nextError instanceof Error ? nextError.message : String(nextError);
             if (task.gitContext?.mode !== 'workspace' && /工作区不存在|does not exist|not found/i.test(message)) {
@@ -172,6 +174,7 @@ const GitReviewPanel: React.FC<GitReviewPanelProps> = ({ task, runtime, onClose 
     refreshRef.current = refresh;
 
     useEffect(() => {
+        setDiffPath('');
         void refreshRef.current();
     }, [task.id]);
 
@@ -179,22 +182,21 @@ const GitReviewPanel: React.FC<GitReviewPanelProps> = ({ task, runtime, onClose 
         setWorktreeRemoved(false);
     }, [task.id]);
 
-    const loadDiff = useCallback(async (staged = showStagedDiff) => {
+    const loadDiff = useCallback(async (path: string | undefined, staged: boolean) => {
         setBusy('diff');
         setError('');
         try {
-            setDiff(await loadTaskGitDiff(task.id, undefined, staged));
+            setDiff(await loadTaskGitDiff(task.id, path, staged));
         } catch (nextError) {
             setError(nextError instanceof Error ? nextError.message : String(nextError));
         } finally {
             setBusy(null);
         }
-    }, [loadTaskGitDiff, showStagedDiff, task.id]);
+    }, [loadTaskGitDiff, task.id]);
 
     useEffect(() => {
-        if (tab !== 'diff') return;
-        void loadDiff(showStagedDiff);
-    }, [loadDiff, showStagedDiff, tab]);
+        if (tab === 'diff') void loadDiff(diffPath || undefined, showStagedDiff);
+    }, [diffPath, loadDiff, showStagedDiff, tab]);
 
     const runSafe = async (label: string, action: () => Promise<unknown>, refreshAfter = true) => {
         setBusy(label);
@@ -267,6 +269,56 @@ const GitReviewPanel: React.FC<GitReviewPanelProps> = ({ task, runtime, onClose 
             '丢弃变更',
             async () => { await runtime.discardTaskGit(task.id, pathsForAction, false, true); },
         );
+    };
+
+    const openDiff = (path: string) => {
+        setSelectedFile(path);
+        setDiffPath(path);
+        setTab('diff');
+    };
+
+    const runFileAction = async (label: string, action: () => Promise<unknown>, successMessage: string) => {
+        setBusy(label);
+        setError('');
+        setNotice('');
+        try {
+            await action();
+            setNotice(successMessage);
+        } catch (nextError) {
+            setError(nextError instanceof Error ? nextError.message : String(nextError));
+        } finally {
+            setBusy(null);
+        }
+    };
+
+    const openFile = (path: string) => {
+        void runFileAction('open-file', () => runtime.openTaskGitFile(task.id, path), '已在系统默认编辑器中打开文件。');
+    };
+
+    const openHeadFile = (path: string) => {
+        void runFileAction('open-head-file', () => runtime.openTaskGitFile(task.id, path, 'HEAD'), '已在系统默认编辑器中打开 HEAD 版本。');
+    };
+
+    const revealInFinder = (path: string) => {
+        void runFileAction('reveal-file', () => runtime.revealTaskGitFile(task.id, path), '已在查找器中显示文件。');
+    };
+
+    const stageFile = (path: string) => askApproval(
+        '确认暂存变更',
+        '将把文件 ' + path + ' 加入 ' + workspaceName(task.workspace) + ' 的 Git 暂存区，不会创建提交。',
+        '暂存变更',
+        async () => { await runtime.stageTaskGit(task.id, [path]); },
+    );
+
+    const discardFile = (path: string) => askApproval(
+        '确认放弃本地变更',
+        '将从 ' + workspaceName(task.workspace) + ' 放弃文件 ' + path + ' 的工作区变更；此操作不会进入 Git 历史。',
+        '放弃更改',
+        async () => { await runtime.discardTaskGit(task.id, [path], false, true); },
+    );
+
+    const addToGitignore = (path: string) => {
+        void runSafe('gitignore', () => runtime.addTaskGitToIgnore(task.id, path));
     };
 
     const submitCommit = () => {
@@ -412,21 +464,35 @@ const GitReviewPanel: React.FC<GitReviewPanelProps> = ({ task, runtime, onClose 
                     <button type="button" onClick={() => void runSafe('fetch', () => runtime.fetchTaskGit(task.id))} disabled={isReadonly || busy !== null} className="ml-auto flex items-center gap-1 rounded-lg px-2 py-2 text-[11px] text-slate-500 hover:bg-slate-100 disabled:opacity-40">{isFetching ? <LoaderCircle size={13} className="animate-spin" /> : <Download size={13} />}{isFetching ? '正在拉取…' : `拉取 ${behindCount}`}</button>
                 </div>
                 {isReadonly && <div className="flex items-start gap-2 rounded-xl border border-slate-200 bg-slate-50 px-3 py-2.5 text-[11px] leading-5 text-slate-500"><Eye size={14} className="mt-0.5 shrink-0" />只读分析任务只提供状态和 Diff，不允许修改仓库。</div>}
-                <GitFileTree files={files} selectedFile={selectedFile} selectedPaths={selectedFileSet} onTogglePath={togglePath} onSelectFile={setSelectedFile} onOpenDiff={() => setTab('diff')} />
+                <GitFileTree
+                    files={files}
+                    selectedFile={selectedFile}
+                    selectedPaths={selectedFileSet}
+                    onTogglePath={togglePath}
+                    onSelectFile={setSelectedFile}
+                    onOpenDiff={openDiff}
+                    onOpenFile={openFile}
+                    onOpenHeadFile={openHeadFile}
+                    onDiscardFile={discardFile}
+                    onStageFile={stageFile}
+                    onAddToGitignore={addToGitignore}
+                    onRevealInFinder={revealInFinder}
+                    readonly={isReadonly}
+                />
                 {files.length > 0 && <div className="flex flex-wrap items-center gap-1.5 border-t border-slate-200 pt-3"><span className="mr-auto text-[10px] text-slate-400">已选 {selectedPaths.length || (selectedFile ? 1 : 0)} 个文件</span><button type="button" onClick={stageSelected} disabled={isReadonly || busy !== null || !pathsForAction.length} className="rounded-lg border border-slate-200 bg-white px-2.5 py-1.5 text-[11px] text-slate-600 hover:bg-slate-50 disabled:opacity-40">暂存所选</button><button type="button" onClick={unstageSelected} disabled={isReadonly || busy !== null || !pathsForAction.length} className="rounded-lg border border-slate-200 bg-white px-2.5 py-1.5 text-[11px] text-slate-600 hover:bg-slate-50 disabled:opacity-40">取消暂存</button><button type="button" onClick={discardSelected} disabled={isReadonly || busy !== null || !pathsForAction.length} className="rounded-lg border border-red-200 bg-white px-2.5 py-1.5 text-[11px] text-red-600 hover:bg-red-50 disabled:opacity-40">丢弃</button></div>}
             </section>}
 
             {tab === 'diff' && <section className="space-y-3">
                 {diff?.patch ? <GitDiffViewer
                     patch={diff.patch}
-                    filePath="当前工作区"
+                    filePath={diffPath || '当前工作区'}
                     truncated={diff.truncated}
                     summary={{
-                        title: '全部变更',
-                        subtitle: '按文件连续展示当前工作区的完整 Diff',
-                        fileCount: files.length,
-                        additions: currentStatus?.additions || 0,
-                        deletions: currentStatus?.deletions || 0,
+                        title: diffPath || '全部变更',
+                        subtitle: diffPath ? '仅展示当前文件的变更' : '按文件连续展示当前工作区的完整 Diff',
+                        fileCount: diffPath ? 1 : files.length,
+                        additions: diffPath ? (files.find((file) => file.path === diffPath)?.additions || 0) : (currentStatus?.additions || 0),
+                        deletions: diffPath ? (files.find((file) => file.path === diffPath)?.deletions || 0) : (currentStatus?.deletions || 0),
                         staged: showStagedDiff,
                         onStagedChange: setShowStagedDiff,
                     }}
