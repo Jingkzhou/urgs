@@ -38,7 +38,6 @@ import {
     listGrokBackgroundTasks,
     getGrokSubagent,
     listGrokMcpServers,
-    listGrokSessions,
     searchGrokSessions,
     compactGrokSession,
     flushGrokMemory,
@@ -78,7 +77,6 @@ import {
     type GrokModelProviderInput,
     type GrokDiscoveredPlugin,
     type GrokModelCatalog,
-    type GrokSessionSummary,
     type GrokRuntimeDiagnostics,
     type GrokMcpServerState,
     type GrokWorkflowFile,
@@ -595,9 +593,6 @@ export const useArkDesktopRuntime = () => {
     const [snapshot, setSnapshot] = useState<ArkDesktopSnapshot>(loadArkDesktopSnapshot);
     const [runtimeStatus, setRuntimeStatus] = useState<GrokRuntimeStatus | null>(null);
     const [modelCatalog, setModelCatalog] = useState<GrokModelCatalog | null>(null);
-    const [remoteSessions, setRemoteSessions] = useState<GrokSessionSummary[]>([]);
-    const [remoteSessionsLoading, setRemoteSessionsLoading] = useState(false);
-    const [remoteSessionsError, setRemoteSessionsError] = useState('');
     const [runtimeDiagnostics, setRuntimeDiagnostics] = useState<GrokRuntimeDiagnostics[]>([]);
     const [mcpServers, setMcpServers] = useState<GrokMcpServerState[]>([]);
     const [discoveredCommands, setDiscoveredCommands] = useState<ArkDesktopSlashCommand[]>([]);
@@ -618,7 +613,6 @@ export const useArkDesktopRuntime = () => {
     const planByTaskIdRef = useRef(new Map<string, ArkDesktopPlanStep[]>());
     const snapshotRef = useRef(snapshot);
     const capabilityRequestIdRef = useRef(0);
-    const remoteSessionRequestIdRef = useRef(0);
     const gitStatusTaskStateRef = useRef(new Map<string, ArkDesktopTaskStatus>());
 
     useEffect(() => {
@@ -726,31 +720,6 @@ export const useArkDesktopRuntime = () => {
         } catch (error) {
             setModelCatalog(null);
             return null;
-        }
-    }, []);
-
-    const refreshRemoteSessions = useCallback(async (workspaceOverride?: string, query = '') => {
-        if (!isDesktopRuntime()) return [];
-        const requestId = ++remoteSessionRequestIdRef.current;
-        const workspace = workspaceOverride?.trim() || snapshotRef.current.settings.workspace;
-        if (!workspace) {
-            setRemoteSessions([]);
-            return [];
-        }
-        setRemoteSessionsLoading(true);
-        setRemoteSessionsError('');
-        try {
-            const sessions = query.trim()
-                ? (await searchGrokSessions(workspace, query.trim(), 30)).results
-                : (await listGrokSessions(workspace, undefined, 200)).sessions;
-            if (requestId === remoteSessionRequestIdRef.current) setRemoteSessions(sessions);
-            return sessions;
-        } catch (error) {
-            const message = redactRuntimeText(error instanceof Error ? error.message : String(error));
-            if (requestId === remoteSessionRequestIdRef.current) setRemoteSessionsError(message);
-            return [];
-        } finally {
-            if (requestId === remoteSessionRequestIdRef.current) setRemoteSessionsLoading(false);
         }
     }, []);
 
@@ -2197,12 +2166,11 @@ export const useArkDesktopRuntime = () => {
         await Promise.allSettled([
             refreshCapabilities(workspace),
             refreshModelCatalog(workspace),
-            refreshRemoteSessions(workspace),
             refreshMcpServers(workspace),
             refreshRuntimeDiagnostics(),
         ]);
         return true;
-    }, [refreshCapabilities, refreshMcpServers, refreshModelCatalog, refreshRemoteSessions, refreshRuntimeDiagnostics, runtimeStatus]);
+    }, [refreshCapabilities, refreshMcpServers, refreshModelCatalog, refreshRuntimeDiagnostics, runtimeStatus]);
 
     const reloadPluginCapabilities = useCallback(async () => {
         await invalidatePreparedGrokRuntime();
@@ -2267,83 +2235,6 @@ export const useArkDesktopRuntime = () => {
             payload: { ...replayed, processId: session.processId },
         }));
     }, [handleGrokEvent, loadGrokSession, updateTask]);
-
-    const openRemoteSession = useCallback(async (summary: GrokSessionSummary) => {
-        const current = snapshotRef.current;
-        const existing = current.tasks.find((task) => task.sessionId === summary.sessionId);
-        if (existing) {
-            setActiveTaskId(existing.id);
-            return existing.id;
-        }
-        const workspace = summary.cwd || current.settings.workspace;
-        const agent = current.agents.find((item) => item.id === current.settings.defaultAgentId && item.enabled)
-            || current.agents.find((item) => item.enabled);
-        if (!agent) throw new Error('没有可用的本地 Agent');
-        const prompt = String(summary.firstPrompt || summary.summary || summary.title || '历史会话').trim();
-        const now = Date.now();
-        const taskId = createId('grok-session');
-        const task: ArkDesktopTask = {
-            id: taskId,
-            title: String(summary.title || summary.summary || '历史会话').slice(0, 80),
-            prompt,
-            agentId: agent.id,
-            skillIds: agent.skillIds.filter((id) => current.skills.some((skill) => skill.id === id && skill.enabled)),
-            workspace,
-            attachmentPaths: [],
-            engine: 'acp',
-            model: current.settings.grokModel || summary.modelId || undefined,
-            permissionMode: current.settings.execution.permissionMode,
-            status: 'completed',
-            messages: [],
-            tools: [],
-            remoteOnly: true,
-            createdAt: summary.createdAt ? Date.parse(summary.createdAt) || now : now,
-            updatedAt: summary.updatedAt ? Date.parse(summary.updatedAt) || now : now,
-        };
-        setSnapshot((value) => ({ ...value, tasks: [task, ...value.tasks].slice(0, 50) }));
-        setActiveTaskId(taskId);
-        try {
-            if (!task.model) throw new Error('请先配置一个可用的模型连接，再打开历史会话');
-            const session = await loadGrokSession(
-                summary.sessionId,
-                workspace,
-                undefined,
-                task.model,
-                buildAcpOptions(current.settings.execution),
-            );
-            mountedSessionIdsRef.current.add(session.sessionId);
-            taskByProcessIdRef.current.set(session.processId, taskId);
-            taskBySessionIdRef.current.set(session.sessionId, taskId);
-            updateTask(taskId, (value) => ({
-                ...value,
-                sessionId: session.sessionId,
-                runtimeProcessId: session.processId,
-                availableCommands: session.availableCommands,
-                mcpServers: session.mcpServers.map((server) => ({
-                    name: server.name,
-                    transport: server.transport,
-                    health: server.health,
-                    tools: server.tools,
-                })),
-                updatedAt: Date.now(),
-            }));
-            session.replayedEvents.forEach((replayed) => handleGrokEvent({
-                eventType: 'session_update',
-                payload: { ...replayed, processId: session.processId },
-            }));
-            const info = await getGrokSessionInfo(session.sessionId).catch(() => null);
-            if (info) updateTask(taskId, (value) => ({
-                ...value,
-                contextInfo: info.context,
-                updatedAt: Date.now(),
-            }));
-            return taskId;
-        } catch (error) {
-            const message = redactRuntimeText(runtimeErrorText(error));
-            updateTask(taskId, (value) => ({ ...value, status: 'failed', error: message, updatedAt: Date.now() }));
-            throw error;
-        }
-    }, [handleGrokEvent, updateTask]);
 
     const sendFollowUp = useCallback(async (taskId: string, prompt: string, displayPrompt = prompt) => {
         const task = snapshotRef.current.tasks.find((item) => item.id === taskId);
@@ -3301,10 +3192,9 @@ export const useArkDesktopRuntime = () => {
         if (!task) throw new Error('会话不存在');
         if (task.sessionId) {
             await renameGrokSession(task.sessionId, normalized, task.workspace);
-            await refreshRemoteSessions(task.workspace).catch(() => undefined);
         }
         updateTask(taskId, (task) => ({ ...task, title: normalized }));
-    }, [refreshRemoteSessions, updateTask]);
+    }, [updateTask]);
 
     const toggleTaskPin = useCallback((taskId: string) => {
         updateTask(taskId, (task) => ({
@@ -3346,7 +3236,6 @@ export const useArkDesktopRuntime = () => {
                     throw error instanceof Error ? error : new Error(redactRuntimeText(result.stderr || result.stdout || '删除本地会话失败'));
                 }
             }
-            await refreshRemoteSessions(task.workspace).catch(() => undefined);
         }
         setSnapshot((current) => ({
             ...current,
@@ -3361,7 +3250,7 @@ export const useArkDesktopRuntime = () => {
             mountedSessionIdsRef.current.delete(task.sessionId);
             taskBySessionIdRef.current.delete(task.sessionId);
         }
-    }, [refreshRemoteSessions]);
+    }, []);
 
     const deleteScheduledTask = useCallback(async (ownerTaskId: string, scheduledTaskId: string) => {
         const ownerTask = snapshotRef.current.tasks.find((item) => item.id === ownerTaskId);
@@ -3419,11 +3308,6 @@ export const useArkDesktopRuntime = () => {
         refreshRuntimeStatus,
         modelCatalog,
         refreshModelCatalog,
-        remoteSessions,
-        remoteSessionsLoading,
-        remoteSessionsError,
-        refreshRemoteSessions,
-        openRemoteSession,
         runtimeDiagnostics,
         refreshRuntimeDiagnostics,
         mcpServers,

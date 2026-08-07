@@ -283,7 +283,6 @@ export interface ArkDesktopTask {
     queueRunningPromptId?: string | null;
     plan?: ArkDesktopPlanStep[];
     availableCommands?: ArkDesktopSlashCommand[];
-    remoteOnly?: boolean;
     contextInfo?: ArkDesktopContextInfo;
     recap?: string;
     backgroundTasks?: ArkDesktopBackgroundTask[];

@@ -89,11 +89,6 @@ export interface GrokSessionSummary {
     score?: number;
 }
 
-export interface GrokSessionListResponse {
-    sessions: GrokSessionSummary[];
-    nextCursor?: string | null;
-}
-
 export interface GrokSessionSearchResponse {
     results: GrokSessionSummary[];
     nextOffset?: number | null;
@@ -462,19 +457,6 @@ const normalizeSessionSummary = (item: any, workspace = ''): GrokSessionSummary 
     snippet: item?.snippet ?? null,
     score: typeof item?.score === 'number' ? item.score : undefined,
 });
-
-export const listGrokSessions = (workspace: string, query?: string, limit = 50, cursor?: string) =>
-    invokeGrok<any>('grok_session_list', {
-        workspace,
-        query: query?.trim() || null,
-        limit,
-        cursor: cursor?.trim() || null,
-    }).then((response) => ({
-        sessions: Array.isArray(response?.sessions)
-            ? response.sessions.map((item: any) => normalizeSessionSummary(item, workspace)).filter((item: GrokSessionSummary) => item.sessionId)
-            : [],
-        nextCursor: response?.nextCursor ?? response?.next_cursor ?? null,
-    } as GrokSessionListResponse));
 
 export const searchGrokSessions = (workspace: string, query: string, limit = 20) =>
     invokeGrok<any>('grok_session_search', { workspace, query, limit }).then((response) => ({

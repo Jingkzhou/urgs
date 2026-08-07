@@ -76,6 +76,13 @@ const ArkPage: React.FC<ArkPageProps> = ({ launchTask, onLaunchTaskHandled }) =>
     const [viewportHeight, setViewportHeight] = useState(0);
     const openingGrokTaskCenterRef = useRef<Promise<void> | null>(null);
 
+    const focusGrokTaskCenter = async (window: WebviewWindow) => {
+        await window.unminimize();
+        await window.show();
+        await window.setFullscreen(true);
+        await window.setFocus();
+    };
+
     const openGrokTaskCenter = async () => {
         if (!isDesktopRuntime()) {
             window.open('#/grok-task-center', '_blank', 'noopener,noreferrer');
@@ -90,8 +97,7 @@ const ArkPage: React.FC<ArkPageProps> = ({ launchTask, onLaunchTaskHandled }) =>
         const opening = (async () => {
             const existingWindow = await WebviewWindow.getByLabel('grok-task-center');
             if (existingWindow) {
-                await existingWindow.show();
-                await existingWindow.setFocus();
+                await focusGrokTaskCenter(existingWindow);
                 return;
             }
 
@@ -103,7 +109,7 @@ const ArkPage: React.FC<ArkPageProps> = ({ launchTask, onLaunchTaskHandled }) =>
                 minWidth: 1100,
                 minHeight: 700,
                 center: true,
-                maximized: true,
+                fullscreen: true,
                 resizable: true,
                 visible: true,
                 focus: true,
@@ -114,8 +120,7 @@ const ArkPage: React.FC<ArkPageProps> = ({ launchTask, onLaunchTaskHandled }) =>
             await new Promise<void>((resolve, reject) => {
                 taskCenterWindow.once('tauri://created', async () => {
                     try {
-                        await taskCenterWindow.show();
-                        await taskCenterWindow.setFocus();
+                        await focusGrokTaskCenter(taskCenterWindow);
                         resolve();
                     } catch (error) {
                         reject(error);

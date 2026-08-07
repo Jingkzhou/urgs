@@ -344,10 +344,6 @@ const ArkDesktopPage: React.FC = () => {
             .sort((left, right) => right[1] - left[1])
             .map(([workspace]) => workspace);
     }, [draftWorkspace, runtime.snapshot.settings.workspacePaths, runtime.snapshot.tasks]);
-    const remoteSessionsForSidebar = useMemo(() => {
-        const opened = new Set(runtime.snapshot.tasks.map((task) => task.sessionId).filter(Boolean));
-        return runtime.remoteSessions.filter((session) => !opened.has(session.sessionId));
-    }, [runtime.remoteSessions, runtime.snapshot.tasks]);
     const activeWorkflowCount = useMemo(() => runtime.snapshot.tasks
         .flatMap((task) => task.workflowRuns || [])
         .filter((run) => !/complete|completed|failed|interrupted|cancelled|stopped|cleared/i.test(run.status)).length, [runtime.snapshot.tasks]);
@@ -384,8 +380,8 @@ const ArkDesktopPage: React.FC = () => {
                 <label className="mb-3 flex h-9 w-full cursor-text items-center gap-2 rounded-lg border border-transparent bg-[#eeeeef] px-3 text-slate-400 transition focus-within:border-slate-200 focus-within:bg-white focus-within:ring-2 focus-within:ring-slate-100">
                     <Search size={16} className="shrink-0" />
                     <span className="sr-only">搜索会话</span>
-                    <input value={searchValue} onChange={(event) => { const value = event.target.value; setSearchValue(value); void runtime.refreshRemoteSessions(undefined, value); }} placeholder="搜索会话" className="min-w-0 flex-1 bg-transparent text-[13px] text-slate-700 outline-none placeholder:text-slate-400" />
-                    {searchValue && <button type="button" onClick={() => { setSearchValue(''); void runtime.refreshRemoteSessions(undefined, ''); }} className="rounded p-0.5 text-slate-400 hover:bg-slate-200 hover:text-slate-600" title="清除搜索" aria-label="清除搜索"><X size={13} /></button>}
+                    <input value={searchValue} onChange={(event) => setSearchValue(event.target.value)} placeholder="搜索会话" className="min-w-0 flex-1 bg-transparent text-[13px] text-slate-700 outline-none placeholder:text-slate-400" />
+                    {searchValue && <button type="button" onClick={() => setSearchValue('')} className="rounded p-0.5 text-slate-400 hover:bg-slate-200 hover:text-slate-600" title="清除搜索" aria-label="清除搜索"><X size={13} /></button>}
                 </label>
                 <nav className="space-y-0.5">
                     {sectionItems.map((item) => {
@@ -399,11 +395,7 @@ const ArkDesktopPage: React.FC = () => {
                     defaultWorkspace={runtime.snapshot.settings.workspace}
                     searchValue={searchValue}
                     activeTaskId={runtime.activeTaskId}
-                    remoteSessions={remoteSessionsForSidebar}
-                    remoteSessionsLoading={runtime.remoteSessionsLoading}
-                    remoteSessionsError={runtime.remoteSessionsError}
                     onOpenTask={(taskId) => { setLatestMessageTaskId(taskId); setSection('new-task'); runtime.setActiveTaskId(taskId); }}
-                    onOpenRemoteSession={async (session) => { setLatestMessageTaskId(null); setSection('new-task'); await runtime.openRemoteSession(session); }}
                     onAddWorkspace={addWorkspace}
                     onCreateInWorkspace={openNewTask}
                     onSetDefaultWorkspace={runtime.setDefaultWorkspace}
@@ -584,6 +576,13 @@ const PermissionModePicker: React.FC<{
     </div>;
 };
 
+const formatContextWindow = (tokens?: number) => {
+    if (!tokens) return '上下文窗口未配置';
+    return tokens >= 1_000_000
+        ? `${(tokens / 1_000_000).toLocaleString()}M`
+        : `${(tokens / 1000).toLocaleString()}K`;
+};
+
 const ModelPickerControl: React.FC<{
     runtime: ReturnType<typeof useArkDesktopRuntime>;
     selectedModel: string;
@@ -598,9 +597,7 @@ const ModelPickerControl: React.FC<{
     const modelOptions = runtime.snapshot.settings.modelOptions;
     const providers = new Map(runtime.snapshot.settings.modelProviders.map((provider) => [provider.id, provider]));
     const selectedProvider = providers.get(selectedModel);
-    const officialModels = runtime.modelCatalog?.availableModels || [];
-    const selectedOfficialModel = officialModels.find((model) => model.modelId === selectedModel);
-    const hasModelOptions = modelOptions.length > 0 || officialModels.length > 0;
+    const hasModelOptions = modelOptions.length > 0;
 
     useEffect(() => {
         if (!open) return undefined;
@@ -628,13 +625,12 @@ const ModelPickerControl: React.FC<{
     return <div ref={menuRef} className="relative">
         <button type="button" disabled={disabled || switching || !hasModelOptions} onClick={() => setOpen((current) => !current)} title={!hasModelOptions ? '请先在设置中配置模型' : disabled ? disabledReason : '选择模型'} className="flex max-w-56 items-center gap-1.5 rounded-lg px-2.5 py-2 text-xs font-medium text-slate-500 transition hover:bg-slate-100 hover:text-slate-700 disabled:cursor-default disabled:opacity-50">
             {switching ? <LoaderCircle size={15} className="shrink-0 animate-spin" /> : <Cpu size={15} className="shrink-0" />}
-            <span className="truncate">{selectedProvider?.name || selectedOfficialModel?.name || selectedModel || '默认模型'}</span>
+            <span className="truncate">{selectedProvider?.name || selectedModel || '默认模型'}</span>
             <ChevronDown size={13} className={`shrink-0 text-slate-400 transition-transform ${open ? 'rotate-180' : ''}`} />
         </button>
         {open && hasModelOptions && <div className="absolute bottom-[calc(100%+8px)] left-0 z-40 w-80 overflow-hidden rounded-2xl border border-slate-200 bg-white p-2 shadow-[0_20px_55px_rgba(15,23,42,0.18)]">
             <div className="px-2.5 pb-2 pt-1 text-xs font-semibold text-slate-500">选择推理模型</div>
-            {modelOptions.map((model) => { const provider = providers.get(model); const active = model === selectedModel; return <button key={model} type="button" disabled={switching || active} onClick={() => void switchModel(model)} className={`flex w-full items-center gap-3 rounded-xl px-2.5 py-2.5 text-left transition ${active ? 'bg-slate-100' : 'hover:bg-slate-50 disabled:opacity-100'}`}><span className={`flex h-8 w-8 shrink-0 items-center justify-center rounded-lg ${active ? 'bg-slate-900 text-white' : 'bg-slate-100 text-slate-500'}`}>{active ? <Check size={15} /> : <Cpu size={15} />}</span><span className="min-w-0 flex-1"><span className="block truncate text-sm font-medium text-slate-700">{provider?.name || model}</span><span className="mt-0.5 block truncate text-xs text-slate-400">{provider?.model || model}</span></span></button>; })}
-            {officialModels.length > 0 && <div className="mt-2 border-t border-slate-100 pt-2"><div className="px-2.5 pb-1 text-[10px] font-semibold uppercase tracking-wide text-slate-400">官方目录</div>{officialModels.map((model) => { const active = model.modelId === selectedModel; const selectable = providers.has(model.modelId); return <button key={`official-${model.modelId}`} type="button" disabled={switching || active || !selectable} onClick={() => void switchModel(model.modelId)} className={`flex w-full items-center gap-3 rounded-xl px-2.5 py-2 text-left transition ${active ? 'bg-slate-100' : 'hover:bg-slate-50 disabled:cursor-not-allowed disabled:opacity-50'}`}><span className={`flex h-7 w-7 shrink-0 items-center justify-center rounded-lg ${active ? 'bg-slate-900 text-white' : 'bg-indigo-50 text-indigo-600'}`}>{active ? <Check size={14} /> : <Cpu size={14} />}</span><span className="min-w-0 flex-1"><span className="block truncate text-sm font-medium text-slate-700">{model.name || model.modelId}</span><span className="mt-0.5 block truncate text-[10px] text-slate-400">{model.modelId} · {model.totalContextTokens ? `${(model.totalContextTokens / 1000).toLocaleString()}K context` : '上下文窗口由上游提供'}{!selectable && ' · 需先配置连接'}</span></span></button>; })}</div>}
+            {modelOptions.map((model) => { const provider = providers.get(model); const active = model === selectedModel; return <button key={model} type="button" disabled={switching || active} onClick={() => void switchModel(model)} className={`flex w-full items-center gap-3 rounded-xl px-2.5 py-2.5 text-left transition ${active ? 'bg-slate-100' : 'hover:bg-slate-50 disabled:opacity-100'}`}><span className={`flex h-8 w-8 shrink-0 items-center justify-center rounded-lg ${active ? 'bg-slate-900 text-white' : 'bg-slate-100 text-slate-500'}`}>{active ? <Check size={15} /> : <Cpu size={15} />}</span><span className="min-w-0 flex-1"><span className="block truncate text-sm font-medium text-slate-700">{provider?.name || model}</span><span className="mt-0.5 block truncate text-xs text-slate-400">{provider?.model || model} · 上下文窗口：{formatContextWindow(provider?.contextWindow)}</span></span></button>; })}
         </div>}
     </div>;
 };

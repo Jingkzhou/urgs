@@ -268,7 +268,6 @@ pub fn run() {
             grok_runtime::grok_workflow_list,
             grok_runtime::grok_workflow_read,
             grok_runtime::grok_model_catalog,
-            grok_runtime::grok_session_list,
             grok_runtime::grok_session_search,
             grok_runtime::grok_session_info,
             grok_runtime::grok_compact_session,

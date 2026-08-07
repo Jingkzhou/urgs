@@ -1,10 +1,9 @@
 import React, { useEffect, useMemo, useRef, useState } from 'react';
 import {
     Archive, ArchiveRestore, Check, Copy, Ellipsis, Folder,
-    FolderOpen, History, LoaderCircle, Pencil, Pin, PinOff, Plus, RefreshCw, Trash2, X,
+    FolderOpen, LoaderCircle, Pencil, Pin, PinOff, Plus, Trash2, X,
 } from 'lucide-react';
 import { copyToClipboard } from '@/utils/clipboard';
-import type { GrokSessionSummary } from '@/services/grokDesktop';
 import type { ArkDesktopTask } from './types';
 
 type SessionView = 'active' | 'running' | 'archived';
@@ -15,11 +14,7 @@ interface WorkspaceSessionSidebarProps {
     defaultWorkspace: string;
     searchValue: string;
     activeTaskId: string | null;
-    remoteSessions: GrokSessionSummary[];
-    remoteSessionsLoading?: boolean;
-    remoteSessionsError?: string;
     onOpenTask: (taskId: string) => void;
-    onOpenRemoteSession: (session: GrokSessionSummary) => void | Promise<void>;
     onAddWorkspace: () => Promise<void>;
     onCreateInWorkspace: (workspace: string) => void;
     onSetDefaultWorkspace: (workspace: string) => void;
@@ -36,13 +31,6 @@ interface WorkspaceSessionSidebarProps {
 const isBusyTask = (task: ArkDesktopTask) => task.status === 'running' || task.status === 'waiting_authorization';
 const DEFAULT_VISIBLE_TASK_COUNT = 5;
 const taskWorkspace = (task: ArkDesktopTask) => task.sourceWorkspace || task.gitContext?.repoRoot || task.workspace;
-
-const remoteSessionTime = (value?: string | null) => {
-    if (!value) return '';
-    const timestamp = Date.parse(value);
-    if (!Number.isFinite(timestamp)) return '';
-    return new Intl.DateTimeFormat('zh-CN', { month: 'numeric', day: 'numeric', hour: '2-digit', minute: '2-digit' }).format(timestamp);
-};
 
 const MenuButton: React.FC<{
     icon: React.ElementType;
@@ -69,11 +57,7 @@ const WorkspaceSessionSidebar: React.FC<WorkspaceSessionSidebarProps> = ({
     defaultWorkspace,
     searchValue,
     activeTaskId,
-    remoteSessions,
-    remoteSessionsLoading = false,
-    remoteSessionsError = '',
     onOpenTask,
-    onOpenRemoteSession,
     onAddWorkspace,
     onCreateInWorkspace,
     onSetDefaultWorkspace,
@@ -271,30 +255,6 @@ const WorkspaceSessionSidebar: React.FC<WorkspaceSessionSidebarProps> = ({
         </div>
 
         <div className="custom-scrollbar mt-3 min-h-0 flex-1 space-y-3 overflow-y-auto pr-1">
-            {(remoteSessions.length > 0 || remoteSessionsLoading || remoteSessionsError) && <section className="rounded-xl border border-[#e4e1fb] bg-[#f7f5ff] p-2">
-                <div className="flex items-center gap-2 px-1.5 py-1">
-                    <History size={14} className="shrink-0 text-[#6657d9]" />
-                    <span className="min-w-0 flex-1 text-[11px] font-semibold text-[#5142c7]">Grok 历史</span>
-                    {remoteSessionsLoading && <RefreshCw size={12} className="animate-spin text-[#8a7cf0]" />}
-                    <span className="text-[10px] text-[#8a7cf0]">{remoteSessions.length}</span>
-                </div>
-                {remoteSessionsError && <p className="px-1.5 py-1 text-[10px] leading-4 text-amber-700">{remoteSessionsError}</p>}
-                <div className="mt-1 space-y-0.5">
-                    {remoteSessions.slice(0, 100).map((session) => <button
-                        key={session.sessionId}
-                        type="button"
-                        onClick={() => void Promise.resolve(onOpenRemoteSession(session)).catch((error) => onError(error instanceof Error ? error.message : String(error)))}
-                        className="group flex w-full min-w-0 items-start gap-2 rounded-lg px-1.5 py-2 text-left transition hover:bg-white"
-                        title={session.summary || session.title}
-                    >
-                        <span className="mt-0.5 flex h-5 w-5 shrink-0 items-center justify-center rounded-md bg-white text-[#8a7cf0] shadow-sm"><History size={11} /></span>
-                        <span className="min-w-0 flex-1">
-                            <span className="block truncate text-[11px] font-medium text-slate-700">{session.title || session.summary || '未命名会话'}</span>
-                            <span className="mt-0.5 flex items-center gap-1 truncate text-[10px] text-slate-400"><span className="truncate">{session.cwd.split(/[\\/]/).filter(Boolean).pop() || session.cwd}</span>{remoteSessionTime(session.updatedAt) && <><span>·</span><span>{remoteSessionTime(session.updatedAt)}</span></>}</span>
-                        </span>
-                    </button>)}
-                </div>
-            </section>}
             {groups.map((group) => {
                 const collapsed = collapsedWorkspaceKeys.has(group.workspace);
                 const expandedTasks = expandedTaskWorkspaceKeys.has(group.workspace);
@@ -438,7 +398,7 @@ const WorkspaceSessionSidebar: React.FC<WorkspaceSessionSidebarProps> = ({
                     <span className="flex h-10 w-10 shrink-0 items-center justify-center rounded-xl bg-red-50 text-red-600"><Trash2 size={18} /></span>
                     <div className="min-w-0 flex-1">
                         <h2 id="delete-session-title" className="font-semibold text-slate-900">永久删除这个会话？</h2>
-                        <p className="mt-2 text-sm leading-6 text-slate-500">“{deleteTarget.title}”将从 URGS{deleteTarget.sessionId ? ' 和本地 Grok 历史' : ''}中永久删除，且无法恢复。</p>
+                        <p className="mt-2 text-sm leading-6 text-slate-500">“{deleteTarget.title}”将从 URGS{deleteTarget.sessionId ? ' 和对应的本地会话' : ''}中永久删除，且无法恢复。</p>
                     </div>
                 </div>
                 <div className="mt-5 flex justify-end gap-2">

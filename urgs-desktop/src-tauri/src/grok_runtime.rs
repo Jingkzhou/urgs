@@ -3158,31 +3158,6 @@ pub async fn grok_model_catalog(
 }
 
 #[tauri::command]
-pub async fn grok_session_list(
-    state: State<'_, GrokRuntimeState>,
-    workspace: String,
-    query: Option<String>,
-    limit: Option<usize>,
-    cursor: Option<String>,
-) -> Result<Value, String> {
-    let workspace = validate_workspace(&workspace)?;
-    let process = workspace_process(&state, &workspace)?;
-    let params = json!({
-        "cwd": workspace.to_string_lossy(),
-        "query": query.filter(|value| !value.trim().is_empty()),
-        "limit": limit.unwrap_or(50).clamp(1, 200),
-        "cursor": cursor.filter(|value| !value.trim().is_empty()),
-    });
-    match process.request("session/list", params.clone()).await {
-        Ok(value) => Ok(value),
-        Err(error) if is_method_not_found_error(&error) => {
-            process.request("x.ai/session/list", params).await
-        }
-        Err(error) => Err(error),
-    }
-}
-
-#[tauri::command]
 pub async fn grok_session_search(
     state: State<'_, GrokRuntimeState>,
     workspace: String,
