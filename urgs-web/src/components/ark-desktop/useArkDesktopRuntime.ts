@@ -188,13 +188,18 @@ const resolveModelProvider = (snapshot: ArkDesktopSnapshot, modelValue?: string)
         || snapshot.settings.modelProviders.find((provider) => provider.model === value);
 };
 
+const isImageInputUnsupportedText = (value: string) =>
+    /当前模型连接不支持图像输入/i.test(value)
+    || /unknown variant[\s`'\"]*image_url[\s`'\"]*[\s\S]*expected[\s`'\"]*text/i.test(value)
+    || /image_url\s+is\s+not\s+supported/i.test(value);
+
 const redactRuntimeText = (value: string) => {
     const redacted = value
         .replace(/\bgrok(?:\s+build)?\b/gi, '内置智能引擎')
         .replace(/\bxai\b/gi, '服务')
         .replace(/MODEL_KEY_AUTHORIZATION_REQUIRED:[A-Za-z0-9_-]+/g, '当前模型连接需要先解锁本机密钥');
-    if (/unknown variant[\s`'\"]*image_url[\s`'\"]*[\s\S]*expected[\s`'\"]*text/i.test(redacted)) {
-        return '当前模型连接不支持图像输入；已生成的文件仍然保留，请切换支持图片的模型后重新进行视觉验证。';
+    if (isImageInputUnsupportedText(redacted)) {
+        return '当前模型连接不支持图像输入；已生成的文件仍然保留。普通文字可以继续发送，系统会自动开启纯文本续聊；如需视觉验证，请切换支持图片的模型。';
     }
     return redacted;
 };
@@ -2132,7 +2137,6 @@ export const useArkDesktopRuntime = () => {
     useEffect(() => {
         if (!isDesktopRuntime()) return;
         const taskIds = snapshotRef.current.tasks
-            .filter((task) => Boolean(task.gitContext))
             .slice(0, 20)
             .map((task) => task.id);
         void Promise.allSettled(taskIds.map((taskId) => refreshTaskGitStatus(taskId)));
@@ -2142,13 +2146,17 @@ export const useArkDesktopRuntime = () => {
         if (!isDesktopRuntime()) return;
         const refreshIds: string[] = [];
         snapshot.tasks.forEach((task) => {
-            if (!task.gitContext) return;
             if (gitStatusTaskStateRef.current.get(task.id) === task.status) return;
             gitStatusTaskStateRef.current.set(task.id, task.status);
             refreshIds.push(task.id);
         });
         void Promise.allSettled(refreshIds.map((taskId) => refreshTaskGitStatus(taskId)));
     }, [refreshTaskGitStatus, snapshot.tasks]);
+
+    useEffect(() => {
+        if (!isDesktopRuntime() || !activeTaskId) return;
+        void refreshTaskGitStatus(activeTaskId).catch(() => undefined);
+    }, [activeTaskId, refreshTaskGitStatus]);
 
     const prepareEngine = useCallback(async (workspaceOverride?: string) => {
         const current = snapshotRef.current;
@@ -2259,7 +2267,7 @@ export const useArkDesktopRuntime = () => {
         if (startsNewPrompt) clearPromptPlan();
         try {
             const current = snapshotRef.current;
-            const sessionId = task.sessionId
+            let sessionId = task.sessionId
                 || await (async () => {
                     try {
                         return await findHistoricalSessionId(task.workspace, task.title || task.prompt);
@@ -2293,7 +2301,34 @@ export const useArkDesktopRuntime = () => {
                     permissionMode: task.permissionMode || current.settings.execution.permissionMode,
                     alwaysApprove: false,
                 };
-                if (!mountedSessionIdsRef.current.has(sessionId)) {
+                const resetImageSessionForTextContinuation = Boolean(
+                    sessionId && isImageInputUnsupportedText(task.error || ''),
+                );
+                if (resetImageSessionForTextContinuation) {
+                    const previousSessionId = sessionId;
+                    const sessionRules = buildSessionRules(agent, skills);
+                    const freshSession = await createGrokSession(
+                        task.workspace,
+                        sessionRules,
+                        modelProvider.id,
+                        buildAcpOptions(execution),
+                    );
+                    taskBySessionIdRef.current.delete(previousSessionId);
+                    if (task.runtimeProcessId) taskByProcessIdRef.current.delete(task.runtimeProcessId);
+                    await releaseGrokSession(previousSessionId).catch(() => undefined);
+                    sessionId = freshSession.sessionId;
+                    mountedSessionIdsRef.current.add(freshSession.sessionId);
+                    taskByProcessIdRef.current.set(freshSession.processId, taskId);
+                    taskBySessionIdRef.current.set(freshSession.sessionId, taskId);
+                    updateTask(taskId, (value) => ({
+                        ...value,
+                        sessionId: freshSession.sessionId,
+                        runtimeProcessId: freshSession.processId,
+                        availableCommands: freshSession.availableCommands,
+                        error: undefined,
+                        updatedAt: Date.now(),
+                    }));
+                } else if (!mountedSessionIdsRef.current.has(sessionId)) {
                     const sessionRules = buildSessionRules(agent, skills);
                     const acpOptions = buildAcpOptions(execution);
                     const attachMode = task.messages.length > 0 ? 'resume' : 'load';

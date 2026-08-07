@@ -320,10 +320,16 @@ const ArkDesktopPage: React.FC = () => {
     };
     const headerTitle = runtime.activeTask?.title || (section === 'settings' ? '设置' : sectionItems.find((item) => item.id === section)?.label || '新建任务');
     const headerStatus = runtime.activeTask ? taskStatus[runtime.activeTask.status] : undefined;
-    const showGitReview = Boolean(
+    const showGitReview = true;
+    const gitReviewAvailable = Boolean(
         runtime.activeTask?.gitContext
         && runtime.activeTask.gitContext.status?.isRepository !== false,
     );
+    const gitReviewDisabledReason = !runtime.activeTask
+        ? '请先打开一个任务'
+        : !gitReviewAvailable
+            ? '当前工作区不是 Git 仓库或 Git 尚未可用'
+            : undefined;
     const headerMeta = runtime.activeTask
         ? [
             workspaceName(runtime.activeTask.sourceWorkspace || runtime.activeTask.gitContext?.repoRoot || runtime.activeTask.workspace),
@@ -366,12 +372,12 @@ const ArkDesktopPage: React.FC = () => {
                     icon={runtime.activeTask ? <Cpu size={16} strokeWidth={1.8} /> : section === 'settings' ? <Settings size={16} strokeWidth={1.8} /> : section === 'workflows' ? <Workflow size={16} strokeWidth={1.8} /> : <CheckSquare size={16} strokeWidth={1.8} />}
                     status={headerStatus ? <span className={`shrink-0 rounded-full px-2 py-0.5 text-[10px] font-medium ${headerStatus.className}`}>{headerStatus.label}</span> : undefined}
                 />
-                <div className="mr-3 flex items-center gap-1">
+                <div className="mr-3 flex shrink-0 items-center gap-1">
                     <ArkDesktopSidebarToggle collapsed={isSidebarCollapsed} onToggle={() => setIsSidebarCollapsed((current) => !current)} />
                     <button type="button" onClick={() => setTerminalPanelOpen((current) => !current)} className={panelToggleClass(terminalPanelOpen)} title={terminalPanelOpen ? '关闭底部终端面板' : '打开底部终端面板'} aria-label={terminalPanelOpen ? '关闭底部终端面板' : '打开底部终端面板'} aria-pressed={terminalPanelOpen}>
                         <PanelBottom size={16} strokeWidth={1.8} />
                     </button>
-                    {showGitReview && <button type="button" onClick={() => setGitReviewOpen((current) => !current)} className={panelToggleClass(gitReviewOpen)} title={gitReviewOpen ? '关闭 Git 变更审查' : '打开 Git 变更审查'} aria-label={gitReviewOpen ? '关闭 Git 变更审查' : '打开 Git 变更审查'} aria-pressed={gitReviewOpen}>
+                    {showGitReview && <button type="button" disabled={!gitReviewAvailable} onClick={() => { if (gitReviewAvailable) setGitReviewOpen((current) => !current); }} className={`${panelToggleClass(gitReviewOpen)} disabled:cursor-not-allowed disabled:text-slate-300 disabled:hover:bg-transparent disabled:hover:text-slate-300`} title={gitReviewDisabledReason || (gitReviewOpen ? '关闭 Git 变更审查' : '打开 Git 变更审查')} aria-label={gitReviewDisabledReason || (gitReviewOpen ? '关闭 Git 变更审查' : '打开 Git 变更审查')} aria-pressed={gitReviewOpen}>
                         <PanelRight size={16} strokeWidth={1.8} />
                     </button>}
                 </div>
@@ -453,7 +459,7 @@ const ArkDesktopPage: React.FC = () => {
                 {terminalPanelOpen && <TaskTerminalPanel workspace={runtime.activeTask?.workspace || runtime.snapshot.settings.workspace} onClose={() => setTerminalPanelOpen(false)} />}
             </section>
 
-            {showGitReview && runtime.activeTask && gitReviewOpen && <GitReviewPanel task={runtime.activeTask} runtime={runtime} onClose={() => setGitReviewOpen(false)} />}
+            {gitReviewAvailable && runtime.activeTask && gitReviewOpen && <GitReviewPanel task={runtime.activeTask} runtime={runtime} onClose={() => setGitReviewOpen(false)} />}
 
             {editor?.type === 'automation' && <AutomationEditor id={editor.id} runtime={runtime} onClose={() => setEditor(null)} />}
             {runtime.permission && <Modal title={`允许“${runtime.permission.taskTitle}”执行本地操作？`} onClose={() => void runtime.answerPermission()}><p className="mb-5 text-sm leading-6 text-slate-600">{runtime.permission.title}</p><div className="flex flex-wrap justify-end gap-2"><button type="button" onClick={() => void runtime.answerPermission()} className="rounded-lg border border-slate-200 px-4 py-2 text-sm text-slate-600">拒绝</button>{runtime.permission.options.map((option) => <button key={option.optionId} type="button" onClick={() => void runtime.answerPermission(option.optionId)} className="rounded-lg bg-slate-900 px-4 py-2 text-sm text-white">{option.name}</button>)}</div></Modal>}

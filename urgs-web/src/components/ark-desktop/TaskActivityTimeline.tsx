@@ -131,7 +131,20 @@ const joinSummaryParts = (parts: string[]) => {
 
 const genericTitlePattern = /^(本地工具调用|工具调用|已执行任务|执行任务|任务|tool call|task|use tool|execute task)$/i;
 
+const commandGroupSummary = (tools: Tool[]) => {
+    if (!tools.length || tools.some((tool) => activityKind(tool) !== 'command')) return undefined;
+    const descriptions = Array.from(new Set(tools
+        .map(toolDescription)
+        .filter((description): description is string => Boolean(description))
+        .map((description) => compactText(description, 64))));
+    if (descriptions.length === 0) return undefined;
+    if (tools.length === 1) return descriptions[0];
+    return `${descriptions.slice(0, 2).join('、')}等操作`;
+};
+
 const activityGroupSummary = (tools: Tool[]) => {
+    const commandSummary = commandGroupSummary(tools);
+    if (commandSummary) return commandSummary;
     const kinds = Array.from(new Set(tools.map(activityKind)));
     const concreteKinds = kinds.filter((kind) => kind !== 'other');
     const displayedKinds = concreteKinds.length > 0 ? concreteKinds : kinds;
