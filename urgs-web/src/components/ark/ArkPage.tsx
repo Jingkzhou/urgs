@@ -77,10 +77,14 @@ const ArkPage: React.FC<ArkPageProps> = ({ launchTask, onLaunchTaskHandled }) =>
     const openingGrokTaskCenterRef = useRef<Promise<void> | null>(null);
 
     const focusGrokTaskCenter = async (window: WebviewWindow) => {
-        await window.setFullscreen(false);
         await window.unminimize();
-        await window.maximize();
         await window.show();
+        try {
+            await window.setFullscreen(false);
+        } catch (error) {
+            console.warn('无法退出智能任务中心全屏状态，继续使用最大化窗口', error);
+        }
+        await window.maximize();
         await window.setFocus();
     };
 
