@@ -3813,6 +3813,25 @@ fn terminal_shell_command() -> (String, String) {
     }
 }
 
+#[cfg(windows)]
+fn sanitize_windows_terminal_environment(command: &mut CommandBuilder) {
+    let environment: Vec<(String, String)> = command
+        .iter_full_env_as_str()
+        .filter(|(key, _)| !key.is_empty() && !key.starts_with('=') && !key.contains('\0'))
+        .map(|(key, value)| {
+            (
+                key.to_string(),
+                value.split('\0').next().unwrap_or_default().to_string(),
+            )
+        })
+        .collect();
+
+    command.env_clear();
+    for (key, value) in environment {
+        command.env(key, value);
+    }
+}
+
 fn terminal_pty_size(cols: Option<u16>, rows: Option<u16>) -> PtySize {
     PtySize {
         cols: cols.unwrap_or(100).clamp(20, 400),
@@ -3856,6 +3875,8 @@ pub fn terminal_create_session(
         .map_err(|error| format!("创建终端会话失败: {error}"))?;
 
     let mut command = CommandBuilder::new(shell_command);
+    #[cfg(windows)]
+    sanitize_windows_terminal_environment(&mut command);
     command.cwd(&current_dir);
     command.env("TERM", "xterm-256color");
     command.env("COLORTERM", "truecolor");

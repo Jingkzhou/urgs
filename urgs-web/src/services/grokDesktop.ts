@@ -189,6 +189,7 @@ export interface GrokGitFile {
 export interface GrokGitStatus {
     repoRoot: string;
     workspacePath: string;
+    isRepository?: boolean;
     branch?: string | null;
     upstream?: string | null;
     ahead: number;

@@ -19,6 +19,11 @@ interface GitReviewPanelProps {
 }
 
 const workspaceName = (value: string) => value.split(/[\\/]/).filter(Boolean).pop() || value;
+const NON_GIT_REPOSITORY_NOTICE = '当前工作区不是 Git 仓库，代码变更审查仅适用于 Git 仓库。';
+const isNonGitRepositoryError = (message: string) => {
+    const normalized = message.toLowerCase();
+    return normalized.includes('not a git repository') || /不是(?:一个)?\s*git\s*仓库/.test(message);
+};
 const DEFAULT_PANEL_WIDTH = 430;
 const MIN_PANEL_WIDTH = 320;
 const MAX_PANEL_WIDTH = 720;
@@ -68,6 +73,7 @@ const GitReviewPanel: React.FC<GitReviewPanelProps> = ({ task, runtime, onClose 
     const [busy, setBusy] = useState<string | null>(null);
     const [error, setError] = useState('');
     const [notice, setNotice] = useState('');
+    const [gitRepositoryUnavailable, setGitRepositoryUnavailable] = useState(false);
     const [confirmation, setConfirmation] = useState<{ title: string; body: string; confirmLabel: string; action: () => Promise<void>; refreshAfter?: boolean; busyLabel?: string } | null>(null);
     const [worktreeRemoved, setWorktreeRemoved] = useState(false);
     const [panelWidth, setPanelWidth] = useState(readStoredPanelWidth);
@@ -86,6 +92,7 @@ const GitReviewPanel: React.FC<GitReviewPanelProps> = ({ task, runtime, onClose 
     const isReadonly = task.gitContext?.mode === 'readonly';
     const isWorktree = task.gitContext?.mode === 'worktree';
     const repoRoot = task.gitContext?.repoRoot || task.sourceWorkspace || task.workspace;
+    const isGitRepository = !gitRepositoryUnavailable && currentStatus?.isRepository !== false;
 
     const clampPanelWidth = useCallback((value: number) => {
         return clampPanelWidthValue(value);
@@ -149,6 +156,7 @@ const GitReviewPanel: React.FC<GitReviewPanelProps> = ({ task, runtime, onClose 
                 listTaskGitRemotes(task.id).catch(() => []),
             ]);
             setStatus(nextStatus);
+            setGitRepositoryUnavailable(false);
             setWorktrees(nextWorktrees);
             setAuditEntries(nextAudit);
             setRemotes(nextRemotes);
@@ -164,6 +172,12 @@ const GitReviewPanel: React.FC<GitReviewPanelProps> = ({ task, runtime, onClose 
                 setNotice('此任务 Worktree 已清理，源仓库仍然保留。');
                 return;
             }
+            if (isNonGitRepositoryError(message)) {
+                setGitRepositoryUnavailable(true);
+                setDiff(null);
+                setNotice(NON_GIT_REPOSITORY_NOTICE);
+                return;
+            }
             setError(message);
         } finally {
             setBusy(null);
@@ -175,6 +189,7 @@ const GitReviewPanel: React.FC<GitReviewPanelProps> = ({ task, runtime, onClose 
 
     useEffect(() => {
         setDiffPath('');
+        setGitRepositoryUnavailable(false);
         void refreshRef.current();
     }, [task.id]);
 
@@ -188,7 +203,14 @@ const GitReviewPanel: React.FC<GitReviewPanelProps> = ({ task, runtime, onClose 
         try {
             setDiff(await loadTaskGitDiff(task.id, path, staged));
         } catch (nextError) {
-            setError(nextError instanceof Error ? nextError.message : String(nextError));
+            const message = nextError instanceof Error ? nextError.message : String(nextError);
+            if (isNonGitRepositoryError(message)) {
+                setGitRepositoryUnavailable(true);
+                setDiff(null);
+                setNotice(NON_GIT_REPOSITORY_NOTICE);
+            } else {
+                setError(message);
+            }
         } finally {
             setBusy(null);
         }
@@ -438,7 +460,7 @@ const GitReviewPanel: React.FC<GitReviewPanelProps> = ({ task, runtime, onClose 
                 <span className="flex h-9 w-9 shrink-0 items-center justify-center rounded-xl bg-indigo-50 text-indigo-600"><GitBranch size={18} /></span>
                 <div className="min-w-0 flex-1">
                     <div className="flex items-center gap-2"><h2 className="truncate text-sm font-semibold text-slate-900">代码变更审查</h2>{isWorktree && <span className="rounded-full bg-indigo-50 px-1.5 py-0.5 text-[10px] font-medium text-indigo-600">Worktree</span>}</div>
-                    <p className="mt-1 truncate text-[11px] text-slate-400" title={repoRoot}>{workspaceName(repoRoot)} · {task.gitContext?.branch || currentStatus?.branch || '未连接分支'}</p>
+                    <p className="mt-1 truncate text-[11px] text-slate-400" title={repoRoot}>{workspaceName(repoRoot)} · {isGitRepository ? (task.gitContext?.branch || currentStatus?.branch || '未连接分支') : '非 Git 工作区'}</p>
                 </div>
                 <button type="button" onClick={onClose} className="rounded-lg p-1.5 text-slate-400 hover:bg-slate-100 hover:text-slate-700" title="关闭审查面板" aria-label="关闭审查面板"><X size={16} /></button>
             </div>
@@ -451,11 +473,13 @@ const GitReviewPanel: React.FC<GitReviewPanelProps> = ({ task, runtime, onClose 
         </div>
 
         <div className="flex border-b border-slate-200 bg-white px-2 pt-1" role="tablist" aria-label="Git 审查标签">
-            {([['changes', '变更'], ['diff', 'Diff'], ['commit', '提交'], ['worktree', 'Worktree']] as const).map(([value, label]) => <button key={value} type="button" role="tab" aria-selected={tab === value} onClick={() => setTab(value)} className={`flex-1 border-b-2 px-1 py-2 text-[11px] font-medium transition ${tab === value ? 'border-indigo-500 text-indigo-600' : 'border-transparent text-slate-400 hover:text-slate-600'}`}>{label}</button>)}
+            {([['changes', '变更'], ['diff', 'Diff'], ['commit', '提交'], ['worktree', 'Worktree']] as const).map(([value, label]) => <button key={value} type="button" role="tab" aria-selected={tab === value} onClick={() => setTab(value)} disabled={!isGitRepository} className={`flex-1 border-b-2 px-1 py-2 text-[11px] font-medium transition ${tab === value ? 'border-indigo-500 text-indigo-600' : 'border-transparent text-slate-400 hover:text-slate-600'} disabled:cursor-not-allowed disabled:opacity-50`}>{label}</button>)}
         </div>
 
         <div className="min-h-0 flex-1 overflow-y-auto p-3">
-            {(error || notice) && <div className={`mb-3 flex items-start gap-2 rounded-xl border px-3 py-2.5 text-[11px] leading-5 ${error ? 'border-red-200 bg-red-50 text-red-700' : 'border-emerald-200 bg-emerald-50 text-emerald-700'}`}><span className="mt-0.5 shrink-0">{error ? <AlertTriangle size={14} /> : <Check size={14} />}</span><span className="min-w-0 flex-1 whitespace-pre-wrap">{error || notice}</span><button type="button" onClick={() => { setError(''); setNotice(''); }}><X size={13} /></button></div>}
+            {(error || notice || !isGitRepository) && <div className={`mb-3 flex items-start gap-2 rounded-xl border px-3 py-2.5 text-[11px] leading-5 ${error ? 'border-red-200 bg-red-50 text-red-700' : !isGitRepository ? 'border-amber-200 bg-amber-50 text-amber-800' : 'border-emerald-200 bg-emerald-50 text-emerald-700'}`}><span className="mt-0.5 shrink-0">{error ? <AlertTriangle size={14} /> : !isGitRepository ? <GitBranch size={14} /> : <Check size={14} />}</span><span className="min-w-0 flex-1 whitespace-pre-wrap">{error || notice || NON_GIT_REPOSITORY_NOTICE}</span><button type="button" onClick={() => { setError(''); setNotice(''); }}><X size={13} /></button></div>}
+
+            {!isGitRepository ? <div className="rounded-xl border border-amber-200 bg-amber-50 px-4 py-6 text-center text-[11px] leading-5 text-amber-800"><GitBranch size={22} className="mx-auto mb-2 text-amber-600" /><p className="font-medium">当前工作区不是 Git 仓库</p><p className="mt-1 text-amber-700">请在 Git 仓库目录中打开任务，代码变更审查、Diff、提交和 Worktree 功能将自动恢复。</p></div> : <>
 
             {tab === 'changes' && <section className="space-y-3">
                 <div className="flex items-center gap-1.5">
@@ -516,6 +540,7 @@ const GitReviewPanel: React.FC<GitReviewPanelProps> = ({ task, runtime, onClose 
                 <div className="rounded-xl border border-slate-200 bg-white p-3"><div className="flex items-center justify-between gap-2"><span className="text-xs font-semibold text-slate-700">仓库 Worktree 列表</span><button type="button" onClick={gcWorktrees} disabled={busy !== null} className="flex items-center gap-1 text-[10px] text-slate-400 hover:text-slate-600"><RefreshCw size={11} />清理记录</button></div><div className="mt-2 space-y-1.5">{worktrees.map((item) => <div key={item.path} className="rounded-lg bg-slate-50 px-2.5 py-2"><div className="flex items-center gap-2"><GitBranch size={12} className="shrink-0 text-slate-400" /><span className="min-w-0 flex-1 truncate font-mono text-[10px] text-slate-600" title={item.path}>{workspaceName(item.path)}</span>{item.branch && <span className="max-w-32 truncate text-[10px] text-indigo-600">{item.branch}</span>}</div><p className="mt-1 truncate pl-[20px] text-[9px] text-slate-400" title={item.path}>{item.path}</p></div>)}{worktrees.length === 0 && <p className="text-[10px] text-slate-400">未读取到 Worktree。</p>}</div></div>
                 {auditEntries.length > 0 && <details className="rounded-xl border border-slate-200 bg-white p-3"><summary className="cursor-pointer text-xs font-semibold text-slate-700">最近审计记录（{auditEntries.length}）</summary><div className="mt-2 space-y-1.5">{auditEntries.slice(0, 8).map((entry) => <div key={entry.id} className="rounded-lg bg-slate-50 px-2.5 py-2 text-[10px]"><div className="flex items-center gap-2"><span className={`font-medium ${entry.success ? 'text-emerald-600' : 'text-red-600'}`}>{entry.operation}</span><span className="ml-auto text-slate-400">{new Date(entry.createdAt).toLocaleString('zh-CN')}</span></div><p className="mt-1 leading-4 text-slate-500">{entry.summary}</p></div>)}</div></details>}
             </section>}
+            </>}
         </div>
 
         {confirmation && <div className="fixed inset-0 z-[1300] flex items-center justify-center bg-slate-950/35 p-4 backdrop-blur-sm" role="dialog" aria-modal="true" aria-labelledby="git-approval-title"><div className="w-full max-w-md rounded-2xl border border-slate-200 bg-white p-5 shadow-2xl"><div className="flex items-start gap-3"><span className="flex h-9 w-9 shrink-0 items-center justify-center rounded-xl bg-amber-50 text-amber-700"><ShieldCheck size={17} /></span><div className="min-w-0 flex-1"><h2 id="git-approval-title" className="text-sm font-semibold text-slate-900">{confirmation.title}</h2><p className="mt-2 whitespace-pre-wrap text-[12px] leading-5 text-slate-600">{confirmation.body}</p></div></div><div className="mt-5 flex justify-end gap-2"><button type="button" onClick={() => setConfirmation(null)} className="rounded-lg border border-slate-200 px-3 py-2 text-xs text-slate-600 hover:bg-slate-50">取消</button><button type="button" onClick={() => void confirmAction()} className="rounded-lg bg-slate-900 px-3 py-2 text-xs font-medium text-white hover:bg-slate-700">{confirmation.confirmLabel}</button></div></div></div>}

@@ -3,6 +3,8 @@ use std::collections::hash_map::DefaultHasher;
 use std::fs::{self, OpenOptions};
 use std::hash::{Hash, Hasher};
 use std::io::Write;
+#[cfg(windows)]
+use std::os::windows::process::CommandExt;
 use std::path::{Component, Path, PathBuf};
 use std::process::Command;
 use std::time::{SystemTime, UNIX_EPOCH};
@@ -33,6 +35,7 @@ pub struct GrokGitFile {
 pub struct GrokGitStatus {
     pub repo_root: String,
     pub workspace_path: String,
+    pub is_repository: bool,
     pub branch: Option<String>,
     pub upstream: Option<String>,
     pub ahead: u32,
@@ -158,6 +161,14 @@ struct CommandResult {
     success: bool,
 }
 
+fn new_git_command(workspace: &Path) -> Command {
+    let mut command = Command::new("git");
+    command.arg("-C").arg(workspace);
+    #[cfg(windows)]
+    command.creation_flags(0x08000000);
+    command
+}
+
 fn now_millis() -> u64 {
     SystemTime::now()
         .duration_since(UNIX_EPOCH)
@@ -186,9 +197,7 @@ fn command_error(args: &[String], result: &CommandResult) -> String {
 }
 
 fn run_git(workspace: &Path, args: &[String]) -> Result<CommandResult, String> {
-    let output = Command::new("git")
-        .arg("-C")
-        .arg(workspace)
+    let output = new_git_command(workspace)
         .args(args)
         .output()
         .map_err(|error| format!("无法启动 git，请确认已安装 Git: {error}"))?;
@@ -212,9 +221,7 @@ fn run_git(workspace: &Path, args: &[String]) -> Result<CommandResult, String> {
 }
 
 fn run_git_allow_failure(workspace: &Path, args: &[String]) -> Result<CommandResult, String> {
-    let output = Command::new("git")
-        .arg("-C")
-        .arg(workspace)
+    let output = new_git_command(workspace)
         .args(args)
         .output()
         .map_err(|error| format!("无法启动 git，请确认已安装 Git: {error}"))?;
@@ -252,6 +259,36 @@ fn git_root(workspace: &Path) -> Result<PathBuf, String> {
     let args = vec!["rev-parse".to_string(), "--show-toplevel".to_string()];
     let result = run_git(workspace, &args)?;
     canonical_directory(result.stdout.trim())
+}
+
+fn is_not_git_repository_error(message: &str) -> bool {
+    let normalized = message.to_ascii_lowercase();
+    normalized.contains("not a git repository")
+        || message.contains("不是 git 仓库")
+        || message.contains("不是一个 git 仓库")
+}
+
+fn non_repository_status(workspace: &Path) -> GrokGitStatus {
+    let workspace_path = workspace.to_string_lossy().to_string();
+    GrokGitStatus {
+        repo_root: workspace_path.clone(),
+        workspace_path,
+        is_repository: false,
+        branch: None,
+        upstream: None,
+        ahead: 0,
+        behind: 0,
+        head_commit: None,
+        is_dirty: false,
+        is_detached: false,
+        staged_count: 0,
+        modified_count: 0,
+        untracked_count: 0,
+        conflict_count: 0,
+        additions: 0,
+        deletions: 0,
+        files: Vec::new(),
+    }
 }
 
 fn git_common_root(workspace: &Path) -> Result<PathBuf, String> {
@@ -444,6 +481,7 @@ fn git_status_at(workspace: &Path) -> Result<GrokGitStatus, String> {
     Ok(GrokGitStatus {
         repo_root: repo_root.to_string_lossy().to_string(),
         workspace_path: workspace.to_string_lossy().to_string(),
+        is_repository: true,
         branch: branch.clone(),
         upstream,
         ahead,
@@ -620,9 +658,7 @@ fn materialize_head_file(
     relative: &str,
 ) -> Result<PathBuf, String> {
     let spec = format!("HEAD:{relative}");
-    let output = Command::new("git")
-        .arg("-C")
-        .arg(workspace)
+    let output = new_git_command(workspace)
         .arg("show")
         .arg(spec)
         .output()
@@ -825,8 +861,11 @@ pub fn grok_git_prepare_task(
 #[tauri::command]
 pub fn grok_git_status(workspace: String) -> Result<GrokGitStatus, String> {
     let workspace = canonical_directory(&workspace)?;
-    git_root(&workspace)?;
-    git_status_at(&workspace)
+    match git_root(&workspace) {
+        Ok(_) => git_status_at(&workspace),
+        Err(error) if is_not_git_repository_error(&error) => Ok(non_repository_status(&workspace)),
+        Err(error) => Err(error),
+    }
 }
 
 #[tauri::command]
@@ -836,8 +875,20 @@ pub fn grok_git_diff(
     staged: bool,
 ) -> Result<GrokGitDiff, String> {
     let workspace = canonical_directory(&workspace)?;
-    git_root(&workspace)?;
     let relative = path.map(|value| relative_path(&value)).transpose()?;
+    if let Err(error) = git_root(&workspace) {
+        if is_not_git_repository_error(&error) {
+            return Ok(GrokGitDiff {
+                workspace_path: workspace.to_string_lossy().to_string(),
+                path: relative,
+                staged,
+                patch: String::new(),
+                truncated: false,
+                files: Vec::new(),
+            });
+        }
+        return Err(error);
+    }
     let mut args = vec![
         "diff".to_string(),
         "--no-ext-diff".to_string(),

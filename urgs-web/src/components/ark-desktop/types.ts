@@ -225,6 +225,7 @@ export interface ArkDesktopGitFile {
 export interface ArkDesktopGitStatus {
     repoRoot: string;
     workspacePath: string;
+    isRepository?: boolean;
     branch?: string | null;
     upstream?: string | null;
     ahead: number;
