@@ -175,6 +175,8 @@ export interface GrokAcpOptions {
     leaderSocket?: string;
 }
 
+export type GrokSessionAttachMode = 'load' | 'resume';
+
 export type GrokGitMode = 'worktree' | 'workspace' | 'readonly';
 
 export interface GrokGitFile {
@@ -1053,8 +1055,21 @@ export const generateLlmText = (input: LlmTextGenerationInput) =>
 export const createGrokSession = (workspace: string, rules?: string, model?: string, options?: GrokAcpOptions) =>
     invokeGrok<GrokSession>('grok_create_session', { workspace, rules: rules || null, model: model || null, options: options || null });
 
-export const loadGrokSession = (sessionId: string, workspace: string, rules?: string, model?: string, options?: GrokAcpOptions) =>
-    invokeGrok<GrokSession>('grok_load_session', { sessionId, workspace, rules: rules || null, model: model || null, options: options || null });
+export const loadGrokSession = (
+    sessionId: string,
+    workspace: string,
+    rules?: string,
+    model?: string,
+    options?: GrokAcpOptions,
+    attachMode: GrokSessionAttachMode = 'load',
+) => invokeGrok<GrokSession>('grok_load_session', {
+    sessionId,
+    workspace,
+    rules: rules || null,
+    model: model || null,
+    options: options || null,
+    attachMode,
+});
 
 export const sendGrokPrompt = (
     sessionId: string,

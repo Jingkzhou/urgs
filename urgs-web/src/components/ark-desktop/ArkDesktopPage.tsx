@@ -1026,11 +1026,12 @@ const TaskSessionUtilityBar: React.FC<{ task: ArkDesktopTask; runtime: ReturnTyp
             setPending(null);
         }
     };
-    const hasSessionDetails = Boolean(task.recap || task.backgroundTasks?.length || task.subagents?.length || task.workflowRuns?.length || task.mcpServers?.length);
+    const hasSessionDetails = Boolean(task.runtimeMode || task.recap || task.backgroundTasks?.length || task.subagents?.length || task.workflowRuns?.length || task.mcpServers?.length);
     if (!hasSessionDetails) return null;
 
     return <div className="mb-4 rounded-2xl border border-slate-200 bg-white px-4 py-3 shadow-[0_4px_18px_rgba(15,23,42,0.04)]">
         <div className="space-y-2">
+            {task.runtimeMode && <div className="flex items-center gap-2 text-[11px] text-slate-600"><span className="font-medium">当前运行模式</span><code className="rounded bg-slate-100 px-1.5 py-0.5 text-[10px] text-slate-500">{task.runtimeMode}</code></div>}
             {task.recap && <details className="group" open>
                 <summary className="cursor-pointer list-none text-[11px] font-medium text-slate-600">最近会话 Recap</summary>
                 <p className="mt-1.5 whitespace-pre-wrap text-xs leading-5 text-slate-500">{task.recap}</p>

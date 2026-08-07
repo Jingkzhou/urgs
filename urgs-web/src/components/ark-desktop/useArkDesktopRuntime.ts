@@ -1269,7 +1269,65 @@ export const useArkDesktopRuntime = () => {
                 updateTask(taskId, (task) => settleForegroundActivities(task, status));
                 return;
             }
-            if (updateType === 'user_message_chunk' || updateType === 'interaction_resolved' || updateType === 'current_mode_update') {
+            if (updateType === 'current_mode_update') {
+                const mode = redactRuntimeText(String(
+                    update.currentModeId
+                    ?? update.current_mode_id
+                    ?? update.modeId
+                    ?? update.mode_id
+                    ?? update.currentMode?.id
+                    ?? update.current_mode?.id
+                    ?? '',
+                ).trim()).slice(0, 80);
+                updateTask(taskId, (task) => ({
+                    ...upsertTaskActivity(task, {
+                        id: 'runtime-current-mode',
+                        title: '运行模式',
+                        status: mode ? `当前：${mode}` : '已同步',
+                        kind: 'diagnostic',
+                    }),
+                    ...(mode ? { runtimeMode: mode } : {}),
+                }));
+                return;
+            }
+            if (updateType === 'config_option_update') {
+                const configId = redactRuntimeText(String(update.configId || update.config_id || '').trim()).slice(0, 80);
+                updateTask(taskId, (task) => upsertTaskActivity(task, {
+                    id: 'runtime-config-option',
+                    title: '运行配置',
+                    status: configId ? `已同步：${configId}` : '已同步',
+                    kind: 'diagnostic',
+                }));
+                return;
+            }
+            if (updateType === 'session_info_update') {
+                const sessionInfo = update.sessionInfo || update.session_info || {};
+                const title = redactRuntimeText(String(
+                    update.title
+                    || update.sessionTitle
+                    || update.session_title
+                    || sessionInfo.title
+                    || '',
+                ).trim()).slice(0, 80);
+                const summary = redactRuntimeText(String(
+                    update.summary
+                    || update.description
+                    || sessionInfo.summary
+                    || '',
+                ).trim()).slice(0, 12_000);
+                updateTask(taskId, (task) => ({
+                    ...upsertTaskActivity(task, {
+                        id: 'runtime-session-info',
+                        title: '会话信息',
+                        status: title ? `已同步：${title}` : '已同步',
+                        kind: 'diagnostic',
+                        ...(summary ? { output: summary } : {}),
+                    }),
+                    ...(title ? { title } : {}),
+                }));
+                return;
+            }
+            if (updateType === 'user_message_chunk' || updateType === 'interaction_resolved') {
                 return;
             }
             const diagnosticType = typeof updateType === 'string' && updateType ? updateType : 'unknown';
@@ -1979,14 +2037,15 @@ export const useArkDesktopRuntime = () => {
         if (!modelProvider.enabled) throw new Error(`模型连接“${modelProvider.name}”已停用`);
         const sessionRules = buildSessionRules(agent, skills);
         const acpOptions = buildAcpOptions(execution);
+        const attachMode = task.messages.length > 0 ? 'resume' : 'load';
         let recoveredFromMissingWorkspace = false;
         let session: Awaited<ReturnType<typeof loadGrokSession>>;
         try {
-            session = await loadGrokSession(task.sessionId, task.workspace, sessionRules, modelProvider.id, acpOptions);
+            session = await loadGrokSession(task.sessionId, task.workspace, sessionRules, modelProvider.id, acpOptions, attachMode);
         } catch (error) {
             const fallbackWorkspace = taskFallbackWorkspace(task);
             if (!fallbackWorkspace || !isWorkspacePathUnavailable(error)) throw error;
-            session = await loadGrokSession(task.sessionId, fallbackWorkspace, sessionRules, modelProvider.id, acpOptions);
+            session = await loadGrokSession(task.sessionId, fallbackWorkspace, sessionRules, modelProvider.id, acpOptions, attachMode);
             recoveredFromMissingWorkspace = true;
         }
         mountedSessionIdsRef.current.add(session.sessionId);
@@ -2134,14 +2193,15 @@ export const useArkDesktopRuntime = () => {
                 if (!mountedSessionIdsRef.current.has(sessionId)) {
                     const sessionRules = buildSessionRules(agent, skills);
                     const acpOptions = buildAcpOptions(execution);
+                    const attachMode = task.messages.length > 0 ? 'resume' : 'load';
                     let recoveredFromMissingWorkspace = false;
                     let session: Awaited<ReturnType<typeof loadGrokSession>>;
                     try {
-                        session = await loadGrokSession(sessionId, task.workspace, sessionRules, modelProvider.id, acpOptions);
+                        session = await loadGrokSession(sessionId, task.workspace, sessionRules, modelProvider.id, acpOptions, attachMode);
                     } catch (error) {
                         const fallbackWorkspace = taskFallbackWorkspace(task);
                         if (!fallbackWorkspace || !isWorkspacePathUnavailable(error)) throw error;
-                        session = await loadGrokSession(sessionId, fallbackWorkspace, sessionRules, modelProvider.id, acpOptions);
+                        session = await loadGrokSession(sessionId, fallbackWorkspace, sessionRules, modelProvider.id, acpOptions, attachMode);
                         recoveredFromMissingWorkspace = true;
                     }
                     mountedSessionIdsRef.current.add(session.sessionId);

@@ -29,6 +29,7 @@ const REQUEST_TIMEOUT: Duration = Duration::from_secs(30);
 const INITIALIZE_TIMEOUT: Duration = Duration::from_secs(90);
 const AUTHENTICATE_TIMEOUT: Duration = Duration::from_secs(180);
 const SESSION_START_TIMEOUT: Duration = Duration::from_secs(120);
+const SESSION_CLOSE_TIMEOUT: Duration = Duration::from_secs(10);
 const MODEL_PROVIDER_FILE: &str = "model-providers.json";
 const MODEL_CREDENTIAL_SERVICE: &str = "com.urgs.desktop.grok-model";
 const MODEL_KEY_AUTHORIZATION_REQUIRED: &str = "MODEL_KEY_AUTHORIZATION_REQUIRED:";
@@ -53,7 +54,8 @@ fn request_timeout(method: &str) -> Duration {
         "session/prompt" => Duration::from_secs(60 * 60),
         "initialize" => INITIALIZE_TIMEOUT,
         "authenticate" => AUTHENTICATE_TIMEOUT,
-        "session/new" | "session/load" => SESSION_START_TIMEOUT,
+        "session/new" | "session/load" | "session/resume" => SESSION_START_TIMEOUT,
+        "session/close" => SESSION_CLOSE_TIMEOUT,
         _ => REQUEST_TIMEOUT,
     }
 }
@@ -2111,6 +2113,46 @@ fn format_rpc_error(error: &Value) -> String {
 
 fn is_method_not_found_error(error: &str) -> bool {
     error.to_ascii_lowercase().contains("method not found")
+}
+
+fn is_unsupported_acp_method_error(error: &str) -> bool {
+    let error = error.to_ascii_lowercase();
+    error.contains("method not found")
+        || error.contains("unknown method")
+        || error.contains("unsupported method")
+        || error.contains("not implemented")
+        || error.contains("-32601")
+}
+
+fn session_attach_method(attach_mode: Option<&str>) -> Result<&'static str, String> {
+    match attach_mode.map(str::trim).filter(|mode| !mode.is_empty()) {
+        None | Some("load") => Ok("session/load"),
+        Some("resume") => Ok("session/resume"),
+        Some(mode) => Err(format!("不支持的 Grok 会话挂载模式: {mode}")),
+    }
+}
+
+async fn request_session_attach(
+    process: &GrokProcess,
+    method: &str,
+    session_id: &str,
+    workspace: &Path,
+    mcp_payload: &[Value],
+) -> (Result<Value, String>, Vec<Value>) {
+    process.replaying_session.store(true, Ordering::Relaxed);
+    let result = process
+        .request(
+            method,
+            json!({
+                "sessionId": session_id,
+                "cwd": workspace.to_string_lossy().to_string(),
+                "mcpServers": mcp_payload,
+            }),
+        )
+        .await;
+    process.replaying_session.store(false, Ordering::Relaxed);
+    let replayed_events = process.take_replayed_events();
+    (result, replayed_events)
 }
 
 fn emit_event(app: &AppHandle, event_type: &str, payload: Value) {
@@ -4633,11 +4675,13 @@ pub async fn grok_load_session(
     rules: Option<String>,
     model: Option<String>,
     options: Option<GrokAcpOptions>,
+    attach_mode: Option<String>,
 ) -> Result<GrokSession, String> {
     let session_id = session_id.trim().to_string();
     if session_id.is_empty() {
         return Err("会话标识不能为空".to_string());
     }
+    let attach_method = session_attach_method(attach_mode.as_deref())?;
     let workspace = validate_workspace(&workspace)?;
     let options = options.unwrap_or_default();
     let effective_options = effective_acp_options(&app, model.as_deref(), &options)?;
@@ -4697,20 +4741,32 @@ pub async fn grok_load_session(
     }
     let (mcp_payload, mcp_states) = configured_mcp_servers(&app, &workspace)?;
     process.replace_mcp_servers(mcp_states.clone());
-    process.replaying_session.store(true, Ordering::Relaxed);
-    let load_result = process
-        .request(
-            "session/load",
-            json!({
-                "sessionId": session_id,
-                "cwd": workspace,
-                "mcpServers": mcp_payload,
-            }),
-        )
-        .await;
-    process.replaying_session.store(false, Ordering::Relaxed);
-    let replayed_events = process.take_replayed_events();
-    if let Err(error) = load_result {
+    let (attach_result, replayed_events) = request_session_attach(
+        &process,
+        attach_method,
+        &session_id,
+        &workspace,
+        &mcp_payload,
+    )
+    .await;
+    let (attach_result, replayed_events) = if attach_method == "session/resume" {
+        match attach_result {
+            Err(error) if is_unsupported_acp_method_error(&error) => {
+                request_session_attach(
+                    &process,
+                    "session/load",
+                    &session_id,
+                    &workspace,
+                    &mcp_payload,
+                )
+                .await
+            }
+            result => (result, replayed_events),
+        }
+    } else {
+        (attach_result, replayed_events)
+    };
+    if let Err(error) = attach_result {
         process.stop();
         return Err(error);
     }
@@ -5179,7 +5235,7 @@ pub fn grok_cancel(state: State<'_, GrokRuntimeState>, session_id: String) -> Re
 }
 
 #[tauri::command]
-pub fn grok_release_session(
+pub async fn grok_release_session(
     state: State<'_, GrokRuntimeState>,
     session_id: String,
 ) -> Result<(), String> {
@@ -5201,6 +5257,9 @@ pub fn grok_release_session(
         (process, shared)
     };
     if let Some(process) = process {
+        let _ = process
+            .request("session/close", json!({ "sessionId": session_id }))
+            .await;
         if shared {
             for request_id in process.cancel_permissions(session_id) {
                 process.write_json(json!({
@@ -5343,15 +5402,17 @@ mod tests {
         available_commands_from_list, available_commands_from_session_update, build_prompt_content,
         cache_provider_api_key, consume_prompt_attachment_grants, direct_model_api_endpoint,
         direct_model_api_payload, direct_model_api_response_text, forget_cached_provider_api_key,
-        format_rpc_error, grok_agent_arguments, model_key_env_name, normalize_model_id,
-        normalize_model_provider, normalized_interjection_params, normalized_queue_changed_params,
+        format_rpc_error, grok_agent_arguments, is_unsupported_acp_method_error,
+        model_key_env_name, normalize_model_id, normalize_model_provider,
+        normalized_interjection_params, normalized_queue_changed_params,
         normalized_session_update_message, parse_grok_toml, plan_approval_params,
         process_launch_key, read_provider_api_key, request_timeout, scheduled_prompt_injection,
-        select_auth_method, serialize_grok_toml, user_question_params, validate_cli_arguments,
-        validate_service_arguments, workflow_listings_from_response, GrokAcpOptions,
-        GrokCliService, GrokModelProvider, GrokModelProviderInput, GrokRuntimeState,
-        PromptAttachmentGrant, AUTHENTICATE_TIMEOUT, GROK_INTERJECT_METHOD, GROK_RECAP_METHOD,
-        INITIALIZE_TIMEOUT, MAX_PROMPT_ATTACHMENT_BYTES, REQUEST_TIMEOUT, SESSION_START_TIMEOUT,
+        select_auth_method, serialize_grok_toml, session_attach_method, user_question_params,
+        validate_cli_arguments, validate_service_arguments, workflow_listings_from_response,
+        GrokAcpOptions, GrokCliService, GrokModelProvider, GrokModelProviderInput,
+        GrokRuntimeState, PromptAttachmentGrant, AUTHENTICATE_TIMEOUT, GROK_INTERJECT_METHOD,
+        GROK_RECAP_METHOD, INITIALIZE_TIMEOUT, MAX_PROMPT_ATTACHMENT_BYTES, REQUEST_TIMEOUT,
+        SESSION_CLOSE_TIMEOUT, SESSION_START_TIMEOUT,
     };
     use serde_json::json;
     use std::fs;
@@ -5907,9 +5968,33 @@ mod tests {
         assert_eq!(request_timeout("authenticate"), AUTHENTICATE_TIMEOUT);
         assert_eq!(request_timeout("session/new"), SESSION_START_TIMEOUT);
         assert_eq!(request_timeout("session/load"), SESSION_START_TIMEOUT);
+        assert_eq!(request_timeout("session/resume"), SESSION_START_TIMEOUT);
+        assert_eq!(request_timeout("session/close"), SESSION_CLOSE_TIMEOUT);
         assert_eq!(request_timeout("_x.ai/commands/list"), REQUEST_TIMEOUT);
         assert!(request_timeout("authenticate") > request_timeout("session/new"));
         assert!(request_timeout("session/new") > request_timeout("_x.ai/commands/list"));
+    }
+
+    #[test]
+    fn session_attach_modes_are_explicit_and_backward_compatible() {
+        assert_eq!(session_attach_method(None).unwrap(), "session/load");
+        assert_eq!(session_attach_method(Some("")).unwrap(), "session/load");
+        assert_eq!(session_attach_method(Some("load")).unwrap(), "session/load");
+        assert_eq!(
+            session_attach_method(Some("resume")).unwrap(),
+            "session/resume"
+        );
+        assert!(session_attach_method(Some("fork")).is_err());
+    }
+
+    #[test]
+    fn unsupported_acp_method_errors_are_detected_for_resume_fallback() {
+        assert!(is_unsupported_acp_method_error("Method not found"));
+        assert!(is_unsupported_acp_method_error(
+            "unknown method session/resume"
+        ));
+        assert!(is_unsupported_acp_method_error("ACP error -32601"));
+        assert!(!is_unsupported_acp_method_error("session resume failed"));
     }
 
     #[test]

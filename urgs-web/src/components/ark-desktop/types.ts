@@ -257,6 +257,7 @@ export interface ArkDesktopTask {
     alwaysApprove?: boolean;
     sessionId?: string;
     runtimeProcessId?: string;
+    runtimeMode?: string;
     cliServiceId?: string;
     status: ArkDesktopTaskStatus;
     messages: ArkDesktopMessage[];
