@@ -87,6 +87,24 @@ const RunningChangeProgress: React.FC<{
     </section>;
 };
 
+const CompletedPlanProgress: React.FC<{
+    plan: ArkDesktopPlanStep[];
+    taskStatus: ArkDesktopTaskStatus;
+}> = ({ plan, taskStatus }) => {
+    const completedCount = plan.filter((step) => step.status === 'completed' || step.status === 'cancelled').length;
+    const completed = completedCount === plan.length && taskStatus === 'completed';
+    return <section className="my-3 flex justify-center" aria-label="执行计划进度">
+        <TaskPlanPanel
+            plan={plan}
+            taskStatus={taskStatus}
+            trigger={<>{completed
+                ? <CheckCircle2 size={17} className="shrink-0 text-emerald-500" />
+                : <AlertTriangle size={17} className="shrink-0 text-amber-500" />}
+            <span className="shrink-0 font-medium text-slate-700">计划 {completedCount} / {plan.length} 已完成</span></>}
+        />
+    </section>;
+};
+
 const TaskChangeSummary: React.FC<TaskChangeSummaryProps> = ({ taskId, workspace, promptIndex, tools, taskStatus, plan, onRewind }) => {
     const files = useMemo(() => mergeFileChanges(tools.flatMap((tool) => tool.fileChanges || [])), [tools]);
     const [expanded, setExpanded] = useState(false);
@@ -97,7 +115,7 @@ const TaskChangeSummary: React.FC<TaskChangeSummaryProps> = ({ taskId, workspace
     const activeTask = taskStatus === 'running' || taskStatus === 'waiting_authorization';
     if (activeTask && files.length === 0 && !plan?.length) return null;
     if (activeTask) return <RunningChangeProgress files={files} taskStatus={taskStatus} plan={plan} />;
-    if (files.length === 0) return null;
+    if (files.length === 0) return plan?.length ? <CompletedPlanProgress plan={plan} taskStatus={taskStatus} /> : null;
     const additions = files.reduce((total, file) => total + file.additions, 0);
     const deletions = files.reduce((total, file) => total + file.deletions, 0);
     const reverted = tools.some((tool) => tool.fileChanges?.length && tool.changesRevertedAt);
@@ -129,6 +147,7 @@ const TaskChangeSummary: React.FC<TaskChangeSummaryProps> = ({ taskId, workspace
         }
     };
     return <>
+        {plan?.length ? <CompletedPlanProgress plan={plan} taskStatus={taskStatus} /> : null}
         <section className="my-4 overflow-hidden rounded-2xl border border-slate-200 bg-white shadow-[0_1px_2px_rgba(15,23,42,0.03)]" aria-label={`已编辑 ${files.length} 个文件`}>
             <div className="flex items-center gap-3 border-b border-slate-100 px-4 py-3.5"><span className="flex h-10 w-10 shrink-0 items-center justify-center rounded-xl bg-slate-100 text-slate-500"><FileDiff size={20} /></span><div className="min-w-0 flex-1"><div className="flex items-center gap-2 text-[15px] font-semibold text-slate-800">{reverted ? '文件修改已撤销' : `已编辑 ${files.length} 个文件`}{reverted && <CheckCircle2 size={16} className="text-emerald-600" />}</div><div className="mt-0.5 text-xs"><span className="text-emerald-600">+{additions}</span><span className="ml-2 text-red-500">-{deletions}</span></div></div><div className="flex items-center gap-1.5">{!reverted && <button type="button" disabled={undoing} onClick={() => void undo()} className="flex h-8 items-center gap-1.5 rounded-lg px-2.5 text-sm font-medium text-slate-600 hover:bg-slate-100 disabled:opacity-50">{undoing ? <LoaderCircle size={15} className="animate-spin" /> : <RotateCcw size={15} />}撤销</button>}<button type="button" onClick={() => setReviewing(true)} className="h-8 rounded-lg border border-slate-200 px-3 text-sm font-medium text-slate-700 shadow-sm hover:bg-slate-50">审核</button></div></div>
             <div className="px-4 py-2">{visibleFiles.map((file) => <button key={file.path} type="button" onClick={() => setReviewing(true)} className="flex w-full items-center gap-3 rounded-lg px-1 py-2 text-left hover:bg-slate-50"><span className="min-w-0 flex-1 truncate text-[13px] text-slate-600" title={file.path}>{displayPath(file.path, workspace)}</span><span className="shrink-0 text-xs"><span className="text-emerald-600">+{file.additions}</span><span className="ml-2 text-red-500">-{file.deletions}</span></span></button>)}{hiddenCount > 0 && <button type="button" onClick={() => setExpanded(true)} className="flex items-center gap-1 py-2 text-xs font-medium text-slate-600 hover:text-slate-900">再显示 {hiddenCount} 个文件<ChevronDown size={14} /></button>}{expanded && files.length > 3 && <button type="button" onClick={() => setExpanded(false)} className="flex items-center gap-1 py-2 text-xs font-medium text-slate-500 hover:text-slate-900">收起文件<ChevronDown size={14} className="rotate-180" /></button>}</div>

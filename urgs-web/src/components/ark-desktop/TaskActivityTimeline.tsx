@@ -35,6 +35,27 @@ const getStage = (tool: Tool) => {
     return `正在${value}`;
 };
 
+const completedStage = (stage: string) => {
+    const normalized = stage
+        .replace(/^正在分析/, '已分析')
+        .replace(/^正在制定/, '已制定')
+        .replace(/^正在检查/, '已检查')
+        .replace(/^正在搜索/, '已搜索')
+        .replace(/^正在修改/, '已修改')
+        .replace(/^正在运行验证$/, '已完成验证')
+        .replace(/^正在执行/, '已执行')
+        .replace(/^正在协同/, '已完成协同');
+    return normalized === stage && !/^已/.test(stage) ? `已完成${stage.replace(/^(正在|等待)/, '')}` : normalized;
+};
+
+const displayStage = (tool: Tool) => {
+    const stage = getStage(tool);
+    const state = getToolState(tool.status);
+    if (state === 'completed') return completedStage(stage);
+    if (state === 'failed') return `${stage.replace(/^正在/, '')}未完成`;
+    return stage;
+};
+
 const formatDuration = (milliseconds: number) => {
     const seconds = Math.max(0, Math.round(milliseconds / 1000));
     if (seconds < 60) return `${seconds} 秒`;
@@ -85,7 +106,44 @@ const StageIcon: React.FC<{ state: ReturnType<typeof getToolState>; active: bool
     if (state === 'failed') return <AlertCircle size={15} className="text-amber-500" />;
     if (active) return <LoaderCircle size={15} className="animate-spin text-blue-500" />;
     if (state === 'pending') return <Circle size={14} className="text-slate-300" />;
-    return <CheckCircle2 size={15} className="text-emerald-500" />;
+    return <CheckCircle2 size={15} strokeWidth={1.7} className="text-[#8b8b8b]" />;
+};
+
+const stageIcon = (stage: string) => {
+    if (/检查|搜索|分析/.test(stage)) return Search;
+    if (/修改|编辑|写入/.test(stage)) return FileText;
+    if (/验证|运行|命令/.test(stage)) return SquareTerminal;
+    return Wrench;
+};
+
+export const TaskActivityDetails: React.FC<{ tools: Tool[] }> = ({ tools }) => {
+    const visibleTools = tools.filter((tool) => !isHidden(tool) && !isReasoning(tool));
+    const groupedStages = visibleTools.reduce<Array<{ label: string; tools: Tool[] }>>((groups, tool) => {
+        const label = displayStage(tool);
+        const last = groups[groups.length - 1];
+        if (last?.label === label) last.tools.push(tool);
+        else groups.push({ label, tools: [tool] });
+        return groups;
+    }, []);
+    if (groupedStages.length === 0) return null;
+
+    return <div className="space-y-2 py-1">
+        {groupedStages.map((group) => {
+            const active = group.tools.some((tool) => ['running', 'pending'].includes(getToolState(tool.status)));
+            const state = group.tools.some((tool) => getToolState(tool.status) === 'failed') ? 'failed' : active ? 'running' : 'completed';
+            const ActionIcon = stageIcon(group.label);
+            return <div key={`${group.label}-${group.tools[0]?.id}`}>
+                <div className="flex min-h-6 items-center gap-2 text-[13px] leading-5 text-[#77787c]">
+                    {active || state === 'failed'
+                        ? <StageIcon state={state} active={active} />
+                        : <ActionIcon size={15} strokeWidth={1.7} className="text-[#8b8b8b]" />}
+                    <span className="min-w-0 flex-1 truncate">{group.label}</span>
+                    {group.tools.length > 1 && <span className="shrink-0 text-[11px] text-slate-400">{group.tools.length} 项</span>}
+                </div>
+                {group.tools.map((tool) => <ActivityDetail key={tool.id} tool={tool} />)}
+            </div>;
+        })}
+    </div>;
 };
 
 const getSummaryIcon = (stage: string, active: boolean, failed: boolean) => {
@@ -109,7 +167,6 @@ interface TaskActivityTimelineProps {
 }
 
 const TaskActivityTimeline: React.FC<TaskActivityTimelineProps> = ({ tools, taskStatus, execution, runStartedAt, runCompletedAt, isActive, summaryOnly = false, children }) => {
-    const [expanded, setExpanded] = useState(false);
     const [diagnosticsOpen, setDiagnosticsOpen] = useState(false);
     const [now, setNow] = useState(() => Date.now());
     const summaryTools = useMemo(() => tools.filter((tool) => !isHidden(tool) && !isReasoning(tool)), [tools]);
@@ -122,6 +179,7 @@ const TaskActivityTimeline: React.FC<TaskActivityTimelineProps> = ({ tools, task
     const activeTool = [...summaryTools].reverse().find((tool) => ['running', 'pending'].includes(getToolState(tool.status)));
     const failedTool = summaryTools.some((tool) => getToolState(tool.status) === 'failed' && !tool.recovered);
     const active = isActive ?? Boolean(activeTool);
+    const [expanded, setExpanded] = useState(active);
     const isRunning = active && (taskStatus === 'running' || execution?.status === 'running' || execution?.status === 'recovering' || Boolean(activeTool));
     const isWaiting = active && (taskStatus === 'waiting_authorization' || execution?.status === 'waiting_user');
     const currentStage = isWaiting && active
@@ -143,16 +201,11 @@ const TaskActivityTimeline: React.FC<TaskActivityTimelineProps> = ({ tools, task
         return () => window.clearInterval(timer);
     }, [isRunning, isWaiting]);
 
-    if (!summaryOnly && tools.length === 0 && !execution?.currentStage) return null;
+    useEffect(() => {
+        setExpanded(active);
+    }, [active]);
 
-    const detailTools = summaryOnly ? tools.filter((tool) => !isHidden(tool)) : summaryTools;
-    const groupedStages = detailTools.reduce<Array<{ label: string; tools: Tool[] }>>((groups, tool) => {
-        const label = getStage(tool);
-        const last = groups[groups.length - 1];
-        if (last?.label === label) last.tools.push(tool);
-        else groups.push({ label, tools: [tool] });
-        return groups;
-    }, []);
+    if (!summaryOnly && tools.length === 0 && !execution?.currentStage) return null;
 
     const statusText = isWaiting
         ? '等待你的操作'
@@ -174,18 +227,8 @@ const TaskActivityTimeline: React.FC<TaskActivityTimelineProps> = ({ tools, task
                     : `已处理 ${formatCompactDuration(elapsed)}`;
     const expandedDetails = expanded && <div className="mt-1.5 space-y-2 border-l border-slate-200 pl-4">
         {children}
-        {groupedStages.length > 0 ? groupedStages.map((group) => {
-            const active = group.tools.some((tool) => ['running', 'pending'].includes(getToolState(tool.status)));
-            const state = group.tools.some((tool) => getToolState(tool.status) === 'failed') ? 'failed' : active ? 'running' : 'completed';
-            return <div key={`${group.label}-${group.tools[0]?.id}`} className="py-0.5">
-                <div className="flex items-center gap-2 text-[12px] text-slate-600">
-                    <StageIcon state={state} active={active} />
-                    <span className="min-w-0 flex-1 truncate">{group.label}</span>
-                    <span className="shrink-0 text-[10px] text-slate-400">{group.tools.length} 项</span>
-                </div>
-                {group.tools.map((tool) => <ActivityDetail key={tool.id} tool={tool} />)}
-            </div>;
-        }) : <div className="py-1 text-[12px] text-slate-400">{active ? '当前阶段正在准备中' : '已完成执行步骤'}</div>}
+        {!children && <TaskActivityDetails tools={summaryTools} />}
+        {!children && summaryTools.length === 0 && <div className="py-1 text-[12px] text-slate-400">{active ? '当前阶段正在准备中' : '已完成执行步骤'}</div>}
         {diagnosticTools.length > 0 && <div className="pt-1">
             <button type="button" onClick={() => setDiagnosticsOpen((value) => !value)} className="flex items-center gap-1.5 text-[11px] text-slate-400 hover:text-slate-600" aria-expanded={diagnosticsOpen}>
                 <ChevronRight size={13} className={diagnosticsOpen ? 'rotate-90' : ''} />

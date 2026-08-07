@@ -5049,6 +5049,17 @@ pub async fn grok_rewind_points(
         .await
 }
 
+fn rewind_model_provider<'a>(
+    providers: &'a [GrokModelProvider],
+    requested_model: &str,
+) -> Result<&'a GrokModelProvider, String> {
+    providers
+        .iter()
+        .find(|provider| provider.id == requested_model && provider.enabled)
+        .or_else(|| providers.iter().find(|provider| provider.enabled))
+        .ok_or_else(|| "没有可用于加载历史文件检查点的模型连接".to_string())
+}
+
 #[tauri::command]
 pub async fn grok_rewind_files(
     app: AppHandle,
@@ -5066,18 +5077,15 @@ pub async fn grok_rewind_files(
         return Err("会话标识不能为空".to_string());
     }
     let workspace = validate_workspace(&workspace)?;
-    let model = normalize_model_id(&model)?;
-    let provider = read_model_providers(&app)?
-        .into_iter()
-        .find(|provider| provider.id == model)
-        .ok_or_else(|| format!("模型连接“{model}”不存在"))?;
-    if !provider.enabled {
-        return Err(format!("模型连接“{}”已停用", provider.name));
-    }
+    let requested_model = normalize_model_id(&model)?;
     let (process, transient) = match session_process(&state, session_id) {
         Ok(process) => (process, false),
         Err(_) => {
             enforce_offline_config(&app)?;
+            let providers = read_model_providers(&app)?;
+            let model = rewind_model_provider(&providers, &requested_model)?
+                .id
+                .clone();
             let mut effective_options = options.unwrap_or_default();
             effective_options.reauth = None;
             let arguments = grok_agent_arguments(Some(&model), &effective_options, true)?;
@@ -5407,13 +5415,13 @@ mod tests {
         model_key_env_name, normalize_model_id, normalize_model_provider,
         normalized_interjection_params, normalized_queue_changed_params,
         normalized_session_update_message, parse_grok_toml, plan_approval_params,
-        process_launch_key, read_provider_api_key, request_timeout, scheduled_prompt_injection,
-        select_auth_method, serialize_grok_toml, session_attach_method, user_question_params,
-        validate_cli_arguments, validate_service_arguments, workflow_listings_from_response,
-        GrokAcpOptions, GrokCliService, GrokModelProvider, GrokModelProviderInput,
-        GrokRuntimeState, PromptAttachmentGrant, AUTHENTICATE_TIMEOUT, GROK_INTERJECT_METHOD,
-        GROK_RECAP_METHOD, INITIALIZE_TIMEOUT, MAX_PROMPT_ATTACHMENT_BYTES, REQUEST_TIMEOUT,
-        SESSION_CLOSE_TIMEOUT, SESSION_START_TIMEOUT,
+        process_launch_key, read_provider_api_key, request_timeout, rewind_model_provider,
+        scheduled_prompt_injection, select_auth_method, serialize_grok_toml, session_attach_method,
+        user_question_params, validate_cli_arguments, validate_service_arguments,
+        workflow_listings_from_response, GrokAcpOptions, GrokCliService, GrokModelProvider,
+        GrokModelProviderInput, GrokRuntimeState, PromptAttachmentGrant, AUTHENTICATE_TIMEOUT,
+        GROK_INTERJECT_METHOD, GROK_RECAP_METHOD, INITIALIZE_TIMEOUT, MAX_PROMPT_ATTACHMENT_BYTES,
+        REQUEST_TIMEOUT, SESSION_CLOSE_TIMEOUT, SESSION_START_TIMEOUT,
     };
     use serde_json::json;
     use std::fs;
@@ -6059,6 +6067,16 @@ mod tests {
         assert_eq!(normalize_model_id("  model-1  ").unwrap(), "model-1");
         assert!(normalize_model_id("").is_err());
         assert!(normalize_model_id("model\n1").is_err());
+    }
+
+    #[test]
+    fn rewind_uses_an_enabled_provider_when_historical_provider_is_missing() {
+        let current = test_model_provider("chat_completions", "https://example.test/v1");
+        let providers = vec![current];
+
+        let selected = rewind_model_provider(&providers, "removed-historical-provider").unwrap();
+
+        assert_eq!(selected.id, "test-provider");
     }
 
     #[test]
