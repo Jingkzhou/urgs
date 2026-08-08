@@ -10,6 +10,7 @@ interface GitFileTreeNode {
 }
 
 interface GitFileTreeProps {
+    compact?: boolean;
     files: GrokGitStatus['files'];
     selectedFile: string;
     selectedPaths: Set<string>;
@@ -96,6 +97,7 @@ const ContextMenuButton: React.FC<{
 );
 
 const GitFileTree: React.FC<GitFileTreeProps> = ({
+    compact = false,
     files,
     selectedFile,
     selectedPaths,
@@ -214,7 +216,7 @@ const GitFileTree: React.FC<GitFileTreeProps> = ({
     const canStage = Boolean(contextFile && !readonly && (!contextFile.staged || contextFile.modified));
     const canOpenHead = Boolean(contextFile && !contextFile.untracked);
     return <div className="relative">
-        <div className="space-y-0.5 rounded-xl border border-slate-200 bg-white p-1.5">{tree.length > 0 ? tree.map((node) => renderNode(node, 0)) : <EmptyState />}</div>
+        <div className={compact ? 'space-y-0.5' : 'space-y-0.5 rounded-xl border border-slate-200 bg-white p-1.5'}>{tree.length > 0 ? tree.map((node) => renderNode(node, 0)) : <EmptyState />}</div>
         {contextMenu && contextFile && <div
             ref={contextMenuRef}
             role="menu"

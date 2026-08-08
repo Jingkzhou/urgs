@@ -73,6 +73,60 @@
 
 final result: passed
 
+---
+
+## 本轮文件导航默认关闭验收
+
+**实现证据**
+
+- 代码：`/Users/zhoujingkun/Documents/GitHub/urgs/urgs-web/src/components/ark-desktop/GitReviewPanel.tsx`
+- 验收实例：从 `/Applications/URGS.app` 启动的 macOS Debug App
+
+**Findings**
+
+- 文件导航默认关闭，右侧完整 Diff 直接占满审查区域。
+- 顶部“文件导航”按钮可打开左侧文件树；文件树标题栏和顶部按钮均可再次关闭。
+- 收起或展开不会清空当前 Diff、文件选择或全部变更状态。
+
+**Validation**
+
+- [x] `CI=true pnpm exec tsc --noEmit`
+- [x] `pnpm run build:web`
+- [x] Tauri macOS Debug App 构建
+- [x] 构建产物与 `/Applications/URGS.app/Contents/MacOS/urgs-desktop` SHA-256 一致
+- [x] 从 `/Applications/URGS.app` 完成默认关闭、打开、关闭真实交互验收
+
+final result: passed
+
+---
+
+## 本轮变更与 Diff 合并验收
+
+**实现证据**
+
+- 代码：`/Users/zhoujingkun/Documents/GitHub/urgs/urgs-web/src/components/ark-desktop/GitReviewPanel.tsx`
+- 文件导航：`/Users/zhoujingkun/Documents/GitHub/urgs/urgs-web/src/components/ark-desktop/GitFileTree.tsx`
+- 真实桌面截图：`/tmp/urgs-git-review-merged-final.jpeg`
+- 验收实例：从 `/Applications/URGS.app` 启动的 macOS Debug App
+
+**Findings**
+
+- 原“变更”和“Diff”两个标签已合并为单一的“变更 + Diff”标签。
+- 左侧文件导航保持常驻；点击文件后，右侧在同一页面切换到该文件 Diff。
+- “全部变更”入口可恢复当前工作区的完整 Diff；无 Diff 文件显示明确空状态。
+- 提升审查面板默认宽度与最小宽度，避免文件导航和代码区互相挤压。
+
+**Validation**
+
+- [x] `CI=true pnpm exec tsc --noEmit`
+- [x] `pnpm run build:web`
+- [x] Tauri macOS Debug App 构建
+- [x] `git diff --check`
+- [x] 构建产物与 `/Applications/URGS.app/Contents/MacOS/urgs-desktop` SHA-256 一致
+- [x] 从 `/Applications/URGS.app` 启动并完成文件切换、空状态、全部 Diff 真实验收
+
+final result: passed
+
 ### 工作区文件夹开合与五条会话复验
 
 - 用户参考：`/var/folders/34/nv2447mj5ns38jjkskrqbb680000gn/T/codex-clipboard-84a0afdf-e787-4ea9-b8ce-d0b774ba4d3a.png`。

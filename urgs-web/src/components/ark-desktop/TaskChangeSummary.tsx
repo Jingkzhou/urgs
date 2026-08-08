@@ -93,6 +93,7 @@ const CompletedPlanProgress: React.FC<{
 }> = ({ plan, taskStatus }) => {
     const completedCount = plan.filter((step) => step.status === 'completed').length;
     const completed = completedCount === plan.length && taskStatus === 'completed';
+    if (completed) return null;
     const progressLabel = taskStatus === 'cancelled'
         ? `计划已停止 · ${completedCount} / ${plan.length} 完成`
         : taskStatus === 'failed'

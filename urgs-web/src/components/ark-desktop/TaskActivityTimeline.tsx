@@ -291,8 +291,10 @@ export const TaskActivityDetails: React.FC<{ tools: Tool[] }> = ({ tools }) => {
             {active || state === 'failed'
                 ? <StageIcon state={state} active={active} />
                 : <ActionIcon size={15} strokeWidth={1.7} className="shrink-0 text-[#8b8b8b]" />}
-            <span className="min-w-0 flex-1 truncate">{summary}</span>
-            <ChevronRight size={14} className={`shrink-0 text-slate-400 transition-transform ${open ? 'rotate-90' : ''}`} />
+            <span className="group/detail inline-flex min-w-0 max-w-full items-center gap-1.5">
+                <span className="min-w-0 truncate">{summary}</span>
+                <ChevronRight size={14} className={`shrink-0 text-slate-400 opacity-0 transition-[transform,opacity] group-hover/detail:opacity-100 ${open ? 'rotate-90' : ''}`} />
+            </span>
         </button>
         {open && <div className="ml-5 mt-1 space-y-0.5 border-l border-slate-200 pl-2">
             {visibleTools.map((tool) => <ActivityDetail key={tool.id} tool={tool} />)}
@@ -403,9 +405,11 @@ const TaskActivityTimeline: React.FC<TaskActivityTimelineProps> = ({ tools, task
     </div>;
 
     if (summaryOnly) return <section className="my-2" aria-label="执行记录">
-        <button type="button" onClick={() => setExpanded((value) => !value)} className="flex w-full items-center gap-1.5 border-b border-slate-200 py-3 text-left text-[15px] font-medium text-slate-500 transition hover:text-slate-700" aria-expanded={expanded} aria-label={compactSummary}>
-            <span className="truncate">{compactSummary}</span>
-            <ChevronRight size={16} strokeWidth={1.8} className={`shrink-0 text-slate-400 transition-transform ${expanded ? 'rotate-90' : ''}`} />
+        <button type="button" onClick={() => setExpanded((value) => !value)} className="group flex w-full items-center border-b border-slate-200 py-3 text-left text-[15px] font-medium text-slate-500 transition hover:text-slate-700" aria-expanded={expanded} aria-label={compactSummary}>
+            <span className="group/summary inline-flex min-w-0 max-w-full items-center gap-1.5">
+                <span className="min-w-0 truncate">{compactSummary}</span>
+                <ChevronRight size={16} strokeWidth={1.8} className={`shrink-0 text-slate-400 opacity-0 transition-[transform,opacity] group-hover/summary:opacity-100 ${expanded ? 'rotate-90' : ''}`} />
+            </span>
         </button>
         {expandedDetails}
     </section>;

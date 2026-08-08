@@ -1,6 +1,6 @@
 import React, { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import {
-    AlertTriangle, Archive, Check, Download, Eye,
+    AlertTriangle, Archive, Check, Download, Eye, FileDiff, PanelLeftClose, PanelLeftOpen,
     GitBranch, GitCommitHorizontal, GitMerge, LoaderCircle, RefreshCw, Sparkles,
     ShieldCheck, Trash2, Upload, X,
 } from 'lucide-react';
@@ -10,7 +10,7 @@ import type { ArkDesktopRuntime } from './useArkDesktopRuntime';
 import GitFileTree from './GitFileTree';
 import GitDiffViewer from './GitDiffViewer';
 
-type ReviewTab = 'changes' | 'diff' | 'commit' | 'worktree';
+type ReviewTab = 'review' | 'commit' | 'worktree';
 
 interface GitReviewPanelProps {
     task: ArkDesktopTask;
@@ -29,8 +29,8 @@ const isNonGitRepositoryError = (message: string) => {
         || normalized.includes('os error 2')
         || /不是(?:一个)?\s*git\s*仓库/.test(message);
 };
-const DEFAULT_PANEL_WIDTH = 430;
-const MIN_PANEL_WIDTH = 320;
+const DEFAULT_PANEL_WIDTH = 560;
+const MIN_PANEL_WIDTH = 420;
 const MAX_PANEL_WIDTH = 720;
 const PANEL_WIDTH_STORAGE_KEY = 'urgs_ark_desktop_git_review_panel_width_v1';
 
@@ -61,7 +61,7 @@ const persistPanelWidth = (value: number) => {
 };
 
 const GitReviewPanel: React.FC<GitReviewPanelProps> = ({ task, runtime, onClose }) => {
-    const [tab, setTab] = useState<ReviewTab>('diff');
+    const [tab, setTab] = useState<ReviewTab>('review');
     const [status, setStatus] = useState<GrokGitStatus | undefined>(task.gitContext?.status);
     const [diff, setDiff] = useState<GrokGitDiff | null>(null);
     const [selectedFile, setSelectedFile] = useState('');
@@ -81,6 +81,7 @@ const GitReviewPanel: React.FC<GitReviewPanelProps> = ({ task, runtime, onClose 
     const [gitRepositoryUnavailable, setGitRepositoryUnavailable] = useState(false);
     const [confirmation, setConfirmation] = useState<{ title: string; body: string; confirmLabel: string; action: () => Promise<void>; refreshAfter?: boolean; busyLabel?: string } | null>(null);
     const [worktreeRemoved, setWorktreeRemoved] = useState(false);
+    const [isFileNavOpen, setIsFileNavOpen] = useState(false);
     const [panelWidth, setPanelWidth] = useState(readStoredPanelWidth);
     const [isResizing, setIsResizing] = useState(false);
     const resizeStartRef = useRef<{ startX: number; startWidth: number } | null>(null);
@@ -222,7 +223,7 @@ const GitReviewPanel: React.FC<GitReviewPanelProps> = ({ task, runtime, onClose 
     }, [loadTaskGitDiff, task.id]);
 
     useEffect(() => {
-        if (tab === 'diff') void loadDiff(diffPath || undefined, showStagedDiff);
+        if (tab === 'review') void loadDiff(diffPath || undefined, showStagedDiff);
     }, [diffPath, loadDiff, showStagedDiff, tab]);
 
     const runSafe = async (label: string, action: () => Promise<unknown>, refreshAfter = true) => {
@@ -301,7 +302,13 @@ const GitReviewPanel: React.FC<GitReviewPanelProps> = ({ task, runtime, onClose 
     const openDiff = (path: string) => {
         setSelectedFile(path);
         setDiffPath(path);
-        setTab('diff');
+        setTab('review');
+    };
+
+    const openAllDiff = () => {
+        setSelectedFile('');
+        setDiffPath('');
+        setTab('review');
     };
 
     const runFileAction = async (label: string, action: () => Promise<unknown>, successMessage: string) => {
@@ -478,54 +485,72 @@ const GitReviewPanel: React.FC<GitReviewPanelProps> = ({ task, runtime, onClose 
         </div>
 
         <div className="flex border-b border-slate-200 bg-white px-2 pt-1" role="tablist" aria-label="Git 审查标签">
-            {([['changes', '变更'], ['diff', 'Diff'], ['commit', '提交'], ['worktree', 'Worktree']] as const).map(([value, label]) => <button key={value} type="button" role="tab" aria-selected={tab === value} onClick={() => setTab(value)} disabled={!isGitRepository} className={`flex-1 border-b-2 px-1 py-2 text-[11px] font-medium transition ${tab === value ? 'border-indigo-500 text-indigo-600' : 'border-transparent text-slate-400 hover:text-slate-600'} disabled:cursor-not-allowed disabled:opacity-50`}>{label}</button>)}
+            {([['review', '变更 + Diff'], ['commit', '提交'], ['worktree', 'Worktree']] as const).map(([value, label]) => <button key={value} type="button" role="tab" aria-selected={tab === value} onClick={() => setTab(value)} disabled={!isGitRepository} className={`flex-1 border-b-2 px-1 py-2 text-[11px] font-medium transition ${tab === value ? 'border-indigo-500 text-indigo-600' : 'border-transparent text-slate-400 hover:text-slate-600'} disabled:cursor-not-allowed disabled:opacity-50`}>{label}</button>)}
         </div>
 
-        <div className="min-h-0 flex-1 overflow-y-auto p-3">
+        <div className="min-h-0 flex-1 flex flex-col overflow-y-auto p-3">
             {(error || notice || !isGitRepository) && <div className={`mb-3 flex items-start gap-2 rounded-xl border px-3 py-2.5 text-[11px] leading-5 ${error ? 'border-red-200 bg-red-50 text-red-700' : !isGitRepository ? 'border-amber-200 bg-amber-50 text-amber-800' : 'border-emerald-200 bg-emerald-50 text-emerald-700'}`}><span className="mt-0.5 shrink-0">{error ? <AlertTriangle size={14} /> : !isGitRepository ? <GitBranch size={14} /> : <Check size={14} />}</span><span className="min-w-0 flex-1 whitespace-pre-wrap">{error || notice || NON_GIT_REPOSITORY_NOTICE}</span><button type="button" onClick={() => { setError(''); setNotice(''); }}><X size={13} /></button></div>}
 
             {!isGitRepository ? <div className="rounded-xl border border-amber-200 bg-amber-50 px-4 py-6 text-center text-[11px] leading-5 text-amber-800"><GitBranch size={22} className="mx-auto mb-2 text-amber-600" /><p className="font-medium">当前工作区不是 Git 仓库</p><p className="mt-1 text-amber-700">请在 Git 仓库目录中打开任务，代码变更审查、Diff、提交和 Worktree 功能将自动恢复。</p></div> : <>
 
-            {tab === 'changes' && <section className="space-y-3">
-                <div className="flex items-center gap-1.5">
+            {tab === 'review' && <section className="flex min-h-0 flex-1 flex-col gap-2">
+                <div className="flex shrink-0 items-center gap-1.5">
+                    <button type="button" onClick={() => setIsFileNavOpen((current) => !current)} aria-expanded={isFileNavOpen} aria-controls="git-file-navigation" className={`flex items-center gap-1.5 rounded-lg border px-2.5 py-2 text-[11px] font-medium transition ${isFileNavOpen ? 'border-indigo-200 bg-indigo-50 text-indigo-700' : 'border-slate-200 bg-white text-slate-600 hover:bg-slate-50'}`} title={isFileNavOpen ? '关闭文件导航' : '打开文件导航'}>{isFileNavOpen ? <PanelLeftClose size={13} /> : <PanelLeftOpen size={13} />}{isFileNavOpen ? '隐藏文件导航' : '文件导航'}</button>
                     <button type="button" onClick={() => void refresh()} disabled={busy !== null} className="flex items-center gap-1.5 rounded-lg border border-slate-200 bg-white px-2.5 py-2 text-[11px] font-medium text-slate-600 hover:bg-slate-50 disabled:opacity-50"><RefreshCw size={13} className={busy === 'refresh' ? 'animate-spin' : ''} />刷新</button>
                     <button type="button" onClick={stageAllChanges} disabled={isReadonly || busy !== null || files.length === 0} className="rounded-lg bg-slate-900 px-2.5 py-2 text-[11px] font-medium text-white hover:bg-slate-700 disabled:opacity-40">暂存全部</button>
                     <button type="button" onClick={() => void runSafe('fetch', () => runtime.fetchTaskGit(task.id))} disabled={isReadonly || busy !== null} className="ml-auto flex items-center gap-1 rounded-lg px-2 py-2 text-[11px] text-slate-500 hover:bg-slate-100 disabled:opacity-40">{isFetching ? <LoaderCircle size={13} className="animate-spin" /> : <Download size={13} />}{isFetching ? '正在拉取…' : `拉取 ${behindCount}`}</button>
                 </div>
-                {isReadonly && <div className="flex items-start gap-2 rounded-xl border border-slate-200 bg-slate-50 px-3 py-2.5 text-[11px] leading-5 text-slate-500"><Eye size={14} className="mt-0.5 shrink-0" />只读分析任务只提供状态和 Diff，不允许修改仓库。</div>}
-                <GitFileTree
-                    files={files}
-                    selectedFile={selectedFile}
-                    selectedPaths={selectedFileSet}
-                    onTogglePath={togglePath}
-                    onSelectFile={setSelectedFile}
-                    onOpenDiff={openDiff}
-                    onOpenFile={openFile}
-                    onOpenHeadFile={openHeadFile}
-                    onDiscardFile={discardFile}
-                    onStageFile={stageFile}
-                    onAddToGitignore={addToGitignore}
-                    onRevealInFinder={revealInFinder}
-                    readonly={isReadonly}
-                />
-                {files.length > 0 && <div className="flex flex-wrap items-center gap-1.5 border-t border-slate-200 pt-3"><span className="mr-auto text-[10px] text-slate-400">已选 {selectedPaths.length || (selectedFile ? 1 : 0)} 个文件</span><button type="button" onClick={stageSelected} disabled={isReadonly || busy !== null || !pathsForAction.length} className="rounded-lg border border-slate-200 bg-white px-2.5 py-1.5 text-[11px] text-slate-600 hover:bg-slate-50 disabled:opacity-40">暂存所选</button><button type="button" onClick={unstageSelected} disabled={isReadonly || busy !== null || !pathsForAction.length} className="rounded-lg border border-slate-200 bg-white px-2.5 py-1.5 text-[11px] text-slate-600 hover:bg-slate-50 disabled:opacity-40">取消暂存</button><button type="button" onClick={discardSelected} disabled={isReadonly || busy !== null || !pathsForAction.length} className="rounded-lg border border-red-200 bg-white px-2.5 py-1.5 text-[11px] text-red-600 hover:bg-red-50 disabled:opacity-40">丢弃</button></div>}
-            </section>}
-
-            {tab === 'diff' && <section className="space-y-3">
-                {diff?.patch ? <GitDiffViewer
-                    patch={diff.patch}
-                    filePath={diffPath || '当前工作区'}
-                    truncated={diff.truncated}
-                    summary={{
-                        title: diffPath || '全部变更',
-                        subtitle: diffPath ? '仅展示当前文件的变更' : '按文件连续展示当前工作区的完整 Diff',
-                        fileCount: diffPath ? 1 : files.length,
-                        additions: diffPath ? (files.find((file) => file.path === diffPath)?.additions || 0) : (currentStatus?.additions || 0),
-                        deletions: diffPath ? (files.find((file) => file.path === diffPath)?.deletions || 0) : (currentStatus?.deletions || 0),
-                        staged: showStagedDiff,
-                        onStagedChange: setShowStagedDiff,
-                    }}
-                /> : <EmptyState text={busy === 'diff' ? '正在读取全部 Diff…' : '当前工作区没有可展示的 Diff'} />}
+                {isReadonly && <div className="flex shrink-0 items-start gap-2 rounded-xl border border-slate-200 bg-slate-50 px-3 py-2.5 text-[11px] leading-5 text-slate-500"><Eye size={14} className="mt-0.5 shrink-0" />只读分析任务只提供状态和 Diff，不允许修改仓库。</div>}
+                <div className={`grid min-h-0 flex-1 ${isFileNavOpen ? 'grid-cols-[minmax(132px,36%)_minmax(0,1fr)] gap-2' : 'grid-cols-1'}`}>
+                    {isFileNavOpen && <div id="git-file-navigation" className="flex min-h-0 flex-col overflow-hidden rounded-xl border border-slate-200 bg-white">
+                        <div className="shrink-0 border-b border-slate-100 p-1.5">
+                            <div className="flex items-center gap-1">
+                                <button type="button" onClick={openAllDiff} className={`flex min-w-0 flex-1 items-center gap-2 rounded-lg px-2.5 py-2 text-left transition ${!diffPath ? 'bg-indigo-50 text-indigo-700 ring-1 ring-indigo-100' : 'text-slate-600 hover:bg-slate-50'}`} aria-current={!diffPath ? 'page' : undefined}>
+                                    <FileDiff size={14} className="shrink-0" />
+                                    <span className="min-w-0 flex-1 truncate text-[11px] font-semibold">全部变更</span>
+                                    <span className="shrink-0 text-[10px] text-slate-400">{files.length}</span>
+                                </button>
+                                <button type="button" onClick={() => setIsFileNavOpen(false)} className="shrink-0 rounded-lg p-2 text-slate-400 hover:bg-slate-100 hover:text-slate-700" aria-label="关闭文件导航" title="关闭文件导航"><PanelLeftClose size={14} /></button>
+                            </div>
+                            <div className="mt-1 px-2.5 text-[10px] text-slate-400">文件导航</div>
+                        </div>
+                        <div className="min-h-0 flex-1 overflow-y-auto p-1.5">
+                            <GitFileTree
+                                compact
+                                files={files}
+                                selectedFile={selectedFile}
+                                selectedPaths={selectedFileSet}
+                                onTogglePath={togglePath}
+                                onSelectFile={setSelectedFile}
+                                onOpenDiff={openDiff}
+                                onOpenFile={openFile}
+                                onOpenHeadFile={openHeadFile}
+                                onDiscardFile={discardFile}
+                                onStageFile={stageFile}
+                                onAddToGitignore={addToGitignore}
+                                onRevealInFinder={revealInFinder}
+                                readonly={isReadonly}
+                            />
+                        </div>
+                        {files.length > 0 && <div className="flex shrink-0 flex-wrap items-center gap-1 border-t border-slate-100 p-1.5"><span className="mr-auto w-full truncate px-1 text-[10px] text-slate-400">已选 {selectedPaths.length || (selectedFile ? 1 : 0)} 个文件</span><button type="button" onClick={stageSelected} disabled={isReadonly || busy !== null || !pathsForAction.length} className="rounded-lg border border-slate-200 bg-white px-2 py-1.5 text-[10px] text-slate-600 hover:bg-slate-50 disabled:opacity-40">暂存</button><button type="button" onClick={unstageSelected} disabled={isReadonly || busy !== null || !pathsForAction.length} className="rounded-lg border border-slate-200 bg-white px-2 py-1.5 text-[10px] text-slate-600 hover:bg-slate-50 disabled:opacity-40">取消暂存</button><button type="button" onClick={discardSelected} disabled={isReadonly || busy !== null || !pathsForAction.length} className="rounded-lg border border-red-200 bg-white px-2 py-1.5 text-[10px] text-red-600 hover:bg-red-50 disabled:opacity-40">丢弃</button></div>}
+                    </div>}
+                    <div className="min-h-0 overflow-y-auto rounded-xl border border-slate-200 bg-[#fbfbfc] p-2">
+                        {diff?.patch ? <GitDiffViewer
+                            patch={diff.patch}
+                            filePath={diffPath || '当前工作区'}
+                            truncated={diff.truncated}
+                            summary={{
+                                title: diffPath || '全部变更',
+                                subtitle: diffPath ? '当前文件的变更 · 可从左侧切换文件' : '按文件连续展示当前工作区的完整 Diff',
+                                fileCount: diffPath ? 1 : files.length,
+                                additions: diffPath ? (files.find((file) => file.path === diffPath)?.additions || 0) : (currentStatus?.additions || 0),
+                                deletions: diffPath ? (files.find((file) => file.path === diffPath)?.deletions || 0) : (currentStatus?.deletions || 0),
+                                staged: showStagedDiff,
+                                onStagedChange: setShowStagedDiff,
+                            }}
+                        /> : <EmptyState text={busy === 'diff' ? '正在读取 Diff…' : '当前工作区没有可展示的 Diff'} />}
+                    </div>
+                </div>
             </section>}
 
             {tab === 'commit' && <section className="space-y-3">
