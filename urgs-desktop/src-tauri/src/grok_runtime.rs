@@ -60,16 +60,31 @@ fn request_timeout(method: &str) -> Duration {
     }
 }
 
+fn session_startup_hints() -> Value {
+    json!({
+        "nonInteractive": false,
+        "skipGitStatus": true,
+        "skipProjectLayout": true,
+        "deliveryTools": []
+    })
+}
+
+fn session_request_meta(rules: Option<&str>) -> Value {
+    let mut meta = json!({
+        "startupHints": session_startup_hints()
+    });
+    if let Some(rules) = rules.filter(|value| !value.trim().is_empty()) {
+        meta["rules"] = json!(rules);
+    }
+    meta
+}
+
 fn initialize_client_meta(rules: Option<&str>) -> Value {
     let mut meta = json!({
         "clientType": "urgs-ark-desktop",
         "clientIdentifier": "urgs-desktop",
         "clientVersion": env!("CARGO_PKG_VERSION"),
-        "startupHints": {
-            "nonInteractive": false,
-            "skipGitStatus": true,
-            "skipProjectLayout": true
-        }
+        "startupHints": session_startup_hints()
     });
     if let Some(rules) = rules.filter(|value| !value.trim().is_empty()) {
         meta["rules"] = json!(rules);
@@ -2139,16 +2154,18 @@ async fn request_session_attach(
     session_id: &str,
     workspace: &Path,
     mcp_payload: &[Value],
+    rules: Option<&str>,
 ) -> (Result<Value, String>, Vec<Value>) {
     process.replaying_session.store(true, Ordering::Relaxed);
     let result = process
-        .request(
+        .request_with_meta(
             method,
             json!({
                 "sessionId": session_id,
                 "cwd": workspace.to_string_lossy().to_string(),
                 "mcpServers": mcp_payload,
             }),
+            Some(session_request_meta(rules)),
         )
         .await;
     process.replaying_session.store(false, Ordering::Relaxed);
@@ -4620,12 +4637,13 @@ pub async fn grok_create_session(
     let (mcp_payload, mcp_states) = configured_mcp_servers(&app, &workspace)?;
     process.replace_mcp_servers(mcp_states.clone());
     let response = match process
-        .request(
+        .request_with_meta(
             "session/new",
             json!({
                 "cwd": workspace,
                 "mcpServers": mcp_payload,
             }),
+            Some(session_request_meta(rules.as_deref())),
         )
         .await
     {
@@ -4744,6 +4762,7 @@ pub async fn grok_load_session(
         &session_id,
         &workspace,
         &mcp_payload,
+        rules.as_deref(),
     )
     .await;
     let (attach_result, replayed_events) = if attach_method == "session/resume" {
@@ -4755,6 +4774,7 @@ pub async fn grok_load_session(
                     &session_id,
                     &workspace,
                     &mcp_payload,
+                    rules.as_deref(),
                 )
                 .await
             }
@@ -5407,17 +5427,18 @@ mod tests {
         available_commands_from_list, available_commands_from_session_update, build_prompt_content,
         cache_provider_api_key, consume_prompt_attachment_grants, direct_model_api_endpoint,
         direct_model_api_payload, direct_model_api_response_text, forget_cached_provider_api_key,
-        format_rpc_error, grok_agent_arguments, is_unsupported_acp_method_error,
-        model_key_env_name, normalize_model_id, normalize_model_provider,
-        normalized_interjection_params, normalized_queue_changed_params,
+        format_rpc_error, grok_agent_arguments, initialize_client_meta,
+        is_unsupported_acp_method_error, model_key_env_name, normalize_model_id,
+        normalize_model_provider, normalized_interjection_params, normalized_queue_changed_params,
         normalized_session_update_message, parse_grok_toml, plan_approval_params,
         process_launch_key, read_provider_api_key, request_timeout, rewind_model_provider,
         scheduled_prompt_injection, select_auth_method, serialize_grok_toml, session_attach_method,
-        user_question_params, validate_cli_arguments, validate_service_arguments,
-        workflow_listings_from_response, GrokAcpOptions, GrokCliService, GrokModelProvider,
-        GrokModelProviderInput, GrokRuntimeState, PromptAttachmentGrant, AUTHENTICATE_TIMEOUT,
-        GROK_INTERJECT_METHOD, GROK_RECAP_METHOD, INITIALIZE_TIMEOUT, MAX_PROMPT_ATTACHMENT_BYTES,
-        REQUEST_TIMEOUT, SESSION_CLOSE_TIMEOUT, SESSION_START_TIMEOUT,
+        session_request_meta, user_question_params, validate_cli_arguments,
+        validate_service_arguments, workflow_listings_from_response, GrokAcpOptions,
+        GrokCliService, GrokModelProvider, GrokModelProviderInput, GrokRuntimeState,
+        PromptAttachmentGrant, AUTHENTICATE_TIMEOUT, GROK_INTERJECT_METHOD, GROK_RECAP_METHOD,
+        INITIALIZE_TIMEOUT, MAX_PROMPT_ATTACHMENT_BYTES, REQUEST_TIMEOUT, SESSION_CLOSE_TIMEOUT,
+        SESSION_START_TIMEOUT,
     };
     use serde_json::json;
     use std::fs;
@@ -5978,6 +5999,24 @@ mod tests {
         assert_eq!(request_timeout("_x.ai/commands/list"), REQUEST_TIMEOUT);
         assert!(request_timeout("authenticate") > request_timeout("session/new"));
         assert!(request_timeout("session/new") > request_timeout("_x.ai/commands/list"));
+    }
+
+    #[test]
+    fn session_requests_repeat_the_interactive_startup_policy() {
+        let initialize_meta = initialize_client_meta(Some("workspace rules"));
+        let session_meta = session_request_meta(Some("workspace rules"));
+        let expected_hints = json!({
+            "nonInteractive": false,
+            "skipGitStatus": true,
+            "skipProjectLayout": true,
+            "deliveryTools": []
+        });
+
+        assert_eq!(initialize_meta["startupHints"], expected_hints);
+        assert_eq!(session_meta["startupHints"], expected_hints);
+        assert_eq!(initialize_meta["rules"], "workspace rules");
+        assert_eq!(session_meta["rules"], "workspace rules");
+        assert!(session_request_meta(None).get("rules").is_none());
     }
 
     #[test]

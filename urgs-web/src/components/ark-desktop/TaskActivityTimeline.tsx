@@ -3,6 +3,7 @@ import {
     AlertCircle, CheckCircle2, ChevronDown, ChevronRight, Circle, FileText, FolderOpen, LoaderCircle, Pencil, Search, ShieldAlert, SquareTerminal, Wrench,
 } from 'lucide-react';
 import type { ArkDesktopExecutionState, ArkDesktopTask, ArkDesktopToolActivity } from './types';
+import { classifyActivityStatus } from './activityStatus';
 
 type Tool = ArkDesktopToolActivity;
 type ToolState = 'failed' | 'completed' | 'pending' | 'running';
@@ -14,10 +15,11 @@ const isHidden = (tool: Tool) => tool.visibility === 'diagnostic' || hiddenKinds
 const isReasoning = (tool: Tool) => tool.kind === 'reasoning';
 
 const getToolState = (status: string): ToolState => {
-    if (/失败|错误|退出码|failed|error/i.test(status)) return 'failed';
-    if (/已完成|已记录|完成|成功|取消|不可用|未生成|completed|recorded|success|cancelled|canceled|unavailable|done/i.test(status)) return 'completed';
-    if (/等待|pending/i.test(status)) return 'pending';
-    return 'running';
+    const kind = classifyActivityStatus(status);
+    if (kind === 'failed') return 'failed';
+    if (kind === 'pending') return 'pending';
+    if (kind === 'running') return 'running';
+    return 'completed';
 };
 
 const compactText = (value: string, maxLength = 72) => {
@@ -47,6 +49,10 @@ const inputString = (tool: Tool, keys: string[]) => {
 
 const toolDescription = (tool: Tool) => inputString(tool, ['description', 'display_name', 'displayName', 'label']);
 const toolVariant = (tool: Tool) => inputString(tool, ['variant', 'type', 'tool_type', 'toolType']);
+const localizedToolDescription = (tool: Tool) => {
+    const description = toolDescription(tool);
+    return description && /[\u3400-\u9fff]/.test(description) ? description : undefined;
+};
 
 const toolPath = (tool: Tool) => {
     const changedPaths = Array.from(new Set((tool.fileChanges || []).map((change) => change.path).filter(Boolean)));
@@ -134,7 +140,7 @@ const genericTitlePattern = /^(本地工具调用|工具调用|已执行任务|�
 const commandGroupSummary = (tools: Tool[]) => {
     if (!tools.length || tools.some((tool) => activityKind(tool) !== 'command')) return undefined;
     const descriptions = Array.from(new Set(tools
-        .map(toolDescription)
+        .map(localizedToolDescription)
         .filter((description): description is string => Boolean(description))
         .map((description) => compactText(description, 64))));
     if (descriptions.length === 0) return undefined;
@@ -172,7 +178,7 @@ const activityDetailSummary = (tool: Tool) => {
     const path = toolPath(tool);
     const command = toolCommand(tool);
     const query = toolQuery(tool);
-    const description = toolDescription(tool);
+    const description = localizedToolDescription(tool);
     const question = toolQuestion(tool);
     const changedPathCount = new Set((tool.fileChanges || []).map((change) => change.path).filter(Boolean)).size;
     if (kind === 'edit' && changedPathCount > 1) return `${state === 'running' ? '正在编辑' : state === 'failed' ? '编辑未完成：' : '编辑了'} ${changedPathCount} 个文件`;
@@ -185,7 +191,7 @@ const activityDetailSummary = (tool: Tool) => {
     if (description) return compactText(description);
     if ((kind === 'command' || kind === 'git') && command) return `${state === 'running' ? '正在运行' : state === 'failed' ? '运行未完成：' : '运行'} ${command}`;
     const title = compactText(tool.title);
-    if (title && !genericTitlePattern.test(title)) return title;
+    if (title && /[\u3400-\u9fff]/.test(title) && !genericTitlePattern.test(title)) return title;
     return activityClause(kind, state);
 };
 
@@ -326,10 +332,14 @@ const TaskActivityTimeline: React.FC<TaskActivityTimelineProps> = ({ tools, task
     );
     const activeTool = [...summaryTools].reverse().find((tool) => ['running', 'pending'].includes(getToolState(tool.status)));
     const failedTool = summaryTools.some((tool) => getToolState(tool.status) === 'failed' && !tool.recovered);
-    const active = isActive ?? Boolean(activeTool);
+    const terminalTask = taskStatus === 'completed'
+        || taskStatus === 'failed'
+        || taskStatus === 'cancelled'
+        || ['completed', 'completed_limited', 'failed', 'stopped'].includes(execution?.status || '');
+    const active = !terminalTask && (isActive ?? Boolean(activeTool));
     const [expanded, setExpanded] = useState(active);
-    const isRunning = active && (taskStatus === 'running' || execution?.status === 'running' || execution?.status === 'recovering' || Boolean(activeTool));
     const isWaiting = active && (taskStatus === 'waiting_authorization' || execution?.status === 'waiting_user');
+    const isRunning = active && !isWaiting && (taskStatus === 'running' || execution?.status === 'running' || execution?.status === 'recovering' || Boolean(activeTool));
     const currentStage = isWaiting && active
         ? execution?.currentStage || '等待你的确认'
         : active && activeTool

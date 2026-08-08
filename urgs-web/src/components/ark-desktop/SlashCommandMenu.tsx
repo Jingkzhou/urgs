@@ -1,5 +1,6 @@
 import React, { useEffect, useMemo, useRef, useState } from 'react';
 import {
+    Box,
     Brain,
     CircleDashed,
     CircleHelp,
@@ -92,8 +93,12 @@ const commandIcon = (name: string) => {
     return Code2;
 };
 
-const commandLabel = (name: string) => commandLabels[name]
-    || name.replace(/[-_]/g, ' ').replace(/\b\w/g, (letter) => letter.toUpperCase());
+const commandLabel = (name: string) => {
+    const displayName = name.includes(':') ? name.slice(name.lastIndexOf(':') + 1) : name;
+    return commandLabels[name]
+        || commandLabels[displayName]
+        || displayName.replace(/[-_]/g, ' ').replace(/\b\w/g, (letter) => letter.toUpperCase());
+};
 
 const coreSessionCommands: ArkDesktopSlashCommand[] = [
     { name: 'compact', description: 'Compress conversation history', inputHint: 'optional context about what to preserve' },
@@ -101,6 +106,15 @@ const coreSessionCommands: ArkDesktopSlashCommand[] = [
     { name: 'context', description: 'Show context window usage and session stats' },
     { name: 'session-info', description: 'Show session details' },
 ];
+
+const availableCommands = (commands: ArkDesktopSlashCommand[]) => commands.length > 0 ? commands : coreSessionCommands;
+
+const selectedSlashCommand = (value: string, commands: ArkDesktopSlashCommand[]) => {
+    const match = value.match(/^\/([^\s/]+)\s([\s\S]*)$/);
+    if (!match) return undefined;
+    const command = availableCommands(commands).find((item) => item.name === match[1]);
+    return command ? { command, prefix: `/${command.name} ` } : undefined;
+};
 
 const slashQuery = (value: string) => {
     const match = value.match(/^\/([^\s/]*)$/);
@@ -134,8 +148,7 @@ const SlashCommandMenu: React.FC<SlashCommandMenuProps> = ({ value, commands, on
     const menuRef = useRef<HTMLDivElement>(null);
     const filteredCommands = useMemo(() => {
         if (query === null) return [];
-        const availableCommands = commands.length > 0 ? commands : coreSessionCommands;
-        return availableCommands
+        return availableCommands(commands)
             .filter((command) => {
                 const searchable = `${command.name} ${command.description} ${commandDescriptions[command.name] || ''}`.toLowerCase();
                 return !query || searchable.includes(query);
@@ -166,7 +179,7 @@ const SlashCommandMenu: React.FC<SlashCommandMenuProps> = ({ value, commands, on
     }, [value, visible]);
 
     const select = (command: ArkDesktopSlashCommand) => {
-        const nextValue = `/${command.name}${command.inputHint ? ' ' : ''}`;
+        const nextValue = `/${command.name} `;
         setDismissedValue(nextValue);
         onChange(nextValue);
     };
@@ -239,22 +252,38 @@ export const ConversationPromptInput: React.FC<ConversationPromptInputProps> = (
     placeholder,
     rows = 2,
     className = 'block w-full resize-none bg-transparent px-2.5 py-2 text-[15px] leading-6 text-slate-800 outline-none placeholder:text-slate-400 disabled:cursor-not-allowed',
-}) => (
-    <SlashCommandMenu value={value} commands={commands} onChange={onChange} disabled={disabled || slashDisabled}>
-        <textarea
-            value={value}
-            onChange={(event) => onChange(event.target.value)}
-            onKeyDown={(event) => {
-                if (event.key !== 'Enter' || event.shiftKey || disabled || !value.trim()) return;
-                event.preventDefault();
-                void onSubmit();
-            }}
-            disabled={disabled}
-            placeholder={placeholder}
-            rows={rows}
-            className={className}
-        />
-    </SlashCommandMenu>
-);
+}) => {
+    const selected = useMemo(() => selectedSlashCommand(value, commands), [commands, value]);
+    const visibleValue = selected ? value.slice(selected.prefix.length) : value;
+    const handleChange = (nextValue: string) => onChange(selected ? `${selected.prefix}${nextValue}` : nextValue);
+    const textareaClassName = selected ? className.replace(/\bw-full\b/, 'min-w-0 flex-1') : className;
+
+    return <SlashCommandMenu value={value} commands={commands} onChange={onChange} disabled={disabled || slashDisabled}>
+        <div className="relative flex min-w-0 flex-nowrap items-start">
+            {selected && <span className="mt-2 ml-2 inline-flex max-w-[min(48%,420px)] shrink-0 items-center gap-2 whitespace-nowrap rounded-[14px] bg-transparent px-3 py-0 text-[15px] font-normal leading-6 text-[#60a5fa]" aria-label={`已选择命令 ${commandLabel(selected.command.name)}`}>
+                <Box size={18} strokeWidth={1.8} className="shrink-0 text-[#60a5fa]" />
+                <span className="truncate">{commandLabel(selected.command.name)}</span>
+            </span>}
+            <textarea
+                value={visibleValue}
+                onChange={(event) => handleChange(event.target.value)}
+                onKeyDown={(event) => {
+                    if (event.key === 'Backspace' && selected && !visibleValue) {
+                        event.preventDefault();
+                        onChange('');
+                        return;
+                    }
+                    if (event.key !== 'Enter' || event.shiftKey || disabled || !value.trim()) return;
+                    event.preventDefault();
+                    void onSubmit();
+                }}
+                disabled={disabled}
+                placeholder={placeholder}
+                rows={rows}
+                className={textareaClassName}
+            />
+        </div>
+    </SlashCommandMenu>;
+};
 
 export default SlashCommandMenu;

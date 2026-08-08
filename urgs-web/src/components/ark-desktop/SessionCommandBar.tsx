@@ -90,8 +90,8 @@ const SessionCommandBar: React.FC<{
 
     if (actions.length === 0 && !onChooseAttachments && enabledSkills.length === 0 && !showPlugins) return null;
 
-    const select = (name: string, inputHint?: string) => {
-        onSelect(`/${name}${inputHint ? ' ' : ''}`);
+    const select = (name: string) => {
+        onSelect(`/${name} `);
         setOpen(false);
     };
 
@@ -127,13 +127,12 @@ const SessionCommandBar: React.FC<{
             {actions.length > 0 && <SectionLabel>会话能力</SectionLabel>}
             {actions.map((action) => {
                 const Icon = action.icon;
-                const command = available.get(action.name)!;
                 return <button
                     key={action.name}
                     type="button"
                     role="menuitem"
                     disabled={disabled}
-                    onClick={() => select(action.name, command.inputHint)}
+                    onClick={() => select(action.name)}
                     className="flex min-h-11 w-full items-center gap-3 rounded-xl px-3 py-2 text-left transition hover:bg-slate-100 disabled:cursor-not-allowed disabled:opacity-45"
                     title={disabled ? '任务运行中暂不可使用' : action.description}
                 >

@@ -46,7 +46,7 @@ pnpm verify:windows
 
 ```powershell
 $setup = Get-ChildItem "src-tauri/target/release/bundle/nsis/*-setup.exe" | Select-Object -First 1
-pnpm verify:windows:install -- -InstallerPath $setup.FullName -ExpectedVersion 0.2.121
+pnpm verify:windows:install -- -InstallerPath $setup.FullName -ExpectedVersion 1.0.0
 ```
 
 因此正式客户端不需要用户另行安装 Grok Build；安装 URGS 客户端后，Grok 运行时随客户端一起部署。Windows 构建流水线使用官方安装源只是在构建机准备 sidecar，最终安装包内包含的是已锁定并验收过的 `grok.exe`。

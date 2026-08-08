@@ -87,6 +87,13 @@ import {
 } from '@/services/grokDesktop';
 import { loadArkDesktopSnapshot, resetArkDesktopSnapshot, saveArkDesktopSnapshot } from './storage';
 import { extractFileChanges } from './fileChanges';
+import {
+    activityStatusLabel,
+    classifyActivityStatus,
+    inferTerminalActivityStatus,
+    isActiveActivityStatus,
+    isSettledActivityStatus,
+} from './activityStatus';
 import type {
     ArkDesktopAgent,
     ArkDesktopExecutionState,
@@ -226,13 +233,36 @@ const extractText = (update: Record<string, any>) =>
     || update?.delta
     || '';
 
+const decodeToolDetailValue = (value: unknown, depth = 0): unknown => {
+    if (depth > 5 || value === undefined || value === null) return value;
+    if (Array.isArray(value)) {
+        const isByteArray = value.length > 0
+            && value.every((item) => typeof item === 'number' && Number.isInteger(item) && item >= 0 && item <= 255);
+        if (isByteArray) {
+            try {
+                return new TextDecoder().decode(new Uint8Array(value));
+            } catch {
+                return value;
+            }
+        }
+        return value.map((item) => decodeToolDetailValue(item, depth + 1));
+    }
+    if (typeof value !== 'object') return value;
+    return Object.fromEntries(Object.entries(value as Record<string, unknown>)
+        .map(([key, item]) => [key, decodeToolDetailValue(item, depth + 1)]));
+};
+
 const formatToolDetail = (value: unknown) => {
     if (value === undefined || value === null || value === '') return undefined;
-    const text = typeof value === 'string'
-        ? value
-        : Array.isArray(value)
-            ? value.map((item) => item?.text || item?.content?.text || JSON.stringify(item)).join('\n')
-            : JSON.stringify(value, null, 2);
+    const normalized = decodeToolDetailValue(value);
+    const text = typeof normalized === 'string'
+        ? normalized
+        : Array.isArray(normalized)
+            ? normalized.map((item) => {
+                const record = item && typeof item === 'object' ? item as Record<string, any> : undefined;
+                return record?.text || record?.content?.text || JSON.stringify(item);
+            }).join('\n')
+            : JSON.stringify(normalized, null, 2) || '';
     return redactRuntimeText(text).slice(0, 12_000);
 };
 
@@ -243,14 +273,66 @@ const formatDisplayToolTitle = (value: unknown, fallback = '本地工具调用')
         : title;
 };
 
-const statusLabel = (status?: string) => {
-    switch (status) {
-        case 'pending': return '等待中';
-        case 'in_progress': return '运行中';
-        case 'completed': return '已完成';
-        case 'failed': return '失败';
-        default: return status || '运行中';
+const statusLabel = (status?: unknown, fallback = '运行中') => activityStatusLabel(status, fallback);
+
+const firstStatusValue = (values: unknown[]) => values.find((value) => (
+    value !== undefined
+    && value !== null
+    && (typeof value !== 'string' || value.trim())
+));
+
+const toolCallStatusValue = (update: Record<string, any>) => firstStatusValue([
+    update.status,
+    update.toolCall?.status,
+    update.tool_call?.status,
+    update.toolCallUpdate?.status,
+    update.tool_call_update?.status,
+    update.fields?.status,
+    update.toolCall?.fields?.status,
+    update.tool_call?.fields?.status,
+]);
+
+const toolCallResultValues = (update: Record<string, any>) => [
+    update.rawOutput,
+    update.raw_output,
+    update.toolCall?.rawOutput,
+    update.toolCall?.raw_output,
+    update.tool_call?.rawOutput,
+    update.tool_call?.raw_output,
+    update.fields?.rawOutput,
+    update.fields?.raw_output,
+    update.toolCall?.fields?.rawOutput,
+    update.toolCall?.fields?.raw_output,
+    update.tool_call?.fields?.rawOutput,
+    update.tool_call?.fields?.raw_output,
+    update.content,
+    update.toolCall?.content,
+    update.tool_call?.content,
+].filter((value) => value !== undefined && value !== null && value !== '');
+
+const resolveToolCallStatus = (
+    updateType: string,
+    update: Record<string, any>,
+    existing?: ArkDesktopToolActivity,
+) => {
+    const rawStatus = toolCallStatusValue(update);
+    const existingKind = existing ? classifyActivityStatus(existing.status) : undefined;
+    if (rawStatus !== undefined) {
+        // A late pending/in-progress update must not resurrect a completed tool.
+        if (existing && isSettledActivityStatus(existing.status) && isActiveActivityStatus(rawStatus) && existingKind !== 'failed') {
+            return existing.status;
+        }
+        return statusLabel(rawStatus);
     }
+    // Some bridge versions deliver the final raw result without copying the ACP
+    // status to the outer update. Only infer completion from explicit result
+    // evidence such as exit_code, timed_out, signal, success, or nested status.
+    const inferred = updateType === 'tool_call_update'
+        ? inferTerminalActivityStatus(toolCallResultValues(update))
+        : undefined;
+    if (inferred && existingKind !== 'cancelled') return inferred;
+    if (existing && isSettledActivityStatus(existing.status)) return existing.status;
+    return existing?.status || (updateType === 'tool_call' ? '等待中' : '运行中');
 };
 
 const hiddenActivityKinds = new Set(['diagnostic', 'context', 'memory', 'recovery', 'inference']);
@@ -273,7 +355,7 @@ const semanticStageForActivity = (kind?: string, title?: string) => {
 const activityVisibilityForKind = (kind?: string): ArkDesktopToolActivity['visibility'] =>
     hiddenActivityKinds.has(String(kind || '').toLowerCase()) ? 'diagnostic' : 'summary';
 
-const activityIsRunning = (status: string) => /运行中|等待中|分析中|后台运行中|running|pending|in_progress|retry/i.test(status);
+const activityIsRunning = (status: string) => isActiveActivityStatus(status);
 
 const workflowText = (value: unknown) => {
     const text = typeof value === 'string' ? value.trim() : '';
@@ -401,8 +483,6 @@ const applyCompactedContextInfo = (
     };
 };
 
-const isSettledActivity = (status: string) => /已完成|已记录|完成|成功|失败|取消|不可用|未生成|退出码|completed|recorded|success|failed|cancelled|canceled|unavailable|done/i.test(status);
-
 const settleForegroundActivities = (
     task: ArkDesktopTask,
     terminalStatus: ArkDesktopTaskStatus,
@@ -417,7 +497,7 @@ const settleForegroundActivities = (
     const tools = task.tools.map((tool) => {
         // Recap is queued asynchronously by the sidecar. A foreground turn can
         // finish before its session_recap/session_recap_unavailable event arrives.
-        if (tool.id === 'session-recap' || isSettledActivity(tool.status) || ['background_task', 'monitor', 'goal', 'workflow'].includes(tool.kind || '')) return tool;
+        if (tool.id === 'session-recap' || isSettledActivityStatus(tool.status) || ['background_task', 'monitor', 'goal', 'workflow'].includes(tool.kind || '')) return tool;
         return { ...tool, status: nextStatus, updatedAt: now };
     });
     return {
@@ -905,6 +985,7 @@ export const useArkDesktopRuntime = () => {
             return;
         }
         if (event.eventType === 'session_update' && taskId) {
+            if (cancelledTaskIdsRef.current.has(taskId)) return;
             const params = event.payload?.params || event.payload;
             const update = params?.update || params?.sessionUpdate || {};
             const updateType = update?.sessionUpdate;
@@ -966,10 +1047,10 @@ export const useArkDesktopRuntime = () => {
                 updateTask(taskId, (task) => {
                     const next = upsertTaskActivity(task, {
                         id: 'session-recap',
-                        title: '生成会话 Recap',
+                        title: '生成会话摘要',
                         status: recap ? '已完成' : '不可用',
                         kind: 'context',
-                        output: recap ? '会话 Recap 已生成' : 'Recap 返回为空，当前未生成摘要',
+                        output: recap ? '会话摘要已生成' : '会话摘要返回为空，当前未生成摘要',
                     });
                     return recap ? { ...next, recap } : next;
                 });
@@ -978,10 +1059,10 @@ export const useArkDesktopRuntime = () => {
             if (updateType === 'session_recap_unavailable') {
                 updateTask(taskId, (task) => upsertTaskActivity(task, {
                     id: 'session-recap',
-                    title: '生成会话 Recap',
+                    title: '生成会话摘要',
                     status: '不可用',
                     kind: 'context',
-                    output: formatToolDetail(update.reason || update.message || '当前会话暂时无法生成 Recap') || '当前会话暂时无法生成 Recap',
+                    output: formatToolDetail(update.reason || update.message || '当前会话暂时无法生成摘要') || '当前会话暂时无法生成摘要',
                 }));
                 return;
             }
@@ -996,7 +1077,7 @@ export const useArkDesktopRuntime = () => {
                         return upsertTaskActivity(task, {
                             id: `subagent-${activityId}`,
                             title: existing?.title || '子智能体协作',
-                            status: existing && isSettledActivity(existing.status) ? existing.status : '运行中',
+                            status: existing && isSettledActivityStatus(existing.status) ? existing.status : '运行中',
                             kind: 'subagent',
                             output: redactRuntimeText(chunk),
                         }, { appendOutput: true });
@@ -1015,7 +1096,7 @@ export const useArkDesktopRuntime = () => {
                     const isWorkflowCompletionMessage = String(params?._meta?.promptId || '').startsWith('workflow-completed-');
                     const tools = task.tools.map((tool) => (
                         (tool.kind === 'reasoning' || (tool.kind === 'subagent' && isWorkflowCompletionMessage))
-                        && !isSettledActivity(tool.status)
+                        && !isSettledActivityStatus(tool.status)
                     ) ? { ...tool, status: '已完成', updatedAt: Date.now() } : tool);
                     return { ...task, messages, tools, updatedAt: Date.now() };
                 });
@@ -1055,32 +1136,54 @@ export const useArkDesktopRuntime = () => {
                 return;
             }
             if (updateType === 'tool_call' || updateType === 'tool_call_update') {
-                const id = String(update.toolCallId || update.tool_call_id || update.toolCall?.toolCallId || update.toolCall?.tool_call_id || createId('tool'));
+                const id = String(update.toolCallId
+                    || update.tool_call_id
+                    || update.toolCall?.toolCallId
+                    || update.toolCall?.tool_call_id
+                    || update.tool_call?.toolCallId
+                    || update.tool_call?.tool_call_id
+                    || createId('tool'));
                 updateTask(taskId, (task) => {
                     const existing = task.tools.find((tool) => tool.id === id);
-                    const input = formatToolDetail(update.rawInput ?? update.raw_input ?? update.toolCall?.rawInput ?? update.toolCall?.raw_input);
-                    const structuredContent = update.content ?? update.toolCall?.content;
+                    const input = formatToolDetail(update.rawInput
+                        ?? update.raw_input
+                        ?? update.toolCall?.rawInput
+                        ?? update.toolCall?.raw_input
+                        ?? update.tool_call?.rawInput
+                        ?? update.tool_call?.raw_input);
+                    const structuredContent = update.content ?? update.toolCall?.content ?? update.tool_call?.content;
                     const fileChanges = extractFileChanges(structuredContent);
                     const output = formatToolDetail(
-                        update.rawOutput ?? update.raw_output ?? (fileChanges.length > 0 ? undefined : structuredContent),
+                        update.rawOutput
+                        ?? update.raw_output
+                        ?? update.toolCall?.rawOutput
+                        ?? update.toolCall?.raw_output
+                        ?? update.tool_call?.rawOutput
+                        ?? update.tool_call?.raw_output
+                        ?? (fileChanges.length > 0 ? undefined : structuredContent),
                     );
                     const readOnlyValue = update.isReadOnly
                         ?? update.is_read_only
                         ?? update.toolCall?.isReadOnly
-                        ?? update.toolCall?.is_read_only;
+                        ?? update.toolCall?.is_read_only
+                        ?? update.tool_call?.isReadOnly
+                        ?? update.tool_call?.is_read_only;
                     const readOnly = typeof readOnlyValue === 'boolean' ? readOnlyValue : undefined;
-                    const kind = update.kind || update.toolCall?.kind;
-                    const title = formatDisplayToolTitle(update.title || update.toolCall?.title);
-                    const nextStatus = statusLabel(update.status);
-                    const recovered = Boolean(existing && /失败|failed|error/i.test(existing.status) && /已完成|completed|success|done/i.test(nextStatus));
+                    const kind = update.kind || update.toolCall?.kind || update.tool_call?.kind;
+                    const title = formatDisplayToolTitle(update.title || update.toolCall?.title || update.tool_call?.title);
+                    const nextStatus = resolveToolCallStatus(updateType, update, existing);
+                    const nextStatusKind = classifyActivityStatus(nextStatus);
+                    const recovered = Boolean(existing
+                        && classifyActivityStatus(existing.status) === 'failed'
+                        && nextStatusKind === 'completed');
                     return upsertTaskActivity(task, {
                         id,
                         title,
                         status: nextStatus,
                         kind,
                         semanticStage: semanticStageForActivity(kind, title),
-                        visibility: /失败|failed|error/i.test(nextStatus) ? 'diagnostic' : activityVisibilityForKind(kind),
-                        severity: /失败|failed|error/i.test(nextStatus) ? 'warning' : 'info',
+                        visibility: nextStatusKind === 'failed' ? 'diagnostic' : activityVisibilityForKind(kind),
+                        severity: nextStatusKind === 'failed' ? 'warning' : 'info',
                         ...(recovered ? { recovered: true } : {}),
                         ...(readOnly === undefined ? {} : { readOnly }),
                         ...(input ? { input } : {}),
@@ -1204,7 +1307,7 @@ export const useArkDesktopRuntime = () => {
                     : undefined;
                 updateTask(taskId, (task) => {
                     const title = redactRuntimeText(update.description || `${update.subagent_type || '子智能体'}协作`);
-                    const status = finished ? statusLabel(update.status) : progress || '运行中';
+                    const status = finished ? statusLabel(update.status, '已完成') : progress || '运行中';
                     const next = upsertTaskActivity(task, {
                         id: `subagent-${subagentId}`,
                         title,
@@ -1359,10 +1462,17 @@ export const useArkDesktopRuntime = () => {
                 return;
             }
             if (updateType === 'turn_completed') {
-                const stopReason = String(update.stopReason || update.stop_reason || '').toLowerCase();
-                const status: ArkDesktopTask['status'] = stopReason.includes('cancel')
+                const terminalSignal = firstStatusValue([
+                    update.stopReason,
+                    update.stop_reason,
+                    update.status,
+                    update.reason,
+                    update.error,
+                ]);
+                const terminalKind = classifyActivityStatus(terminalSignal);
+                const status: ArkDesktopTask['status'] = terminalKind === 'cancelled'
                     ? 'cancelled'
-                    : stopReason.includes('error') || stopReason.includes('fail')
+                    : terminalKind === 'failed'
                         ? 'failed'
                         : 'completed';
                 updateTask(taskId, (task) => settleForegroundActivities(task, status));
@@ -1564,18 +1674,14 @@ export const useArkDesktopRuntime = () => {
         if (event.eventType === 'runtime_error') {
             const message = redactRuntimeText(event.payload?.message || '本地智能运行时发生错误');
             if (taskId) {
-                updateTask(taskId, (task) => ({
-                    ...task,
-                    status: 'failed',
-                    error: message,
-                    execution: {
-                        ...task.execution,
-                        status: 'failed',
-                        completedAt: Date.now(),
-                        lastActivityAt: Date.now(),
-                    },
-                    updatedAt: Date.now(),
-                }));
+                updateTask(taskId, (task) => {
+                    if (cancelledTaskIdsRef.current.has(taskId)
+                        || ['completed', 'failed', 'cancelled'].includes(task.status)) return task;
+                    return {
+                        ...settleForegroundActivities(task, 'failed'),
+                        error: message,
+                    };
+                });
             } else {
                 setRuntimeError(message);
             }
@@ -1590,18 +1696,11 @@ export const useArkDesktopRuntime = () => {
             setPermissions((current) => current.filter((item) => item.taskId !== taskId));
             setUserQuestions((current) => current.filter((item) => item.taskId !== taskId));
             setPlanApprovals((current) => current.filter((item) => item.taskId !== taskId));
-            updateTask(taskId, (task) => task.runtimeProcessId === processId && task.status === 'running'
+            updateTask(taskId, (task) => task.runtimeProcessId === processId
+                && !['completed', 'failed', 'cancelled'].includes(task.status)
                 ? {
-                    ...task,
-                    status: 'failed',
+                    ...settleForegroundActivities(task, 'failed'),
                     error: '本地任务进程已退出',
-                    execution: {
-                        ...task.execution,
-                        status: 'failed',
-                        completedAt: Date.now(),
-                        lastActivityAt: Date.now(),
-                    },
-                    updatedAt: Date.now(),
                 }
                 : task);
         }

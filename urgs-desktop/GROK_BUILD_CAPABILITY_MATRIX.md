@@ -1,22 +1,23 @@
 # Grok Build Desktop 能力矩阵
 
-更新时间：2026-08-07
+更新时间：2026-08-08
 
 ## 现场基线
 
-- URGS 随包二进制：`grok 0.2.121 (393430e)`，当前开发机为 `aarch64-apple-darwin`
-- Windows 发布锁定：`0.2.121`，目标为 `x86_64-pc-windows-msvc`，哈希见 `grok-sidecar.lock.json`
+- URGS 本轮构建二进制：`grok 1.0.0 (5151f2f)`，当前开发机为 `aarch64-apple-darwin`；`5151f2f` 为官方 `afbc0fb` 叠加 URGS 两行 Git 子进程分离修复
+- Windows 发布锁定：`1.0.0 (3cd0d0cbce)`，目标为 `x86_64-pc-windows-msvc`，哈希见 `grok-sidecar.lock.json`
 - 随包清单：`src-tauri/binaries/grok-sidecar-manifest.json`
-- 官方公开仓库最新提交：`393430ee4934bc791b0d538f304a21691c517433`
+- 官方公开仓库基线：`afbc0fb710320c7add294c2106d447ecc3e3af2e`，`SOURCE_REV=3e620a76a5f374ce644dc7c87f7e990c68348218`
 - 发现方式：随包二进制 `--version`、根命令和全部顶级子命令 `--help`、真实 ACP `initialize`、扩展方法探测、官方同提交源码与用户指南
 
-能力判断以本轮随包二进制的真实响应为准；本轮 ACP `initialize` 宣告了 `sessionCapabilities.list/resume/close`、Hooks、`sessionRecap`、`cancelRewind` 和 `voiceMode`，图片/音频输入仍未宣告。
+能力判断以本轮构建二进制的真实响应为准；1.0.0 ACP `initialize` 宣告了 `sessionCapabilities.list/resume/close`、Hooks、`sessionRecap`、`cancelRewind` 和 `voiceMode`，图片/音频输入仍未宣告。`session/new` 已接受会话级 `startupHints`，在未配置模型凭据的隔离探测中按预期返回认证要求。
 
 ## 能力矩阵
 
 | 能力 | 官方证据 | URGS 入口 | 接入层 | 状态 | 自动化证据 | 人工证据 | 阻塞/备注 |
 |---|---|---|---|---|---|---|---|
 | 新建、加载、续聊 | ACP `session/new`、`session/load`、`session/prompt` | 新建任务、历史任务输入框 | ACP + 会话状态 | 原生 UI | Rust 会话测试、前端类型检查 | 历史任务可恢复后继续发送 | 已按 session/process/task 三重标识隔离 |
+| 会话附着策略 | 1.0.0 支持会话请求 `_meta.startupHints`，含 `nonInteractive`、`deliveryTools` | 新建任务、历史任务续聊 | ACP 请求元数据 | 通用桥接 | Rust 元数据一致性测试、真实 1.0.0 `session/new` 探测 | 无额外操作；恢复任务延续当前交互策略 | URGS 为可见交互界面，保持 `nonInteractive=false`、`deliveryTools=[]` |
 | 多会话与取消 | ACP `session/cancel` | 左侧历史会话、输入框停止按钮 | ACP + 会话状态 | 原生 UI | Rust 进程关联测试 | 多任务状态独立显示 | 并发数量不硬编码 |
 | 工作区会话管理 | `grok sessions delete` + URGS 本地会话状态 | 左侧工作区、工作区/会话菜单、状态筛选 | 受控 CLI + 本地持久化状态 | 原生 UI | 前端类型检查、真实 App 交互验收 | 支持在指定工作区新建、固定、重命名、归档/恢复、搜索筛选和永久删除 | 运行中或等待授权的会话禁止归档和删除；永久删除会同步清理 Grok 历史 |
 | 工具、思考、计划、权限 | ACP `session/update`、permission reverse request | 消息区工具时间线、计划按钮、权限弹窗 | ACP 事件桥接 | 原生 UI | Rust 事件解析测试、前端类型检查 | 工具详情可展开，权限归属当前任务 | 未识别事件保留为诊断活动 |
@@ -34,13 +35,13 @@
 | Agent/Leader 后台服务 | `agent headless/serve/leader`、`leader *` | 设置 → CLI 与诊断 → Agent 服务 | Tauri 后台进程 | 通用桥接 | Rust 服务 allowlist 测试 | 服务 PID、输出和停止可见 | ACP stdio 由新建任务托管 |
 | 导出、Trace、Doctor、Inspect | 顶级 CLI 命令 | 设置 → CLI 与诊断 | 受控 CLI | 仅 CLI 中心 | CLI allowlist 测试 | 输出可查看和复制 | Trace 默认仅本地 |
 | 登录、托管配置、在线模型、自更新 | `login/logout/setup/models/update` | 无 | 禁止接入 | 缺失 | CLI allowlist 拒绝测试 | 设置页显示内网隔离 | 产品安全策略明确禁止 xAI 与组件自更新 |
-| 会话 Recap | ACP `initialize` 宣告 `sessionRecap=true` | 无 | 扩展探测 | 待验证 | 0.2.121 initialize 已宣告，尚未完成真实会话方法探测 | 无 | 不创建不可验证入口 |
-| 会话 Rewind | ACP `initialize` 宣告 `cancelRewind=true` | 无 | 扩展探测 | 待验证 | 0.2.121 initialize 已宣告，尚未完成真实会话方法探测 | 无 | 不创建不可验证入口 |
-| 图片、音频提示 | `promptCapabilities.image=false`、`audio=false` | 无 | ACP 能力门禁 | 上游不支持 | 0.2.121 ACP initialize | 无 | `voiceMode=true` 不能替代 ACP 图片/音频提示能力 |
-| Hooks 管理 | ACP 宣告 `x.ai/hooks` 能力 | 无 | 通用桥接未产品化 | 缺失 | 0.2.121 ACP initialize 已宣告 Hooks | 无 | 当前仍无用户可操作的 Hooks 管理入口 |
+| 会话 Recap | 1.0.0 ACP `initialize` 宣告 `sessionRecap=true`，摘要跟随会话语言 | 会话详情 → 会话摘要 | ACP 扩展 + 会话状态 | 待验证 | 1.0.0 initialize 已宣告；前端已处理 `session_recap` 和不可用事件 | 待有模型凭据的中文长会话验收 | 不增加独立弹窗，摘要在会话详情按需展开 |
+| 会话 Rewind | ACP `initialize` 宣告 `cancelRewind=true` | 无 | 扩展探测 | 待验证 | 1.0.0 initialize 已宣告，尚未完成真实会话方法探测 | 无 | 不创建不可验证入口 |
+| 图片、音频提示 | `promptCapabilities.image=false`、`audio=false` | 无 | ACP 能力门禁 | 上游不支持 | 1.0.0 ACP initialize | 无 | `voiceMode=true` 不能替代 ACP 图片/音频提示能力；MCP 工具结果图片是另一条链路 |
+| Hooks 管理 | ACP 宣告 `x.ai/hooks` 能力 | 无 | 通用桥接未产品化 | 缺失 | 1.0.0 ACP initialize 已宣告 Hooks | 无 | 当前仍无用户可操作的 Hooks 管理入口 |
 
 ## 下一阶段优先级
 
-1. 升级并锁定新的官方 sidecar 后，重新探测 `x.ai/rewind/*`、`x.ai/recap`、`x.ai/session/info` 和 Hooks 扩展。
-2. 扩展方法真实可用后，优先补齐原生 Rewind 选择器、会话 Recap 和结构化上下文用量面板。
+1. 使用已配置内网模型的真实长会话复验中文 Recap、`x.ai/rewind/*`、`x.ai/session/info` 和 Hooks 扩展。
+2. 扩展方法真实可用后，优先补齐原生 Rewind 选择器；Recap 和上下文信息继续放在会话详情，避免打断对话。
 3. 补齐项目作用域 `.grok/workflows` 的安全发现机制，并继续验证严格重叠执行的两个并发会话。
