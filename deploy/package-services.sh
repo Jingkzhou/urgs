@@ -367,13 +367,23 @@ github_api_request() {
     local endpoint="$2"
     local token="$3"
     local data="${4:-}"
+    local max_attempts=1
+    local attempt
+    if [ "$method" = "GET" ]; then
+        max_attempts="${GITHUB_API_GET_RETRIES:-4}"
+    fi
     if command -v gh >/dev/null 2>&1 && gh auth status --hostname github.com >/dev/null 2>&1; then
-        if [ -n "$data" ]; then
-            printf '%s' "$data" | gh api --method "$method" "$endpoint" --input -
-        else
-            gh api --method "$method" "$endpoint"
-        fi
-        return
+        for attempt in $(seq 1 "$max_attempts"); do
+            if [ -n "$data" ]; then
+                if printf '%s' "$data" | gh api --method "$method" "$endpoint" --input -; then
+                    return 0
+                fi
+            elif gh api --method "$method" "$endpoint"; then
+                return 0
+            fi
+            [ "$attempt" -lt "$max_attempts" ] || return 1
+            sleep "${GITHUB_API_RETRY_DELAY_SECONDS:-2}"
+        done
     fi
 
     local args=(
