@@ -72,6 +72,7 @@ test('验收内置 Grok sidecar 的目标、版本、大小和 SHA-256', async (
     const result = await verifyWindowsBundle({
         bundleRoot: fixture.bundleRoot,
         configPath: fixture.configPath,
+        environment: { GROK_BUILD_VERSION: '0.2.121' },
         sidecarPath,
         sidecarManifestPath,
         sidecarTarget: 'x86_64-pc-windows-msvc',
