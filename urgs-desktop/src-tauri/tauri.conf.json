@@ -26,6 +26,7 @@
       }
     ],
     "security": {
+      "dangerousDisableAssetCspModification": ["style-src"],
       "csp": "default-src 'self' customprotocol: asset:; base-uri 'self'; object-src 'none'; form-action 'self' http: https:; script-src 'self' http: https:; style-src 'self' 'unsafe-inline' http: https:; font-src 'self' data: http: https:; img-src 'self' asset: http://asset.localhost data: blob: http: https:; media-src 'self' data: blob: http: https:; connect-src 'self' ipc: http://ipc.localhost http: https: ws: wss:; frame-src 'self' data: blob: http: https:; worker-src 'self' blob:"
     }
   },

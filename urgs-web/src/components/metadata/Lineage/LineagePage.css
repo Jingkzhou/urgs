@@ -766,3 +766,382 @@
     border-top: 1px solid #e8eef7;
     border-left: 0;
 }
+
+.lineage-relation-detail-body,
+.lineage-relation-evidence,
+.lineage-sql-evidence-body,
+.lineage-source-files-list {
+    min-width: 0;
+    max-width: 100%;
+}
+
+.lineage-relation-detail-body {
+    padding: 16px 24px 24px;
+}
+
+.lineage-relation-summary .ant-descriptions-item-label {
+    white-space: nowrap;
+}
+
+.lineage-relation-summary .ant-descriptions-item-content,
+.lineage-relation-value,
+.lineage-relation-note {
+    min-width: 0;
+    overflow-wrap: anywhere;
+    word-break: break-word;
+}
+
+.lineage-relation-value,
+.lineage-relation-note {
+    display: block;
+    line-height: 1.6;
+}
+
+.lineage-relation-note {
+    color: #64748b;
+}
+
+.lineage-relation-evidence {
+    margin-top: 18px;
+    padding-top: 18px;
+    border-top: 1px solid #e8eef7;
+}
+
+.lineage-relation-evidence-header {
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+    gap: 12px;
+    flex-wrap: wrap;
+}
+
+.lineage-relation-evidence-hint {
+    white-space: nowrap;
+}
+
+.lineage-relation-evidence-list {
+    min-height: 0;
+    max-height: min(36vh, 320px);
+    padding-right: 4px;
+}
+
+.lineage-relation-evidence-item {
+    min-width: 0;
+    min-height: 64px;
+}
+
+.lineage-relation-evidence-item:focus-visible {
+    outline: 2px solid #1677ff;
+    outline-offset: 2px;
+}
+
+.lineage-relation-evidence-main {
+    min-width: 0;
+    flex: 1 1 auto;
+}
+
+.lineage-relation-evidence-file {
+    display: inline-block;
+    max-width: min(40vw, 300px);
+    overflow: hidden;
+    text-overflow: ellipsis;
+    vertical-align: middle;
+    white-space: nowrap;
+}
+
+.lineage-relation-evidence-fields {
+    display: flex;
+    min-width: 0;
+    align-items: center;
+    gap: 6px;
+}
+
+.lineage-relation-evidence-fields > span:not(.lineage-relation-evidence-arrow) {
+    min-width: 0;
+    overflow: hidden;
+    text-overflow: ellipsis;
+    white-space: nowrap;
+}
+
+.lineage-relation-evidence-fields > span:first-child,
+.lineage-relation-evidence-fields > span:last-child {
+    flex: 1 1 0;
+}
+
+.lineage-relation-evidence-arrow {
+    flex: 0 0 auto;
+    color: #94a3b8;
+}
+
+.lineage-relation-evidence-action {
+    flex: 0 0 auto;
+}
+
+.lineage-sql-evidence-body {
+    min-height: 0;
+}
+
+.lineage-sql-code-block {
+    margin: 0;
+    max-width: 100%;
+    font-family: 'JetBrains Mono', 'SFMono-Regular', Consolas, monospace;
+}
+
+.lineage-source-files-list {
+    padding: 0 24px 24px;
+}
+
+.lineage-source-file-item {
+    overflow-wrap: anywhere;
+    word-break: break-word;
+}
+
+/* Ant Design Modal fallback for the Tauri WebView. Keep the rules scoped to
+   this lineage surface so the normal web modal theme remains unchanged. */
+.desktop-runtime .lineage-relation-detail-modal,
+.desktop-runtime .lineage-source-files-modal,
+.desktop-runtime .lineage-sql-evidence-modal {
+    position: fixed;
+    inset: 0;
+}
+
+.desktop-runtime .lineage-relation-detail-modal .ant-modal-mask:not([style*="display: none"]),
+.desktop-runtime .lineage-source-files-modal .ant-modal-mask:not([style*="display: none"]),
+.desktop-runtime .lineage-sql-evidence-modal .ant-modal-mask:not([style*="display: none"]) {
+    position: fixed;
+    inset: 0;
+    display: block !important;
+    visibility: visible !important;
+    opacity: 1 !important;
+    background: rgba(15, 23, 42, 0.45) !important;
+}
+
+.desktop-runtime .lineage-relation-detail-modal .ant-modal-wrap:not([style*="display: none"]),
+.desktop-runtime .lineage-source-files-modal .ant-modal-wrap:not([style*="display: none"]) {
+    position: fixed;
+    inset: 0;
+    display: flex !important;
+    align-items: center;
+    justify-content: center;
+    box-sizing: border-box;
+    padding: 16px;
+    overflow: auto;
+}
+
+.desktop-runtime .lineage-relation-detail-modal .ant-modal,
+.desktop-runtime .lineage-source-files-modal .ant-modal {
+    position: relative;
+    box-sizing: border-box;
+    max-width: calc(100vw - 32px);
+    margin: auto;
+    visibility: visible !important;
+    opacity: 1 !important;
+    transform: none !important;
+}
+
+.desktop-runtime .lineage-relation-detail-modal .ant-modal {
+    width: min(960px, calc(100vw - 32px)) !important;
+}
+
+.desktop-runtime .lineage-source-files-modal .ant-modal {
+    width: min(680px, calc(100vw - 32px)) !important;
+}
+
+.desktop-runtime .lineage-relation-detail-modal .ant-modal-container,
+.desktop-runtime .lineage-relation-detail-modal .ant-modal-content,
+.desktop-runtime .lineage-source-files-modal .ant-modal-container,
+.desktop-runtime .lineage-source-files-modal .ant-modal-content {
+    display: flex;
+    flex-direction: column;
+    box-sizing: border-box;
+    max-height: min(calc(100vh - 32px), 760px);
+    padding: 0 !important;
+    color: #334155;
+    background: #fff;
+    border-radius: 12px;
+    box-shadow: 0 24px 60px rgba(15, 23, 42, 0.2);
+}
+
+.desktop-runtime .lineage-relation-detail-modal .ant-modal-header,
+.desktop-runtime .lineage-source-files-modal .ant-modal-header {
+    flex: 0 0 auto;
+    margin: 0;
+    padding: 18px 24px 14px;
+    background: transparent;
+    border-bottom: 1px solid #e8eef7;
+}
+
+.desktop-runtime .lineage-relation-detail-modal .ant-modal-title,
+.desktop-runtime .lineage-source-files-modal .ant-modal-title {
+    color: #1e293b;
+    font-size: 17px;
+    font-weight: 600;
+}
+
+.desktop-runtime .lineage-relation-detail-modal .ant-modal-body,
+.desktop-runtime .lineage-source-files-modal .ant-modal-body {
+    min-height: 0;
+    max-height: min(calc(100vh - 132px), 680px);
+    padding: 0 !important;
+    overflow-y: auto;
+}
+
+.desktop-runtime .lineage-relation-detail-modal .ant-modal-footer {
+    display: flex;
+    flex: 0 0 auto;
+    justify-content: flex-end;
+    gap: 8px;
+    margin: 0;
+    padding: 12px 24px 18px;
+    border-top: 1px solid #e8eef7;
+}
+
+.desktop-runtime .lineage-relation-detail-modal .ant-modal-close,
+.desktop-runtime .lineage-source-files-modal .ant-modal-close,
+.desktop-runtime .lineage-sql-evidence-modal .ant-modal-close {
+    position: absolute;
+    top: 14px;
+    right: 16px;
+    display: inline-flex;
+    align-items: center;
+    justify-content: center;
+    width: 32px;
+    height: 32px;
+    color: #64748b;
+    background: transparent;
+    border: 0;
+    border-radius: 6px;
+    cursor: pointer;
+}
+
+.desktop-runtime .lineage-relation-detail-modal .ant-modal-close:hover,
+.desktop-runtime .lineage-source-files-modal .ant-modal-close:hover,
+.desktop-runtime .lineage-sql-evidence-modal .ant-modal-close:hover {
+    color: #1e293b;
+    background: #f1f5f9;
+}
+
+.desktop-runtime .lineage-relation-detail-modal .lineage-relation-summary .ant-descriptions-view {
+    border-color: #dbe4ef;
+}
+
+.desktop-runtime .lineage-relation-detail-modal .lineage-relation-summary .ant-descriptions-item-label {
+    color: #475569;
+    font-weight: 600;
+    background: #f8fafc;
+}
+
+.desktop-runtime .lineage-relation-detail-modal .lineage-relation-summary .ant-descriptions-item-content {
+    color: #1e293b;
+    background: #fff;
+}
+
+.desktop-runtime .lineage-relation-detail-modal .lineage-relation-source-files-button {
+    max-width: 100%;
+    overflow: hidden;
+    text-overflow: ellipsis;
+    white-space: nowrap;
+}
+
+.desktop-runtime .lineage-relation-detail-modal .ant-modal-footer .ant-btn {
+    min-height: 34px;
+    border-radius: 7px;
+}
+
+.desktop-runtime .lineage-source-files-modal .lineage-source-files-list {
+    max-height: min(calc(100vh - 170px), 420px);
+    overflow-y: auto;
+}
+
+/* The SQL viewer is intentionally full-screen, but its panel still needs an
+   explicit flex/overflow contract in the WebView. */
+.desktop-runtime .lineage-sql-evidence-modal .ant-modal-wrap:not([style*="display: none"]) {
+    position: fixed;
+    inset: 0;
+    display: flex !important;
+    z-index: 1201;
+    overflow: hidden;
+}
+
+.desktop-runtime .lineage-sql-evidence-modal .ant-modal {
+    width: 100vw !important;
+    max-width: none;
+    height: 100vh;
+    margin: 0;
+}
+
+.desktop-runtime .lineage-sql-evidence-modal .ant-modal-container,
+.desktop-runtime .lineage-sql-evidence-modal .ant-modal-content {
+    display: flex;
+    flex-direction: column;
+    width: 100%;
+    height: 100%;
+    max-height: none;
+    padding: 0 !important;
+    color: #334155;
+    background: #fff;
+    border-radius: 0;
+}
+
+.desktop-runtime .lineage-sql-evidence-modal .ant-modal-header {
+    flex: 0 0 auto;
+    margin: 0;
+    padding: 16px 24px;
+    background: #fff;
+    border-bottom: 1px solid #e2e8f0;
+}
+
+.desktop-runtime .lineage-sql-evidence-modal .ant-modal-title {
+    color: #1e293b;
+    font-size: 17px;
+    font-weight: 600;
+}
+
+.desktop-runtime .lineage-sql-evidence-modal .ant-modal-body {
+    min-height: 0;
+    flex: 1 1 auto;
+    height: auto;
+    max-height: none;
+    padding: 0 !important;
+    background: #fff;
+    overflow: auto;
+}
+
+.desktop-runtime .lineage-sql-evidence-modal .lineage-sql-evidence-body {
+    min-height: 100%;
+    padding: 16px 24px 24px;
+}
+
+.desktop-runtime .lineage-sql-evidence-modal .lineage-sql-code-block {
+    min-height: 0;
+    max-height: none;
+    overflow: auto;
+}
+
+@media (max-width: 760px) {
+    .lineage-relation-detail-body {
+        padding: 12px 16px 16px;
+    }
+
+    .lineage-relation-evidence-header {
+        align-items: flex-start;
+        flex-direction: column;
+        gap: 4px;
+    }
+
+    .lineage-relation-evidence-hint {
+        white-space: normal;
+    }
+
+    .lineage-relation-evidence-item {
+        align-items: flex-start;
+    }
+
+    .lineage-relation-evidence-action {
+        padding-top: 2px;
+    }
+
+    .lineage-source-files-list {
+        padding-inline: 16px;
+    }
+}

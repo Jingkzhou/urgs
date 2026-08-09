@@ -786,7 +786,10 @@ const ChatWidget: React.FC = () => {
                         transition={{ duration: 0.2, ease: "easeOut" }}
                         className="fixed inset-0 flex items-center justify-center pointer-events-none"
                     >
-                        <div className="pointer-events-auto bg-white rounded-2xl shadow-[0_20px_60px_-15px_rgba(0,0,0,0.15)] border border-slate-200 w-[940px] h-[min(650px,calc(100vh-140px))] flex overflow-hidden ring-1 ring-black/[0.03]">
+                        <div
+                            className="urgs-adaptive-overlay pointer-events-auto flex h-[650px] overflow-hidden rounded-2xl border border-slate-200 bg-white shadow-[0_20px_60px_-15px_rgba(0,0,0,0.15)] ring-1 ring-black/[0.03]"
+                            style={{ '--urgs-overlay-width': '940px' } as React.CSSProperties}
+                        >
 
                             {/* 1. Left Navigation Bar (Slim) */}
                             <div className="w-[68px] bg-white border-r border-slate-200 flex flex-col items-center py-6 flex-shrink-0 z-30 rounded-l-2xl relative">

@@ -1,0 +1,809 @@
+{
+  "version": 1,
+  "records": [
+    {
+      "file": "src/App.tsx",
+      "rule": "hidden-horizontal-overflow",
+      "source": "<main className=\"app-main flex-1 min-h-0 min-w-0 overflow-y-auto overflow-x-hidden p-4 lg:p-8 scroll-smooth bg-slate-50/50\">",
+      "count": 1
+    },
+    {
+      "file": "src/components/ark-desktop/ArkDesktopPage.tsx",
+      "rule": "nested-viewport-height",
+      "source": "<div className=\"relative flex h-screen min-h-[680px] overflow-hidden bg-white pt-[52px] text-[#292a2e]\">",
+      "count": 1
+    },
+    {
+      "file": "src/components/ark-desktop/GitDiffViewer.tsx",
+      "rule": "nested-viewport-height",
+      "source": "{!isCollapsed && <div id={fileId} className=\"max-h-[calc(100vh-330px)] overflow-auto py-1\">",
+      "count": 1
+    },
+    {
+      "file": "src/components/ark-desktop/GrokCliCenter.tsx",
+      "rule": "browser-only-api",
+      "source": "{result && <div className={`rounded-2xl border p-5 ${result.success ? 'border-emerald-200 bg-emerald-50/40' : 'border-red-200 bg-red-50/40'}`}><div className=\"mb-3 flex items-center justify-between gap-3\"><div className={`flex items-center gap-2 text-sm font-semibold ${result.success ? 'text-emerald-700' : 'text-red-700'}`}>{result.success ? <CheckCircle2 size={17} /> : <XCircle size={17} />}{result.success ? '执行成功' : `执行失败（${result.exitCode ?? '未知'}）`}</div><div className=\"flex gap-1\"><button type=\"button\" onClick={() => void navigator.clipboard.writeText(formatOutput(result))} className=\"rounded-lg p-2 text-slate-500 hover:bg-white\" title=\"复制输出\"><Clipboard size={15} /></button><button type=\"button\" onClick={() => setResult(null)} className=\"rounded-lg p-2 text-slate-500 hover:bg-white\"><RefreshCw size={15} /></button></div></div><div className=\"mb-2 overflow-x-auto rounded-lg bg-slate-900 px-3 py-2 font-mono text-xs text-slate-300\">内置命令 {result.arguments.join(' ')}</div><pre className=\"max-h-[420px] overflow-auto whitespace-pre-wrap break-words rounded-xl bg-white p-4 text-xs leading-6 text-slate-700\">{formatOutput(result)}</pre>{result.stderr && result.stdout && <details className=\"mt-3\"><summary className=\"cursor-pointer text-xs text-amber-700\"><AlertTriangle size={13} className=\"mr-1 inline\" />查看错误输出</summary><pre className=\"mt-2 whitespace-pre-wrap rounded-lg bg-amber-50 p-3 text-xs text-amber-800\">{redactVendorText(result.stderr)}</pre></details>}</div>}",
+      "count": 1
+    },
+    {
+      "file": "src/components/ark-desktop/SessionCommandBar.tsx",
+      "rule": "nested-viewport-height",
+      "source": "<div className=\"custom-scrollbar max-h-[min(420px,calc(100vh-240px))] overflow-y-auto pr-1\">",
+      "count": 1
+    },
+    {
+      "file": "src/components/ark-desktop/SlashCommandMenu.tsx",
+      "rule": "nested-viewport-height",
+      "source": "{filteredCommands.length > 0 ? <div className=\"custom-scrollbar max-h-[min(440px,calc(100vh-220px))] overflow-y-auto\">",
+      "count": 1
+    },
+    {
+      "file": "src/components/ark-desktop/TaskTerminalPanel.css",
+      "rule": "hidden-horizontal-overflow",
+      "source": "overflow-x: hidden;",
+      "count": 1
+    },
+    {
+      "file": "src/components/ark/ArkPage.tsx",
+      "rule": "browser-only-api",
+      "source": "window.open('#/grok-task-center', '_blank', 'noopener,noreferrer');",
+      "count": 1
+    },
+    {
+      "file": "src/components/DataSourceManager.tsx",
+      "rule": "unsafe-fixed-width",
+      "source": "width={640}",
+      "count": 1
+    },
+    {
+      "file": "src/components/DataSourceManager.tsx",
+      "rule": "unsafe-fixed-width",
+      "source": "width={860}",
+      "count": 1
+    },
+    {
+      "file": "src/components/desktop/DesktopConnectionSetup.tsx",
+      "rule": "nested-viewport-height",
+      "source": "<div className=\"flex min-h-screen items-center justify-center bg-slate-950 px-6 py-10\">",
+      "count": 1
+    },
+    {
+      "file": "src/components/home/SystemLinks.tsx",
+      "rule": "browser-only-api",
+      "source": "const jumpWindow = isDesktopRuntime() ? null : window.open('about:blank', '_blank');",
+      "count": 1
+    },
+    {
+      "file": "src/components/im/ChatWindow.tsx",
+      "rule": "browser-only-api",
+      "source": "download={file.name}",
+      "count": 1
+    },
+    {
+      "file": "src/components/im/ChatWindow.tsx",
+      "rule": "browser-only-api",
+      "source": "link.download = `image_${Date.now()}.png`; // Simple download",
+      "count": 1
+    },
+    {
+      "file": "src/components/knowledge/KnowledgeCenter.tsx",
+      "rule": "browser-only-api",
+      "source": "const url = URL.createObjectURL(blob);",
+      "count": 1
+    },
+    {
+      "file": "src/components/knowledge/KnowledgeCenter.tsx",
+      "rule": "browser-only-api",
+      "source": "link.download = '知识库打包下载.zip';",
+      "count": 1
+    },
+    {
+      "file": "src/components/knowledge/useKnowledgeStore.ts",
+      "rule": "browser-only-api",
+      "source": "const url = URL.createObjectURL(blob);",
+      "count": 1
+    },
+    {
+      "file": "src/components/knowledge/useKnowledgeStore.ts",
+      "rule": "browser-only-api",
+      "source": "link.download = doc.fileName || doc.title;",
+      "count": 1
+    },
+    {
+      "file": "src/components/knowledge/useKnowledgeStore.ts",
+      "rule": "browser-only-api",
+      "source": "link.download = fileName;",
+      "count": 1
+    },
+    {
+      "file": "src/components/login/LoginPage.tsx",
+      "rule": "nested-viewport-height",
+      "source": "<div className=\"relative grid min-h-[100dvh] w-full overflow-hidden bg-slate-50 xl:grid-cols-[minmax(0,1fr)_minmax(560px,1.1fr)]\">",
+      "count": 1
+    },
+    {
+      "file": "src/components/marketplace/AssetObjectDetailLink.tsx",
+      "rule": "unsafe-fixed-width",
+      "source": "width={760}",
+      "count": 1
+    },
+    {
+      "file": "src/components/marketplace/ReviewTaskDetailDrawer.tsx",
+      "rule": "unsafe-fixed-width",
+      "source": "width={920}",
+      "count": 1
+    },
+    {
+      "file": "src/components/marketplace/StatsPage.tsx",
+      "rule": "unsafe-fixed-width",
+      "source": "width={1080}",
+      "count": 1
+    },
+    {
+      "file": "src/components/marketplace/StatsPage.tsx",
+      "rule": "unsafe-min-width",
+      "source": "<table className=\"w-full min-w-[1040px] table-fixed text-sm\">",
+      "count": 1
+    },
+    {
+      "file": "src/components/marketplace/StatsPage.tsx",
+      "rule": "unsafe-min-width",
+      "source": "<table className=\"w-full min-w-[1120px] table-fixed text-sm\">",
+      "count": 1
+    },
+    {
+      "file": "src/components/marketplace/TaskVersionMergeRequests.tsx",
+      "rule": "nested-viewport-height",
+      "source": "<div className={`${detailFullscreen ? 'max-h-[calc(100vh-150px)]' : 'max-h-[72vh]'} space-y-4 overflow-y-auto pr-1`}>",
+      "count": 1
+    },
+    {
+      "file": "src/components/marketplace/WorkDetailDrawer.tsx",
+      "rule": "nested-viewport-height",
+      "source": "body: { height: 'calc(100vh - 55px)', overflowY: 'auto', padding: 24 },",
+      "count": 1
+    },
+    {
+      "file": "src/components/marketplace/WorkDetailDrawer.tsx",
+      "rule": "nested-viewport-height",
+      "source": "className=\"!max-w-none [&_.ant-modal-content]:h-screen [&_.ant-modal-content]:rounded-none\"",
+      "count": 1
+    },
+    {
+      "file": "src/components/marketplace/WorkDetailDrawer.tsx",
+      "rule": "unbounded-viewport-width",
+      "source": "width=\"100vw\"",
+      "count": 1
+    },
+    {
+      "file": "src/components/marketplace/WorkDetailDrawer.tsx",
+      "rule": "unsafe-fixed-width",
+      "source": "width={760}",
+      "count": 1
+    },
+    {
+      "file": "src/components/marketplace/WorkDetailDrawer.tsx",
+      "rule": "unsafe-min-width",
+      "source": "<table className=\"w-full min-w-[900px] text-xs\">",
+      "count": 1
+    },
+    {
+      "file": "src/components/marketplace/WorkList.tsx",
+      "rule": "browser-only-api",
+      "source": "const downloadUrl = URL.createObjectURL(blob);",
+      "count": 1
+    },
+    {
+      "file": "src/components/marketplace/WorkList.tsx",
+      "rule": "browser-only-api",
+      "source": "link.download = fileName;",
+      "count": 1
+    },
+    {
+      "file": "src/components/marketplace/WorkList.tsx",
+      "rule": "unsafe-min-width",
+      "source": "<div className=\"min-w-[1280px]\">",
+      "count": 1
+    },
+    {
+      "file": "src/components/marketplace/WorkStatistics.tsx",
+      "rule": "unsafe-fixed-width",
+      "source": "width={640}",
+      "count": 1
+    },
+    {
+      "file": "src/components/metadata/CodeDirectory.tsx",
+      "rule": "browser-only-api",
+      "source": "a.download = 'code_directory_export.xlsx';",
+      "count": 1
+    },
+    {
+      "file": "src/components/metadata/CodeDirectory.tsx",
+      "rule": "browser-only-api",
+      "source": "const url = window.URL.createObjectURL(blob);",
+      "count": 1
+    },
+    {
+      "file": "src/components/metadata/CodeDirectory.tsx",
+      "rule": "unsafe-fixed-width",
+      "source": "<div className=\"w-[900px] max-h-[90vh] bg-white rounded-xl shadow-2xl relative flex flex-col animate-scale-in\">",
+      "count": 1
+    },
+    {
+      "file": "src/components/metadata/Lineage/analysis/components/CodeModal.tsx",
+      "rule": "browser-only-api",
+      "source": "navigator.clipboard.writeText(code);",
+      "count": 1
+    },
+    {
+      "file": "src/components/metadata/Lineage/analysis/components/CodeModal.tsx",
+      "rule": "unsafe-fixed-width",
+      "source": "width={800}",
+      "count": 1
+    },
+    {
+      "file": "src/components/metadata/Lineage/analysis/components/ColumnLineageDiagram.tsx",
+      "rule": "unsafe-fixed-width",
+      "source": "width={680}",
+      "count": 1
+    },
+    {
+      "file": "src/components/metadata/Lineage/analysis/components/ColumnLineageDiagram.tsx",
+      "rule": "unsafe-fixed-width",
+      "source": "width={920}",
+      "count": 1
+    },
+    {
+      "file": "src/components/metadata/Lineage/analysis/components/EngineLogViewer.tsx",
+      "rule": "browser-only-api",
+      "source": "navigator.clipboard.writeText(logs.join('\\n'));",
+      "count": 1
+    },
+    {
+      "file": "src/components/metadata/Lineage/analysis/components/LineageEngineStartModal.tsx",
+      "rule": "unsafe-fixed-width",
+      "source": "width={800}",
+      "count": 1
+    },
+    {
+      "file": "src/components/metadata/Lineage/analysis/components/LineageEngineToolbar.tsx",
+      "rule": "unsafe-fixed-width",
+      "source": "width={840}",
+      "count": 1
+    },
+    {
+      "file": "src/components/metadata/Lineage/analysis/components/LineageListView.tsx",
+      "rule": "unsafe-fixed-width",
+      "source": "width={920}",
+      "count": 1
+    },
+    {
+      "file": "src/components/metadata/Lineage/analysis/components/RelationEvidencePanel.tsx",
+      "rule": "nested-viewport-height",
+      "source": "<pre className=\"lineage-sql-code-block min-h-[calc(100vh-180px)] overflow-auto whitespace-pre-wrap rounded-lg bg-slate-900 p-5 text-sm leading-7 text-slate-100\">",
+      "count": 1
+    },
+    {
+      "file": "src/components/metadata/Lineage/analysis/components/RelationEvidencePanel.tsx",
+      "rule": "nested-viewport-height",
+      "source": "body: { height: 'calc(100vh - 56px)', overflow: 'auto' },",
+      "count": 1
+    },
+    {
+      "file": "src/components/metadata/Lineage/analysis/components/RelationEvidencePanel.tsx",
+      "rule": "nested-viewport-height",
+      "source": "container: { height: '100vh', borderRadius: 0 },",
+      "count": 1
+    },
+    {
+      "file": "src/components/metadata/Lineage/analysis/components/RelationEvidencePanel.tsx",
+      "rule": "unbounded-viewport-width",
+      "source": "width=\"100vw\"",
+      "count": 1
+    },
+    {
+      "file": "src/components/metadata/Lineage/LineagePage.css",
+      "rule": "nested-viewport-height",
+      "source": "height: 100vh;",
+      "count": 3
+    },
+    {
+      "file": "src/components/metadata/Lineage/LineagePage.css",
+      "rule": "nested-viewport-height",
+      "source": "max-height: min(calc(100vh - 132px), 680px);",
+      "count": 1
+    },
+    {
+      "file": "src/components/metadata/Lineage/LineagePage.css",
+      "rule": "nested-viewport-height",
+      "source": "max-height: min(calc(100vh - 170px), 420px);",
+      "count": 1
+    },
+    {
+      "file": "src/components/metadata/Lineage/LineagePage.css",
+      "rule": "nested-viewport-height",
+      "source": "max-height: min(calc(100vh - 32px), 760px);",
+      "count": 1
+    },
+    {
+      "file": "src/components/metadata/Lineage/LineagePage.css",
+      "rule": "nested-viewport-height",
+      "source": "min-height: 100vh;",
+      "count": 2
+    },
+    {
+      "file": "src/components/metadata/Lineage/LineagePage.css",
+      "rule": "unbounded-viewport-width",
+      "source": "width: 100vw !important;",
+      "count": 1
+    },
+    {
+      "file": "src/components/metadata/Lineage/LineagePage.css",
+      "rule": "unbounded-viewport-width",
+      "source": "width: 100vw;",
+      "count": 2
+    },
+    {
+      "file": "src/components/metadata/Lineage/LineagePage.css",
+      "rule": "unbounded-viewport-width",
+      "source": "width: min(680px, calc(100vw - 32px)) !important;",
+      "count": 1
+    },
+    {
+      "file": "src/components/metadata/Lineage/LineagePage.css",
+      "rule": "unbounded-viewport-width",
+      "source": "width: min(960px, calc(100vw - 32px)) !important;",
+      "count": 1
+    },
+    {
+      "file": "src/components/metadata/Lineage/LineagePage.tsx",
+      "rule": "browser-only-api",
+      "source": "a.download = filename;",
+      "count": 1
+    },
+    {
+      "file": "src/components/metadata/Lineage/LineagePage.tsx",
+      "rule": "browser-only-api",
+      "source": "await canvasElement.requestFullscreen();",
+      "count": 1
+    },
+    {
+      "file": "src/components/metadata/Lineage/LineagePage.tsx",
+      "rule": "browser-only-api",
+      "source": "const url = window.URL.createObjectURL(blob);",
+      "count": 1
+    },
+    {
+      "file": "src/components/metadata/MaintenanceDetailPanel.tsx",
+      "rule": "browser-only-api",
+      "source": "navigator.clipboard.writeText(record.script);",
+      "count": 1
+    },
+    {
+      "file": "src/components/metadata/MetadataModel.tsx",
+      "rule": "nested-viewport-height",
+      "source": "min-height: 100vh;",
+      "count": 1
+    },
+    {
+      "file": "src/components/metadata/reg-asset/AssetDetailSidebar.tsx",
+      "rule": "unsafe-fixed-width",
+      "source": "className={`fixed top-0 right-0 h-full w-[650px] bg-slate-50 shadow-2xl z-[10000] transform transition-transform duration-300 ease-out flex flex-col border-l border-slate-200 ${isOpen ? 'translate-x-0' : 'translate-x-full'",
+      "count": 1
+    },
+    {
+      "file": "src/components/metadata/reg-asset/components/CodeValuesModal.tsx",
+      "rule": "unsafe-fixed-width",
+      "source": "<div className=\"code-modal-crystal rounded-2xl w-[880px] max-h-[85vh] flex flex-col animate-crystal-in overflow-hidden\">",
+      "count": 1
+    },
+    {
+      "file": "src/components/metadata/reg-asset/components/TableModal.tsx",
+      "rule": "unsafe-fixed-width",
+      "source": "<div className=\"bg-white rounded-xl shadow-2xl w-[700px] max-h-[90vh] flex flex-col animate-in slide-in-from-bottom-5 duration-200\">",
+      "count": 1
+    },
+    {
+      "file": "src/components/metadata/reg-asset/hooks/useTableImportExport.ts",
+      "rule": "browser-only-api",
+      "source": "anchor.download = fileName;",
+      "count": 1
+    },
+    {
+      "file": "src/components/metadata/reg-asset/hooks/useTableImportExport.ts",
+      "rule": "browser-only-api",
+      "source": "const blobUrl = window.URL.createObjectURL(blob);",
+      "count": 1
+    },
+    {
+      "file": "src/components/metadata/reg-asset/views/RegulatoryAssetTableView.tsx",
+      "rule": "unsafe-min-width",
+      "source": "<div className=\"bg-white min-w-[960px]\">",
+      "count": 1
+    },
+    {
+      "file": "src/components/metadata/RegulatoryAssetView.tsx",
+      "rule": "browser-only-api",
+      "source": "a.download = `${currentTable.cnName || currentTable.name || 'RegulatoryElements'}_${timestamp}.xlsx`;",
+      "count": 1
+    },
+    {
+      "file": "src/components/metadata/RegulatoryAssetView.tsx",
+      "rule": "browser-only-api",
+      "source": "const url = window.URL.createObjectURL(blob);",
+      "count": 1
+    },
+    {
+      "file": "src/components/ops/infrastructure/AssetFormModal.tsx",
+      "rule": "unsafe-fixed-width",
+      "source": "width={760}",
+      "count": 1
+    },
+    {
+      "file": "src/components/ops/infrastructure/SystemManualPanel.tsx",
+      "rule": "browser-only-api",
+      "source": "link.download = doc.fileName || doc.title || 'manual';",
+      "count": 1
+    },
+    {
+      "file": "src/components/ops/InfrastructureManagement.tsx",
+      "rule": "browser-only-api",
+      "source": "const url = window.URL.createObjectURL(blob);",
+      "count": 1
+    },
+    {
+      "file": "src/components/ops/InfrastructureManagement.tsx",
+      "rule": "browser-only-api",
+      "source": "link.download = 'infrastructure_assets.xlsx';",
+      "count": 1
+    },
+    {
+      "file": "src/components/ops/IssueTracking.tsx",
+      "rule": "browser-only-api",
+      "source": "a.download = fileName;",
+      "count": 2
+    },
+    {
+      "file": "src/components/ops/IssueTracking.tsx",
+      "rule": "browser-only-api",
+      "source": "const url = window.URL.createObjectURL(blob);",
+      "count": 2
+    },
+    {
+      "file": "src/components/ops/IssueTracking.tsx",
+      "rule": "unsafe-fixed-width",
+      "source": "<div className=\"bg-white rounded-lg shadow-xl w-[700px] max-h-[90vh] flex flex-col\">",
+      "count": 1
+    },
+    {
+      "file": "src/components/ops/IssueTracking.tsx",
+      "rule": "unsafe-min-width",
+      "source": "<table className=\"min-w-[1320px] w-full table-fixed text-left text-sm\">",
+      "count": 1
+    },
+    {
+      "file": "src/components/ops/regulation/task-instance/TaskInstanceDetailDrawer.tsx",
+      "rule": "browser-only-api",
+      "source": "await navigator.clipboard.writeText(text);",
+      "count": 1
+    },
+    {
+      "file": "src/components/ops/regulation/task-instance/TaskInstanceDetailDrawer.tsx",
+      "rule": "browser-only-api",
+      "source": "const url = URL.createObjectURL(blob);",
+      "count": 1
+    },
+    {
+      "file": "src/components/ops/regulation/task-instance/TaskInstanceDetailDrawer.tsx",
+      "rule": "browser-only-api",
+      "source": "document.execCommand('copy');",
+      "count": 1
+    },
+    {
+      "file": "src/components/ops/regulation/task-instance/TaskInstanceDetailDrawer.tsx",
+      "rule": "browser-only-api",
+      "source": "if (navigator.clipboard?.writeText) {",
+      "count": 1
+    },
+    {
+      "file": "src/components/ops/regulation/task-instance/TaskInstanceDetailDrawer.tsx",
+      "rule": "browser-only-api",
+      "source": "link.download = filename;",
+      "count": 1
+    },
+    {
+      "file": "src/components/ops/regulation/TaskEditorModal.tsx",
+      "rule": "nested-viewport-height",
+      "source": "body: { maxHeight: 'calc(100vh - 150px)', overflowY: 'auto', padding: 0 },",
+      "count": 1
+    },
+    {
+      "file": "src/components/ops/regulation/TaskEditorModal.tsx",
+      "rule": "unsafe-fixed-width",
+      "source": "width={1120}",
+      "count": 1
+    },
+    {
+      "file": "src/components/ops/regulation/TaskExecutionLog.tsx",
+      "rule": "unsafe-min-width",
+      "source": "<table className=\"w-full min-w-[1320px] text-sm text-left\">",
+      "count": 1
+    },
+    {
+      "file": "src/components/ops/regulation/TaskInstance.tsx",
+      "rule": "unsafe-fixed-width",
+      "source": "width={980}",
+      "count": 1
+    },
+    {
+      "file": "src/components/ops/regulation/TaskListTable.tsx",
+      "rule": "unsafe-min-width",
+      "source": "<table className=\"w-full min-w-[1100px] text-sm text-left\">",
+      "count": 1
+    },
+    {
+      "file": "src/components/ops/regulation/TaskManagement.tsx",
+      "rule": "unsafe-min-width",
+      "source": "<div className=\"flex min-w-[1320px] items-end gap-2\">",
+      "count": 1
+    },
+    {
+      "file": "src/components/ops/RegulationBatchManagement.tsx",
+      "rule": "unsafe-fixed-width",
+      "source": "width={1280}",
+      "count": 1
+    },
+    {
+      "file": "src/components/ops/ReportGeneratorModal.tsx",
+      "rule": "browser-only-api",
+      "source": "navigator.clipboard.writeText(report);",
+      "count": 1
+    },
+    {
+      "file": "src/components/ops/ReportGeneratorModal.tsx",
+      "rule": "unsafe-fixed-width",
+      "source": "width={800}",
+      "count": 1
+    },
+    {
+      "file": "src/components/SqlConsole.tsx",
+      "rule": "browser-only-api",
+      "source": "a.download = `query_result_${Date.now()}.csv`;",
+      "count": 1
+    },
+    {
+      "file": "src/components/SqlConsole.tsx",
+      "rule": "browser-only-api",
+      "source": "const url = URL.createObjectURL(blob);",
+      "count": 1
+    },
+    {
+      "file": "src/components/system/ai/AiAgentAppSkillManager.tsx",
+      "rule": "unsafe-fixed-width",
+      "source": "width={640}",
+      "count": 1
+    },
+    {
+      "file": "src/components/system/ai/AiApiManager.tsx",
+      "rule": "unsafe-fixed-width",
+      "source": "width={640}",
+      "count": 1
+    },
+    {
+      "file": "src/components/system/SystemManagement.css",
+      "rule": "hidden-horizontal-overflow",
+      "source": "overflow-x: hidden;",
+      "count": 1
+    },
+    {
+      "file": "src/components/system/SystemManagement.css",
+      "rule": "unsafe-min-width",
+      "source": "min-width: 1200px;",
+      "count": 2
+    },
+    {
+      "file": "src/components/tools/OnlineDocsTool.tsx",
+      "rule": "browser-only-api",
+      "source": "link.download = doc.fileName || doc.title;",
+      "count": 1
+    },
+    {
+      "file": "src/components/tools/OnlineDocsTool.tsx",
+      "rule": "browser-only-api",
+      "source": "navigator.clipboard.writeText(doc.fileUrl).then(() => {",
+      "count": 1
+    },
+    {
+      "file": "src/components/tools/OnlineDocsTool.tsx",
+      "rule": "unsafe-fixed-width",
+      "source": "width={860} destroyOnHidden>",
+      "count": 1
+    },
+    {
+      "file": "src/components/version/AICodeAudit.tsx",
+      "rule": "nested-viewport-height",
+      "source": "<div className=\"flex h-[calc(100vh-53px)] flex-col overflow-hidden bg-slate-950\">",
+      "count": 1
+    },
+    {
+      "file": "src/components/version/AICodeAudit.tsx",
+      "rule": "nested-viewport-height",
+      "source": "className=\"[&_.ant-modal-content]:h-screen [&_.ant-modal-content]:rounded-none [&_.ant-modal-content]:p-0\"",
+      "count": 1
+    },
+    {
+      "file": "src/components/version/AICodeAudit.tsx",
+      "rule": "unbounded-viewport-width",
+      "source": "width=\"100vw\"",
+      "count": 1
+    },
+    {
+      "file": "src/components/version/AICodeReport.tsx",
+      "rule": "browser-only-api",
+      "source": "const url = window.URL.createObjectURL(blob);",
+      "count": 1
+    },
+    {
+      "file": "src/components/version/AICodeReport.tsx",
+      "rule": "browser-only-api",
+      "source": "link.download = fileName;",
+      "count": 1
+    },
+    {
+      "file": "src/components/version/DeploymentManagement.tsx",
+      "rule": "browser-only-api",
+      "source": "a.download = fileName;",
+      "count": 1
+    },
+    {
+      "file": "src/components/version/DeploymentManagement.tsx",
+      "rule": "browser-only-api",
+      "source": "const url = window.URL.createObjectURL(blob);",
+      "count": 1
+    },
+    {
+      "file": "src/components/version/DeploymentPackageModals.tsx",
+      "rule": "unsafe-fixed-width",
+      "source": "width={720}",
+      "count": 1
+    },
+    {
+      "file": "src/components/version/DeploymentPackageModals.tsx",
+      "rule": "unsafe-fixed-width",
+      "source": "width={760}",
+      "count": 2
+    },
+    {
+      "file": "src/components/version/git-repo/CommitDetail.tsx",
+      "rule": "browser-only-api",
+      "source": "navigator.clipboard.writeText(commit.fullSha || '');",
+      "count": 1
+    },
+    {
+      "file": "src/components/version/git-repo/CommitList.tsx",
+      "rule": "browser-only-api",
+      "source": "navigator.clipboard.writeText(commit.sha);",
+      "count": 1
+    },
+    {
+      "file": "src/components/version/git-repo/GitRepoDetail.tsx",
+      "rule": "browser-only-api",
+      "source": "anchor.download = viewingFile.name;",
+      "count": 1
+    },
+    {
+      "file": "src/components/version/git-repo/GitRepoDetail.tsx",
+      "rule": "browser-only-api",
+      "source": "const objectUrl = URL.createObjectURL(blob);",
+      "count": 1
+    },
+    {
+      "file": "src/components/version/git-repo/GitRepoDetail.tsx",
+      "rule": "browser-only-api",
+      "source": "navigator.clipboard.writeText(repo.cloneUrl || '');",
+      "count": 1
+    },
+    {
+      "file": "src/components/version/git-repo/GitRepoDetail.tsx",
+      "rule": "browser-only-api",
+      "source": "navigator.clipboard.writeText(viewingFile.content || '');",
+      "count": 2
+    },
+    {
+      "file": "src/components/version/git-repo/GitRepoDetail.tsx",
+      "rule": "nested-viewport-height",
+      "source": "<div className=\"bg-white overflow-auto\" style={{ height: 'calc(100vh - 180px)', maxWidth: 'calc(100vw - 320px)' }}>",
+      "count": 1
+    },
+    {
+      "file": "src/components/version/git-repo/GitRepoDetail.tsx",
+      "rule": "nested-viewport-height",
+      "source": "className={`min-h-[160px] max-h-[calc(100vh-360px)] overflow-x-auto overflow-y-scroll border ${latestCommit ? 'border-t-0 rounded-b-lg' : 'rounded-lg'} border-slate-200`}",
+      "count": 1
+    },
+    {
+      "file": "src/components/version/git-repo/GitRepoDetail.tsx",
+      "rule": "unsafe-fixed-width",
+      "source": "width={960}",
+      "count": 1
+    },
+    {
+      "file": "src/components/version/git-repo/GitRepoManagement.tsx",
+      "rule": "unsafe-fixed-width",
+      "source": "width={800}",
+      "count": 1
+    },
+    {
+      "file": "src/components/version/git-repo/PullRequestDetail.tsx",
+      "rule": "unsafe-fixed-width",
+      "source": "width={900}",
+      "count": 1
+    },
+    {
+      "file": "src/components/version/git-repo/TagList.tsx",
+      "rule": "browser-only-api",
+      "source": "const url = window.URL.createObjectURL(blob);",
+      "count": 1
+    },
+    {
+      "file": "src/components/version/git-repo/TagList.tsx",
+      "rule": "browser-only-api",
+      "source": "link.download = `${tag.name}.zip`;",
+      "count": 1
+    },
+    {
+      "file": "src/components/VersionManagement.tsx",
+      "rule": "hidden-horizontal-overflow",
+      "source": "<div className=\"flex-1 overflow-y-auto overflow-x-hidden p-6 scrollbar-thin scrollbar-thumb-slate-200 scrollbar-track-transparent\">",
+      "count": 1
+    },
+    {
+      "file": "src/index.css",
+      "rule": "nested-viewport-height",
+      "source": "height: 100dvh;",
+      "count": 1
+    },
+    {
+      "file": "src/index.css",
+      "rule": "nested-viewport-height",
+      "source": "height: 100vh;",
+      "count": 1
+    },
+    {
+      "file": "src/utils/clipboard.ts",
+      "rule": "browser-only-api",
+      "source": "await navigator.clipboard.writeText(text);",
+      "count": 1
+    },
+    {
+      "file": "src/utils/clipboard.ts",
+      "rule": "browser-only-api",
+      "source": "const successful = document.execCommand('copy');",
+      "count": 1
+    },
+    {
+      "file": "src/utils/clipboard.ts",
+      "rule": "browser-only-api",
+      "source": "if (navigator.clipboard && window.isSecureContext) {",
+      "count": 1
+    },
+    {
+      "file": "src/utils/desktopDownload.ts",
+      "rule": "browser-only-api",
+      "source": "const nativeCreateObjectUrl = URL.createObjectURL.bind(URL);",
+      "count": 1
+    },
+    {
+      "file": "src/utils/desktopDownload.ts",
+      "rule": "browser-only-api",
+      "source": "URL.createObjectURL = (object: Blob | MediaSource) => {",
+      "count": 1
+    },
+    {
+      "file": "src/utils/desktopRuntime.ts",
+      "rule": "browser-only-api",
+      "source": "window.open(url, '_blank', 'noopener,noreferrer');",
+      "count": 1
+    }
+  ]
+}

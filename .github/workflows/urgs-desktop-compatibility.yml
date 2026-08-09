@@ -1,0 +1,44 @@
+name: URGS Web 与 Desktop 双端兼容门禁
+
+on:
+  pull_request:
+    paths:
+      - "AGENTS.md"
+      - ".github/workflows/urgs-desktop-compatibility.yml"
+      - "urgs-web/package.json"
+      - "urgs-web/scripts/**"
+      - "urgs-web/src/**"
+  push:
+    branches:
+      - master
+    paths:
+      - "AGENTS.md"
+      - ".github/workflows/urgs-desktop-compatibility.yml"
+      - "urgs-web/package.json"
+      - "urgs-web/scripts/**"
+      - "urgs-web/src/**"
+
+permissions:
+  contents: read
+
+jobs:
+  compatibility:
+    name: 检查新增双端兼容风险
+    runs-on: ubuntu-latest
+    timeout-minutes: 5
+
+    steps:
+      - name: 检出代码
+        uses: actions/checkout@v4
+
+      - name: 配置 Node.js
+        uses: actions/setup-node@v4
+        with:
+          node-version: "22"
+
+      - name: 运行兼容规则单元测试
+        run: node --test urgs-web/scripts/desktop-compatibility-rules.test.mjs
+
+      - name: 检查新增兼容风险
+        run: node urgs-web/scripts/check-desktop-compatibility.mjs
+

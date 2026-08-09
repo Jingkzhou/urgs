@@ -1172,6 +1172,8 @@ const ColumnLineageDiagram: React.FC<ColumnLineageDiagramProps> = ({
                 <Modal
                     open={relationModalVisible}
                     title="关系来源详情"
+                    rootClassName="lineage-relation-detail-modal"
+                    className="lineage-relation-detail-dialog"
                     footer={!selectedRelation.link.sourceColumnId && !selectedRelation.link.targetColumnId ? (
                         <Button type="primary" onClick={() => void handleAnalyzeTableRelation()} loading={fieldLoading}>
                             字段级分析该表关系
@@ -1182,65 +1184,76 @@ const ColumnLineageDiagram: React.FC<ColumnLineageDiagramProps> = ({
                         setRelationModalVisible(false);
                         setSourceFilesModalVisible(false);
                     }}
+                    styles={{ body: { padding: 0 } }}
                 >
-                    <Descriptions size="small" bordered column={1}>
-                        <Descriptions.Item label="源表">{selectedRelation.sourceTable}</Descriptions.Item>
-                        <Descriptions.Item label="目标表">{selectedRelation.targetTable}</Descriptions.Item>
-                        <Descriptions.Item label="关联类型">
-                            <Tag color={getRelationStyle(selectedRelation.link.type).color}>
-                                {getRelationLabel(selectedRelation.link.type)}
-                            </Tag>
-                        </Descriptions.Item>
-                        <Descriptions.Item label="证据层级">
-                            {getRelationLevelLabel(selectedRelation.link.properties?.relationLevel)}
-                        </Descriptions.Item>
-                        <Descriptions.Item label="关系数量">
-                            共 {selectedRelation.link.properties?.relationCount || 1} 条
-                            {selectedRelation.link.properties?.fieldRelationCount !== undefined
-                                ? `，字段级 ${selectedRelation.link.properties.fieldRelationCount} 条`
-                                : ''}
-                            {selectedRelation.link.properties?.fallbackRelationCount
-                                ? `，表级兜底 ${selectedRelation.link.properties.fallbackRelationCount} 条`
-                                : ''}
-                        </Descriptions.Item>
-                        <Descriptions.Item label="源字段">
-                            {formatDetailList(selectedRelation.sourceColumns)}
-                        </Descriptions.Item>
-                        <Descriptions.Item label="目标字段">
-                            {formatDetailList(selectedRelation.targetColumns)}
-                        </Descriptions.Item>
-                        <Descriptions.Item label="源文件">
-                            {selectedRelation.sourceFiles.length > 1 ? (
-                                <Button
-                                    type="link"
-                                    className="px-0"
-                                    onClick={() => setSourceFilesModalVisible(true)}
-                                >
-                                    共 {selectedRelation.sourceFiles.length} 个文件，查看列表
-                                </Button>
-                            ) : selectedRelation.sourceFiles[0] || '-'}
-                        </Descriptions.Item>
-                        <Descriptions.Item label="解析来源">
-                            {formatDetailList(normalizeArray(selectedRelation.link.properties?.lineageOrigins))}
-                        </Descriptions.Item>
-                        <Descriptions.Item label="说明">
-                            {selectedRelation.link.properties?.relationLevel === 'end_to_end'
-                                ? '当前是端到端汇总线路，请切换到完整链路，逐步查看每条实际关系对应的 SQL 证据。'
-                                : selectedRelation.link.sourceColumnId || selectedRelation.link.targetColumnId
-                                ? '每段 SQL 都是当前字段关系的独立证据，不会与其他处理步骤拼接。'
-                                : '当前是表级归并关系，SQL 作为多份独立证据展示；进入字段级分析可查看实际字段边。'}
-                        </Descriptions.Item>
-                    </Descriptions>
-                    {selectedRelation.link.properties?.relationLevel !== 'end_to_end' && (
-                        <RelationEvidencePanel
-                            active={relationModalVisible}
-                            link={selectedRelation.link}
-                            sourceTable={selectedRelation.sourceTable}
-                            targetTable={selectedRelation.targetTable}
-                            sourceColumn={selectedRelation.sourceColumns[0]}
-                            targetColumn={selectedRelation.targetColumns[0]}
-                        />
-                    )}
+                    <div className="lineage-relation-detail-body">
+                        <Descriptions className="lineage-relation-summary" size="small" bordered column={{ xs: 1, sm: 2 }}>
+                            <Descriptions.Item label="源表">
+                                <span className="lineage-relation-value" title={selectedRelation.sourceTable}>{selectedRelation.sourceTable}</span>
+                            </Descriptions.Item>
+                            <Descriptions.Item label="目标表">
+                                <span className="lineage-relation-value" title={selectedRelation.targetTable}>{selectedRelation.targetTable}</span>
+                            </Descriptions.Item>
+                            <Descriptions.Item label="关联类型">
+                                <Tag color={getRelationStyle(selectedRelation.link.type).color}>
+                                    {getRelationLabel(selectedRelation.link.type)}
+                                </Tag>
+                            </Descriptions.Item>
+                            <Descriptions.Item label="证据层级">
+                                {getRelationLevelLabel(selectedRelation.link.properties?.relationLevel)}
+                            </Descriptions.Item>
+                            <Descriptions.Item label="关系数量">
+                                共 {selectedRelation.link.properties?.relationCount || 1} 条
+                                {selectedRelation.link.properties?.fieldRelationCount !== undefined
+                                    ? `，字段级 ${selectedRelation.link.properties.fieldRelationCount} 条`
+                                    : ''}
+                                {selectedRelation.link.properties?.fallbackRelationCount
+                                    ? `，表级兜底 ${selectedRelation.link.properties.fallbackRelationCount} 条`
+                                    : ''}
+                            </Descriptions.Item>
+                            <Descriptions.Item label="源字段">
+                                <span className="lineage-relation-value">{formatDetailList(selectedRelation.sourceColumns)}</span>
+                            </Descriptions.Item>
+                            <Descriptions.Item label="目标字段">
+                                <span className="lineage-relation-value">{formatDetailList(selectedRelation.targetColumns)}</span>
+                            </Descriptions.Item>
+                            <Descriptions.Item label="源文件" span={2}>
+                                {selectedRelation.sourceFiles.length > 1 ? (
+                                    <Button
+                                        type="link"
+                                        className="lineage-relation-source-files-button px-0"
+                                        onClick={() => setSourceFilesModalVisible(true)}
+                                    >
+                                        共 {selectedRelation.sourceFiles.length} 个文件，查看列表
+                                    </Button>
+                                ) : <span className="lineage-relation-value">{selectedRelation.sourceFiles[0] || '-'}</span>}
+                            </Descriptions.Item>
+                            <Descriptions.Item label="解析来源">
+                                <span className="lineage-relation-value">
+                                    {formatDetailList(normalizeArray(selectedRelation.link.properties?.lineageOrigins))}
+                                </span>
+                            </Descriptions.Item>
+                            <Descriptions.Item label="说明" span={2}>
+                                <span className="lineage-relation-note">
+                                    {selectedRelation.link.properties?.relationLevel === 'end_to_end'
+                                        ? '当前是端到端汇总线路，请切换到完整链路，逐步查看每条实际关系对应的 SQL 证据。'
+                                        : selectedRelation.link.sourceColumnId || selectedRelation.link.targetColumnId
+                                        ? '每段 SQL 都是当前字段关系的独立证据，不会与其他处理步骤拼接。'
+                                        : '当前是表级归并关系，SQL 作为多份独立证据展示；进入字段级分析可查看实际字段边。'}
+                                </span>
+                            </Descriptions.Item>
+                        </Descriptions>
+                        {selectedRelation.link.properties?.relationLevel !== 'end_to_end' && (
+                            <RelationEvidencePanel
+                                active={relationModalVisible}
+                                link={selectedRelation.link}
+                                sourceTable={selectedRelation.sourceTable}
+                                targetTable={selectedRelation.targetTable}
+                                sourceColumn={selectedRelation.sourceColumns[0]}
+                                targetColumn={selectedRelation.targetColumns[0]}
+                            />
+                        )}
+                    </div>
                 </Modal>
             ) : null}
             {selectedRelation ? (
@@ -1250,11 +1263,14 @@ const ColumnLineageDiagram: React.FC<ColumnLineageDiagramProps> = ({
                     footer={null}
                     width={680}
                     zIndex={1100}
+                    rootClassName="lineage-source-files-modal"
+                    className="lineage-source-files-dialog"
+                    styles={{ body: { padding: 0 } }}
                     onCancel={() => setSourceFilesModalVisible(false)}
                 >
-                    <div className="max-h-[420px] space-y-2 overflow-auto">
+                    <div className="lineage-source-files-list max-h-[420px] space-y-2 overflow-auto">
                         {selectedRelation.sourceFiles.map(file => (
-                            <div key={file} className="rounded-md border border-slate-200 bg-slate-50 px-3 py-2 text-sm break-all">
+                            <div key={file} className="lineage-source-file-item rounded-md border border-slate-200 bg-slate-50 px-3 py-2 text-sm break-all" title={file}>
                                 {file}
                             </div>
                         ))}

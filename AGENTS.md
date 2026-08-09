@@ -51,6 +51,19 @@
   - 用户明确要求“编译通过/构建验证”
 - 若执行了编译且失败，必须修复后再提交
 
+### 4.1 Web 与 Desktop 双端兼容门禁
+
+**所有新增页面和功能必须从首次开发开始同时支持 Web 与 Tauri Desktop，不得先交付 Web 再补 Desktop。**
+
+- App Shell 是唯一视口所有者；普通路由页面禁止新增 `100vh`、`100dvh`、`100vw`、`h-screen`、`min-h-screen`。
+- 所有路由自动继承 `PageViewport`；新页面根节点优先使用 `urgs-web/src/components/common/adaptive/` 下的 `AdaptivePage`。
+- 工具栏、双栏布局和宽数据区优先使用 `AdaptiveToolbar`、`AdaptiveSplitLayout`、`AdaptiveDataRegion`，不得用大固定宽度和 `overflow-x-hidden` 掩盖裁切。
+- 下载、文件选择、保存、剪贴板、全屏、打开新窗口等平台能力必须通过双端适配器实现，禁止业务页面直接假设浏览器行为在 WebView 中可用。
+- Ant Design 必须保持静态组件样式模式与稳定主题变量；不得移除入口 `antd/dist/antd.css`、关闭根 `zeroRuntime`，或破坏 Tauri `style-src 'unsafe-inline'` 与仅限 `style-src` 的 CSP 改写豁免。
+- 前端功能改动必须执行 `cd urgs-web && pnpm run test:desktop-compat && pnpm run check:desktop-compat`；检查失败不得通过更新基线绕过。
+- 确属独立全屏画布或局部横向滚动的例外，必须使用 `desktop-compat-allow: <具体原因>` 注释并在真实 Desktop 中验收。
+- 完整开发与验收规范见 `docs/desktop-dual-platform.md`。
+
 ### 5. 禁止使用 Unicode 弯引号（全角引号）
 
 **JSX/TSX 代码中的字符串属性值必须使用 ASCII 直引号 `"` `'`，严禁使用 Unicode 弯引号 `"` `"` `'` `'`。**

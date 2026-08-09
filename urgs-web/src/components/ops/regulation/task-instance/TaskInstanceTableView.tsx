@@ -2,6 +2,7 @@ import React from 'react';
 import { Tag, Tooltip } from 'antd';
 import { AlertTriangle, CheckCircle2, Eye, MoreHorizontal, Play, RefreshCw, RotateCcw, Search, Square } from 'lucide-react';
 import Pagination from '@/components/common/Pagination';
+import { AdaptiveDataRegion } from '@/components/common/adaptive';
 import { QuartzTask, QuartzTaskStatus } from '../mockData';
 import {
     batchActionClass,
@@ -199,7 +200,8 @@ const TaskInstanceTableView: React.FC<TaskInstanceTableViewProps> = ({
                     </div>
                 </div>
 
-                <div className="overflow-x-auto px-4 py-2.5">
+                <AdaptiveDataRegion className="px-4 py-2.5" label="任务实例筛选条件">
+                    {/* desktop-compat-allow: 筛选字段保持可读宽度并仅在当前数据区域横向滚动 */}
                     <div className="flex min-w-[1280px] items-end gap-2">
                         <label className={`${labelClass} w-[300px] shrink-0`}>
                             <div className={labelTextClass}>搜索条件</div>
@@ -323,7 +325,7 @@ const TaskInstanceTableView: React.FC<TaskInstanceTableViewProps> = ({
                             </div>
                         </div>
                     </div>
-                </div>
+                </AdaptiveDataRegion>
 
                 <div className="flex flex-wrap items-center gap-x-3 gap-y-1 border-t border-slate-100 px-4 py-2">
                     <span className="shrink-0 text-xs font-semibold text-slate-600">执行器线程池指标</span>
@@ -442,7 +444,8 @@ const TaskInstanceTableView: React.FC<TaskInstanceTableViewProps> = ({
                         {selectedInstanceIds.length > 0 ? `已选择 ${selectedInstanceIds.length} 条` : '可多选后批量重跑、停止或强制通过'}
                     </div>
                 </div>
-                <div className="min-h-0 flex-1 overflow-auto">
+                <AdaptiveDataRegion className="min-h-0 flex-1" label="任务实例列表">
+                    {/* desktop-compat-allow: 多列表格保持列宽并仅在当前数据区域横向滚动 */}
                     <table className="w-full min-w-[1516px] table-fixed text-left text-sm">
                         <colgroup>
                             <col style={{ width: 76 }} />
@@ -588,7 +591,7 @@ const TaskInstanceTableView: React.FC<TaskInstanceTableViewProps> = ({
                             })}
                         </tbody>
                     </table>
-                </div>
+                </AdaptiveDataRegion>
                 <div className="border-t border-slate-100 px-4 py-3">
                     <Pagination
                         current={currentPage}

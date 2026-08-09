@@ -19,6 +19,7 @@ import KnowledgeCenter from './components/knowledge/KnowledgeCenter';
 import MarketplacePage from './components/marketplace/MarketplacePage';
 import ToolsPage from './components/tools/ToolsPage';
 import DesktopAutostartSetting from './components/desktop/DesktopAutostartSetting';
+import { PageViewport } from './components/common/adaptive';
 import { DashboardViewDefinition, DashboardViewKey, dashboardViewDefinitions } from './components/home/dashboardViews';
 import { getMarketplaceTodos } from './api/marketplace';
 import { LOGO_URL } from './constants';
@@ -594,7 +595,7 @@ const App: React.FC = () => {
                         )}
 
                         <main className="app-main flex-1 min-h-0 min-w-0 overflow-y-auto overflow-x-hidden p-4 lg:p-8 scroll-smooth bg-slate-50/50">
-                            <div className="app-page-host mx-auto h-full min-h-0 min-w-0 max-w-[98%]">
+                            <PageViewport className="app-page-host mx-auto h-full min-h-0 min-w-0 max-w-[98%]">
                                 {activeTab === 'dashboard' && <Dashboard />}
                                 {activeTab === 'ark' && <ArkPage
                                     launchTask={null}
@@ -609,7 +610,7 @@ const App: React.FC = () => {
                                 {activeTab === 'knowledge' && <KnowledgeCenter />}
                                 {activeTab === 'marketplace' && <MarketplacePage />}
                                 {activeTab === 'basic_info' && hasPermission('profile') && <BasicInfo userInfo={userInfo} />}
-                            </div>
+                            </PageViewport>
                         </main>
                     </div>
 

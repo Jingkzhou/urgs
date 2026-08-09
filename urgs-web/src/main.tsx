@@ -28,6 +28,7 @@ import { installDesktopDownloadAdapter } from './utils/desktopDownload';
 import { initializeDesktopAutostart } from './utils/desktopAutostart';
 import { initializeDesktopRuntimeConfig } from './utils/desktopRuntime';
 import './index.css';
+import './styles/dual-platform.css';
 
 const rootElement = document.getElementById('root');
 if (!rootElement) {
@@ -64,7 +65,7 @@ const startApplication = async () => {
 
   root.render(
     <React.StrictMode>
-      <ConfigProvider theme={{ zeroRuntime: false }}>
+      <ConfigProvider theme={{ zeroRuntime: true, cssVar: { key: 'urgs' } }}>
         {desktopRuntime && (!getApiBaseUrl() || editDesktopConnection) ? <DesktopConnectionSetup /> : <App />}
         <DesktopAutoUpdater />
       </ConfigProvider>

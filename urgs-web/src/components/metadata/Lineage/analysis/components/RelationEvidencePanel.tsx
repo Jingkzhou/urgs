@@ -199,16 +199,16 @@ const RelationEvidencePanel: React.FC<RelationEvidencePanelProps> = ({
         : [];
 
     return (
-        <div className="mt-4">
-            <div className="mb-3 flex items-center justify-between">
+        <div className="lineage-relation-evidence mt-4">
+            <div className="lineage-relation-evidence-header mb-3">
                 <Text strong>SQL 证据（{evidence.length || getLinkEvidenceCount(link)}）</Text>
-                <Text type="secondary" className="text-xs">点击一条 SQL 全屏查看对应代码</Text>
+                <Text type="secondary" className="lineage-relation-evidence-hint text-xs">选择一条 SQL，全屏查看对应代码</Text>
             </div>
             {error && <Alert className="mb-3" type="warning" showIcon message={error} />}
             {evidence.length === 0 ? (
                 <Empty image={Empty.PRESENTED_IMAGE_SIMPLE} description="当前关系未关联可展示的 SQL 语句" />
             ) : (
-                <div className="max-h-72 space-y-2 overflow-auto">
+                <div className="lineage-relation-evidence-list max-h-72 space-y-2 overflow-auto">
                     {evidence.map((item, index) => {
                         const sourceFields = item.sourceColumns.length > 0 ? item.sourceColumns : (sourceColumn ? [sourceColumn] : []);
                         const targetFields = item.targetColumns.length > 0 ? item.targetColumns : (targetColumn ? [targetColumn] : []);
@@ -216,21 +216,24 @@ const RelationEvidencePanel: React.FC<RelationEvidencePanelProps> = ({
                             <button
                                 key={item.statementUid || String(index)}
                                 type="button"
-                                className="flex w-full items-center justify-between gap-4 rounded-lg border border-slate-200 bg-white px-4 py-3 text-left transition hover:border-blue-300 hover:bg-blue-50/40"
+                                aria-label={`打开 SQL ${index + 1}：${fileLabel(item)}`}
+                                className="lineage-relation-evidence-item flex w-full items-center justify-between gap-4 rounded-lg border border-slate-200 bg-white px-4 py-3 text-left transition hover:border-blue-300 hover:bg-blue-50/40"
                                 onClick={() => setSelectedEvidenceIndex(index)}
                             >
-                                <div className="min-w-0">
+                                <div className="lineage-relation-evidence-main min-w-0">
                                     <div className="mb-1 flex flex-wrap items-center gap-2">
                                         <span className="font-medium text-slate-800">SQL {index + 1}</span>
-                                        <Tag>{fileLabel(item)}</Tag>
+                                        <Tag className="lineage-relation-evidence-file" title={item.sourceFiles.join('、') || '未记录文件'}>{fileLabel(item)}</Tag>
                                         <span className="text-xs text-slate-400">语句序号 {(item.statementIndex || 0) + 1}</span>
                                         {item.ambiguityCodes.length > 0 && <Tag color="warning">存在歧义</Tag>}
                                     </div>
-                                    <div className="truncate text-xs text-slate-500">
-                                        {sourceFields.join('、') || '-'} {' → '} {targetFields.join('、') || '-'}
+                                    <div className="lineage-relation-evidence-fields truncate text-xs text-slate-500" title={`${sourceFields.join('、') || '-'} → ${targetFields.join('、') || '-'}`}>
+                                        <span>{sourceFields.join('、') || '-'}</span>
+                                        <span className="lineage-relation-evidence-arrow" aria-hidden="true">→</span>
+                                        <span>{targetFields.join('、') || '-'}</span>
                                     </div>
                                 </div>
-                                <span className="shrink-0 text-xs font-medium text-blue-600">全屏查看</span>
+                                <span className="lineage-relation-evidence-action shrink-0 text-xs font-medium text-blue-600">全屏查看</span>
                             </button>
                         );
                     })}
@@ -242,6 +245,8 @@ const RelationEvidencePanel: React.FC<RelationEvidencePanelProps> = ({
                 footer={null}
                 width="100vw"
                 zIndex={1200}
+                rootClassName="lineage-sql-evidence-modal"
+                className="lineage-sql-evidence-dialog"
                 style={{ top: 0, maxWidth: '100vw', paddingBottom: 0 }}
                 styles={{
                     container: { height: '100vh', borderRadius: 0 },
@@ -250,7 +255,7 @@ const RelationEvidencePanel: React.FC<RelationEvidencePanelProps> = ({
                 onCancel={() => setSelectedEvidenceIndex(null)}
             >
                 {selectedEvidence ? (
-                    <div>
+                    <div className="lineage-sql-evidence-body">
                         <div className="mb-4 flex flex-wrap items-center gap-x-5 gap-y-2 text-xs text-slate-500">
                             <span>来源文件：{selectedEvidence.sourceFiles.join('、') || '未记录'}</span>
                             <span>语句序号：{(selectedEvidence.statementIndex || 0) + 1}</span>
@@ -263,7 +268,7 @@ const RelationEvidencePanel: React.FC<RelationEvidencePanelProps> = ({
                             <span><i className="mr-1 inline-block h-2 w-2 rounded-sm bg-rose-400" />目标字段</span>
                             <span><i className="mr-1 inline-block h-2 w-2 rounded-sm bg-violet-400" />重合关键字</span>
                         </div>
-                        <pre className="min-h-[calc(100vh-180px)] overflow-auto whitespace-pre-wrap rounded-lg bg-slate-900 p-5 text-sm leading-7 text-slate-100">
+                        <pre className="lineage-sql-code-block min-h-[calc(100vh-180px)] overflow-auto whitespace-pre-wrap rounded-lg bg-slate-900 p-5 text-sm leading-7 text-slate-100">
                             <code
                                 className="hljs sql"
                                 style={{ background: 'transparent', padding: 0, fontSize: 'inherit', lineHeight: 'inherit' }}

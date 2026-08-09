@@ -1,0 +1,161 @@
+:root {
+  --urgs-page-gutter: clamp(12px, 1.5vw, 24px);
+  --urgs-control-min-height: 36px;
+  --urgs-overlay-gutter: 16px;
+}
+
+/*
+ * Web 与 Tauri 共用的页面布局协议。
+ * 只有 App Shell 拥有视口高度，所有路由页面都根据实际内容容器宽度响应。
+ */
+.urgs-page-viewport {
+  width: 100%;
+  min-width: 0;
+  max-width: 100%;
+  min-height: 0;
+  container-name: urgs-page-host;
+  container-type: inline-size;
+}
+
+.urgs-adaptive-page {
+  width: 100%;
+  min-width: 0;
+  max-width: min(100%, var(--urgs-page-max-width, 1600px));
+  min-height: 0;
+  margin-inline: auto;
+}
+
+.urgs-adaptive-page[data-page-scroll='page'] {
+  display: flex;
+  height: 100%;
+  flex-direction: column;
+  overflow: auto;
+  overscroll-behavior: contain;
+}
+
+.urgs-adaptive-page[data-page-scroll='none'] {
+  height: 100%;
+  overflow: hidden;
+}
+
+.urgs-adaptive-toolbar {
+  display: flex;
+  width: 100%;
+  min-width: 0;
+  max-width: 100%;
+  align-items: center;
+  gap: 12px;
+}
+
+.urgs-adaptive-toolbar__leading,
+.urgs-adaptive-toolbar__content,
+.urgs-adaptive-toolbar__actions {
+  min-width: 0;
+}
+
+.urgs-adaptive-toolbar__leading {
+  flex: 0 1 auto;
+}
+
+.urgs-adaptive-toolbar__content {
+  flex: 1 1 360px;
+}
+
+.urgs-adaptive-toolbar__actions {
+  display: flex;
+  flex: 0 1 auto;
+  flex-wrap: wrap;
+  align-items: center;
+  justify-content: flex-end;
+  gap: 8px;
+}
+
+.urgs-adaptive-split {
+  display: grid;
+  width: 100%;
+  min-width: 0;
+  min-height: 0;
+  grid-template-columns: minmax(220px, var(--urgs-sidebar-width, 280px)) minmax(0, 1fr);
+  gap: 16px;
+}
+
+.urgs-adaptive-split__sidebar,
+.urgs-adaptive-split__content {
+  min-width: 0;
+  min-height: 0;
+}
+
+.urgs-adaptive-data-region {
+  width: 100%;
+  min-width: 0;
+  max-width: 100%;
+  overflow: auto;
+  overscroll-behavior: contain;
+  scrollbar-gutter: stable;
+}
+
+.urgs-adaptive-data-region:focus-visible {
+  outline: 2px solid #1677ff;
+  outline-offset: 2px;
+}
+
+.urgs-adaptive-overlay {
+  /* desktop-compat-allow: 浮层宽度同时受到双向视口边距约束 */
+  width: min(var(--urgs-overlay-width, 960px), calc(100vw - (var(--urgs-overlay-gutter) * 2)));
+  max-width: calc(100vw - (var(--urgs-overlay-gutter) * 2));
+  /* desktop-compat-allow: 浮层高度同时受到双向视口边距约束 */
+  max-height: calc(100dvh - (var(--urgs-overlay-gutter) * 2));
+}
+
+@container urgs-page-host (max-width: 960px) {
+  .urgs-adaptive-toolbar {
+    align-items: stretch;
+    flex-wrap: wrap;
+  }
+
+  .urgs-adaptive-toolbar__leading,
+  .urgs-adaptive-toolbar__content,
+  .urgs-adaptive-toolbar__actions {
+    flex-basis: 100%;
+  }
+
+  .urgs-adaptive-toolbar__actions {
+    justify-content: flex-start;
+  }
+
+  .urgs-adaptive-split {
+    grid-template-columns: minmax(0, 1fr);
+  }
+}
+
+@container urgs-page-host (max-width: 640px) {
+  .urgs-adaptive-toolbar__actions > *,
+  .urgs-adaptive-toolbar__actions .ant-space,
+  .urgs-adaptive-toolbar__actions .ant-btn,
+  .urgs-adaptive-toolbar__actions .ant-select,
+  .urgs-adaptive-toolbar__actions .ant-input-affix-wrapper {
+    max-width: 100%;
+  }
+}
+
+@supports not (container-type: inline-size) {
+  @media (max-width: 1279px) {
+    .urgs-adaptive-toolbar {
+      align-items: stretch;
+      flex-wrap: wrap;
+    }
+
+    .urgs-adaptive-toolbar__actions {
+      justify-content: flex-start;
+    }
+
+    .urgs-adaptive-split {
+      grid-template-columns: minmax(0, 1fr);
+    }
+  }
+}
+
+.desktop-runtime .urgs-adaptive-page,
+.desktop-runtime .urgs-adaptive-data-region {
+  -webkit-overflow-scrolling: touch;
+}

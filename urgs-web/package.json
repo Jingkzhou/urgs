@@ -6,7 +6,9 @@
   "scripts": {
     "dev": "vite",
     "dev:ai": "sh ../scripts/pre-commit-hook.sh && vite",
-    "build": "vite build",
+    "check:desktop-compat": "node scripts/check-desktop-compatibility.mjs",
+    "test:desktop-compat": "node --test scripts/desktop-compatibility-rules.test.mjs",
+    "build": "node scripts/check-desktop-compatibility.mjs && vite build",
     "preview": "vite preview"
   },
   "dependencies": {
@@ -29,7 +31,7 @@
     "@xterm/addon-fit": "^0.10.0",
     "@xterm/addon-webgl": "0.18.0",
     "@xterm/xterm": "^5.5.0",
-    "antd": "^6.0.0",
+    "antd": "6.3.1",
     "dagre": "^0.8.5",
     "date-fns": "^4.1.0",
     "dayjs": "^1.11.13",
