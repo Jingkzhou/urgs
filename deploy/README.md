@@ -99,6 +99,12 @@ DEPLOY_ENV=sit PACKAGE_NAME=urgs-sit deploy/package-services.sh full
 DEPLOY_ENV=pre PACKAGE_NAME=urgs-pre deploy/package-services.sh full
 ```
 
+本地环境完整包：
+
+```bash
+DEPLOY_ENV=local PACKAGE_NAME=urgs-local deploy/package-services.sh full
+```
+
 输出文件：
 
 ```text
@@ -136,6 +142,9 @@ DEPLOY_ENV=sit deploy/package-services.sh api web executor nginx desktop
 
 # 离线兜底：指定本地已下载的签名工件目录（包含 MSI、setup.exe 及 .sig）
 DEPLOY_ENV=sit DESKTOP_UPDATER_SOURCE_DIR=/path/to/windows-bundle deploy/package-services.sh api web executor nginx desktop
+
+# 本地环境必须显式指定 Windows 签名工件目录，不会触发 GitHub Actions
+DEPLOY_ENV=local DESKTOP_UPDATER_SOURCE_DIR=/path/to/windows-bundle deploy/package-services.sh api web executor nginx desktop
 ```
 
 如果服务器已经安装好 Nginx / Redis，不想把组件打进包：
@@ -275,7 +284,7 @@ logs/java/urgs-executor-prod.log
 ## 8. 补充说明
 
 - `full` 包含：`api web executor agent lineage nginx redis onlyoffice`。
-- `desktop` 不是常驻服务；未指定 `DESKTOP_UPDATER_SOURCE_DIR` 时，它会触发 GitHub Actions 的“构建 URGS 内网 Windows 更新包”、等待完成，并下载工件到 `deploy/artifacts/windows-updater/<环境>/<请求标识>/`。随后把签名的 Windows MSI、NSIS `setup.exe` 和 `.sig` 发布到 Nginx 的 `/desktop/`。安装包已内置并在 Windows 构建机上完成安装后冒烟验证的 Grok sidecar，不需要终端另行安装 Grok Build。更新地址来自环境模板中的 `DESKTOP_UPDATER_BASE_URL`，SIT 和生产必须填写客户端可访问的内网地址。
+- `desktop` 不是常驻服务；SIT/生产未指定 `DESKTOP_UPDATER_SOURCE_DIR` 时，会触发 GitHub Actions 构建并下载签名工件；`local` 必须显式指定本地 Windows 签名工件目录，不会触发 GitHub Actions。随后签名的 Windows MSI、NSIS `setup.exe` 和 `.sig` 会发布到 Nginx 的 `/desktop/`。安装包已内置并在 Windows 构建机上完成安装后冒烟验证的 Grok sidecar，不需要终端另行安装 Grok Build。更新地址来自环境模板中的 `DESKTOP_UPDATER_BASE_URL`。
 - Windows 安装包必须在 Windows 构建机上使用 `TAURI_UPDATER_ENDPOINT=<内网地址>/latest.json pnpm --dir urgs-desktop build:updater` 构建；部署脚本只发布已签名工件，不会在 macOS/Linux 上伪造 Windows 更新签名。
 - `lineage` 是随包分发的命令行工具，不是常驻服务。
 - `onlyoffice` 使用官方 ARM64 DEB 安装为 Linux 系统服务，首次执行 `bin/deploy.sh install/up` 需要 sudo 权限并安装 PostgreSQL、RabbitMQ、字体、Nginx 等系统依赖。

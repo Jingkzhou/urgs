@@ -15,13 +15,14 @@ CLEAN_WORK_DIR_ON_EXIT=0
 usage() {
     cat <<'EOF'
 Usage:
-  deploy/package-services.sh [--env sit|pre|prod] <service-or-component...>
+  deploy/package-services.sh [--env local|sit|pre|prod] <service-or-component...>
 
 Environment config:
+  --env local  Package deploy/templates/deploy.local.env as config/deploy.env.
   --env sit     Package deploy/templates/deploy.sit.env as config/deploy.env.
   --env pre     Package deploy/templates/deploy.pre.env as config/deploy.env.
   --env prod    Package deploy/templates/deploy.prod.env as config/deploy.env.
-  DEPLOY_ENV can also be set to sit, pre, or prod.
+  DEPLOY_ENV can also be set to local, sit, pre, or prod.
   DEPLOY_ENV_TEMPLATE can point to an explicit env file.
 
 Services:
@@ -30,7 +31,7 @@ Services:
   executor     Build and package urgs-executor Spring Boot service.
   agent        Package urgs-agent LangGraph runtime source and lock file.
   lineage      Package sql-lineage-engine source and requirements.
-  desktop      Build/download signed Windows updater artifacts from GitHub, then package them for intranet Nginx.
+  desktop      Package signed Windows updater artifacts from a local source or GitHub for Nginx.
 
 Components:
   nginx        Package nginx deployment config and NGINX_TARBALL, or latest cached ARM64 package.
@@ -44,6 +45,7 @@ Groups:
 
 Examples:
   DEPLOY_ENV=prod deploy/package-services.sh full
+  DEPLOY_ENV=local DESKTOP_UPDATER_SOURCE_DIR=/tmp/urgs-windows deploy/package-services.sh api web executor nginx desktop
   deploy/package-services.sh --env pre full
   deploy/package-services.sh --env sit api web nginx redis
   deploy/package-services.sh api web
@@ -153,6 +155,7 @@ normalize_deploy_env() {
     local env_name
     env_name="$(printf '%s' "$1" | tr '[:upper:]' '[:lower:]')"
     case "$env_name" in
+        local) echo "local" ;;
         sit | test) echo "sit" ;;
         pre | preprod | pre-production | pre_production | uat) echo "pre" ;;
         prod | production) echo "prod" ;;
@@ -173,7 +176,7 @@ resolve_deploy_env_template() {
         return 0
     fi
 
-    env_name="$(normalize_deploy_env "$DEPLOY_ENV")" || die "Unknown DEPLOY_ENV: ${DEPLOY_ENV}. Expected sit, pre, or prod."
+    env_name="$(normalize_deploy_env "$DEPLOY_ENV")" || die "Unknown DEPLOY_ENV: ${DEPLOY_ENV}. Expected local, sit, pre, or prod."
     printf '%s\n' "${ROOT_DIR}/deploy/templates/deploy.${env_name}.env"
 }
 
@@ -515,12 +518,15 @@ package_desktop() {
     local version
 
     require_command node
-    environment="$(normalize_deploy_env "$DEPLOY_ENV")" || die "desktop requires DEPLOY_ENV=sit, pre, or prod."
+    environment="$(normalize_deploy_env "$DEPLOY_ENV")" || die "desktop requires DEPLOY_ENV=local, sit, or prod."
     case "$environment" in
         sit | prod) ;;
-        *) die "desktop only supports DEPLOY_ENV=sit or DEPLOY_ENV=prod because GitHub Actions only builds those intranet updater endpoints." ;;
+        local)
+            [ -n "$source_dir" ] || die "desktop with DEPLOY_ENV=local requires DESKTOP_UPDATER_SOURCE_DIR; local packaging does not trigger GitHub Actions."
+            ;;
+        *) die "desktop only supports DEPLOY_ENV=local, sit, or DEPLOY_ENV=prod." ;;
     esac
-    if [ -z "$source_dir" ]; then
+    if [ -z "$source_dir" ] && [ "$environment" != "local" ]; then
         fetch_desktop_updater_from_github "$environment"
         source_dir="$DESKTOP_UPDATER_DOWNLOADED_SOURCE_DIR"
     fi
@@ -632,7 +638,7 @@ while [ "$#" -gt 0 ]; do
     case "$1" in
         --env)
             shift
-            [ -n "${1:-}" ] || die "--env requires sit, pre, or prod."
+            [ -n "${1:-}" ] || die "--env requires local, sit, pre, or prod."
             DEPLOY_ENV="$1"
             ;;
         --env=*)
