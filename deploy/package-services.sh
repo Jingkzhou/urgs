@@ -455,6 +455,7 @@ fetch_desktop_updater_from_github() {
     local run_conclusion
     local artifacts_json
     local artifact_url
+    local artifact_size_bytes
     local artifact_dir
     local artifact_zip
     local attempt
@@ -479,6 +480,9 @@ fetch_desktop_updater_from_github() {
         runs_json="$(github_api_request GET "/repos/${repository}/actions/workflows/${workflow_file}/runs?event=workflow_dispatch&branch=${DESKTOP_UPDATER_GITHUB_REF_RESOLVED}&per_page=20" "$token")"
         run_id="$(printf '%s' "$runs_json" | json_value 'const fs = require("fs"); const requestId = process.argv[1]; const data = JSON.parse(fs.readFileSync(0, "utf8")); const run = (data.workflow_runs || []).find((item) => item.display_title && item.display_title.includes(requestId)); if (run) process.stdout.write(String(run.id));' "$request_id")"
         [ -n "$run_id" ] && break
+        if [ $((attempt % 4)) -eq 0 ]; then
+            log "Still waiting for GitHub Actions run creation (${attempt}/24 checks)."
+        fi
     done
     [ -n "$run_id" ] || die "GitHub Actions did not create the updater build within two minutes. Check the Actions page and retry."
 
@@ -491,6 +495,9 @@ fetch_desktop_updater_from_github() {
             [ "$run_conclusion" = "success" ] || die "GitHub Actions updater build ${run_id} ended with ${run_conclusion}."
             break
         fi
+        if [ $((attempt % 4)) -eq 0 ]; then
+            log "GitHub Actions run ${run_id} status=${run_status} (${attempt}/240 checks)."
+        fi
         sleep 15
     done
     [ "${run_status:-}" = "completed" ] || die "GitHub Actions updater build ${run_id} timed out after one hour."
@@ -498,15 +505,26 @@ fetch_desktop_updater_from_github() {
     artifacts_json="$(github_api_request GET "/repos/${repository}/actions/runs/${run_id}/artifacts" "$token")"
     artifact_url="$(printf '%s' "$artifacts_json" | json_value 'const fs = require("fs"); const name = process.argv[1]; const data = JSON.parse(fs.readFileSync(0, "utf8")); const artifact = (data.artifacts || []).find((item) => item.name === name && !item.expired); if (artifact) process.stdout.write(artifact.archive_download_url);' "urgs-windows-updater-${environment}-${request_id}")"
     [ -n "$artifact_url" ] || die "GitHub Actions succeeded but the signed updater artifact was not found."
+    artifact_size_bytes="$(printf '%s' "$artifacts_json" | json_value 'const fs = require("fs"); const name = process.argv[1]; const data = JSON.parse(fs.readFileSync(0, "utf8")); const artifact = (data.artifacts || []).find((item) => item.name === name && !item.expired); if (artifact && artifact.size_in_bytes) process.stdout.write(String(artifact.size_in_bytes));' "urgs-windows-updater-${environment}-${request_id}")"
 
     artifact_dir="${DESKTOP_UPDATER_ARTIFACT_DIR:-${ROOT_DIR}/deploy/artifacts/windows-updater/${environment}/${request_id}}"
     artifact_zip="${artifact_dir}/github-actions-artifact.zip"
     mkdir -p "$artifact_dir"
-    log "Downloading signed Windows updater artifact to ${artifact_dir}."
-    curl --fail --silent --show-error --location \
-        --header "Authorization: Bearer ${token}" \
-        --output "$artifact_zip" \
-        "$artifact_url"
+    if [ -n "$artifact_size_bytes" ]; then
+        log "Downloading signed Windows updater artifact to ${artifact_dir} (${artifact_size_bytes} bytes)."
+    else
+        log "Downloading signed Windows updater artifact to ${artifact_dir}."
+    fi
+    curl --progress-bar --continue-at - --config - --output "$artifact_zip" "$artifact_url" <<EOF
+fail
+show-error
+location
+retry = 4
+retry-all-errors
+header = "Accept: application/vnd.github+json"
+header = "Authorization: Bearer ${token}"
+header = "X-GitHub-Api-Version: 2022-11-28"
+EOF
     unzip -q -o "$artifact_zip" -d "$artifact_dir"
     DESKTOP_UPDATER_DOWNLOADED_SOURCE_DIR="$artifact_dir"
 }
