@@ -83,7 +83,7 @@ const normalizeBaseUrl = (value) => {
         throw new Error('DESKTOP_UPDATER_BASE_URL 只支持 http 或 https 地址');
     }
     if (['github.com', 'api.github.com'].includes(url.hostname)) {
-        throw new Error('DESKTOP_UPDATER_BASE_URL 不能指向 GitHub；SIT/生产更新必须使用内网地址');
+        throw new Error('DESKTOP_UPDATER_BASE_URL 不能指向 GitHub；更新必须使用本地或内网地址');
     }
     return value.replace(/\/+$/, '');
 };

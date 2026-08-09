@@ -10,6 +10,7 @@ on:
         default: sit
         type: choice
         options:
+          - local
           - sit
           - prod
       request_id:
@@ -80,7 +81,9 @@ jobs:
         id: updater
         shell: pwsh
         run: |
-          if ("${{ inputs.deploy_env }}" -eq "sit") {
+          if ("${{ inputs.deploy_env }}" -eq "local") {
+            $endpoint = "http://127.0.0.1:18080/desktop/latest.json"
+          } elseif ("${{ inputs.deploy_env }}" -eq "sit") {
             $endpoint = "http://25.18.17.210:18080/desktop/latest.json"
           } else {
             $endpoint = "http://214.129.29.66:18080/desktop/latest.json"

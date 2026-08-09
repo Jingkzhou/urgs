@@ -45,6 +45,7 @@ Groups:
 
 Examples:
   DEPLOY_ENV=prod deploy/package-services.sh full
+  DEPLOY_ENV=local deploy/package-services.sh api web executor nginx desktop
   DEPLOY_ENV=local DESKTOP_UPDATER_SOURCE_DIR=/tmp/urgs-windows deploy/package-services.sh api web executor nginx desktop
   deploy/package-services.sh --env pre full
   deploy/package-services.sh --env sit api web nginx redis
@@ -182,7 +183,7 @@ resolve_deploy_env_template() {
 
 package_env_label() {
     if [ -n "$DEPLOY_ENV" ]; then
-        normalize_deploy_env "$DEPLOY_ENV" || die "Unknown DEPLOY_ENV: ${DEPLOY_ENV}. Expected sit, pre, or prod."
+        normalize_deploy_env "$DEPLOY_ENV" || die "Unknown DEPLOY_ENV: ${DEPLOY_ENV}. Expected local, sit, pre, or prod."
         return 0
     fi
 
@@ -520,13 +521,10 @@ package_desktop() {
     require_command node
     environment="$(normalize_deploy_env "$DEPLOY_ENV")" || die "desktop requires DEPLOY_ENV=local, sit, or prod."
     case "$environment" in
-        sit | prod) ;;
-        local)
-            [ -n "$source_dir" ] || die "desktop with DEPLOY_ENV=local requires DESKTOP_UPDATER_SOURCE_DIR; local packaging does not trigger GitHub Actions."
-            ;;
+        local | sit | prod) ;;
         *) die "desktop only supports DEPLOY_ENV=local, sit, or DEPLOY_ENV=prod." ;;
     esac
-    if [ -z "$source_dir" ] && [ "$environment" != "local" ]; then
+    if [ -z "$source_dir" ]; then
         fetch_desktop_updater_from_github "$environment"
         source_dir="$DESKTOP_UPDATER_DOWNLOADED_SOURCE_DIR"
     fi
