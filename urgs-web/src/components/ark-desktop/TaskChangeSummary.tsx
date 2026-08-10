@@ -1,6 +1,6 @@
 import React, { useMemo, useState } from 'react';
 import { AlertTriangle, CheckCircle2, ChevronDown, FileDiff, LoaderCircle, RotateCcw, X } from 'lucide-react';
-import { mergeFileChanges } from './fileChanges';
+import { mergeFileChanges, userVisibleFileChanges } from './fileChanges';
 import TaskPlanPanel from './TaskPlanPanel';
 import type { ArkDesktopPlanStep, ArkDesktopTask, ArkDesktopTaskStatus } from './types';
 
@@ -112,7 +112,7 @@ const CompletedPlanProgress: React.FC<{
 };
 
 const TaskChangeSummary: React.FC<TaskChangeSummaryProps> = ({ taskId, workspace, promptIndex, tools, taskStatus, plan, onRewind }) => {
-    const files = useMemo(() => mergeFileChanges(tools.flatMap((tool) => tool.fileChanges || [])), [tools]);
+    const files = useMemo(() => userVisibleFileChanges(mergeFileChanges(tools.flatMap((tool) => tool.fileChanges || []))), [tools]);
     const [expanded, setExpanded] = useState(false);
     const [reviewing, setReviewing] = useState(false);
     const [undoing, setUndoing] = useState(false);

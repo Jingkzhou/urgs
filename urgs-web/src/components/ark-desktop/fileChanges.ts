@@ -3,6 +3,11 @@ import type { ArkDesktopDiffHunk, ArkDesktopFileChange } from './types';
 const MAX_PREVIEW_CHARACTERS = 160_000;
 const MAX_PREVIEW_LINES = 2_000;
 
+const isAgentTemporaryFile = (path: string) => {
+    const fileName = path.replace(/\\/g, '/').split('/').pop() || '';
+    return fileName.startsWith('.temp-');
+};
+
 const lineCount = (value: string) => value ? value.split('\n').length : 0;
 
 const splitLines = (value: string) => value ? value.split('\n') : [];
@@ -92,3 +97,7 @@ export const mergeFileChanges = (changes: ArkDesktopFileChange[]) => {
     });
     return Array.from(merged.values());
 };
+
+export const userVisibleFileChanges = (changes: ArkDesktopFileChange[]) => (
+    changes.filter((change) => !isAgentTemporaryFile(change.path))
+);
