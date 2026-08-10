@@ -18,6 +18,23 @@ export interface GrokSession {
     replayedEvents: Array<Record<string, any>>;
 }
 
+export type GrokSessionMode = 'default' | 'plan' | 'ask';
+
+export interface GrokSessionPlan {
+    sessionId: string;
+    content: string | null;
+}
+
+export interface GrokSessionForkResult {
+    newSessionId: string;
+    chatMessagesCopied: number;
+    updatesCopied: number;
+    planStateCopied: boolean;
+    newCwd: string;
+    parentSessionId: string;
+    newModelId?: string | null;
+}
+
 export interface GrokAvailableCommand {
     name: string;
     description: string;
@@ -1233,6 +1250,7 @@ export const sendGrokPrompt = (
     attachments: string[] = [],
     attachmentGrants: string[] = [],
     queued = false,
+    mode: GrokSessionMode = 'default',
     logContext?: DesktopLogContext,
 ) =>
     invokeGrok<void>('grok_send_prompt', {
@@ -1241,6 +1259,7 @@ export const sendGrokPrompt = (
         attachments: attachments.length > 0 ? attachments : null,
         attachmentGrants: attachmentGrants.length > 0 ? attachmentGrants : null,
         queued,
+        sessionMode: mode,
     }, logContext);
 
 export const applyGrokQueueAction = (
@@ -1265,6 +1284,25 @@ export interface GrokPromptAttachmentSelection {
 
 export const setGrokSessionModel = (sessionId: string, model: string, logContext?: DesktopLogContext) =>
     invokeGrok<void>('grok_session_set_model', { sessionId, model }, logContext);
+
+export const setGrokSessionMode = (sessionId: string, mode: GrokSessionMode, logContext?: DesktopLogContext) =>
+    invokeGrok<void>('grok_session_set_mode', { sessionId, mode }, logContext);
+
+export const readGrokSessionPlan = (sessionId: string, logContext?: DesktopLogContext) =>
+    invokeGrok<GrokSessionPlan>('grok_session_plan', { sessionId }, logContext);
+
+export const forkGrokSession = (
+    sourceSessionId: string,
+    sourceCwd: string,
+    targetPromptIndex?: number,
+    newModelId?: string,
+    logContext?: DesktopLogContext,
+) => invokeGrok<GrokSessionForkResult>('grok_session_fork', {
+    sourceSessionId,
+    sourceCwd,
+    targetPromptIndex: targetPromptIndex ?? null,
+    newModelId: newModelId || null,
+}, logContext);
 
 export interface GrokRewindPoint {
     promptIndex: number;

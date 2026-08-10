@@ -51,6 +51,7 @@ export const createDefaultArkDesktopSnapshot = (): ArkDesktopSnapshot => ({
             gitMode: 'workspace',
             reasoningEffort: '',
             permissionMode: 'default',
+            interactionMode: 'default',
             sandboxProfile: '',
             maxTurns: 0,
             noPlan: false,
@@ -154,6 +155,9 @@ export const loadArkDesktopSnapshot = (): ArkDesktopSnapshot => {
                 permissionMode: bypassPermissions
                     ? 'bypassPermissions' as const
                     : 'default' as const,
+                interactionMode: ['plan', 'ask'].includes(task.interactionMode || '')
+                    ? task.interactionMode
+                    : 'default' as const,
                 alwaysApprove: false,
                 runtimeProcessId: undefined,
             };
@@ -205,6 +209,9 @@ export const loadArkDesktopSnapshot = (): ArkDesktopSnapshot => {
                     permissionMode: stored.settings?.execution?.alwaysApprove || stored.settings?.execution?.permissionMode === 'bypassPermissions'
                         ? 'bypassPermissions'
                         : defaults.settings.execution.permissionMode,
+                    interactionMode: ['plan', 'ask'].includes(stored.settings?.execution?.interactionMode || '')
+                        ? stored.settings!.execution!.interactionMode
+                        : defaults.settings.execution.interactionMode,
                     alwaysApprove: false,
                 },
             },

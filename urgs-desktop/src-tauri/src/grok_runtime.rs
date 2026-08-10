@@ -41,6 +41,7 @@ const MAX_PROMPT_ATTACHMENTS_TOTAL_BYTES: u64 = 25 * 1024 * 1024;
 const PROMPT_ATTACHMENT_GRANT_TTL_SECONDS: u64 = 60 * 60;
 const MAX_PROMPT_ATTACHMENT_GRANTS: usize = 64;
 const MAX_WORKFLOW_SOURCE_BYTES: u64 = 1024 * 1024;
+const MAX_PLAN_FILE_BYTES: u64 = 2 * 1024 * 1024;
 const MAX_LLM_PROMPT_BYTES: usize = 512 * 1024;
 const MAX_LLM_RESPONSE_BYTES: usize = 4 * 1024 * 1024;
 const LLM_REQUEST_TIMEOUT: Duration = Duration::from_secs(120);
@@ -1243,6 +1244,69 @@ fn find_persisted_session_directory(
         }
     }
     Ok(None)
+}
+
+fn validate_session_mode(mode: &str) -> Result<&str, String> {
+    match mode.trim() {
+        "default" => Ok("default"),
+        "plan" => Ok("plan"),
+        "ask" => Ok("ask"),
+        _ => Err("会话模式仅支持 default、plan 或 ask".to_string()),
+    }
+}
+
+fn validate_persisted_session_id(session_id: &str) -> Result<&str, String> {
+    let session_id = session_id.trim();
+    if session_id.is_empty()
+        || session_id == "."
+        || session_id == ".."
+        || session_id.contains('/')
+        || session_id.contains('\\')
+    {
+        return Err("会话 ID 格式无效".to_string());
+    }
+    Ok(session_id)
+}
+
+#[tauri::command]
+pub async fn grok_session_plan(app: AppHandle, session_id: String) -> Result<Value, String> {
+    let session_id = validate_persisted_session_id(&session_id)?;
+    let Some(session_directory) = find_persisted_session_directory(&app, session_id)? else {
+        return Err("未找到对应的 Grok 会话目录".to_string());
+    };
+    let plan_path = session_directory.join("plan.md");
+    let metadata = match fs::symlink_metadata(&plan_path) {
+        Ok(metadata) => metadata,
+        Err(error) if error.kind() == std::io::ErrorKind::NotFound => {
+            return Ok(json!({ "sessionId": session_id, "content": Value::Null }));
+        }
+        Err(error) => return Err(format!("读取计划文件失败: {error}")),
+    };
+    if metadata.file_type().is_symlink() || !metadata.is_file() {
+        return Err("计划文件类型不安全".to_string());
+    }
+    if metadata.len() > MAX_PLAN_FILE_BYTES {
+        return Err("计划文件超过 2 MB，无法在任务中心预览".to_string());
+    }
+    let canonical_session = session_directory
+        .canonicalize()
+        .map_err(|error| format!("校验会话目录失败: {error}"))?;
+    let canonical_sessions_root = grok_home(&app)?
+        .join("sessions")
+        .canonicalize()
+        .map_err(|error| format!("校验会话根目录失败: {error}"))?;
+    if !canonical_session.starts_with(&canonical_sessions_root) {
+        return Err("会话目录不在 Grok 会话根目录内".to_string());
+    }
+    let canonical_plan = plan_path
+        .canonicalize()
+        .map_err(|error| format!("校验计划文件失败: {error}"))?;
+    if canonical_plan.parent() != Some(canonical_session.as_path()) {
+        return Err("计划文件不在当前会话目录内".to_string());
+    }
+    let content =
+        fs::read_to_string(canonical_plan).map_err(|error| format!("读取计划文件失败: {error}"))?;
+    Ok(json!({ "sessionId": session_id, "content": content }))
 }
 
 fn read_persisted_session_info(app: &AppHandle, session_id: &str) -> Result<Option<Value>, String> {
@@ -5212,6 +5276,7 @@ pub async fn grok_send_prompt(
     attachments: Option<Vec<String>>,
     attachment_grants: Option<Vec<String>>,
     queued: Option<bool>,
+    session_mode: Option<String>,
 ) -> Result<(), String> {
     let grants_to_consume = attachment_grants.clone().unwrap_or_default();
     let attachments = authorize_prompt_attachments(&state, attachments, attachment_grants)?;
@@ -5227,7 +5292,11 @@ pub async fn grok_send_prompt(
     );
     let content = build_prompt_content(&prompt, attachments)?;
     let process = session_process(&state, &session_id)?;
-    let prompt_meta = Some(json!({ "clientIdentifier": "urgs-desktop" }));
+    let session_mode = validate_session_mode(session_mode.as_deref().unwrap_or("default"))?;
+    let prompt_meta = Some(json!({
+        "clientIdentifier": "urgs-desktop",
+        "mode": session_mode,
+    }));
     if queued.unwrap_or(false) {
         let queued_session_id = session_id.clone();
         let queued_process = Arc::clone(&process);
@@ -5307,6 +5376,63 @@ pub async fn grok_send_prompt(
     );
     consume_prompt_attachment_grants(&state, &grants_to_consume);
     Ok(())
+}
+
+#[tauri::command]
+pub async fn grok_session_set_mode(
+    state: State<'_, GrokRuntimeState>,
+    session_id: String,
+    mode: String,
+) -> Result<(), String> {
+    let session_id = session_id.trim();
+    if session_id.is_empty() {
+        return Err("会话 ID 不能为空".to_string());
+    }
+    let mode = validate_session_mode(&mode)?;
+    let process = session_process(&state, session_id)?;
+    process
+        .request(
+            "session/set_mode",
+            json!({ "sessionId": session_id, "modeId": mode }),
+        )
+        .await?;
+    Ok(())
+}
+
+#[tauri::command]
+pub async fn grok_session_fork(
+    state: State<'_, GrokRuntimeState>,
+    source_session_id: String,
+    source_cwd: String,
+    target_prompt_index: Option<u64>,
+    new_model_id: Option<String>,
+) -> Result<Value, String> {
+    let source_session_id = source_session_id.trim();
+    if source_session_id.is_empty() {
+        return Err("源会话 ID 不能为空".to_string());
+    }
+    let source_cwd = source_cwd.trim();
+    if source_cwd.is_empty() {
+        return Err("源会话工作区不能为空".to_string());
+    }
+    let process = session_process(&state, source_session_id)?;
+    process
+        .request(
+            "x.ai/session/fork",
+            json!({
+                "sourceSessionId": source_session_id,
+                "sourceCwd": source_cwd,
+                "newCwd": source_cwd,
+                "newModelId": new_model_id.and_then(|value| {
+                    let value = value.trim().to_string();
+                    (!value.is_empty()).then_some(value)
+                }),
+                "targetPromptIndex": target_prompt_index,
+                "sessionKind": "fork",
+                "sourceWorkspaceDir": source_cwd,
+            }),
+        )
+        .await
 }
 
 #[tauri::command]
@@ -5825,16 +5951,42 @@ mod tests {
         process_launch_key, read_provider_api_key, request_timeout, rewind_model_provider,
         scheduled_prompt_injection, select_auth_method, serialize_grok_toml, session_attach_method,
         session_request_meta, user_question_params, validate_cli_arguments,
-        validate_service_arguments, workflow_listings_from_response, GrokAcpOptions,
-        GrokCliService, GrokModelProvider, GrokModelProviderInput, GrokRuntimeState,
-        PromptAttachmentGrant, AUTHENTICATE_TIMEOUT, GROK_INTERJECT_METHOD, GROK_RECAP_METHOD,
-        INITIALIZE_TIMEOUT, MAX_PROMPT_ATTACHMENT_BYTES, REQUEST_TIMEOUT, SESSION_CLOSE_TIMEOUT,
-        SESSION_START_TIMEOUT,
+        validate_persisted_session_id, validate_service_arguments, validate_session_mode,
+        workflow_listings_from_response, GrokAcpOptions, GrokCliService, GrokModelProvider,
+        GrokModelProviderInput, GrokRuntimeState, PromptAttachmentGrant, AUTHENTICATE_TIMEOUT,
+        GROK_INTERJECT_METHOD, GROK_RECAP_METHOD, INITIALIZE_TIMEOUT, MAX_PROMPT_ATTACHMENT_BYTES,
+        REQUEST_TIMEOUT, SESSION_CLOSE_TIMEOUT, SESSION_START_TIMEOUT,
     };
     use serde_json::json;
     use std::fs;
     use std::path::{Path, PathBuf};
     use std::sync::Mutex;
+
+    #[test]
+    fn validates_supported_session_modes() {
+        assert_eq!(validate_session_mode("default").unwrap(), "default");
+        assert_eq!(validate_session_mode(" plan ").unwrap(), "plan");
+        assert_eq!(validate_session_mode("ask").unwrap(), "ask");
+        assert!(validate_session_mode("unsafe").is_err());
+    }
+
+    #[test]
+    fn rejects_session_ids_that_can_escape_storage() {
+        assert_eq!(
+            validate_persisted_session_id("session-123").unwrap(),
+            "session-123"
+        );
+        for unsafe_id in [
+            "",
+            ".",
+            "..",
+            "../outside",
+            "workspace/session",
+            "workspace\\session",
+        ] {
+            assert!(validate_persisted_session_id(unsafe_id).is_err());
+        }
+    }
 
     #[test]
     fn extracts_direct_and_wrapped_user_question_requests() {

@@ -33,7 +33,7 @@ import GitReviewPanel from './GitReviewPanel';
 import TaskTerminalPanel from './TaskTerminalPanel';
 import type {
     ArkDesktopAutomation, ArkDesktopSection,
-    ArkDesktopModelProvider, ArkDesktopTask, ArkDesktopTaskStatus, AutomationSchedule, GrokExecutionSettings,
+    ArkDesktopInteractionMode, ArkDesktopModelProvider, ArkDesktopTask, ArkDesktopTaskStatus, AutomationSchedule, GrokExecutionSettings,
 } from './types';
 import { nextAutomationRunAt } from './automationSchedule';
 
@@ -99,6 +99,17 @@ const permissionModeOptions: Array<{
 }> = [
     { value: 'default', label: '请求批准', description: '编辑文件、运行命令和访问网络前询问', icon: Hand },
     { value: 'bypassPermissions', label: '完全访问权限', description: '不受限制地访问网络和本地工作区', icon: ShieldAlert, dangerous: true },
+];
+
+const interactionModeOptions: Array<{
+    value: ArkDesktopInteractionMode;
+    label: string;
+    description: string;
+    icon: React.ElementType;
+}> = [
+    { value: 'default', label: '正常执行', description: '分析后直接使用工具完成任务', icon: CheckSquare },
+    { value: 'plan', label: '计划模式', description: '只读分析并生成计划，批准后再实现', icon: FileText },
+    { value: 'ask', label: '询问模式', description: '遇到关键选择时优先向你确认', icon: Lightbulb },
 ];
 
 const createLocalId = (prefix: string) => `${prefix}-${Date.now()}-${Math.random().toString(16).slice(2)}`;
@@ -423,6 +434,7 @@ const ArkDesktopPage: React.FC = () => {
                     onRemoveWorkspace={runtime.removeWorkspace}
                     onRevealWorkspace={runtime.revealWorkspace}
                     onRenameTask={runtime.renameTask}
+                    onForkTask={runtime.forkTask}
                     onToggleTaskPin={runtime.toggleTaskPin}
                     onArchiveTask={archiveSidebarTask}
                     onRestoreTask={runtime.restoreTask}
@@ -593,6 +605,53 @@ const PermissionModePicker: React.FC<{
         {open && <div className="absolute bottom-[calc(100%+8px)] left-0 z-40 w-[min(420px,calc(100vw-40px))] overflow-hidden rounded-2xl border border-slate-200 bg-white p-2 shadow-[0_20px_55px_rgba(15,23,42,0.18)]">
             <div className="flex items-center justify-between px-2.5 pb-2 pt-1"><span className="text-xs font-semibold text-slate-500">智能体工具权限</span><span className="text-[11px] text-slate-400">{switching ? '正在重载会话' : '应用于下一次发送'}</span></div>
             {permissionModeOptions.map((option) => { const Icon = option.icon; const active = option.value === value; return <button key={option.value} type="button" disabled={switching} onClick={() => void selectMode(option)} className={`flex w-full items-center gap-3 rounded-xl px-2.5 py-2.5 text-left transition disabled:cursor-wait disabled:opacity-60 ${active ? option.dangerous ? 'bg-orange-50' : 'bg-slate-100' : 'hover:bg-slate-50'}`}><span className={`flex h-8 w-8 shrink-0 items-center justify-center rounded-lg ${option.dangerous ? 'text-orange-600' : 'text-slate-500'}`}><Icon size={18} /></span><span className="min-w-0 flex-1"><span className={`block text-sm font-medium ${option.dangerous ? 'text-orange-600' : 'text-slate-800'}`}>{option.label}</span><span className={`mt-0.5 block text-xs leading-5 ${option.dangerous ? 'text-orange-500' : 'text-slate-400'}`}>{option.description}</span></span>{active && <Check size={17} className={option.dangerous ? 'text-orange-600' : 'text-slate-700'} />}</button>; })}
+        </div>}
+    </div>;
+};
+
+const InteractionModePicker: React.FC<{
+    value: ArkDesktopInteractionMode;
+    disabled?: boolean;
+    onChange: (value: ArkDesktopInteractionMode) => void | Promise<void>;
+}> = ({ value, disabled = false, onChange }) => {
+    const [open, setOpen] = useState(false);
+    const [switching, setSwitching] = useState(false);
+    const menuRef = useRef<HTMLDivElement>(null);
+    const selected = interactionModeOptions.find((option) => option.value === value) || interactionModeOptions[0];
+    const SelectedIcon = selected.icon;
+
+    useEffect(() => {
+        if (!open) return undefined;
+        const close = (event: MouseEvent) => {
+            if (!menuRef.current?.contains(event.target as Node)) setOpen(false);
+        };
+        window.addEventListener('mousedown', close);
+        return () => window.removeEventListener('mousedown', close);
+    }, [open]);
+
+    const selectMode = async (option: typeof interactionModeOptions[number]) => {
+        if (option.value === value) {
+            setOpen(false);
+            return;
+        }
+        setSwitching(true);
+        try {
+            await onChange(option.value);
+            setOpen(false);
+        } finally {
+            setSwitching(false);
+        }
+    };
+
+    return <div ref={menuRef} className="relative">
+        <button type="button" disabled={disabled || switching} onClick={() => setOpen((current) => !current)} title="设置 Grok 交互模式" className={`flex max-w-40 items-center gap-1.5 rounded-lg px-2.5 py-2 text-xs font-medium transition disabled:cursor-default disabled:opacity-50 ${value === 'plan' ? 'bg-indigo-50 text-indigo-700 hover:bg-indigo-100' : value === 'ask' ? 'bg-amber-50 text-amber-700 hover:bg-amber-100' : 'text-slate-500 hover:bg-slate-100 hover:text-slate-700'}`}>
+            <SelectedIcon size={15} className="shrink-0" />
+            <span className="truncate">{switching ? '正在切换' : selected.label}</span>
+            <ChevronDown size={13} className={`shrink-0 text-slate-400 transition-transform ${open ? 'rotate-180' : ''}`} />
+        </button>
+        {open && <div className="absolute bottom-[calc(100%+8px)] left-0 z-40 w-[min(380px,calc(100vw-40px))] overflow-hidden rounded-2xl border border-slate-200 bg-white p-2 shadow-[0_20px_55px_rgba(15,23,42,0.18)]">
+            <div className="px-2.5 pb-2 pt-1 text-xs font-semibold text-slate-500">智能体交互模式</div>
+            {interactionModeOptions.map((option) => { const Icon = option.icon; const active = option.value === value; return <button key={option.value} type="button" disabled={switching} onClick={() => void selectMode(option)} className={`flex w-full items-center gap-3 rounded-xl px-2.5 py-2.5 text-left transition disabled:cursor-wait disabled:opacity-60 ${active ? 'bg-slate-100' : 'hover:bg-slate-50'}`}><span className="flex h-8 w-8 shrink-0 items-center justify-center rounded-lg text-slate-500"><Icon size={18} /></span><span className="min-w-0 flex-1"><span className="block text-sm font-medium text-slate-800">{option.label}</span><span className="mt-0.5 block text-xs leading-5 text-slate-400">{option.description}</span></span>{active && <Check size={17} className="text-slate-700" />}</button>; })}
         </div>}
     </div>;
 };
@@ -1013,10 +1072,12 @@ const TaskComposer: React.FC<{ task?: ArkDesktopTask; runtime: ReturnType<typeof
                             onBrowse={newTask.chooseWorkspace}
                         />
                         <PermissionModePicker value={execution.permissionMode} onChange={(permissionMode) => runtime.setSnapshot((current) => ({ ...current, settings: { ...current.settings, execution: { ...current.settings.execution, permissionMode, alwaysApprove: false } } }))} />
+                        <InteractionModePicker value={execution.interactionMode} onChange={(interactionMode) => runtime.setSnapshot((current) => ({ ...current, settings: { ...current.settings, execution: { ...current.settings.execution, interactionMode } } }))} />
                         <DefaultModelPicker runtime={runtime} />
                     </> : task ? <>
                         {task.engine !== 'headless' && <SessionCommandBar commands={task.availableCommands?.length ? task.availableCommands : runtime.availableCommands} disabled={isRunning || isWaitingAuthorization || sending} onSelect={onChange} />}
                         <PermissionModePicker value={task.permissionMode || execution.permissionMode} disabled={isRunning || isWaitingAuthorization} onChange={(permissionMode) => runtime.setTaskPermissionMode(task.id, permissionMode)} />
+                        <InteractionModePicker value={task.interactionMode || 'default'} disabled={isWaitingAuthorization || sending} onChange={(interactionMode) => runtime.setTaskInteractionMode(task.id, interactionMode)} />
                         <TaskModelPicker task={task} runtime={runtime} />
                     </> : null}
                 </div>

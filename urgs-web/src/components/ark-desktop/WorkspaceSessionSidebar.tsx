@@ -1,7 +1,7 @@
 import React, { useEffect, useMemo, useRef, useState } from 'react';
 import {
     Archive, ArchiveRestore, Check, Copy, Ellipsis, Folder,
-    FolderOpen, GitBranch, LoaderCircle, Pencil, Pin, PinOff, Plus, Trash2, X,
+    FolderOpen, GitBranch, GitFork, LoaderCircle, Pencil, Pin, PinOff, Plus, Trash2, X,
 } from 'lucide-react';
 import { copyToClipboard } from '@/utils/clipboard';
 import type { ArkDesktopTask } from './types';
@@ -21,6 +21,7 @@ interface WorkspaceSessionSidebarProps {
     onRemoveWorkspace: (workspace: string) => void;
     onRevealWorkspace: (workspace: string) => Promise<void>;
     onRenameTask: (taskId: string, title: string) => void | Promise<void>;
+    onForkTask: (taskId: string) => void | Promise<unknown>;
     onToggleTaskPin: (taskId: string) => void;
     onArchiveTask: (taskId: string) => void;
     onRestoreTask: (taskId: string) => void;
@@ -88,6 +89,7 @@ const WorkspaceSessionSidebar: React.FC<WorkspaceSessionSidebarProps> = ({
     onRemoveWorkspace,
     onRevealWorkspace,
     onRenameTask,
+    onForkTask,
     onToggleTaskPin,
     onArchiveTask,
     onRestoreTask,
@@ -162,7 +164,7 @@ const WorkspaceSessionSidebar: React.FC<WorkspaceSessionSidebarProps> = ({
     const runningCount = tasks.filter((task) => !task.archivedAt && isBusyTask(task)).length;
     const archivedCount = tasks.filter((task) => task.archivedAt).length;
 
-    const runAction = (action: () => void | Promise<void>) => {
+    const runAction = (action: () => void | Promise<unknown>) => {
         setOpenMenu(null);
         try {
             void Promise.resolve(action()).catch((error) => onError(error instanceof Error ? error.message : String(error)));
@@ -310,6 +312,7 @@ const WorkspaceSessionSidebar: React.FC<WorkspaceSessionSidebarProps> = ({
             {openMenu?.kind === 'task' && openMenu.id === task.id && <div ref={menuRef} role="menu" className="absolute right-1 top-9 z-50 w-44 rounded-xl border border-slate-200 bg-white p-1.5 shadow-[0_16px_45px_rgba(15,23,42,0.16)]">
                 <MenuButton icon={task.pinnedAt ? PinOff : Pin} label={task.pinnedAt ? '取消固定' : '固定到顶部'} onClick={() => runAction(() => onToggleTaskPin(task.id))} />
                 <MenuButton icon={Pencil} label="重命名" onClick={() => beginRename(task)} />
+                <MenuButton icon={GitFork} label="创建会话分支" disabled={busy || task.engine === 'headless' || !task.sessionId} onClick={() => runAction(() => onForkTask(task.id))} />
                 {task.archivedAt
                     ? <MenuButton icon={ArchiveRestore} label="恢复到最近会话" onClick={() => restoreTask(task)} />
                     : <MenuButton icon={Archive} label="归档会话" disabled={busy} onClick={() => archiveTask(task)} />}

@@ -9,7 +9,9 @@ import {
     CornerDownLeft,
     FileSearch,
     GitPullRequest,
+    GitFork,
     Info,
+    ListChecks,
     Network,
     Repeat2,
     Search,
@@ -41,6 +43,9 @@ const commandDescriptions: Record<string, string> = {
     workflow: '启动或管理运行时工作流',
     'deep-research': '并行检索、交叉验证并生成研究报告',
     loop: '按指定间隔重复执行提示词',
+    plan: '进入只读计划模式，先分析并生成实施计划',
+    'view-plan': '查看当前会话已经生成的计划文档',
+    fork: '从当前进度创建一条独立会话分支',
 };
 
 const commandLabels: Record<string, string> = {
@@ -71,6 +76,9 @@ const commandLabels: Record<string, string> = {
     'hooks-untrust': '取消 Hooks 信任',
     'open-knowledge-discovery': '探索知识库',
     'open-knowledge-write-skill': '编写技能',
+    plan: '计划模式',
+    'view-plan': '查看计划',
+    fork: '创建会话分支',
 };
 
 const commandIcon = (name: string) => {
@@ -88,6 +96,8 @@ const commandIcon = (name: string) => {
     if (name.includes('plugin') || name.includes('hook')) return Wrench;
     if (name === 'feedback') return CircleHelp;
     if (name === 'loop') return Repeat2;
+    if (name === 'plan' || name === 'view-plan') return ListChecks;
+    if (name === 'fork') return GitFork;
     if (name.includes('find') || name === 'help') return Search;
     if (name === 'imagine') return Sparkles;
     return Code2;
@@ -101,13 +111,19 @@ const commandLabel = (name: string) => {
 };
 
 const coreSessionCommands: ArkDesktopSlashCommand[] = [
+    { name: 'plan', description: 'Enter read-only plan mode', inputHint: 'describe the task to plan' },
+    { name: 'view-plan', description: 'View the current session plan' },
+    { name: 'fork', description: 'Fork the current session' },
     { name: 'compact', description: 'Compress conversation history', inputHint: 'optional context about what to preserve' },
     { name: 'always-approve', description: 'Toggle always-approve mode', inputHint: 'on|off' },
     { name: 'context', description: 'Show context window usage and session stats' },
     { name: 'session-info', description: 'Show session details' },
 ];
 
-const availableCommands = (commands: ArkDesktopSlashCommand[]) => commands.length > 0 ? commands : coreSessionCommands;
+const availableCommands = (commands: ArkDesktopSlashCommand[]) => {
+    const merged = [...coreSessionCommands, ...commands];
+    return merged.filter((command, index) => merged.findIndex((item) => item.name === command.name) === index);
+};
 
 const selectedSlashCommand = (value: string, commands: ArkDesktopSlashCommand[]) => {
     const match = value.match(/^\/([^\s/]+)\s([\s\S]*)$/);

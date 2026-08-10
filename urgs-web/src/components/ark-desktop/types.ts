@@ -257,6 +257,8 @@ export interface ArkDesktopGitContext {
     updatedAt: number;
 }
 
+export type ArkDesktopInteractionMode = 'default' | 'plan' | 'ask';
+
 export interface ArkDesktopTask {
     id: string;
     title: string;
@@ -271,6 +273,7 @@ export interface ArkDesktopTask {
     engine?: 'acp' | 'headless';
     model?: string;
     permissionMode?: GrokExecutionSettings['permissionMode'];
+    interactionMode?: ArkDesktopInteractionMode;
     alwaysApprove?: boolean;
     sessionId?: string;
     runtimeProcessId?: string;
@@ -283,6 +286,7 @@ export interface ArkDesktopTask {
     queueEntries?: ArkDesktopQueueEntry[];
     queueRunningPromptId?: string | null;
     plan?: ArkDesktopPlanStep[];
+    planDocument?: string;
     availableCommands?: ArkDesktopSlashCommand[];
     contextInfo?: ArkDesktopContextInfo;
     recap?: string;
@@ -329,6 +333,7 @@ export interface GrokExecutionSettings {
     gitMode: ArkDesktopGitMode;
     reasoningEffort: string;
     permissionMode: 'default' | 'bypassPermissions';
+    interactionMode: ArkDesktopInteractionMode;
     sandboxProfile: string;
     maxTurns: number;
     noPlan: boolean;

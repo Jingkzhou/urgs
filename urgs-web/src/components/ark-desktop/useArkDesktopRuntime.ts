@@ -42,6 +42,7 @@ import {
     searchGrokSessions,
     compactGrokSession,
     flushGrokMemory,
+    forkGrokSession,
     killGrokBackgroundTask,
     cancelGrokSubagent,
     renameGrokSession,
@@ -58,6 +59,7 @@ import {
     listGrokModelProviders,
     openGrokWorkspace,
     releaseGrokSession,
+    readGrokSessionPlan,
     rewindGrokFiles,
     runGrokCli,
     respondGrokPlanApproval,
@@ -67,6 +69,7 @@ import {
     startGrokCliService,
     stopGrokCliService,
     sendGrokPrompt,
+    setGrokSessionMode,
     setGrokSessionModel,
     saveGrokModelProvider,
     generateLlmText,
@@ -116,6 +119,7 @@ import type {
     ArkDesktopModelProvider,
     ArkDesktopGitContext,
     ArkDesktopGitMode,
+    ArkDesktopInteractionMode,
     GrokExecutionSettings,
 } from './types';
 import { buildGrokHeadlessArguments, extractGrokHeadlessSessionId, extractGrokHeadlessText } from './execution';
@@ -144,6 +148,17 @@ const modelKeyAuthorizationProviderId = (error: unknown) => {
 };
 
 const createId = (prefix: string) => `${prefix}-${Date.now()}-${Math.random().toString(16).slice(2)}`;
+
+const parseClientSessionCommand = (prompt: string) => {
+    const normalized = prompt.trim();
+    if (/^\/fork$/i.test(normalized)) return { type: 'fork' as const, prompt: '' };
+    if (/^\/(view-plan|show-plan|plan-view)$/i.test(normalized)) {
+        return { type: 'view-plan' as const, prompt: '' };
+    }
+    const plan = normalized.match(/^\/plan(?:\s+([\s\S]*))?$/i);
+    if (plan) return { type: 'plan' as const, prompt: (plan[1] || '').trim() };
+    return undefined;
+};
 
 const isGitRepositoryUnavailable = (error: unknown) => {
     const message = runtimeErrorText(error).toLowerCase();
@@ -1529,6 +1544,9 @@ export const useArkDesktopRuntime = () => {
                     ?? update.current_mode?.id
                     ?? '',
                 ).trim()).slice(0, 80);
+                const interactionMode: ArkDesktopInteractionMode | undefined = mode === 'plan' || mode === 'ask' || mode === 'default'
+                    ? mode
+                    : undefined;
                 updateTask(taskId, (task) => ({
                     ...upsertTaskActivity(task, {
                         id: 'runtime-current-mode',
@@ -1537,6 +1555,7 @@ export const useArkDesktopRuntime = () => {
                         kind: 'diagnostic',
                     }),
                     ...(mode ? { runtimeMode: mode } : {}),
+                    ...(interactionMode ? { interactionMode } : {}),
                 }));
                 return;
             }
@@ -1653,6 +1672,7 @@ export const useArkDesktopRuntime = () => {
             ]);
             updateTask(taskId, (task) => ({
                 ...task,
+                interactionMode: request.mode === 'plan' ? 'plan' : 'ask',
                 execution: {
                     ...task.execution,
                     status: 'waiting_user',
@@ -1686,6 +1706,8 @@ export const useArkDesktopRuntime = () => {
             ]);
             updateTask(taskId, (task) => ({
                 ...task,
+                interactionMode: 'plan',
+                ...(request.planContent ? { planDocument: request.planContent } : {}),
                 execution: {
                     ...task.execution,
                     status: 'waiting_user',
@@ -1867,6 +1889,12 @@ export const useArkDesktopRuntime = () => {
         automationId,
     }: StartTaskInput) => {
         const current = snapshotRef.current;
+        const clientCommand = current.settings.execution.engine === 'acp'
+            ? parseClientSessionCommand(prompt)
+            : undefined;
+        if (clientCommand?.type === 'fork') throw new Error('请先进入一个已有会话再创建分支');
+        if (clientCommand?.type === 'view-plan') throw new Error('请先进入一个已有会话再查看计划');
+        if (clientCommand?.type === 'plan' && !clientCommand.prompt) throw new Error('请输入要规划的任务');
         const workspace = requestedWorkspace?.trim() || current.settings.workspace;
         if (!isDesktopRuntime()) throw new Error('请在 URGS 桌面客户端中运行 ARK Desktop');
         if (!runtimeStatus?.available) throw new Error('未检测到内置智能引擎，请先检查桌面安装包');
@@ -1883,9 +1911,12 @@ export const useArkDesktopRuntime = () => {
         const resolvedSkillIds = Array.from(new Set([...agent.skillIds, ...skillIds]))
             .filter((id) => current.skills.some((skill) => skill.id === id && skill.enabled));
         const skills = current.skills.filter((skill) => resolvedSkillIds.includes(skill.id));
-        const effectivePrompt = prompt.trim()
+        const effectivePrompt = clientCommand?.type === 'plan' ? clientCommand.prompt : prompt.trim()
             || current.settings.execution.promptFile.trim()
             || '本地 JSON 内容块任务';
+        const interactionMode: ArkDesktopInteractionMode = clientCommand?.type === 'plan'
+            ? 'plan'
+            : current.settings.execution.interactionMode;
         const now = Date.now();
         const taskId = createId('task');
         const task: ArkDesktopTask = {
@@ -1901,6 +1932,7 @@ export const useArkDesktopRuntime = () => {
             engine: current.settings.execution.engine,
             model: current.settings.grokModel || undefined,
             permissionMode: current.settings.execution.permissionMode,
+            interactionMode,
             alwaysApprove: false,
             status: 'running',
             execution: {
@@ -2021,7 +2053,10 @@ export const useArkDesktopRuntime = () => {
                         await cancelGrokPrompt(session.sessionId, { taskId }).catch(() => undefined);
                         return;
                     }
-                    await sendGrokPrompt(session.sessionId, effectivePrompt, attachmentPaths, attachmentGrantIds, false, { taskId });
+                    if (interactionMode !== 'default') {
+                        await setGrokSessionMode(session.sessionId, interactionMode, { taskId });
+                    }
+                    await sendGrokPrompt(session.sessionId, effectivePrompt, attachmentPaths, attachmentGrantIds, false, interactionMode, { taskId });
                     const info = await getGrokSessionInfo(session.sessionId).catch(() => null);
                     if (info) updateTask(taskId, (value) => ({
                         ...value,
@@ -2411,15 +2446,100 @@ export const useArkDesktopRuntime = () => {
             })),
             updatedAt: Date.now(),
         }));
+        if (task.interactionMode && task.interactionMode !== 'default') {
+            await setGrokSessionMode(session.sessionId, task.interactionMode, { taskId });
+        }
         session.replayedEvents.forEach((replayed) => handleGrokEvent({
             eventType: 'session_update',
             payload: { ...replayed, processId: session.processId },
         }));
     }, [handleGrokEvent, loadGrokSession, updateTask]);
 
+    const forkTask = useCallback(async (taskId: string) => {
+        const task = snapshotRef.current.tasks.find((item) => item.id === taskId);
+        if (!task) throw new Error('会话不存在');
+        if (task.engine === 'headless') throw new Error('后台模式会话请使用 CLI 的 --fork-session');
+        if (!task.sessionId) throw new Error('当前任务还没有可分支的 Grok 会话');
+        if (task.status === 'running' || task.status === 'waiting_authorization') {
+            throw new Error('请先等待当前任务结束或停止任务');
+        }
+        await ensureTaskSessionMounted(taskId);
+        const result = await forkGrokSession(task.sessionId, task.workspace, undefined, task.model, { taskId });
+        const now = Date.now();
+        const forkedTaskId = createId('task');
+        const forkedTask: ArkDesktopTask = {
+            ...task,
+            id: forkedTaskId,
+            title: `${task.title}（分支）`.slice(0, 80),
+            sessionId: result.newSessionId,
+            workspace: result.newCwd || task.workspace,
+            runtimeProcessId: undefined,
+            cliServiceId: undefined,
+            status: 'completed',
+            execution: {
+                status: 'completed',
+                currentStage: '已从原会话创建分支',
+                startedAt: now,
+                completedAt: now,
+                lastActivityAt: now,
+            },
+            pinnedAt: undefined,
+            archivedAt: undefined,
+            diagnostics: [
+                ...(task.diagnostics || []),
+                `分支来源：${result.parentSessionId}；复制 ${result.chatMessagesCopied} 条消息、${result.updatesCopied} 条更新${result.planStateCopied ? '，包含计划状态' : ''}`,
+            ],
+            error: undefined,
+            modelKeyAuthorization: undefined,
+            createdAt: now,
+            updatedAt: now,
+        };
+        taskBySessionIdRef.current.set(result.newSessionId, forkedTaskId);
+        setSnapshot((current) => ({
+            ...current,
+            tasks: [forkedTask, ...current.tasks].slice(0, 50),
+        }));
+        setActiveTaskId(forkedTaskId);
+        return forkedTaskId;
+    }, [ensureTaskSessionMounted]);
+
     const sendFollowUp = useCallback(async (taskId: string, prompt: string, displayPrompt = prompt) => {
         const task = snapshotRef.current.tasks.find((item) => item.id === taskId);
         if (!task) throw new Error('历史任务不存在');
+        const clientCommand = task.engine === 'headless' ? undefined : parseClientSessionCommand(prompt);
+        if (clientCommand?.type === 'fork') {
+            await forkTask(taskId);
+            return;
+        }
+        if (clientCommand?.type === 'view-plan') {
+            if (!task.sessionId) throw new Error('当前任务还没有可查看计划的会话');
+            await ensureTaskSessionMounted(taskId);
+            const plan = await readGrokSessionPlan(task.sessionId, { taskId });
+            const content = plan.content?.trim();
+            updateTask(taskId, (value) => ({
+                ...value,
+                planDocument: content || undefined,
+                messages: [...value.messages, {
+                    id: createId('message'),
+                    role: 'assistant',
+                    content: content || '当前会话还没有生成计划文档。',
+                    createdAt: Date.now(),
+                }],
+                updatedAt: Date.now(),
+            }));
+            return;
+        }
+        if (clientCommand?.type === 'plan' && !clientCommand.prompt) {
+            if (!task.sessionId) throw new Error('当前任务还没有可切换模式的会话');
+            await ensureTaskSessionMounted(taskId);
+            await setGrokSessionMode(task.sessionId, 'plan', { taskId });
+            updateTask(taskId, (value) => ({ ...value, interactionMode: 'plan', error: undefined, updatedAt: Date.now() }));
+            return;
+        }
+        const effectivePrompt = clientCommand?.type === 'plan' ? clientCommand.prompt : prompt;
+        const interactionMode: ArkDesktopInteractionMode = clientCommand?.type === 'plan'
+            ? 'plan'
+            : task.interactionMode || 'default';
         const activePromptCount = activePromptCountsRef.current.get(taskId) || 0;
         const startsNewPrompt = activePromptCount === 0;
         const clearPromptPlan = () => {
@@ -2556,7 +2676,7 @@ export const useArkDesktopRuntime = () => {
                     ...(permissionMode === 'bypassPermissions' ? ['--always-approve'] : []),
                     '--resume', sessionId,
                     '--output-format', current.settings.execution.outputFormat,
-                    '--single', prompt,
+                    '--single', effectivePrompt,
                 ];
                 let service: Awaited<ReturnType<typeof startGrokCliService>>;
                 try {
@@ -2584,7 +2704,11 @@ export const useArkDesktopRuntime = () => {
                     updatedAt: Date.now(),
                 }));
             } else {
-                await sendGrokPrompt(sessionId, prompt, [], [], shouldQueue, { taskId });
+                if (interactionMode !== 'default' || interactionMode !== (task.interactionMode || 'default')) {
+                    await setGrokSessionMode(sessionId, interactionMode, { taskId });
+                    updateTask(taskId, (value) => ({ ...value, interactionMode, updatedAt: Date.now() }));
+                }
+                await sendGrokPrompt(sessionId, effectivePrompt, [], [], shouldQueue, interactionMode, { taskId });
                 if (!shouldQueue) {
                     const info = await getGrokSessionInfo(sessionId).catch(() => null);
                     if (info) updateTask(taskId, (value) => ({
@@ -2629,7 +2753,7 @@ export const useArkDesktopRuntime = () => {
             }
             throw error;
         }
-    }, [finishForegroundPrompt, updateTask]);
+    }, [ensureTaskSessionMounted, finishForegroundPrompt, forkTask, updateTask]);
 
     const sendWorkflowCommand = useCallback(async (
         taskId: string,
@@ -3158,13 +3282,16 @@ export const useArkDesktopRuntime = () => {
                 item.sessionId !== planApproval.sessionId || JSON.stringify(item.requestId) !== requestKey
             )));
             const resumedAt = Date.now();
+            const outcome = String(response.outcome || '');
             updateTask(planApproval.taskId, (task) => ({
                 ...task,
+                interactionMode: outcome === 'cancelled' ? 'plan' : 'default',
+                ...(planApproval.planContent ? { planDocument: planApproval.planContent } : {}),
                 status: task.status === 'waiting_authorization' ? 'running' : task.status,
                 execution: {
                     ...task.execution,
                     status: 'running',
-                    currentStage: '正在执行已确认计划',
+                    currentStage: outcome === 'cancelled' ? '正在修改计划' : outcome === 'abandoned' ? '已放弃计划' : '正在执行已确认计划',
                     completedAt: undefined,
                     startedAt: resumedAt,
                     lastActivityAt: resumedAt,
@@ -3398,6 +3525,28 @@ export const useArkDesktopRuntime = () => {
         }
     }, [updateTask]);
 
+    const setTaskInteractionMode = useCallback(async (taskId: string, interactionMode: ArkDesktopInteractionMode) => {
+        const task = snapshotRef.current.tasks.find((item) => item.id === taskId);
+        if (!task) throw new Error('会话不存在');
+        if (task.engine === 'headless') throw new Error('后台模式不支持运行时切换 Plan/Ask 模式');
+        if (!task.sessionId) throw new Error('当前会话尚未建立，无法切换交互模式');
+        if ((task.interactionMode || 'default') === interactionMode) return;
+        try {
+            await ensureTaskSessionMounted(taskId);
+            await setGrokSessionMode(task.sessionId, interactionMode, { taskId });
+            updateTask(taskId, (value) => ({
+                ...value,
+                interactionMode,
+                error: undefined,
+                updatedAt: Date.now(),
+            }));
+        } catch (error) {
+            const message = redactRuntimeText(error instanceof Error ? error.message : String(error));
+            updateTask(taskId, (value) => ({ ...value, error: message, updatedAt: Date.now() }));
+            throw error;
+        }
+    }, [ensureTaskSessionMounted, updateTask]);
+
     const renameTask = useCallback(async (taskId: string, title: string) => {
         const normalized = title.trim().slice(0, 80);
         if (!normalized) throw new Error('会话名称不能为空');
@@ -3591,6 +3740,8 @@ export const useArkDesktopRuntime = () => {
         refreshModelProviders,
         switchTaskModel,
         setTaskPermissionMode,
+        setTaskInteractionMode,
+        forkTask,
         renameTask,
         toggleTaskPin,
         archiveTask,

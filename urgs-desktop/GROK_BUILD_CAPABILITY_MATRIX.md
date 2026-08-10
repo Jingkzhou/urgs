@@ -1,47 +1,111 @@
 # Grok Build Desktop 能力矩阵
 
-更新时间：2026-08-08
+更新时间：2026-08-10
 
-## 现场基线
+## 结论
 
-- URGS 本轮构建二进制：`grok 1.0.0 (5151f2f)`，当前开发机为 `aarch64-apple-darwin`；`5151f2f` 为官方 `afbc0fb` 叠加 URGS 两行 Git 子进程分离修复
-- Windows 发布锁定：`1.0.0 (3cd0d0cbce)`，目标为 `x86_64-pc-windows-msvc`，哈希见 `grok-sidecar.lock.json`
+本矩阵以 URGS 随包二进制、真实 ACP 握手、同提交 Grok Build 用户指南和源码为准，不再把 Pager/TUI 命令误认为 ACP 会自动下发的 Slash Command。
+
+- 本轮二进制：`grok 1.0.0 (ddbc5c3)`，目标 `aarch64-apple-darwin`
+- SHA-256：`9a8581dad0182be548ec01e12f27a6f4152b00c24e254fd6c9db79c3196e3790`
 - 随包清单：`src-tauri/binaries/grok-sidecar-manifest.json`
-- 官方公开仓库基线：`afbc0fb710320c7add294c2106d447ecc3e3af2e`，`SOURCE_REV=3e620a76a5f374ce644dc7c87f7e990c68348218`
-- 发现方式：随包二进制 `--version`、根命令和全部顶级子命令 `--help`、真实 ACP `initialize`、扩展方法探测、官方同提交源码与用户指南
+- 实际 ACP `initialize`：协议版本 1；支持 session list/resume/close、HTTP/SSE MCP、Hooks、文件通知、Recap、Cancel Rewind、Voice Mode；prompt 支持 embedded context，不支持 image/audio
+- 实际 `session/new`：动态返回 33 个 Agent/Skill/Hook/Workflow 命令，但不返回 `/plan`、`/view-plan`、`/fork`，因为三者属于 Pager 客户端命令
 
-能力判断以本轮构建二进制的真实响应为准；1.0.0 ACP `initialize` 宣告了 `sessionCapabilities.list/resume/close`、Hooks、`sessionRecap`、`cancelRewind` 和 `voiceMode`，图片/音频输入仍未宣告。`session/new` 已接受会话级 `startupHints`，在未配置模型凭据的隔离探测中按预期返回认证要求。
+## 为什么此前没有 `/plan`
 
-## 能力矩阵
+Grok Build 的 Plan Mode 由客户端负责：Pager 的 `/plan` 或 Shift+Tab 调用 ACP `session/set_mode(modeId=plan)`；智能体完成计划后，通过 `x.ai/exit_plan_mode` 反向请求审批。ACP `availableCommands` 只下发 Agent、Skill、Hook、Workflow 等运行时命令，不会下发 Pager 自己的 `/plan`。
 
-| 能力 | 官方证据 | URGS 入口 | 接入层 | 状态 | 自动化证据 | 人工证据 | 阻塞/备注 |
-|---|---|---|---|---|---|---|---|
-| 新建、加载、续聊 | ACP `session/new`、`session/load`、`session/prompt` | 新建任务、历史任务输入框 | ACP + 会话状态 | 原生 UI | Rust 会话测试、前端类型检查 | 历史任务可恢复后继续发送 | 已按 session/process/task 三重标识隔离 |
-| 会话附着策略 | 1.0.0 支持会话请求 `_meta.startupHints`，含 `nonInteractive`、`deliveryTools` | 新建任务、历史任务续聊 | ACP 请求元数据 | 通用桥接 | Rust 元数据一致性测试、真实 1.0.0 `session/new` 探测 | 无额外操作；恢复任务延续当前交互策略 | URGS 为可见交互界面，保持 `nonInteractive=false`、`deliveryTools=[]` |
-| 多会话与取消 | ACP `session/cancel` | 左侧历史会话、输入框停止按钮 | ACP + 会话状态 | 原生 UI | Rust 进程关联测试 | 多任务状态独立显示 | 并发数量不硬编码 |
-| 工作区会话管理 | `grok sessions delete` + URGS 本地会话状态 | 左侧工作区、工作区/会话菜单、状态筛选 | 受控 CLI + 本地持久化状态 | 原生 UI | 前端类型检查、真实 App 交互验收 | 支持在指定工作区新建、固定、重命名、归档/恢复、搜索筛选和永久删除 | 运行中或等待授权的会话禁止归档和删除；永久删除会同步清理 Grok 历史 |
-| 工具、思考、计划、权限 | ACP `session/update`、permission reverse request | 消息区工具时间线、计划按钮、权限弹窗 | ACP 事件桥接 | 原生 UI | Rust 事件解析测试、前端类型检查 | 工具详情可展开，权限归属当前任务 | 未识别事件保留为诊断活动 |
-| 本地附件上下文 | `promptCapabilities.embeddedContext=true`，ACP 基线支持嵌入资源 | 新任务附件按钮、首条消息附件回显 | 原生文件选择授权 + ACP 文本/二进制 `resource` | 原生 UI | Rust 文本、二进制、路径、一次性授权与大小门禁单测 | 原生选择授权和附件回显已验收；未发送文件内容 | 最多 20 个绝对路径文件，单文件 10 MB、合计 25 MB；不支持目录 |
-| 本地任务技能 | URGS `ArkDesktopSkill` 与 `buildSessionRules` | 新任务输入框 `+` → 技能 | 本地技能状态 + ACP 会话规则 | 原生 UI | 前端类型检查 | 真实 App 已验证多选、取消与菜单保持展开 | 仅展示已启用技能；选择状态在新会话创建时注入，不伪装成 Grok 原生插件技能 |
-| 持续目标 | `availableCommands: goal`、`goal_updated` | 输入框 `+` → 会话能力、`/goal` 菜单、目标活动 | ACP 命令 + 事件 | 原生 UI | 前端类型检查 | 真实 App 已完成创建、状态展示、结果和清理验收 | 支持设置、状态、暂停、恢复、清理 |
-| 工作流 | `availableCommands: workflow` | 输入框 `+` → 会话能力、`/workflow` 菜单 | ACP 命令 | 原生 UI | 前端类型检查、固定 Rhai 夹具 | 用户作用域工作流真实 App 运行通过 | 隔离 `GROK_HOME` 暂未发现仓库 `.grok/workflows`，项目作用域仍待接入 |
-| 深度研究 | `availableCommands: deep-research` | 输入框 `+` → 会话能力、`/deep-research` 菜单 | ACP 命令 | 原生 UI | 前端类型检查、真实本地研究用例 | 本地 README 研究结果和子智能体中间输出隔离均通过；入口可正确填入命令 | 内网模型是否具备搜索工具由会话配置决定 |
-| 上下文、会话信息、压缩 | `context`、`session-info`、`compact` | 会话能力条、斜杠命令菜单 | ACP 命令 | 原生 UI | 前端类型检查 | 待长会话验收 | 自动压缩事件已进入工具时间线 |
-| 模型与凭据 | ACP model state；官方自定义模型配置 | 设置 → 常规 → 模型连接 | Tauri + 系统凭据库 | 原生 UI | Rust 模型配置测试 | 模型可选择且页面初始化不读取密钥 | URGS 内网隔离禁止 xAI 登录和回退 |
-| MCP | `grok mcp list/add/remove/doctor` | 设置 → CLI 与诊断 → MCP 服务 | 受控 CLI | 仅 CLI 中心 | CLI allowlist 测试 | 待真实 MCP 连通性验收 | ACP 新会话当前传入空 `mcpServers`，运行时读取本地配置 |
-| 插件与市场 | `grok plugin validate/install/enable/disable/details/list --json`、`grok inspect --json` | 新任务输入框 `+` → 插件状态；设置 → 插件 | 本地目录选择 + 稳定 DTO + 受控 CLI | 原生 UI | 隔离 `GROK_HOME` 完整生命周期、Rust 单测、前端类型检查 | 真实 App 已验证本地目录校验、信任安装、组件详情、启停和 `+` 菜单同步 | 仅支持本地源；在线市场保持关闭。当前 sidecar 禁用后 `inspect.plugins[].enabled` 仍为 true，状态改以 `[plugins] enabled/disabled` 为准，并用技能列表消失验证实际停用 |
-| 记忆 | `grok memory clear`、`--experimental-memory` | 任务执行设置、CLI 与诊断 | ACP 参数 + 受控 CLI | 通用桥接 | 参数构建测试 | 记忆事件显示在工具时间线 | 清理动作需要确认 |
-| Worktree | `--worktree`、`grok worktree *` | 任务执行设置、CLI 与诊断 | Headless 参数 + 受控 CLI | 通用桥接 | CLI 参数测试 | 待真实创建/清理验收 | 删除默认 dry-run，关闭预览需再次确认 |
-| Agent/Leader 后台服务 | `agent headless/serve/leader`、`leader *` | 设置 → CLI 与诊断 → Agent 服务 | Tauri 后台进程 | 通用桥接 | Rust 服务 allowlist 测试 | 服务 PID、输出和停止可见 | ACP stdio 由新建任务托管 |
-| 导出、Trace、Doctor、Inspect | 顶级 CLI 命令 | 设置 → CLI 与诊断 | 受控 CLI | 仅 CLI 中心 | CLI allowlist 测试 | 输出可查看和复制 | Trace 默认仅本地 |
-| 登录、托管配置、在线模型、自更新 | `login/logout/setup/models/update` | 无 | 禁止接入 | 缺失 | CLI allowlist 拒绝测试 | 设置页显示内网隔离 | 产品安全策略明确禁止 xAI 与组件自更新 |
-| 会话 Recap | 1.0.0 ACP `initialize` 宣告 `sessionRecap=true`，摘要跟随会话语言 | 会话详情 → 会话摘要 | ACP 扩展 + 会话状态 | 待验证 | 1.0.0 initialize 已宣告；前端已处理 `session_recap` 和不可用事件 | 待有模型凭据的中文长会话验收 | 不增加独立弹窗，摘要在会话详情按需展开 |
-| 会话 Rewind | ACP `initialize` 宣告 `cancelRewind=true` | 无 | 扩展探测 | 待验证 | 1.0.0 initialize 已宣告，尚未完成真实会话方法探测 | 无 | 不创建不可验证入口 |
-| 图片、音频提示 | `promptCapabilities.image=false`、`audio=false` | 无 | ACP 能力门禁 | 上游不支持 | 1.0.0 ACP initialize | 无 | `voiceMode=true` 不能替代 ACP 图片/音频提示能力；MCP 工具结果图片是另一条链路 |
-| Hooks 管理 | ACP 宣告 `x.ai/hooks` 能力 | 无 | 通用桥接未产品化 | 缺失 | 1.0.0 ACP initialize 已宣告 Hooks | 无 | 当前仍无用户可操作的 Hooks 管理入口 |
+URGS 之前只展示 `availableCommands`，虽然已经处理退出计划模式的审批请求，却没有实现进入 Plan Mode 的客户端动作，因此入口缺失。本轮已补齐：
 
-## 下一阶段优先级
+1. 新任务和会话输入区提供“正常执行 / 计划模式 / 询问模式”。
+2. `/plan [description]` 调用 `session/set_mode` 后发送任务；裸 `/plan` 在已有会话中只切换模式。
+3. `current_mode_update` 同步回任务状态并持久化。
+4. `/view-plan`、`/show-plan`、`/plan-view` 安全读取会话目录内的 `plan.md`。
+5. Plan 审批允许空计划响应，并保留“带意见批准”的反馈。
+6. `/fork` 和会话菜单调用 `x.ai/session/fork`，复制消息、更新和 Plan 状态，生成独立会话。
 
-1. 使用已配置内网模型的真实长会话复验中文 Recap、`x.ai/rewind/*`、`x.ai/session/info` 和 Hooks 扩展。
-2. 扩展方法真实可用后，优先补齐原生 Rewind 选择器；Recap 和上下文信息继续放在会话详情，避免打断对话。
-3. 补齐项目作用域 `.grok/workflows` 的安全发现机制，并继续验证严格重叠执行的两个并发会话。
+## ACP 与核心运行能力
+
+| 能力 | 官方协议/文档 | URGS 入口 | 接入状态 | 验证 |
+|---|---|---|---|---|
+| 新建、加载、恢复、续聊、关闭 | `session/new`、`load`、`resume`、`prompt`、`close` | 新建任务、历史会话、删除 | 原生 UI | Rust 49 项单测、TypeScript 检查 |
+| Plan / Ask / Default | `session/set_mode`、`current_mode_update` | 输入框模式选择、`/plan` | 原生 UI，本轮补齐 | 模式白名单单测、真实二进制协议审计 |
+| 计划审批 | `x.ai/exit_plan_mode` | 计划审批弹窗 | 原生 UI | 直接/包装反向请求解析单测 |
+| 计划文档 | 会话目录 `plan.md` | `/view-plan` 及别名 | 原生 UI，本轮补齐 | 文件类型、大小、目录边界门禁 |
+| 会话分支 | `x.ai/session/fork` | `/fork`、会话菜单“创建会话分支” | 原生 UI，本轮补齐 | ACP DTO 与 Rust/TS 编译 |
+| 取消、排队、插话 | `session/cancel`、queue、`x.ai/interject` | 停止按钮、运行中继续发送、队列控制 | 原生 UI | 事件标准化与队列单测 |
+| 工具、思考、Todo/Plan | `session/update` | 工具时间线、任务计划 | 原生 UI | 保留有 eventId 的权威 Todo；忽略瞬态 Plan 清理覆盖 |
+| 用户提问 | `x.ai/ask_user_question` | 问题选择弹窗 | 原生 UI | 直接/包装反向请求解析单测 |
+| 权限 | ACP permission reverse request | 权限弹窗、请求批准/完全访问 | 原生 UI | 会话归属与参数单测 |
+| 模型与推理强度 | model config/state | 模型选择、执行设置 | 原生 UI | 模型目录、系统凭据库与切换链路 |
+| Recap | `sessionRecap=true`、`session_recap` | 会话详情“最近会话 Recap” | 原生 UI | 事件处理与异步完成保护 |
+| Rewind | `cancelRewind=true`、`x.ai/rewind/points`、`execute` | 每轮变更摘要“回退文件” | 原生 UI | Rust 回退模型选择测试；需真实有改动会话人工确认 |
+| 附件上下文 | `embeddedContext=true` | 原生附件选择 | 原生 UI | 文本/二进制、一次授权、路径和大小门禁单测 |
+| MCP | ACP HTTP/SSE + `grok mcp *` | MCP 管理器、运行时重载 | 原生 UI + 受控 CLI | 服务状态、启停、重载和诊断链路 |
+| Hooks | `x.ai/hooks`、动态 Hook 命令 | Slash 菜单、配置、诊断面板 | 原生 UI | 动态命令与 `hooks_changed` 诊断事件 |
+| Workflow | `workflow`、项目/用户 Rhai | Workflow 中心、运行控制、Slash | 原生 UI | 项目 `.grok/workflows` 与用户目录安全发现单测 |
+| Goal / Loop / Deep Research | 动态 Slash 命令与事件 | Slash 菜单、目标/工作流活动 | 原生 UI | 实际 `session/new` 命令目录 + 前端类型检查 |
+| Background Task / Subagent | ACP 更新和扩展 | 会话工具条、活动时间线 | 原生 UI | 列表、等待、停止/取消链路 |
+| 文件通知 | `fs_notify` | 运行时桥接 | 通用桥接 | initialize 能力审计；无独立 UI，文件变更统一进入任务视图 |
+| Voice Mode | `voiceMode=true` | 无 | 暂不产品化 | 能力宣告不等于 ACP 音频输入；`audio=false` |
+| 图片/音频 Prompt | `image=false`、`audio=false` | 无 | 上游未支持 | 严格按 initialize 隐藏 |
+
+## 官方 Pager Slash Command 全量归类
+
+下表覆盖 `docs/user-guide/04-slash-commands.md` 的全部命令。状态不是“每个命令都复制一个 TUI 弹窗”，而是每项都有原生入口、ACP 动态入口、受控 CLI 入口或明确的安全/平台边界。
+
+| 官方命令 | URGS 对应入口 | 归类 |
+|---|---|---|
+| `/new`、`/home` | 新建任务 | 原生等价 |
+| `/resume`、`/dashboard`、`/history` | 工作区会话侧栏、搜索、筛选 | 原生等价 |
+| `/compact`、`/context`、`/session-info` | 会话能力菜单、上下文菜单 | ACP 动态/原生 |
+| `/fork` | Slash + 会话菜单 | 本轮原生接入 |
+| `/rewind`、`/undo`、`/edit-prompt` | 每轮变更摘要回退；继续输入可修订 | 原生等价；不伪造 Pager 编辑器 |
+| `/copy` | 消息复制按钮 | 原生等价 |
+| `/export`、`/transcript` | CLI 中心 `sessions export` / `export` | 受控 CLI |
+| `/quit` | 关闭桌面窗口 | 平台等价 |
+| `/delete`、`/rename` | 会话菜单 | 原生等价 |
+| `/model`、`/effort` | 输入区模型选择、执行设置 | 原生等价 |
+| `/always-approve`、`/auto` | 权限模式选择 | 原生等价 + ACP 动态 |
+| `/multiline` | 多行输入框 | 原生常驻能力 |
+| `/compact-mode`、`/minimal`、`/fullscreen` | 响应式 Desktop 布局 | Pager 渲染专属，不透传 |
+| `/vim-mode` | 无 | Pager 输入法专属，不适用于 React 输入框 |
+| `/plan`、`/view-plan` | Slash + 交互模式选择 | 本轮原生接入 |
+| `/memory`、`/flush`、`/dream`、`/remember` | 动态 Slash、会话记忆动作、CLI 清理 | ACP/受控 CLI |
+| `/hooks` | 动态 Hook 命令、配置与诊断 | ACP 动态/原生 |
+| `/plugins`、`/marketplace`、`/skills` | 插件管理器、技能选择、动态命令 | 原生 UI；在线市场按内网策略关闭 |
+| `/imagine`、`/imagine-video` | 仅在运行时实际下发时显示 | ACP 能力门禁，不虚构入口 |
+| `/loop`、`/goal`、`/deep-research` | Slash 菜单与活动时间线 | ACP 动态 |
+| `/workflow`、`/workflows` | Workflow 中心与 Slash | 原生 UI + ACP 动态 |
+| `/theme`、`/settings`、`/timestamps` | URGS 设置、固定消息时间 | 原生等价 |
+| `/feedback`、`/btw` | 运行时实际下发时显示 | ACP 动态 |
+| `/mcps` | MCP 管理器 | 原生等价 |
+| `/doctor` | CLI 与诊断 | 受控 CLI |
+| `/release-notes`、`/docs`、`/tutorial` | 能力矩阵与随包文档 | 文档入口；不启动外网浏览器 |
+| `/import-claude`、`/config-agents`、`/personas` | Agent/Skill/Plugin 配置与 CLI 中心 | 原生/受控 CLI |
+| `/login`、`/logout`、`/privacy` | 无 | 内网隔离策略禁止 xAI 账户与遥测 |
+| `/usage` | 上下文与会话信息 | 原生等价；不展示远端计费 |
+
+## 顶级 CLI 全量归类
+
+| 顶级命令 | URGS 状态 |
+|---|---|
+| `agent`、`leader` | 后台服务中心，可启动、查看、停止 |
+| `sessions` | 列表、搜索、删除、导出、Trace，并有原生会话侧栏 |
+| `mcp` | 原生 MCP 管理器 + doctor/add/remove/list |
+| `plugin` | 原生插件管理器，支持本地 validate/install/enable/disable/details/list |
+| `memory` | 清理与 flush；高风险动作确认 |
+| `worktree` | 原生 Git/Worktree 流程 + CLI list/show/rm/gc/db |
+| `inspect`、`doctor`、`du`、`trace`、`export`、`version` | CLI 与诊断中心 |
+| `completions` | CLI 中心 |
+| `wrap` | 原生剪贴板/消息展示等价，不依赖终端包装 |
+| `dashboard` | 智能任务中心本身 |
+| `login`、`logout`、`setup`、`models`、`update` | 内网安全策略禁止；模型由 URGS 本地连接管理，不允许组件自更新 |
+
+## 仍需真实环境验收的边界
+
+- 图片和音频输入不是遗漏，当前二进制明确宣告不支持。
+- 在线 Marketplace、xAI 登录、遥测隐私切换和 Grok 自更新按内网策略保持禁用。
+- Voice Mode 虽已宣告，但没有 ACP 音频输入能力，暂不创建不可用入口。
+- Plan、Ask、计划审批、计划预览和 Fork 已完成代码链路与自动化验证；`/Applications/URGS.app` 已真实启动并确认任务中心显示“正常执行 / 计划模式 / 询问模式”。
