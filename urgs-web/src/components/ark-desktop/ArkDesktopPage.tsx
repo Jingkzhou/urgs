@@ -138,6 +138,7 @@ const ArkDesktopPage: React.FC = () => {
     const [isSidebarCollapsed, setIsSidebarCollapsed] = useState(false);
     const [gitReviewOpen, setGitReviewOpen] = useState(false);
     const [terminalPanelOpen, setTerminalPanelOpen] = useState(false);
+    const [terminalPanelMounted, setTerminalPanelMounted] = useState(false);
     const [settingsTab, setSettingsTab] = useState<SettingsTab>('general');
 
     const [editor, setEditor] = useState<{ type: 'automation'; id?: string } | null>(null);
@@ -146,6 +147,10 @@ const ArkDesktopPage: React.FC = () => {
     const draftWorkspaceFollowsDefaultRef = useRef(true);
     const conversationScrollRef = useRef<HTMLDivElement>(null);
     const clearLatestMessageLocation = useCallback(() => setLatestMessageTaskId(null), []);
+    const toggleTerminalPanel = () => {
+        setTerminalPanelMounted(true);
+        setTerminalPanelOpen((current) => !current);
+    };
 
     useEffect(() => {
         const initializeSchedules = () => {
@@ -374,7 +379,7 @@ const ArkDesktopPage: React.FC = () => {
                 />
                 <div className="mr-3 flex shrink-0 items-center gap-1">
                     <ArkDesktopSidebarToggle collapsed={isSidebarCollapsed} onToggle={() => setIsSidebarCollapsed((current) => !current)} />
-                    <button type="button" onClick={() => setTerminalPanelOpen((current) => !current)} className={panelToggleClass(terminalPanelOpen)} title={terminalPanelOpen ? '关闭底部终端面板' : '打开底部终端面板'} aria-label={terminalPanelOpen ? '关闭底部终端面板' : '打开底部终端面板'} aria-pressed={terminalPanelOpen}>
+                    <button type="button" onClick={toggleTerminalPanel} className={panelToggleClass(terminalPanelOpen)} title={terminalPanelOpen ? '关闭底部终端面板' : '打开底部终端面板'} aria-label={terminalPanelOpen ? '关闭底部终端面板' : '打开底部终端面板'} aria-pressed={terminalPanelOpen}>
                         <PanelBottom size={16} strokeWidth={1.8} />
                     </button>
                     {showGitReview && <button type="button" disabled={!gitReviewAvailable} onClick={() => { if (gitReviewAvailable) setGitReviewOpen((current) => !current); }} className={`${panelToggleClass(gitReviewOpen)} disabled:cursor-not-allowed disabled:text-slate-300 disabled:hover:bg-transparent disabled:hover:text-slate-300`} title={gitReviewDisabledReason || (gitReviewOpen ? '关闭 Git 变更审查' : '打开 Git 变更审查')} aria-label={gitReviewDisabledReason || (gitReviewOpen ? '关闭 Git 变更审查' : '打开 Git 变更审查')} aria-pressed={gitReviewOpen}>
@@ -456,7 +461,7 @@ const ArkDesktopPage: React.FC = () => {
                         <AutomationCenter runtime={runtime} onEdit={(id) => setEditor({ type: 'automation', id })} />
                     ) : <SettingsView runtime={runtime} chooseWorkspace={chooseDefaultWorkspace} initialTab={settingsTab} />}
                 </main>
-                {terminalPanelOpen && <TaskTerminalPanel workspace={runtime.activeTask?.workspace || runtime.snapshot.settings.workspace} onClose={() => setTerminalPanelOpen(false)} />}
+                {terminalPanelMounted && <TaskTerminalPanel visible={terminalPanelOpen} workspace={runtime.activeTask?.workspace || runtime.snapshot.settings.workspace} onClose={() => setTerminalPanelOpen(false)} />}
             </section>
 
             {gitReviewAvailable && runtime.activeTask && gitReviewOpen && <GitReviewPanel task={runtime.activeTask} runtime={runtime} onClose={() => setGitReviewOpen(false)} />}

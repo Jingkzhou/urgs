@@ -17,6 +17,7 @@ import './TaskTerminalPanel.css';
 interface TaskTerminalPanelProps {
     workspace: string;
     onClose: () => void;
+    visible?: boolean;
 }
 
 interface TerminalOutputEvent {
@@ -80,7 +81,7 @@ const decodeBase64Bytes = (value: string) => {
     return bytes;
 };
 
-const TaskTerminalPanel: React.FC<TaskTerminalPanelProps> = ({ workspace, onClose }) => {
+const TaskTerminalPanel: React.FC<TaskTerminalPanelProps> = ({ workspace, onClose, visible = true }) => {
     const name = workspaceName(workspace);
     const [panelHeight, setPanelHeight] = useState(280);
     const [isResizing, setIsResizing] = useState(false);
@@ -389,6 +390,7 @@ const TaskTerminalPanel: React.FC<TaskTerminalPanelProps> = ({ workspace, onClos
     }, [copyTerminalSelection, syncTerminalScroll, tabs, workspace]);
 
     useEffect(() => {
+        if (!visible) return undefined;
         const fitActiveTerminal = () => {
             window.requestAnimationFrame(() => fitTerminal(activeTabId));
         };
@@ -402,7 +404,7 @@ const TaskTerminalPanel: React.FC<TaskTerminalPanelProps> = ({ workspace, onClos
             window.removeEventListener('resize', fitActiveTerminal);
             observer?.disconnect();
         };
-    }, [activeTabId, panelHeight, fitTerminal]);
+    }, [activeTabId, panelHeight, fitTerminal, visible]);
 
     const selectTab = (tabId: string) => {
         setActiveTabId(tabId);
@@ -459,8 +461,9 @@ const TaskTerminalPanel: React.FC<TaskTerminalPanelProps> = ({ workspace, onClos
     return <section
         role="region"
         aria-label="底部终端面板"
+        aria-hidden={visible ? undefined : true}
         style={{ height: `${panelHeight}px` }}
-        className="ark-terminal-panel relative flex shrink-0 flex-col overflow-hidden border-t border-[#dbe3ef] bg-white text-slate-700"
+        className={`ark-terminal-panel relative flex shrink-0 flex-col overflow-hidden border-t border-[#dbe3ef] bg-white text-slate-700 ${visible ? '' : 'hidden'}`}
     >
         <button
             type="button"
