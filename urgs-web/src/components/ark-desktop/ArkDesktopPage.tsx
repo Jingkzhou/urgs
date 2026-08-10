@@ -137,6 +137,7 @@ const ArkDesktopPage: React.FC = () => {
     const [latestMessageTaskId, setLatestMessageTaskId] = useState<string | null>(null);
     const [isSidebarCollapsed, setIsSidebarCollapsed] = useState(false);
     const [gitReviewOpen, setGitReviewOpen] = useState(false);
+    const [gitReviewMounted, setGitReviewMounted] = useState(false);
     const [terminalPanelOpen, setTerminalPanelOpen] = useState(false);
     const [terminalPanelMounted, setTerminalPanelMounted] = useState(false);
     const [settingsTab, setSettingsTab] = useState<SettingsTab>('general');
@@ -150,6 +151,10 @@ const ArkDesktopPage: React.FC = () => {
     const toggleTerminalPanel = () => {
         setTerminalPanelMounted(true);
         setTerminalPanelOpen((current) => !current);
+    };
+    const toggleGitReviewPanel = () => {
+        setGitReviewMounted(true);
+        setGitReviewOpen((current) => !current);
     };
 
     useEffect(() => {
@@ -382,7 +387,7 @@ const ArkDesktopPage: React.FC = () => {
                     <button type="button" onClick={toggleTerminalPanel} className={panelToggleClass(terminalPanelOpen)} title={terminalPanelOpen ? '关闭底部终端面板' : '打开底部终端面板'} aria-label={terminalPanelOpen ? '关闭底部终端面板' : '打开底部终端面板'} aria-pressed={terminalPanelOpen}>
                         <PanelBottom size={16} strokeWidth={1.8} />
                     </button>
-                    {showGitReview && <button type="button" disabled={!gitReviewAvailable} onClick={() => { if (gitReviewAvailable) setGitReviewOpen((current) => !current); }} className={`${panelToggleClass(gitReviewOpen)} disabled:cursor-not-allowed disabled:text-slate-300 disabled:hover:bg-transparent disabled:hover:text-slate-300`} title={gitReviewDisabledReason || (gitReviewOpen ? '关闭 Git 变更审查' : '打开 Git 变更审查')} aria-label={gitReviewDisabledReason || (gitReviewOpen ? '关闭 Git 变更审查' : '打开 Git 变更审查')} aria-pressed={gitReviewOpen}>
+                    {showGitReview && <button type="button" disabled={!gitReviewAvailable} onClick={() => { if (gitReviewAvailable) toggleGitReviewPanel(); }} className={`${panelToggleClass(gitReviewOpen)} disabled:cursor-not-allowed disabled:text-slate-300 disabled:hover:bg-transparent disabled:hover:text-slate-300`} title={gitReviewDisabledReason || (gitReviewOpen ? '关闭 Git 变更审查' : '打开 Git 变更审查')} aria-label={gitReviewDisabledReason || (gitReviewOpen ? '关闭 Git 变更审查' : '打开 Git 变更审查')} aria-pressed={gitReviewOpen}>
                         <PanelRight size={16} strokeWidth={1.8} />
                     </button>}
                 </div>
@@ -464,7 +469,7 @@ const ArkDesktopPage: React.FC = () => {
                 {terminalPanelMounted && <TaskTerminalPanel visible={terminalPanelOpen} workspace={runtime.activeTask?.workspace || runtime.snapshot.settings.workspace} onClose={() => setTerminalPanelOpen(false)} />}
             </section>
 
-            {gitReviewAvailable && runtime.activeTask && gitReviewOpen && <GitReviewPanel task={runtime.activeTask} runtime={runtime} onClose={() => setGitReviewOpen(false)} />}
+            {gitReviewAvailable && runtime.activeTask && gitReviewMounted && <GitReviewPanel visible={gitReviewOpen} task={runtime.activeTask} runtime={runtime} onClose={() => setGitReviewOpen(false)} />}
 
             {editor?.type === 'automation' && <AutomationEditor id={editor.id} runtime={runtime} onClose={() => setEditor(null)} />}
             {runtime.permission && <Modal title={`允许“${runtime.permission.taskTitle}”执行本地操作？`} onClose={() => void runtime.answerPermission()}><p className="mb-5 text-sm leading-6 text-slate-600">{runtime.permission.title}</p><div className="flex flex-wrap justify-end gap-2"><button type="button" onClick={() => void runtime.answerPermission()} className="rounded-lg border border-slate-200 px-4 py-2 text-sm text-slate-600">拒绝</button>{runtime.permission.options.map((option) => <button key={option.optionId} type="button" onClick={() => void runtime.answerPermission(option.optionId)} className="rounded-lg bg-slate-900 px-4 py-2 text-sm text-white">{option.name}</button>)}</div></Modal>}

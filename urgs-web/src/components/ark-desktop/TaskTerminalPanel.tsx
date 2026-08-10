@@ -124,10 +124,6 @@ const TaskTerminalPanel: React.FC<TaskTerminalPanelProps> = ({ workspace, onClos
             return;
         }
         fitAddon.fit();
-        const sessionId = sessionIdsRef.current.get(tabId);
-        if (sessionId) {
-            void resizeTerminalSession(sessionId, terminal.cols, terminal.rows).catch(() => undefined);
-        }
     }, []);
 
     const disposeTerminal = useCallback((tabId: string) => {
@@ -285,15 +281,6 @@ const TaskTerminalPanel: React.FC<TaskTerminalPanelProps> = ({ workspace, onClos
                 const fitAddon = new FitAddon();
                 terminal.loadAddon(fitAddon);
                 terminal.open(container);
-                try {
-                    // VS Code 的终端优先使用 GPU renderer。除性能收益外，这也避开
-                    // Tauri CSP 对 xterm DOM renderer 动态样式的限制。
-                    const webglAddon = new WebglAddon();
-                    webglAddon.onContextLoss(() => webglAddon.dispose());
-                    terminal.loadAddon(webglAddon);
-                } catch (error) {
-                    console.warn('xterm WebGL renderer unavailable, falling back to DOM renderer', error);
-                }
                 terminalsRef.current.set(tab.id, terminal);
                 fitAddonsRef.current.set(tab.id, fitAddon);
 
@@ -379,6 +366,19 @@ const TaskTerminalPanel: React.FC<TaskTerminalPanelProps> = ({ workspace, onClos
                     fitAddon.fit();
                     syncTerminalScroll(tab.id, terminal);
                     terminal.focus();
+
+                    // 先让面板完成首帧和 PTY 建连，再启用 GPU renderer。WebGL
+                    // 初始化可能触发驱动编译，不能阻塞用户刚点击底部面板的那一帧。
+                    window.setTimeout(() => {
+                        if (!isMountedRef.current || terminalsRef.current.get(tab.id) !== terminal) return;
+                        try {
+                            const webglAddon = new WebglAddon();
+                            webglAddon.onContextLoss(() => webglAddon.dispose());
+                            terminal.loadAddon(webglAddon);
+                        } catch (error) {
+                            console.warn('xterm WebGL renderer unavailable, falling back to DOM renderer', error);
+                        }
+                    }, 0);
                 } catch (error) {
                     terminal.write(`\r\n[终端启动失败] ${error instanceof Error ? error.message : String(error)}\r\n`);
                     setTabs((current) => current.map((item) => item.id === tab.id ? { ...item, status: 'error' } : item));
@@ -394,7 +394,12 @@ const TaskTerminalPanel: React.FC<TaskTerminalPanelProps> = ({ workspace, onClos
         const fitActiveTerminal = () => {
             window.requestAnimationFrame(() => fitTerminal(activeTabId));
         };
-        fitActiveTerminal();
+        window.requestAnimationFrame(() => {
+            fitTerminal(activeTabId);
+            const terminal = terminalsRef.current.get(activeTabId);
+            if (!terminal) return;
+            terminal.focus();
+        });
         window.addEventListener('resize', fitActiveTerminal);
         const observer = typeof ResizeObserver === 'undefined' || !panelContentRef.current
             ? null
@@ -432,13 +437,15 @@ const TaskTerminalPanel: React.FC<TaskTerminalPanelProps> = ({ workspace, onClos
         const tabIndex = tabs.findIndex((tab) => tab.id === tabId);
         if (tabIndex < 0) return;
 
-        disposeTerminal(tabId);
         const remainingTabs = tabs.filter((tab) => tab.id !== tabId);
         if (remainingTabs.length === 0) {
+            // 最后一个标签的关闭按钮与面板关闭保持一致：只隐藏面板，
+            // 保留 PTY、标签和历史输出，重新打开时继续使用原会话。
             onClose();
             return;
         }
 
+        disposeTerminal(tabId);
         setTabs(remainingTabs);
         if (activeTabId === tabId) {
             const nextTab = remainingTabs[Math.min(tabIndex, remainingTabs.length - 1)];
@@ -462,8 +469,19 @@ const TaskTerminalPanel: React.FC<TaskTerminalPanelProps> = ({ workspace, onClos
         role="region"
         aria-label="底部终端面板"
         aria-hidden={visible ? undefined : true}
-        style={{ height: `${panelHeight}px` }}
-        className={`ark-terminal-panel relative flex shrink-0 flex-col overflow-hidden border-t border-[#dbe3ef] bg-white text-slate-700 ${visible ? '' : 'hidden'}`}
+        style={{
+            height: `${panelHeight}px`,
+            position: visible ? 'relative' : 'absolute',
+            left: visible ? undefined : 0,
+            right: visible ? undefined : 0,
+            bottom: visible ? undefined : 0,
+            // Tauri 的 xterm WebGL 画布可能脱离 DOM 的 visibility 合成层，
+            // 隐藏时同时透明并移出视口，保留会话和布局尺寸但不残留画布。
+            opacity: visible ? 1 : 0,
+            transform: visible ? undefined : 'translateY(100%)',
+            pointerEvents: visible ? 'auto' : 'none',
+        }}
+        className="ark-terminal-panel relative flex shrink-0 flex-col overflow-hidden border-t border-[#dbe3ef] bg-white text-slate-700"
     >
         <button
             type="button"

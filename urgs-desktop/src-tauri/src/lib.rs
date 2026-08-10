@@ -366,6 +366,14 @@ pub fn run() {
             Ok(())
         })
         .on_window_event(|window, event| {
+            if window.label() == "grok-task-center"
+                && matches!(
+                    event,
+                    WindowEvent::CloseRequested { .. } | WindowEvent::Destroyed
+                )
+            {
+                let _ = window.state::<grok_runtime::TerminalState>().close_all();
+            }
             if window.label() == "main" {
                 if let WindowEvent::CloseRequested { api, .. } = event {
                     api.prevent_close();

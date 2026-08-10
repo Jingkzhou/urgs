@@ -277,6 +277,24 @@ pub struct TerminalState {
     sessions: Arc<Mutex<HashMap<String, Arc<TerminalSession>>>>,
 }
 
+impl TerminalState {
+    pub fn close_all(&self) -> Result<(), String> {
+        let sessions = self
+            .sessions
+            .lock()
+            .map_err(|_| "终端会话锁不可用".to_string())?
+            .drain()
+            .map(|(_, session)| session)
+            .collect::<Vec<_>>();
+        for session in sessions {
+            if let Ok(mut child) = session.child.lock() {
+                let _ = child.kill();
+            }
+        }
+        Ok(())
+    }
+}
+
 #[derive(Debug, Clone, Serialize)]
 #[serde(rename_all = "camelCase")]
 pub struct GrokCliServiceInfo {
@@ -3871,10 +3889,9 @@ fn get_terminal_session(
         .ok_or_else(|| "终端会话已关闭".to_string())
 }
 
-#[tauri::command]
-pub fn terminal_create_session(
+fn create_terminal_session_blocking(
     app: AppHandle,
-    state: State<'_, TerminalState>,
+    state: TerminalState,
     workspace: Option<String>,
     cols: Option<u16>,
     rows: Option<u16>,
@@ -3987,6 +4004,22 @@ pub fn terminal_create_session(
 }
 
 #[tauri::command]
+pub async fn terminal_create_session(
+    app: AppHandle,
+    state: State<'_, TerminalState>,
+    workspace: Option<String>,
+    cols: Option<u16>,
+    rows: Option<u16>,
+) -> Result<TerminalSessionInfo, String> {
+    let state = state.inner().clone();
+    tauri::async_runtime::spawn_blocking(move || {
+        create_terminal_session_blocking(app, state, workspace, cols, rows)
+    })
+    .await
+    .map_err(|error| format!("等待终端初始化任务失败: {error}"))?
+}
+
+#[tauri::command]
 pub fn terminal_write(
     state: State<'_, TerminalState>,
     session_id: String,
@@ -4006,35 +4039,48 @@ pub fn terminal_write(
 }
 
 #[tauri::command]
-pub fn terminal_resize(
+pub async fn terminal_resize(
     state: State<'_, TerminalState>,
     session_id: String,
     cols: u16,
     rows: u16,
 ) -> Result<(), String> {
-    let session = get_terminal_session(&state, &session_id)?;
-    let result = session
-        .master
-        .lock()
-        .map_err(|_| "终端窗口锁不可用".to_string())?
-        .resize(terminal_pty_size(Some(cols), Some(rows)))
-        .map_err(|error| format!("调整终端窗口失败: {error}"));
-    result
+    let state = state.inner().clone();
+    tauri::async_runtime::spawn_blocking(move || {
+        let session = get_terminal_session(&state, &session_id)?;
+        let result = session
+            .master
+            .lock()
+            .map_err(|_| "终端窗口锁不可用".to_string())?
+            .resize(terminal_pty_size(Some(cols), Some(rows)))
+            .map_err(|error| format!("调整终端窗口失败: {error}"));
+        result
+    })
+    .await
+    .map_err(|error| format!("等待终端缩放任务失败: {error}"))?
 }
 
 #[tauri::command]
-pub fn terminal_close(state: State<'_, TerminalState>, session_id: String) -> Result<(), String> {
-    let session = state
-        .sessions
-        .lock()
-        .map_err(|_| "终端会话锁不可用".to_string())?
-        .remove(&session_id);
-    if let Some(session) = session {
-        if let Ok(mut child) = session.child.lock() {
-            let _ = child.kill();
+pub async fn terminal_close(
+    state: State<'_, TerminalState>,
+    session_id: String,
+) -> Result<(), String> {
+    let state = state.inner().clone();
+    tauri::async_runtime::spawn_blocking(move || {
+        let session = state
+            .sessions
+            .lock()
+            .map_err(|_| "终端会话锁不可用".to_string())?
+            .remove(&session_id);
+        if let Some(session) = session {
+            if let Ok(mut child) = session.child.lock() {
+                let _ = child.kill();
+            }
         }
-    }
-    Ok(())
+        Ok(())
+    })
+    .await
+    .map_err(|error| format!("等待终端关闭任务失败: {error}"))?
 }
 
 #[tauri::command]

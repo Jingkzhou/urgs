@@ -429,28 +429,43 @@ const invokeGrok = async <T>(command: string, args?: Record<string, unknown>) =>
     return invoke<T>(command, args);
 };
 
-const MAX_CONCURRENT_GIT_COMMANDS = 2;
+type GrokGitCommandPriority = 'normal' | 'high';
+
+// 与 VS Code 的扩展宿主/工作台调度原则一致：耗时后台任务不能占满所有
+// 执行槽。普通 Git 操作最多占两个槽，始终给文件 diff、状态刷新等直接
+// 交互保留一个槽，避免长 fetch/status 让面板看起来失去响应。
+const MAX_CONCURRENT_GIT_COMMANDS = 3;
+const MAX_CONCURRENT_NORMAL_GIT_COMMANDS = 2;
 let activeGitCommands = 0;
-const pendingGitCommands: Array<() => void> = [];
+let activeNormalGitCommands = 0;
+const pendingHighGitCommands: Array<() => void> = [];
+const pendingNormalGitCommands: Array<() => void> = [];
 
 const drainGitCommandQueue = () => {
-    while (activeGitCommands < MAX_CONCURRENT_GIT_COMMANDS && pendingGitCommands.length > 0) {
-        pendingGitCommands.shift()?.();
+    while (activeGitCommands < MAX_CONCURRENT_GIT_COMMANDS) {
+        const next = pendingHighGitCommands.shift()
+            ?? (activeNormalGitCommands < MAX_CONCURRENT_NORMAL_GIT_COMMANDS
+                ? pendingNormalGitCommands.shift()
+                : undefined);
+        if (!next) break;
+        next();
     }
 };
 
-const invokeGrokGit = <T>(command: string, args?: Record<string, unknown>, priority: 'normal' | 'high' = 'normal') => new Promise<T>((resolve, reject) => {
+const invokeGrokGit = <T>(command: string, args?: Record<string, unknown>, priority: GrokGitCommandPriority = 'normal') => new Promise<T>((resolve, reject) => {
     const run = () => {
         activeGitCommands += 1;
+        if (priority === 'normal') activeNormalGitCommands += 1;
         void invokeGrok<T>(command, args)
             .then(resolve, reject)
             .finally(() => {
                 activeGitCommands -= 1;
+                if (priority === 'normal') activeNormalGitCommands -= 1;
                 drainGitCommandQueue();
             });
     };
-    if (priority === 'high') pendingGitCommands.unshift(run);
-    else pendingGitCommands.push(run);
+    if (priority === 'high') pendingHighGitCommands.push(run);
+    else pendingNormalGitCommands.push(run);
     drainGitCommandQueue();
 });
 
@@ -634,7 +649,7 @@ export const prepareGrokGitTask = (
 });
 
 export const getGrokGitStatus = (workspace: string, includeStats = false) =>
-    invokeGrokGit<GrokGitStatus>('grok_git_status', { workspace, includeStats });
+    invokeGrokGit<GrokGitStatus>('grok_git_status', { workspace, includeStats }, includeStats ? 'high' : 'normal');
 
 export const getGrokGitDiff = (workspace: string, path?: string, staged = false, includeStatus = true) =>
     invokeGrokGit<GrokGitDiff>('grok_git_diff', {
@@ -645,10 +660,10 @@ export const getGrokGitDiff = (workspace: string, path?: string, staged = false,
     }, 'high');
 
 export const openGrokGitFile = (workspace: string, path: string, revision?: 'HEAD') =>
-    invokeGrokGit<void>('grok_git_open_file', { workspace, path, revision: revision || null });
+    invokeGrokGit<void>('grok_git_open_file', { workspace, path, revision: revision || null }, 'high');
 
 export const revealGrokGitFile = (workspace: string, path: string) =>
-    invokeGrokGit<void>('grok_git_reveal_file', { workspace, path });
+    invokeGrokGit<void>('grok_git_reveal_file', { workspace, path }, 'high');
 
 export const addGrokGitToIgnore = (workspace: string, path: string, taskId?: string) =>
     invokeGrokGit<GrokGitMutationResult>('grok_git_add_to_ignore', { workspace, path, taskId: taskId || null });

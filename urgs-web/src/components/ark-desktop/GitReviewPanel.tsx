@@ -16,6 +16,7 @@ interface GitReviewPanelProps {
     task: ArkDesktopTask;
     runtime: ArkDesktopRuntime;
     onClose: () => void;
+    visible: boolean;
 }
 
 const workspaceName = (value: string) => value.split(/[\\/]/).filter(Boolean).pop() || value;
@@ -66,7 +67,7 @@ const persistPanelWidth = (value: number) => {
     }
 };
 
-const GitReviewPanel: React.FC<GitReviewPanelProps> = ({ task, runtime, onClose }) => {
+const GitReviewPanel: React.FC<GitReviewPanelProps> = ({ task, runtime, onClose, visible }) => {
     const [tab, setTab] = useState<ReviewTab>('review');
     const [status, setStatus] = useState<GrokGitStatus | undefined>(task.gitContext?.status);
     const [diff, setDiff] = useState<GrokGitDiff | null>(null);
@@ -485,7 +486,7 @@ const GitReviewPanel: React.FC<GitReviewPanelProps> = ({ task, runtime, onClose 
         false,
     );
 
-    return <aside className="relative flex h-full min-w-[320px] max-w-[65vw] shrink-0 flex-col border-l border-slate-200 bg-[#fbfbfc] shadow-[-12px_0_30px_rgba(15,23,42,0.04)]" style={{ width: `${panelWidth}px` }} aria-label="Git 变更审查">
+    return <aside className={`${visible ? 'flex' : 'hidden'} relative h-full min-w-[320px] max-w-[65vw] shrink-0 flex-col border-l border-slate-200 bg-[#fbfbfc] shadow-[-12px_0_30px_rgba(15,23,42,0.04)]`} style={{ width: `${panelWidth}px` }} aria-label="Git 变更审查" aria-hidden={visible ? undefined : true}>
         <div
             role="separator"
             aria-orientation="vertical"
