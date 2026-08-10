@@ -7,6 +7,7 @@ use std::io::{Read, Write};
 use std::os::windows::process::CommandExt;
 use std::path::{Component, Path, PathBuf};
 use std::process::{Command, ExitStatus, Stdio};
+use std::sync::mpsc::{self, Receiver};
 use std::thread;
 use std::time::{Duration, Instant, SystemTime, UNIX_EPOCH};
 use tauri::{AppHandle, Manager};
@@ -20,6 +21,9 @@ const LOCAL_GIT_TIMEOUT: Duration = Duration::from_secs(30);
 const LONG_GIT_TIMEOUT: Duration = Duration::from_secs(120);
 const GIT_WAIT_POLL_INTERVAL: Duration = Duration::from_millis(25);
 const SLOW_GIT_COMMAND_THRESHOLD: Duration = Duration::from_millis(500);
+const PROCESS_OUTPUT_DRAIN_TIMEOUT: Duration = Duration::from_secs(2);
+#[cfg(windows)]
+const TASKKILL_TIMEOUT: Duration = Duration::from_secs(2);
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
 #[serde(rename_all = "camelCase")]
@@ -230,24 +234,30 @@ fn git_command_name(args: &[String]) -> &str {
 
 fn read_process_output(
     stream: Option<impl Read + Send + 'static>,
-) -> thread::JoinHandle<Result<Vec<u8>, String>> {
+) -> Receiver<Result<Vec<u8>, String>> {
+    let (sender, receiver) = mpsc::channel();
     thread::spawn(move || {
         let mut bytes = Vec::new();
-        if let Some(mut stream) = stream {
+        let result = if let Some(mut stream) = stream {
             stream
                 .read_to_end(&mut bytes)
-                .map_err(|error| format!("读取 Git 进程输出失败: {error}"))?;
-        }
-        Ok(bytes)
-    })
+                .map(|_| bytes)
+                .map_err(|error| format!("读取 Git 进程输出失败: {error}"))
+        } else {
+            Ok(bytes)
+        };
+        let _ = sender.send(result);
+    });
+    receiver
 }
 
-fn join_process_output(
-    reader: thread::JoinHandle<Result<Vec<u8>, String>>,
+fn receive_process_output(
+    reader: Receiver<Result<Vec<u8>, String>>,
+    deadline: Instant,
 ) -> Result<Vec<u8>, String> {
     reader
-        .join()
-        .map_err(|_| "读取 Git 进程输出的线程异常退出".to_string())?
+        .recv_timeout(deadline.saturating_duration_since(Instant::now()))
+        .map_err(|_| "Git 进程已退出，但输出管道未能及时关闭".to_string())?
 }
 
 fn terminate_git_process(child: &mut std::process::Child) {
@@ -261,7 +271,22 @@ fn terminate_git_process(child: &mut std::process::Child) {
             .stdout(Stdio::null())
             .stderr(Stdio::null())
             .creation_flags(0x08000000);
-        let _ = taskkill.status();
+        if let Ok(mut taskkill_child) = taskkill.spawn() {
+            let started_at = Instant::now();
+            loop {
+                match taskkill_child.try_wait() {
+                    Ok(Some(_)) | Err(_) => break,
+                    Ok(None) if started_at.elapsed() < TASKKILL_TIMEOUT => {
+                        thread::sleep(GIT_WAIT_POLL_INTERVAL);
+                    }
+                    Ok(None) => {
+                        let _ = taskkill_child.kill();
+                        let _ = taskkill_child.wait();
+                        break;
+                    }
+                }
+            }
+        }
     }
     let _ = child.kill();
     let _ = child.wait();
@@ -306,9 +331,12 @@ fn execute_git_raw(workspace: &Path, args: &[String]) -> Result<RawCommandResult
     let stdout_reader = read_process_output(child.stdout.take());
     let stderr_reader = read_process_output(child.stderr.take());
     let status_result = wait_for_git_process(&mut child, args, timeout);
-    let stdout = join_process_output(stdout_reader)?;
-    let stderr = join_process_output(stderr_reader)?;
+    let output_deadline = Instant::now() + PROCESS_OUTPUT_DRAIN_TIMEOUT;
+    let stdout_result = receive_process_output(stdout_reader, output_deadline);
+    let stderr_result = receive_process_output(stderr_reader, output_deadline);
     let status = status_result?;
+    let stdout = stdout_result?;
+    let stderr = stderr_result?;
     let elapsed = started_at.elapsed();
     if elapsed >= SLOW_GIT_COMMAND_THRESHOLD {
         eprintln!(
@@ -531,6 +559,8 @@ fn parse_numstat(workspace: &Path) -> std::collections::HashMap<String, (u32, u3
     let args = vec![
         "diff".to_string(),
         "--no-ext-diff".to_string(),
+        "--no-textconv".to_string(),
+        "--no-renames".to_string(),
         "--numstat".to_string(),
         "HEAD".to_string(),
         "--".to_string(),
@@ -553,6 +583,26 @@ fn parse_numstat(workspace: &Path) -> std::collections::HashMap<String, (u32, u3
             }
         })
         .collect()
+}
+
+fn git_diff_args(path: Option<&str>, staged: bool, has_head: bool) -> Vec<String> {
+    let mut args = vec![
+        "diff".to_string(),
+        "--no-ext-diff".to_string(),
+        "--no-textconv".to_string(),
+        "--no-renames".to_string(),
+        "--unified=3".to_string(),
+    ];
+    if staged {
+        args.push("--cached".to_string());
+    } else if has_head {
+        args.push("HEAD".to_string());
+    }
+    args.push("--".to_string());
+    if let Some(path) = path {
+        args.push(path.to_string());
+    }
+    args
 }
 
 fn git_status_at_with_stats(
@@ -1039,18 +1089,7 @@ pub fn grok_git_diff(
 ) -> Result<GrokGitDiff, String> {
     let workspace = canonical_directory(&workspace)?;
     let relative = path.map(|value| relative_path(&value)).transpose()?;
-    let mut args = vec![
-        "diff".to_string(),
-        "--no-ext-diff".to_string(),
-        "--unified=3".to_string(),
-    ];
-    if staged {
-        args.push("--cached".to_string());
-    }
-    args.push("--".to_string());
-    if let Some(path) = relative.as_ref() {
-        args.push(path.clone());
-    }
+    let args = git_diff_args(relative.as_deref(), staged, git_head(&workspace).is_some());
     let result = match run_git(&workspace, &args) {
         Ok(result) => result,
         Err(error) if is_not_git_repository_error(&error) || is_git_unavailable_error(&error) => {
@@ -1961,8 +2000,8 @@ pub fn grok_git_audit_list(
 #[cfg(test)]
 mod tests {
     use super::{
-        git_command_timeout, is_git_unavailable_error, parse_remotes, parse_tracking,
-        parse_worktrees, relative_path, LOCAL_GIT_TIMEOUT, LONG_GIT_TIMEOUT,
+        git_command_timeout, git_diff_args, is_git_unavailable_error, parse_remotes,
+        parse_tracking, parse_worktrees, relative_path, LOCAL_GIT_TIMEOUT, LONG_GIT_TIMEOUT,
     };
 
     #[test]
@@ -1979,6 +2018,20 @@ mod tests {
             git_command_timeout(&["worktree".to_string(), "add".to_string()]),
             LONG_GIT_TIMEOUT
         );
+    }
+
+    #[test]
+    fn builds_bounded_diff_without_external_drivers() {
+        let all_changes = git_diff_args(Some("src/main.rs"), false, true);
+        assert!(all_changes.contains(&"--no-ext-diff".to_string()));
+        assert!(all_changes.contains(&"--no-textconv".to_string()));
+        assert!(all_changes.contains(&"--no-renames".to_string()));
+        assert!(all_changes.contains(&"HEAD".to_string()));
+        assert_eq!(all_changes.last().map(String::as_str), Some("src/main.rs"));
+
+        let staged = git_diff_args(None, true, true);
+        assert!(staged.contains(&"--cached".to_string()));
+        assert!(!staged.contains(&"HEAD".to_string()));
     }
 
     #[test]

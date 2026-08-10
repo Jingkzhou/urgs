@@ -439,8 +439,8 @@ const drainGitCommandQueue = () => {
     }
 };
 
-const invokeGrokGit = <T>(command: string, args?: Record<string, unknown>) => new Promise<T>((resolve, reject) => {
-    pendingGitCommands.push(() => {
+const invokeGrokGit = <T>(command: string, args?: Record<string, unknown>, priority: 'normal' | 'high' = 'normal') => new Promise<T>((resolve, reject) => {
+    const run = () => {
         activeGitCommands += 1;
         void invokeGrok<T>(command, args)
             .then(resolve, reject)
@@ -448,7 +448,9 @@ const invokeGrokGit = <T>(command: string, args?: Record<string, unknown>) => ne
                 activeGitCommands -= 1;
                 drainGitCommandQueue();
             });
-    });
+    };
+    if (priority === 'high') pendingGitCommands.unshift(run);
+    else pendingGitCommands.push(run);
     drainGitCommandQueue();
 });
 
@@ -640,7 +642,7 @@ export const getGrokGitDiff = (workspace: string, path?: string, staged = false,
         path: path || null,
         staged,
         includeStatus,
-    });
+    }, 'high');
 
 export const openGrokGitFile = (workspace: string, path: string, revision?: 'HEAD') =>
     invokeGrokGit<void>('grok_git_open_file', { workspace, path, revision: revision || null });
