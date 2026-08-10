@@ -2,12 +2,13 @@ use serde::{Deserialize, Serialize};
 use std::collections::hash_map::DefaultHasher;
 use std::fs::{self, OpenOptions};
 use std::hash::{Hash, Hasher};
-use std::io::Write;
+use std::io::{Read, Write};
 #[cfg(windows)]
 use std::os::windows::process::CommandExt;
 use std::path::{Component, Path, PathBuf};
-use std::process::Command;
-use std::time::{SystemTime, UNIX_EPOCH};
+use std::process::{Command, ExitStatus, Stdio};
+use std::thread;
+use std::time::{Duration, Instant, SystemTime, UNIX_EPOCH};
 use tauri::{AppHandle, Manager};
 use tauri_plugin_opener::OpenerExt;
 
@@ -15,6 +16,10 @@ const WORKTREE_RECORDS_FILE: &str = "grok-git-worktrees.json";
 const AUDIT_FILE: &str = "grok-git-audit.jsonl";
 const MAX_COMMAND_OUTPUT: usize = 2_000_000;
 const MAX_DIFF_OUTPUT: usize = 500_000;
+const LOCAL_GIT_TIMEOUT: Duration = Duration::from_secs(30);
+const LONG_GIT_TIMEOUT: Duration = Duration::from_secs(120);
+const GIT_WAIT_POLL_INTERVAL: Duration = Duration::from_millis(25);
+const SLOW_GIT_COMMAND_THRESHOLD: Duration = Duration::from_millis(500);
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
 #[serde(rename_all = "camelCase")]
@@ -161,12 +166,179 @@ struct CommandResult {
     success: bool,
 }
 
+#[derive(Debug)]
+struct RawCommandResult {
+    stdout: Vec<u8>,
+    stderr: Vec<u8>,
+    status: ExitStatus,
+}
+
 fn new_git_command(workspace: &Path) -> Command {
     let mut command = Command::new("git");
-    command.arg("-C").arg(workspace);
+    command
+        .arg("-C")
+        .arg(workspace)
+        .env("GIT_TERMINAL_PROMPT", "0")
+        .env("GCM_INTERACTIVE", "Never")
+        .stdin(Stdio::null())
+        .stdout(Stdio::piped())
+        .stderr(Stdio::piped());
     #[cfg(windows)]
     command.creation_flags(0x08000000);
     command
+}
+
+fn git_command_timeout(args: &[String]) -> Duration {
+    if args.iter().any(|argument| {
+        matches!(
+            argument.as_str(),
+            "fetch" | "push" | "rebase" | "merge" | "worktree" | "stash" | "commit"
+        )
+    }) {
+        LONG_GIT_TIMEOUT
+    } else {
+        LOCAL_GIT_TIMEOUT
+    }
+}
+
+fn git_command_name(args: &[String]) -> &str {
+    args.iter()
+        .find(|argument| {
+            matches!(
+                argument.as_str(),
+                "add"
+                    | "check-ignore"
+                    | "commit"
+                    | "diff"
+                    | "fetch"
+                    | "merge"
+                    | "push"
+                    | "rebase"
+                    | "remote"
+                    | "reset"
+                    | "rev-parse"
+                    | "show"
+                    | "stash"
+                    | "status"
+                    | "symbolic-ref"
+                    | "worktree"
+            )
+        })
+        .map(String::as_str)
+        .unwrap_or("command")
+}
+
+fn read_process_output(
+    stream: Option<impl Read + Send + 'static>,
+) -> thread::JoinHandle<Result<Vec<u8>, String>> {
+    thread::spawn(move || {
+        let mut bytes = Vec::new();
+        if let Some(mut stream) = stream {
+            stream
+                .read_to_end(&mut bytes)
+                .map_err(|error| format!("读取 Git 进程输出失败: {error}"))?;
+        }
+        Ok(bytes)
+    })
+}
+
+fn join_process_output(
+    reader: thread::JoinHandle<Result<Vec<u8>, String>>,
+) -> Result<Vec<u8>, String> {
+    reader
+        .join()
+        .map_err(|_| "读取 Git 进程输出的线程异常退出".to_string())?
+}
+
+fn terminate_git_process(child: &mut std::process::Child) {
+    #[cfg(windows)]
+    {
+        let pid = child.id().to_string();
+        let mut taskkill = Command::new("taskkill");
+        taskkill
+            .args(["/PID", pid.as_str(), "/T", "/F"])
+            .stdin(Stdio::null())
+            .stdout(Stdio::null())
+            .stderr(Stdio::null())
+            .creation_flags(0x08000000);
+        let _ = taskkill.status();
+    }
+    let _ = child.kill();
+    let _ = child.wait();
+}
+
+fn wait_for_git_process(
+    child: &mut std::process::Child,
+    args: &[String],
+    timeout: Duration,
+) -> Result<ExitStatus, String> {
+    let started_at = Instant::now();
+    loop {
+        match child.try_wait() {
+            Ok(Some(status)) => return Ok(status),
+            Ok(None) if started_at.elapsed() < timeout => thread::sleep(GIT_WAIT_POLL_INTERVAL),
+            Ok(None) => {
+                terminate_git_process(child);
+                return Err(format!(
+                    "git {} 执行超时（{} 秒），已终止进程",
+                    git_command_name(args),
+                    timeout.as_secs()
+                ));
+            }
+            Err(error) => {
+                terminate_git_process(child);
+                return Err(format!(
+                    "等待 git {} 执行失败: {error}",
+                    git_command_name(args)
+                ));
+            }
+        }
+    }
+}
+
+fn execute_git_raw(workspace: &Path, args: &[String]) -> Result<RawCommandResult, String> {
+    let timeout = git_command_timeout(args);
+    let started_at = Instant::now();
+    let mut child = new_git_command(workspace)
+        .args(args)
+        .spawn()
+        .map_err(|error| format!("无法启动 git，请确认已安装 Git: {error}"))?;
+    let stdout_reader = read_process_output(child.stdout.take());
+    let stderr_reader = read_process_output(child.stderr.take());
+    let status_result = wait_for_git_process(&mut child, args, timeout);
+    let stdout = join_process_output(stdout_reader)?;
+    let stderr = join_process_output(stderr_reader)?;
+    let status = status_result?;
+    let elapsed = started_at.elapsed();
+    if elapsed >= SLOW_GIT_COMMAND_THRESHOLD {
+        eprintln!(
+            "[urgs-git] slow command: git {} took {} ms",
+            git_command_name(args),
+            elapsed.as_millis()
+        );
+    }
+    Ok(RawCommandResult {
+        stdout,
+        stderr,
+        status,
+    })
+}
+
+fn execute_git(workspace: &Path, args: &[String]) -> Result<CommandResult, String> {
+    let output = execute_git_raw(workspace, args)?;
+    let (stdout, _) = trim_output(
+        String::from_utf8_lossy(&output.stdout).to_string(),
+        MAX_COMMAND_OUTPUT,
+    );
+    let (stderr, _) = trim_output(
+        String::from_utf8_lossy(&output.stderr).to_string(),
+        MAX_COMMAND_OUTPUT,
+    );
+    Ok(CommandResult {
+        stdout,
+        stderr,
+        success: output.status.success(),
+    })
 }
 
 fn now_millis() -> u64 {
@@ -197,47 +369,15 @@ fn command_error(args: &[String], result: &CommandResult) -> String {
 }
 
 fn run_git(workspace: &Path, args: &[String]) -> Result<CommandResult, String> {
-    let output = new_git_command(workspace)
-        .args(args)
-        .output()
-        .map_err(|error| format!("无法启动 git，请确认已安装 Git: {error}"))?;
-    let (stdout, _) = trim_output(
-        String::from_utf8_lossy(&output.stdout).to_string(),
-        MAX_COMMAND_OUTPUT,
-    );
-    let (stderr, _) = trim_output(
-        String::from_utf8_lossy(&output.stderr).to_string(),
-        MAX_COMMAND_OUTPUT,
-    );
-    let result = CommandResult {
-        stdout,
-        stderr,
-        success: output.status.success(),
-    };
-    if !output.status.success() {
+    let result = execute_git(workspace, args)?;
+    if !result.success {
         return Err(command_error(args, &result));
     }
     Ok(result)
 }
 
 fn run_git_allow_failure(workspace: &Path, args: &[String]) -> Result<CommandResult, String> {
-    let output = new_git_command(workspace)
-        .args(args)
-        .output()
-        .map_err(|error| format!("无法启动 git，请确认已安装 Git: {error}"))?;
-    let (stdout, _) = trim_output(
-        String::from_utf8_lossy(&output.stdout).to_string(),
-        MAX_COMMAND_OUTPUT,
-    );
-    let (stderr, _) = trim_output(
-        String::from_utf8_lossy(&output.stderr).to_string(),
-        MAX_COMMAND_OUTPUT,
-    );
-    Ok(CommandResult {
-        stdout,
-        stderr,
-        success: output.status.success(),
-    })
+    execute_git(workspace, args)
 }
 
 fn canonical_directory(value: &str) -> Result<PathBuf, String> {
@@ -415,7 +555,10 @@ fn parse_numstat(workspace: &Path) -> std::collections::HashMap<String, (u32, u3
         .collect()
 }
 
-fn git_status_at(workspace: &Path) -> Result<GrokGitStatus, String> {
+fn git_status_at_with_stats(
+    workspace: &Path,
+    include_stats: bool,
+) -> Result<GrokGitStatus, String> {
     let workspace =
         fs::canonicalize(workspace).map_err(|error| format!("无法解析 Git 工作区: {error}"))?;
     let repo_root = git_common_root(&workspace)?;
@@ -431,7 +574,11 @@ fn git_status_at(workspace: &Path) -> Result<GrokGitStatus, String> {
     let mut upstream = None;
     let mut ahead = 0;
     let mut behind = 0;
-    let numstat = parse_numstat(&workspace);
+    let numstat = if include_stats {
+        parse_numstat(&workspace)
+    } else {
+        std::collections::HashMap::new()
+    };
     let mut files = Vec::new();
 
     for line in result.stdout.lines() {
@@ -506,6 +653,10 @@ fn git_status_at(workspace: &Path) -> Result<GrokGitStatus, String> {
         deletions,
         files,
     })
+}
+
+fn git_status_at(workspace: &Path) -> Result<GrokGitStatus, String> {
+    git_status_at_with_stats(workspace, true)
 }
 
 fn repo_hash(repo_root: &Path) -> String {
@@ -667,11 +818,8 @@ fn materialize_head_file(
     relative: &str,
 ) -> Result<PathBuf, String> {
     let spec = format!("HEAD:{relative}");
-    let output = new_git_command(workspace)
-        .arg("show")
-        .arg(spec)
-        .output()
-        .map_err(|error| format!("无法读取 HEAD 文件，请确认已安装 Git: {error}"))?;
+    let args = vec!["show".to_string(), spec];
+    let output = execute_git_raw(workspace, &args)?;
     if !output.status.success() {
         let detail = String::from_utf8_lossy(&output.stderr).trim().to_string();
         return Err(if detail.is_empty() {
@@ -722,7 +870,7 @@ fn worktree_result(
     })
 }
 
-#[tauri::command]
+#[tauri::command(async)]
 pub fn grok_git_prepare_task(
     app: AppHandle,
     workspace: String,
@@ -867,11 +1015,14 @@ pub fn grok_git_prepare_task(
     )
 }
 
-#[tauri::command]
-pub fn grok_git_status(workspace: String) -> Result<GrokGitStatus, String> {
+#[tauri::command(async)]
+pub fn grok_git_status(
+    workspace: String,
+    include_stats: Option<bool>,
+) -> Result<GrokGitStatus, String> {
     let workspace = canonical_directory(&workspace)?;
-    match git_root(&workspace) {
-        Ok(_) => git_status_at(&workspace),
+    match git_status_at_with_stats(&workspace, include_stats.unwrap_or(false)) {
+        Ok(status) => Ok(status),
         Err(error) if is_not_git_repository_error(&error) || is_git_unavailable_error(&error) => {
             Ok(non_repository_status(&workspace))
         }
@@ -879,27 +1030,15 @@ pub fn grok_git_status(workspace: String) -> Result<GrokGitStatus, String> {
     }
 }
 
-#[tauri::command]
+#[tauri::command(async)]
 pub fn grok_git_diff(
     workspace: String,
     path: Option<String>,
     staged: bool,
+    include_status: Option<bool>,
 ) -> Result<GrokGitDiff, String> {
     let workspace = canonical_directory(&workspace)?;
     let relative = path.map(|value| relative_path(&value)).transpose()?;
-    if let Err(error) = git_root(&workspace) {
-        if is_not_git_repository_error(&error) || is_git_unavailable_error(&error) {
-            return Ok(GrokGitDiff {
-                workspace_path: workspace.to_string_lossy().to_string(),
-                path: relative,
-                staged,
-                patch: String::new(),
-                truncated: false,
-                files: Vec::new(),
-            });
-        }
-        return Err(error);
-    }
     let mut args = vec![
         "diff".to_string(),
         "--no-ext-diff".to_string(),
@@ -912,20 +1051,37 @@ pub fn grok_git_diff(
     if let Some(path) = relative.as_ref() {
         args.push(path.clone());
     }
-    let result = run_git(&workspace, &args)?;
+    let result = match run_git(&workspace, &args) {
+        Ok(result) => result,
+        Err(error) if is_not_git_repository_error(&error) || is_git_unavailable_error(&error) => {
+            return Ok(GrokGitDiff {
+                workspace_path: workspace.to_string_lossy().to_string(),
+                path: relative,
+                staged,
+                patch: String::new(),
+                truncated: false,
+                files: Vec::new(),
+            });
+        }
+        Err(error) => return Err(error),
+    };
     let (patch, truncated) = trim_output(result.stdout, MAX_DIFF_OUTPUT);
-    let status = git_status_at(&workspace)?;
+    let files = if include_status.unwrap_or(true) {
+        git_status_at(&workspace)?.files
+    } else {
+        Vec::new()
+    };
     Ok(GrokGitDiff {
         workspace_path: workspace.to_string_lossy().to_string(),
         path: relative,
         staged,
         patch,
         truncated,
-        files: status.files,
+        files,
     })
 }
 
-#[tauri::command]
+#[tauri::command(async)]
 pub fn grok_git_open_file(
     app: AppHandle,
     workspace: String,
@@ -945,7 +1101,7 @@ pub fn grok_git_open_file(
         .map_err(|error| format!("打开文件失败: {error}"))
 }
 
-#[tauri::command]
+#[tauri::command(async)]
 pub fn grok_git_reveal_file(app: AppHandle, workspace: String, path: String) -> Result<(), String> {
     let workspace = canonical_directory(&workspace)?;
     git_root(&workspace)?;
@@ -964,7 +1120,7 @@ pub fn grok_git_reveal_file(app: AppHandle, workspace: String, path: String) -> 
         .map_err(|error| format!("在查找器中显示文件失败: {error}"))
 }
 
-#[tauri::command]
+#[tauri::command(async)]
 pub fn grok_git_add_to_ignore(
     app: AppHandle,
     workspace: String,
@@ -1021,7 +1177,7 @@ pub fn grok_git_add_to_ignore(
     )
 }
 
-#[tauri::command]
+#[tauri::command(async)]
 pub fn grok_git_stage(
     app: AppHandle,
     workspace: String,
@@ -1059,7 +1215,7 @@ pub fn grok_git_stage(
     )
 }
 
-#[tauri::command]
+#[tauri::command(async)]
 pub fn grok_git_unstage(
     app: AppHandle,
     workspace: String,
@@ -1096,7 +1252,7 @@ pub fn grok_git_unstage(
     )
 }
 
-#[tauri::command]
+#[tauri::command(async)]
 pub fn grok_git_stash(
     app: AppHandle,
     workspace: String,
@@ -1125,7 +1281,7 @@ pub fn grok_git_stash(
     )
 }
 
-#[tauri::command]
+#[tauri::command(async)]
 pub fn grok_git_discard(
     app: AppHandle,
     workspace: String,
@@ -1197,7 +1353,7 @@ pub fn grok_git_discard(
     )
 }
 
-#[tauri::command]
+#[tauri::command(async)]
 pub fn grok_git_commit(
     app: AppHandle,
     workspace: String,
@@ -1243,7 +1399,7 @@ pub fn grok_git_commit(
     )
 }
 
-#[tauri::command]
+#[tauri::command(async)]
 pub fn grok_git_fetch(
     app: AppHandle,
     workspace: String,
@@ -1271,7 +1427,7 @@ pub fn grok_git_fetch(
     )
 }
 
-#[tauri::command]
+#[tauri::command(async)]
 pub fn grok_git_sync_base(
     app: AppHandle,
     workspace: String,
@@ -1343,7 +1499,7 @@ pub fn grok_git_sync_base(
     )
 }
 
-#[tauri::command]
+#[tauri::command(async)]
 pub fn grok_git_abort_operation(
     app: AppHandle,
     workspace: String,
@@ -1378,7 +1534,7 @@ pub fn grok_git_abort_operation(
     )
 }
 
-#[tauri::command]
+#[tauri::command(async)]
 pub fn grok_git_push(
     app: AppHandle,
     workspace: String,
@@ -1526,7 +1682,7 @@ fn parse_remotes(output: &str) -> Vec<GrokGitRemote> {
     remotes
 }
 
-#[tauri::command]
+#[tauri::command(async)]
 pub fn grok_git_remote_list(workspace: String) -> Result<Vec<GrokGitRemote>, String> {
     let workspace = canonical_directory(&workspace)?;
     git_root(&workspace)?;
@@ -1574,7 +1730,7 @@ fn parse_worktrees(output: &str) -> Vec<GrokGitWorktree> {
     result
 }
 
-#[tauri::command]
+#[tauri::command(async)]
 pub fn grok_git_worktree_list(workspace: String) -> Result<Vec<GrokGitWorktree>, String> {
     let workspace = canonical_directory(&workspace)?;
     git_root(&workspace)?;
@@ -1589,7 +1745,7 @@ pub fn grok_git_worktree_list(workspace: String) -> Result<Vec<GrokGitWorktree>,
     Ok(parse_worktrees(&result.stdout))
 }
 
-#[tauri::command]
+#[tauri::command(async)]
 pub fn grok_git_worktree_remove(
     app: AppHandle,
     workspace: String,
@@ -1653,7 +1809,7 @@ pub fn grok_git_worktree_remove(
     )
 }
 
-#[tauri::command]
+#[tauri::command(async)]
 pub fn grok_git_worktree_gc(
     app: AppHandle,
     workspace: String,
@@ -1685,7 +1841,7 @@ pub fn grok_git_worktree_gc(
     )
 }
 
-#[tauri::command]
+#[tauri::command(async)]
 pub fn grok_git_apply_worktree(
     app: AppHandle,
     source_workspace: String,
@@ -1773,7 +1929,7 @@ pub fn grok_git_apply_worktree(
     })
 }
 
-#[tauri::command]
+#[tauri::command(async)]
 pub fn grok_git_audit_list(
     app: AppHandle,
     workspace: Option<String>,
@@ -1805,8 +1961,25 @@ pub fn grok_git_audit_list(
 #[cfg(test)]
 mod tests {
     use super::{
-        is_git_unavailable_error, parse_remotes, parse_tracking, parse_worktrees, relative_path,
+        git_command_timeout, is_git_unavailable_error, parse_remotes, parse_tracking,
+        parse_worktrees, relative_path, LOCAL_GIT_TIMEOUT, LONG_GIT_TIMEOUT,
     };
+
+    #[test]
+    fn uses_short_timeouts_for_reads_and_long_timeouts_for_mutations() {
+        assert_eq!(
+            git_command_timeout(&["status".to_string(), "--porcelain=v1".to_string()]),
+            LOCAL_GIT_TIMEOUT
+        );
+        assert_eq!(
+            git_command_timeout(&["fetch".to_string(), "--all".to_string()]),
+            LONG_GIT_TIMEOUT
+        );
+        assert_eq!(
+            git_command_timeout(&["worktree".to_string(), "add".to_string()]),
+            LONG_GIT_TIMEOUT
+        );
+    }
 
     #[test]
     fn parses_branch_tracking_counts() {
@@ -1821,7 +1994,9 @@ mod tests {
         assert!(is_git_unavailable_error(
             "无法启动 git，请确认已安装 Git: program not found"
         ));
-        assert!(is_git_unavailable_error("系统找不到指定的文件。 (os error 2)"));
+        assert!(is_git_unavailable_error(
+            "系统找不到指定的文件。 (os error 2)"
+        ));
         assert!(!is_git_unavailable_error("fatal: not a git repository"));
     }
 

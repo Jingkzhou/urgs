@@ -233,23 +233,42 @@ const extractText = (update: Record<string, any>) =>
     || update?.delta
     || '';
 
+const MAX_TOOL_DETAIL_TEXT = 12_000;
+const MAX_TOOL_DETAIL_SOURCE_TEXT = 48_000;
+const MAX_TOOL_DETAIL_COLLECTION_ITEMS = 256;
+const GROK_EVENT_BATCH_INTERVAL_MS = 16;
+
 const decodeToolDetailValue = (value: unknown, depth = 0): unknown => {
     if (depth > 5 || value === undefined || value === null) return value;
+    if (typeof value === 'string') return value.slice(0, MAX_TOOL_DETAIL_SOURCE_TEXT);
     if (Array.isArray(value)) {
-        const isByteArray = value.length > 0
-            && value.every((item) => typeof item === 'number' && Number.isInteger(item) && item >= 0 && item <= 255);
+        const boundedItems = value.slice(0, MAX_TOOL_DETAIL_SOURCE_TEXT);
+        const isByteArray = boundedItems.length > 0
+            && typeof boundedItems[0] === 'number'
+            && boundedItems.every((item) => typeof item === 'number' && Number.isInteger(item) && item >= 0 && item <= 255);
         if (isByteArray) {
             try {
-                return new TextDecoder().decode(new Uint8Array(value));
+                const decoded = new TextDecoder().decode(new Uint8Array(boundedItems));
+                return value.length > boundedItems.length ? `${decoded}\n[工具输出已截断]` : decoded;
             } catch {
-                return value;
+                return boundedItems;
             }
         }
-        return value.map((item) => decodeToolDetailValue(item, depth + 1));
+        const decoded = value
+            .slice(0, MAX_TOOL_DETAIL_COLLECTION_ITEMS)
+            .map((item) => decodeToolDetailValue(item, depth + 1));
+        if (value.length > decoded.length) decoded.push(`[已省略 ${value.length - decoded.length} 项]`);
+        return decoded;
     }
     if (typeof value !== 'object') return value;
-    return Object.fromEntries(Object.entries(value as Record<string, unknown>)
+    const entries = Object.entries(value as Record<string, unknown>);
+    const decoded = Object.fromEntries(entries
+        .slice(0, MAX_TOOL_DETAIL_COLLECTION_ITEMS)
         .map(([key, item]) => [key, decodeToolDetailValue(item, depth + 1)]));
+    if (entries.length > MAX_TOOL_DETAIL_COLLECTION_ITEMS) {
+        decoded._truncated = `已省略 ${entries.length - MAX_TOOL_DETAIL_COLLECTION_ITEMS} 个字段`;
+    }
+    return decoded;
 };
 
 const formatToolDetail = (value: unknown) => {
@@ -263,7 +282,7 @@ const formatToolDetail = (value: unknown) => {
                 return record?.text || record?.content?.text || JSON.stringify(item);
             }).join('\n')
             : JSON.stringify(normalized, null, 2) || '';
-    return redactRuntimeText(text).slice(0, 12_000);
+    return redactRuntimeText(text.slice(0, MAX_TOOL_DETAIL_SOURCE_TEXT)).slice(0, MAX_TOOL_DETAIL_TEXT);
 };
 
 const formatDisplayToolTitle = (value: unknown, fallback = '本地工具调用') => {
@@ -705,6 +724,9 @@ export const useArkDesktopRuntime = () => {
     const snapshotRef = useRef(snapshot);
     const capabilityRequestIdRef = useRef(0);
     const gitStatusTaskStateRef = useRef(new Map<string, ArkDesktopTaskStatus>());
+    const gitStatusRequestsRef = useRef(new Map<string, Promise<GrokGitStatus>>());
+    const pendingGrokEventsRef = useRef<GrokBridgeEvent[]>([]);
+    const grokEventTimerRef = useRef<number | null>(null);
 
     useEffect(() => {
         snapshotRef.current = snapshot;
@@ -1710,6 +1732,16 @@ export const useArkDesktopRuntime = () => {
         }
     }, [finishForegroundPrompt, refreshRuntimeStatus, updateTask]);
 
+    const enqueueGrokEvent = useCallback((event: GrokBridgeEvent) => {
+        pendingGrokEventsRef.current.push(event);
+        if (grokEventTimerRef.current !== null) return;
+        grokEventTimerRef.current = window.setTimeout(() => {
+            grokEventTimerRef.current = null;
+            const events = pendingGrokEventsRef.current.splice(0);
+            events.forEach(handleGrokEvent);
+        }, GROK_EVENT_BATCH_INTERVAL_MS);
+    }, [handleGrokEvent]);
+
     useEffect(() => {
         if (!isDesktopRuntime()) return;
         void refreshRuntimeStatus();
@@ -1718,7 +1750,7 @@ export const useArkDesktopRuntime = () => {
         });
         let unlisten: (() => void) | undefined;
         let disposed = false;
-        void subscribeGrokEvents(handleGrokEvent).then((dispose) => {
+        void subscribeGrokEvents(enqueueGrokEvent).then((dispose) => {
             if (disposed) {
                 dispose();
             } else {
@@ -1732,8 +1764,13 @@ export const useArkDesktopRuntime = () => {
         return () => {
             disposed = true;
             unlisten?.();
+            if (grokEventTimerRef.current !== null) {
+                window.clearTimeout(grokEventTimerRef.current);
+                grokEventTimerRef.current = null;
+            }
+            pendingGrokEventsRef.current = [];
         };
-    }, [handleGrokEvent, refreshModelProviders, refreshRuntimeStatus]);
+    }, [enqueueGrokEvent, refreshModelProviders, refreshRuntimeStatus]);
 
     useEffect(() => {
         void refreshCapabilities();
@@ -2044,22 +2081,33 @@ export const useArkDesktopRuntime = () => {
         return status;
     }, [updateTask]);
 
-    const refreshTaskGitStatus = useCallback(async (taskId: string) => {
+    const refreshTaskGitStatus = useCallback(async (taskId: string, includeStats = false) => {
         const task = taskForGit(taskId);
+        const requestKey = `${task.workspace}\u0000${includeStats ? 'stats' : 'fast'}`;
+        let request = gitStatusRequestsRef.current.get(requestKey);
+        if (!request) {
+            request = getGrokGitStatus(task.workspace, includeStats);
+            gitStatusRequestsRef.current.set(requestKey, request);
+            void request.finally(() => {
+                if (gitStatusRequestsRef.current.get(requestKey) === request) {
+                    gitStatusRequestsRef.current.delete(requestKey);
+                }
+            }).catch(() => undefined);
+        }
         try {
-            const status = await getGrokGitStatus(task.workspace);
+            const status = await request;
             return updateTaskGitStatus(taskId, status);
         } catch (error) {
             const fallbackWorkspace = taskFallbackWorkspace(task);
             if (!fallbackWorkspace || !isWorkspacePathUnavailable(error)) throw error;
-            const status = await getGrokGitStatus(fallbackWorkspace);
+            const status = await getGrokGitStatus(fallbackWorkspace, includeStats);
             return updateTaskGitStatus(taskId, status, true);
         }
     }, [taskForGit, updateTaskGitStatus]);
 
     const loadTaskGitDiff = useCallback(async (taskId: string, path?: string, staged = false) => {
         const task = taskForGit(taskId);
-        return getGrokGitDiff(task.workspace, path, staged);
+        return getGrokGitDiff(task.workspace, path, staged, false);
     }, [taskForGit]);
 
     const openTaskGitFile = useCallback((taskId: string, path: string, revision?: 'HEAD') => {
@@ -2235,20 +2283,19 @@ export const useArkDesktopRuntime = () => {
 
     useEffect(() => {
         if (!isDesktopRuntime()) return;
-        const taskIds = snapshotRef.current.tasks
-            .slice(0, 20)
-            .map((task) => task.id);
-        void Promise.allSettled(taskIds.map((taskId) => refreshTaskGitStatus(taskId)));
-    }, [refreshTaskGitStatus]);
-
-    useEffect(() => {
-        if (!isDesktopRuntime()) return;
         const refreshIds: string[] = [];
+        const existingTaskIds = new Set<string>();
         snapshot.tasks.forEach((task) => {
-            if (gitStatusTaskStateRef.current.get(task.id) === task.status) return;
+            existingTaskIds.add(task.id);
+            const previousStatus = gitStatusTaskStateRef.current.get(task.id);
             gitStatusTaskStateRef.current.set(task.id, task.status);
-            refreshIds.push(task.id);
+            if (previousStatus !== undefined && previousStatus !== task.status) {
+                refreshIds.push(task.id);
+            }
         });
+        for (const taskId of gitStatusTaskStateRef.current.keys()) {
+            if (!existingTaskIds.has(taskId)) gitStatusTaskStateRef.current.delete(taskId);
+        }
         void Promise.allSettled(refreshIds.map((taskId) => refreshTaskGitStatus(taskId)));
     }, [refreshTaskGitStatus, snapshot.tasks]);
 

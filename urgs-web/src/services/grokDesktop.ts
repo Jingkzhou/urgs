@@ -429,6 +429,29 @@ const invokeGrok = async <T>(command: string, args?: Record<string, unknown>) =>
     return invoke<T>(command, args);
 };
 
+const MAX_CONCURRENT_GIT_COMMANDS = 2;
+let activeGitCommands = 0;
+const pendingGitCommands: Array<() => void> = [];
+
+const drainGitCommandQueue = () => {
+    while (activeGitCommands < MAX_CONCURRENT_GIT_COMMANDS && pendingGitCommands.length > 0) {
+        pendingGitCommands.shift()?.();
+    }
+};
+
+const invokeGrokGit = <T>(command: string, args?: Record<string, unknown>) => new Promise<T>((resolve, reject) => {
+    pendingGitCommands.push(() => {
+        activeGitCommands += 1;
+        void invokeGrok<T>(command, args)
+            .then(resolve, reject)
+            .finally(() => {
+                activeGitCommands -= 1;
+                drainGitCommandQueue();
+            });
+    });
+    drainGitCommandQueue();
+});
+
 export const getGrokRuntimeStatus = () => invokeGrok<GrokRuntimeStatus>('grok_runtime_status');
 
 export const listGrokAvailableCommands = (workspace: string) =>
@@ -600,7 +623,7 @@ export const prepareGrokGitTask = (
     mode: GrokGitMode,
     worktreeName?: string,
     worktreeRef?: string,
-) => invokeGrok<GrokGitTaskWorkspace>('grok_git_prepare_task', {
+) => invokeGrokGit<GrokGitTaskWorkspace>('grok_git_prepare_task', {
     workspace,
     taskId,
     mode,
@@ -608,29 +631,34 @@ export const prepareGrokGitTask = (
     worktreeRef: worktreeRef?.trim() || null,
 });
 
-export const getGrokGitStatus = (workspace: string) =>
-    invokeGrok<GrokGitStatus>('grok_git_status', { workspace });
+export const getGrokGitStatus = (workspace: string, includeStats = false) =>
+    invokeGrokGit<GrokGitStatus>('grok_git_status', { workspace, includeStats });
 
-export const getGrokGitDiff = (workspace: string, path?: string, staged = false) =>
-    invokeGrok<GrokGitDiff>('grok_git_diff', { workspace, path: path || null, staged });
+export const getGrokGitDiff = (workspace: string, path?: string, staged = false, includeStatus = true) =>
+    invokeGrokGit<GrokGitDiff>('grok_git_diff', {
+        workspace,
+        path: path || null,
+        staged,
+        includeStatus,
+    });
 
 export const openGrokGitFile = (workspace: string, path: string, revision?: 'HEAD') =>
-    invokeGrok<void>('grok_git_open_file', { workspace, path, revision: revision || null });
+    invokeGrokGit<void>('grok_git_open_file', { workspace, path, revision: revision || null });
 
 export const revealGrokGitFile = (workspace: string, path: string) =>
-    invokeGrok<void>('grok_git_reveal_file', { workspace, path });
+    invokeGrokGit<void>('grok_git_reveal_file', { workspace, path });
 
 export const addGrokGitToIgnore = (workspace: string, path: string, taskId?: string) =>
-    invokeGrok<GrokGitMutationResult>('grok_git_add_to_ignore', { workspace, path, taskId: taskId || null });
+    invokeGrokGit<GrokGitMutationResult>('grok_git_add_to_ignore', { workspace, path, taskId: taskId || null });
 
 export const stageGrokGit = (workspace: string, paths: string[] = [], all = false, taskId?: string) =>
-    invokeGrok<GrokGitMutationResult>('grok_git_stage', { workspace, paths, all, taskId: taskId || null });
+    invokeGrokGit<GrokGitMutationResult>('grok_git_stage', { workspace, paths, all, taskId: taskId || null });
 
 export const unstageGrokGit = (workspace: string, paths: string[] = [], all = false, taskId?: string) =>
-    invokeGrok<GrokGitMutationResult>('grok_git_unstage', { workspace, paths, all, taskId: taskId || null });
+    invokeGrokGit<GrokGitMutationResult>('grok_git_unstage', { workspace, paths, all, taskId: taskId || null });
 
 export const stashGrokGit = (workspace: string, message?: string, includeUntracked = false, taskId?: string) =>
-    invokeGrok<GrokGitMutationResult>('grok_git_stash', {
+    invokeGrokGit<GrokGitMutationResult>('grok_git_stash', {
         workspace,
         message: message?.trim() || null,
         includeUntracked,
@@ -643,7 +671,7 @@ export const discardGrokGit = (
     includeUntracked: boolean,
     confirmed: boolean,
     taskId?: string,
-) => invokeGrok<GrokGitMutationResult>('grok_git_discard', {
+) => invokeGrokGit<GrokGitMutationResult>('grok_git_discard', {
     workspace,
     paths,
     includeUntracked,
@@ -655,7 +683,7 @@ export const commitGrokGit = (
     workspace: string,
     message: string,
     options: { amend?: boolean; signoff?: boolean; stageAll?: boolean; expectedBranch?: string; taskId?: string } = {},
-) => invokeGrok<GrokGitMutationResult>('grok_git_commit', {
+) => invokeGrokGit<GrokGitMutationResult>('grok_git_commit', {
     workspace,
     message,
     amend: Boolean(options.amend),
@@ -666,13 +694,13 @@ export const commitGrokGit = (
 });
 
 export const fetchGrokGit = (workspace: string, taskId?: string) =>
-    invokeGrok<GrokGitMutationResult>('grok_git_fetch', { workspace, taskId: taskId || null });
+    invokeGrokGit<GrokGitMutationResult>('grok_git_fetch', { workspace, taskId: taskId || null });
 
 export const syncGrokGitBase = (
     workspace: string,
     baseRef: string,
     options: { expectedBranch?: string; taskId?: string } = {},
-) => invokeGrok<GrokGitMutationResult>('grok_git_sync_base', {
+) => invokeGrokGit<GrokGitMutationResult>('grok_git_sync_base', {
     workspace,
     baseRef,
     expectedBranch: options.expectedBranch || null,
@@ -684,7 +712,7 @@ export const abortGrokGitOperation = (
     operation: 'rebase' | 'merge',
     confirmed: boolean,
     taskId?: string,
-) => invokeGrok<GrokGitMutationResult>('grok_git_abort_operation', {
+) => invokeGrokGit<GrokGitMutationResult>('grok_git_abort_operation', {
     workspace,
     operation,
     confirmed,
@@ -694,7 +722,7 @@ export const abortGrokGitOperation = (
 export const pushGrokGit = (
     workspace: string,
     options: { setUpstream?: boolean; expectedBranch?: string; taskId?: string } = {},
-) => invokeGrok<GrokGitMutationResult>('grok_git_push', {
+) => invokeGrokGit<GrokGitMutationResult>('grok_git_push', {
     workspace,
     setUpstream: Boolean(options.setUpstream),
     expectedBranch: options.expectedBranch || null,
@@ -702,10 +730,10 @@ export const pushGrokGit = (
 });
 
 export const listGrokGitRemotes = (workspace: string) =>
-    invokeGrok<GrokGitRemote[]>('grok_git_remote_list', { workspace });
+    invokeGrokGit<GrokGitRemote[]>('grok_git_remote_list', { workspace });
 
 export const listGrokGitWorktrees = (workspace: string) =>
-    invokeGrok<GrokGitWorktree[]>('grok_git_worktree_list', { workspace });
+    invokeGrokGit<GrokGitWorktree[]>('grok_git_worktree_list', { workspace });
 
 export const removeGrokGitWorktree = (
     workspace: string,
@@ -713,7 +741,7 @@ export const removeGrokGitWorktree = (
     force: boolean,
     confirmed: boolean,
     taskId?: string,
-) => invokeGrok<GrokGitMutationResult>('grok_git_worktree_remove', {
+) => invokeGrokGit<GrokGitMutationResult>('grok_git_worktree_remove', {
     workspace,
     worktreePath,
     force,
@@ -722,13 +750,13 @@ export const removeGrokGitWorktree = (
 });
 
 export const gcGrokGitWorktrees = (workspace: string, taskId?: string) =>
-    invokeGrok<GrokGitMutationResult>('grok_git_worktree_gc', { workspace, taskId: taskId || null });
+    invokeGrokGit<GrokGitMutationResult>('grok_git_worktree_gc', { workspace, taskId: taskId || null });
 
 export const applyGrokGitWorktree = (
     sourceWorkspace: string,
     targetWorkspace: string,
     options: { expectedSourceBranch?: string; expectedTargetBranch?: string; taskId?: string } = {},
-) => invokeGrok<GrokGitApplyResult>('grok_git_apply_worktree', {
+) => invokeGrokGit<GrokGitApplyResult>('grok_git_apply_worktree', {
     sourceWorkspace,
     targetWorkspace,
     expectedSourceBranch: options.expectedSourceBranch || null,
@@ -737,7 +765,7 @@ export const applyGrokGitWorktree = (
 });
 
 export const listGrokGitAudit = (workspace?: string) =>
-    invokeGrok<GrokGitAuditEntry[]>('grok_git_audit_list', { workspace: workspace || null });
+    invokeGrokGit<GrokGitAuditEntry[]>('grok_git_audit_list', { workspace: workspace || null });
 
 export const openGrokWorkspace = async (workspace: string) => {
     assertDesktopRuntime();

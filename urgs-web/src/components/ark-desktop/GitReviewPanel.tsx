@@ -156,7 +156,7 @@ const GitReviewPanel: React.FC<GitReviewPanelProps> = ({ task, runtime, onClose 
         setError('');
         try {
             const [nextStatus, nextWorktrees, nextAudit, nextRemotes] = await Promise.all([
-                refreshTaskGitStatus(task.id),
+                refreshTaskGitStatus(task.id, true),
                 listTaskGitWorktrees(task.id).catch(() => []),
                 listTaskGitAudit(task.id).catch(() => []),
                 listTaskGitRemotes(task.id).catch(() => []),

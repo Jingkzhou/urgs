@@ -15,6 +15,15 @@ const settledActivityPattern = /已完成|完成|成功|失败|取消|不可用|
 const MAX_PERSISTED_TEXT = 4_000;
 const MAX_PERSISTED_DIFF_HUNKS = 6;
 const MAX_PERSISTED_DIFF_LINES = 32;
+const MAX_PERSISTED_SNAPSHOT_BYTES = 4_000_000;
+const MAX_FALLBACK_MESSAGES_PER_TASK = 20;
+const MAX_FALLBACK_TOOLS_PER_TASK = 50;
+const MAX_FALLBACK_MESSAGE_TEXT = 1_000;
+const SNAPSHOT_SAVE_DEBOUNCE_MS = 500;
+
+let pendingSnapshot: ArkDesktopSnapshot | null = null;
+let snapshotSaveTimer: number | null = null;
+let pageHideListenerInstalled = false;
 
 const clone = <T>(value: T): T => JSON.parse(JSON.stringify(value));
 
@@ -208,7 +217,7 @@ export const loadArkDesktopSnapshot = (): ArkDesktopSnapshot => {
     }
 };
 
-export const saveArkDesktopSnapshot = (snapshot: ArkDesktopSnapshot) => {
+const persistArkDesktopSnapshot = (snapshot: ArkDesktopSnapshot) => {
     if (typeof window === 'undefined') return;
     const compact = (value: string | undefined) => value?.slice(-MAX_PERSISTED_TEXT);
     const compactTasks = snapshot.tasks.slice(0, MAX_TASK_HISTORY).map((task) => ({
@@ -232,7 +241,23 @@ export const saveArkDesktopSnapshot = (snapshot: ArkDesktopSnapshot) => {
             } : {}),
         })),
     }));
-    const payload = JSON.stringify({ ...snapshot, tasks: compactTasks });
+    const compactPayload = JSON.stringify({ ...snapshot, tasks: compactTasks });
+    const payload = new TextEncoder().encode(compactPayload).length <= MAX_PERSISTED_SNAPSHOT_BYTES
+        ? compactPayload
+        : JSON.stringify({
+            ...snapshot,
+            tasks: compactTasks.map((task) => ({
+                ...task,
+                prompt: task.prompt.slice(-MAX_PERSISTED_TEXT),
+                messages: task.messages.slice(-MAX_FALLBACK_MESSAGES_PER_TASK).map((message) => ({
+                    ...message,
+                    content: message.content.slice(-MAX_FALLBACK_MESSAGE_TEXT),
+                })),
+                tools: task.tools
+                    .slice(-MAX_FALLBACK_TOOLS_PER_TASK)
+                    .map(({ fileChanges: _fileChanges, input: _input, output: _output, ...tool }) => tool),
+            })),
+        });
     try {
         localStorage.setItem(STORAGE_KEY, payload);
     } catch (error) {
@@ -241,9 +266,13 @@ export const saveArkDesktopSnapshot = (snapshot: ArkDesktopSnapshot) => {
         try {
             localStorage.setItem(STORAGE_KEY, JSON.stringify({
                 ...snapshot,
-                tasks: compactTasks.map((task) => ({
+                tasks: compactTasks.slice(0, 20).map((task) => ({
                     ...task,
-                    tools: task.tools.map(({ fileChanges: _fileChanges, input: _input, output: _output, ...tool }) => tool),
+                    messages: task.messages.slice(-10).map((message) => ({
+                        ...message,
+                        content: message.content.slice(-500),
+                    })),
+                    tools: task.tools.slice(-20).map(({ fileChanges: _fileChanges, input: _input, output: _output, ...tool }) => tool),
                 })),
             }));
         } catch (fallbackError) {
@@ -252,8 +281,33 @@ export const saveArkDesktopSnapshot = (snapshot: ArkDesktopSnapshot) => {
     }
 };
 
+export const flushArkDesktopSnapshot = () => {
+    if (typeof window === 'undefined' || !pendingSnapshot) return;
+    if (snapshotSaveTimer !== null) {
+        window.clearTimeout(snapshotSaveTimer);
+        snapshotSaveTimer = null;
+    }
+    const snapshot = pendingSnapshot;
+    pendingSnapshot = null;
+    persistArkDesktopSnapshot(snapshot);
+};
+
+export const saveArkDesktopSnapshot = (snapshot: ArkDesktopSnapshot) => {
+    if (typeof window === 'undefined') return;
+    pendingSnapshot = snapshot;
+    if (!pageHideListenerInstalled) {
+        window.addEventListener('pagehide', flushArkDesktopSnapshot);
+        pageHideListenerInstalled = true;
+    }
+    if (snapshotSaveTimer !== null) window.clearTimeout(snapshotSaveTimer);
+    snapshotSaveTimer = window.setTimeout(flushArkDesktopSnapshot, SNAPSHOT_SAVE_DEBOUNCE_MS);
+};
+
 export const resetArkDesktopSnapshot = () => {
     if (typeof window !== 'undefined') {
+        if (snapshotSaveTimer !== null) window.clearTimeout(snapshotSaveTimer);
+        snapshotSaveTimer = null;
+        pendingSnapshot = null;
         localStorage.removeItem(STORAGE_KEY);
         LEGACY_STORAGE_KEYS.forEach((key) => localStorage.removeItem(key));
     }
