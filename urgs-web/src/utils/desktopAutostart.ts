@@ -1,11 +1,7 @@
 import { isDesktopRuntime } from '@/config';
+import { invokeDesktop } from '@/services/grokDesktop';
 
 const getAutostartApi = async () => import('@tauri-apps/plugin-autostart');
-
-const getInvoke = async () => {
-    const { invoke } = await import('@tauri-apps/api/core');
-    return invoke;
-};
 
 export const initializeDesktopAutostart = async () => {
     if (!isDesktopRuntime()) {
@@ -13,8 +9,8 @@ export const initializeDesktopAutostart = async () => {
     }
 
     try {
-        const [autostart, invoke] = await Promise.all([getAutostartApi(), getInvoke()]);
-        const preference = await invoke<boolean | null>('load_desktop_auto_start_enabled');
+        const autostart = await getAutostartApi();
+        const preference = await invokeDesktop<boolean | null>('load_desktop_auto_start_enabled');
         const enabled = preference ?? true;
         const registered = await autostart.isEnabled();
 
@@ -25,7 +21,7 @@ export const initializeDesktopAutostart = async () => {
             await autostart.disable();
         }
         if (preference === null) {
-            await invoke('save_desktop_auto_start_enabled', { enabled });
+            await invokeDesktop('save_desktop_auto_start_enabled', { enabled });
         }
 
         return enabled;
@@ -49,12 +45,12 @@ export const setDesktopAutostartEnabled = async (enabled: boolean) => {
         throw new Error('当前不是桌面客户端环境');
     }
 
-    const [autostart, invoke] = await Promise.all([getAutostartApi(), getInvoke()]);
+    const autostart = await getAutostartApi();
     if (enabled) {
         await autostart.enable();
     } else {
         await autostart.disable();
     }
-    await invoke('save_desktop_auto_start_enabled', { enabled });
+    await invokeDesktop('save_desktop_auto_start_enabled', { enabled });
     return autostart.isEnabled();
 };

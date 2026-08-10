@@ -1,11 +1,10 @@
+mod desktop_log;
 mod grok_git;
 mod grok_runtime;
 
 use serde::{Deserialize, Serialize};
 use std::fs;
-use std::io::Write;
 use std::path::PathBuf;
-use std::time::{SystemTime, UNIX_EPOCH};
 use tauri::{
     menu::{Menu, MenuItem},
     tray::{MouseButton, MouseButtonState, TrayIconBuilder, TrayIconEvent},
@@ -17,31 +16,10 @@ const CONFIG_FILE_NAME: &str = "desktop-config.json";
 const PREFERENCES_FILE_NAME: &str = "desktop-preferences.json";
 const SHOW_MAIN_WINDOW_MENU_ID: &str = "show-main-window";
 const QUIT_APPLICATION_MENU_ID: &str = "quit-application";
-const STARTUP_LOG_FILE_NAME: &str = "startup.log";
 const SPLASH_WINDOW_LABEL: &str = "startup-splash";
 
 fn write_startup_log(message: &str) {
-    let Ok(local_app_data) = std::env::var("LOCALAPPDATA") else {
-        return;
-    };
-    let path = PathBuf::from(local_app_data)
-        .join("URGS")
-        .join("logs")
-        .join(STARTUP_LOG_FILE_NAME);
-    let Some(parent) = path.parent() else {
-        return;
-    };
-    if fs::create_dir_all(parent).is_err() {
-        return;
-    }
-
-    let timestamp = SystemTime::now()
-        .duration_since(UNIX_EPOCH)
-        .map(|duration| duration.as_secs())
-        .unwrap_or_default();
-    if let Ok(mut file) = fs::OpenOptions::new().create(true).append(true).open(path) {
-        let _ = writeln!(file, "[{timestamp}] {message}");
-    }
+    desktop_log::info("startup", message);
 }
 
 fn show_main_window(app: &AppHandle) {
@@ -207,6 +185,7 @@ fn save_desktop_preferences(
 
 #[tauri::command]
 fn complete_desktop_startup(app: AppHandle) -> Result<(), String> {
+    desktop_log::info("window", "Completing desktop startup.");
     if let Some(splash) = app.get_webview_window(SPLASH_WINDOW_LABEL) {
         splash
             .close()
@@ -219,9 +198,15 @@ fn complete_desktop_startup(app: AppHandle) -> Result<(), String> {
     main_window
         .show()
         .map_err(|error| format!("显示主窗口失败: {error}"))?;
-    main_window
+    let result = main_window
         .set_focus()
-        .map_err(|error| format!("聚焦主窗口失败: {error}"))
+        .map_err(|error| format!("聚焦主窗口失败: {error}"));
+    if let Err(error) = &result {
+        desktop_log::error("window", &format!("Desktop startup focus failed: {error}"));
+    } else {
+        desktop_log::info("window", "Desktop startup completed.");
+    }
+    result
 }
 
 #[tauri::command]
@@ -234,7 +219,45 @@ fn save_desktop_auto_start_enabled(app: AppHandle, enabled: bool) -> Result<bool
     let mut preferences = load_desktop_preferences(&app)?;
     preferences.auto_start_enabled = Some(enabled);
     save_desktop_preferences(&app, &preferences)?;
+    desktop_log::info(
+        "preferences",
+        &format!("Auto-start preference changed: enabled={enabled}"),
+    );
     Ok(enabled)
+}
+
+#[tauri::command]
+fn desktop_log_read(
+    app: AppHandle,
+    max_lines: Option<usize>,
+) -> Result<desktop_log::DesktopLogSnapshot, String> {
+    desktop_log::read_tail(&app, max_lines)
+}
+
+#[derive(Debug, Deserialize)]
+#[serde(rename_all = "camelCase")]
+struct DesktopLogWriteRequest {
+    level: String,
+    component: String,
+    message: String,
+}
+
+#[tauri::command]
+fn desktop_log_write(request: DesktopLogWriteRequest) -> Result<(), String> {
+    let component = request.component.trim();
+    if component.is_empty() || component.len() > 80 {
+        return Err("客户端日志组件名无效".to_string());
+    }
+    let level = match request.level.trim().to_ascii_uppercase().as_str() {
+        "DEBUG" => "DEBUG",
+        "INFO" => "INFO",
+        "WARN" => "WARN",
+        "ERROR" => "ERROR",
+        _ => return Err("客户端日志级别无效".to_string()),
+    };
+    let message = request.message.chars().take(16_000).collect::<String>();
+    desktop_log::log(level, component, &message);
+    Ok(())
 }
 
 #[cfg_attr(mobile, tauri::mobile_entry_point)]
@@ -262,6 +285,8 @@ pub fn run() {
             save_desktop_runtime_config,
             load_desktop_auto_start_enabled,
             save_desktop_auto_start_enabled,
+            desktop_log_read,
+            desktop_log_write,
             complete_desktop_startup,
             grok_runtime::grok_runtime_status,
             grok_runtime::grok_available_commands,
@@ -342,6 +367,9 @@ pub fn run() {
             grok_git::grok_git_audit_list
         ])
         .setup(|app| {
+            if let Err(error) = desktop_log::configure(app.handle()) {
+                write_startup_log(&format!("Desktop log initialization failed: {error}"));
+            }
             write_startup_log("Tauri setup started.");
             WebviewWindowBuilder::new(
                 app,
@@ -372,10 +400,12 @@ pub fn run() {
                     WindowEvent::CloseRequested { .. } | WindowEvent::Destroyed
                 )
             {
+                desktop_log::info("window", "Grok task center window closed.");
                 let _ = window.state::<grok_runtime::TerminalState>().close_all();
             }
             if window.label() == "main" {
                 if let WindowEvent::CloseRequested { api, .. } = event {
+                    desktop_log::info("window", "Main window close requested; hiding instead.");
                     api.prevent_close();
                     let _ = window.hide();
                 }

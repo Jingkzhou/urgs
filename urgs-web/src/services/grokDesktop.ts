@@ -152,6 +152,21 @@ export interface GrokRuntimeDiagnostics {
     stderr: string;
 }
 
+export interface DesktopLogSnapshot {
+    path: string;
+    lines: string[];
+}
+
+export type DesktopLogLevel = 'DEBUG' | 'INFO' | 'WARN' | 'ERROR';
+
+export interface DesktopLogContext {
+    taskId?: string | number | null;
+    sessionId?: string | number | null;
+    requestId?: string | number | null;
+    bridgeRequestId?: string | number | null;
+    processId?: string | number | null;
+}
+
 export interface GrokAcpOptions {
     reasoningEffort?: string;
     permissionMode?: string;
@@ -423,11 +438,106 @@ const assertDesktopRuntime = () => {
     }
 };
 
-const invokeGrok = async <T>(command: string, args?: Record<string, unknown>) => {
-    assertDesktopRuntime();
-    const { invoke } = await import('@tauri-apps/api/core');
-    return invoke<T>(command, args);
+let desktopInvokeSequence = 0;
+
+const createDesktopRequestId = () => {
+    desktopInvokeSequence += 1;
+    if (typeof crypto !== 'undefined' && typeof crypto.randomUUID === 'function') {
+        return crypto.randomUUID();
+    }
+    return `desktop-${Date.now().toString(36)}-${desktopInvokeSequence.toString(36)}`;
 };
+
+const readLogContextValue = (value: unknown) => {
+    if (typeof value !== 'string' && typeof value !== 'number') return undefined;
+    const normalized = String(value).trim();
+    return normalized ? normalized.slice(0, 160) : undefined;
+};
+
+const contextFromInvokeArgs = (args?: Record<string, unknown>): DesktopLogContext => ({
+    taskId: readLogContextValue(args?.taskId),
+    sessionId: readLogContextValue(args?.sessionId),
+    requestId: readLogContextValue(args?.requestId),
+    processId: readLogContextValue(args?.processId),
+});
+
+const formatLogContext = (context: DesktopLogContext) => Object.entries({
+    bridge_request_id: context.bridgeRequestId,
+    request_id: context.requestId,
+    task_id: context.taskId,
+    session_id: context.sessionId,
+    process_id: context.processId,
+})
+    .map(([key, value]) => [key, readLogContextValue(value)] as const)
+    .filter((entry): entry is readonly [string, string] => Boolean(entry[1]))
+    .map(([key, value]) => `${key}=${value}`)
+    .join(' ');
+
+const redactFrontendLogText = (value: string) => value
+    .replace(/\bBearer\s+[^\s,;]+/gi, 'Bearer [REDACTED]')
+    .replace(/((?:api[_-]?key|access[_-]?token|authorization|x-api-key)\s*[:=]\s*["']?)[^,\s}"']+/gi, '$1[REDACTED]');
+
+const truncateFrontendLogText = (value: string, maxLength = 4_000) => value.length > maxLength
+    ? `${value.slice(0, maxLength)}...`
+    : value;
+
+export const describeDesktopError = (error: unknown, includeStack = false) => {
+    if (error instanceof Error) {
+        const stack = includeStack && error.stack && error.stack !== error.message
+            ? ` stack=${error.stack.split('\n').slice(0, 8).join(' | ')}`
+            : '';
+        return truncateFrontendLogText(`${error.name}: ${error.message}${stack}`);
+    }
+    if (typeof error === 'string') return truncateFrontendLogText(error);
+    return truncateFrontendLogText(Object.prototype.toString.call(error));
+};
+
+export const writeDesktopLog = async (
+    level: DesktopLogLevel,
+    component: string,
+    message: string,
+    context: DesktopLogContext = {},
+) => {
+    if (!isDesktopRuntime()) return;
+    const contextText = formatLogContext(context);
+    const safeMessage = redactFrontendLogText(truncateFrontendLogText(
+        contextText ? `${contextText} ${message}` : message,
+    ));
+    try {
+        const { invoke } = await import('@tauri-apps/api/core');
+        await invoke('desktop_log_write', { level, component, message: safeMessage });
+    } catch {
+        // 日志写入不能反过来制造未处理异常，原始错误仍由调用方继续处理。
+    }
+};
+
+export const invokeDesktop = async <T>(
+    command: string,
+    args?: Record<string, unknown>,
+    logContext: DesktopLogContext = {},
+) => {
+    const context: DesktopLogContext = {
+        ...contextFromInvokeArgs(args),
+        ...logContext,
+        bridgeRequestId: createDesktopRequestId(),
+    };
+    const startedAt = performance.now();
+    try {
+        assertDesktopRuntime();
+        const { invoke } = await import('@tauri-apps/api/core');
+        return await invoke<T>(command, args);
+    } catch (error) {
+        await writeDesktopLog(
+            'ERROR',
+            'web.tauri.invoke',
+            `command=${command} elapsed_ms=${Math.round(performance.now() - startedAt)} error=${describeDesktopError(error)}`,
+            context,
+        );
+        throw error;
+    }
+};
+
+const invokeGrok = invokeDesktop;
 
 type GrokGitCommandPriority = 'normal' | 'high';
 
@@ -594,6 +704,9 @@ export const flushGrokMemory = (sessionId: string) =>
 
 export const getGrokRuntimeDiagnostics = () =>
     invokeGrok<GrokRuntimeDiagnostics[]>('grok_runtime_diagnostics');
+
+export const readDesktopLog = (maxLines = 200) =>
+    invokeGrok<DesktopLogSnapshot>('desktop_log_read', { maxLines });
 
 export const prepareGrokRuntime = (workspace: string, model: string, options?: GrokAcpOptions, rules?: string) =>
     invokeGrok<void>('grok_runtime_prepare', { workspace, model, options: options || null, rules: rules || null });
@@ -1089,8 +1202,13 @@ export const deleteGrokModelProvider = (providerId: string) =>
 export const generateLlmText = (input: LlmTextGenerationInput) =>
     invokeGrok<LlmTextGenerationResult>('llm_generate_text', { input });
 
-export const createGrokSession = (workspace: string, rules?: string, model?: string, options?: GrokAcpOptions) =>
-    invokeGrok<GrokSession>('grok_create_session', { workspace, rules: rules || null, model: model || null, options: options || null });
+export const createGrokSession = (
+    workspace: string,
+    rules?: string,
+    model?: string,
+    options?: GrokAcpOptions,
+    logContext?: DesktopLogContext,
+) => invokeGrok<GrokSession>('grok_create_session', { workspace, rules: rules || null, model: model || null, options: options || null }, logContext);
 
 export const loadGrokSession = (
     sessionId: string,
@@ -1099,6 +1217,7 @@ export const loadGrokSession = (
     model?: string,
     options?: GrokAcpOptions,
     attachMode: GrokSessionAttachMode = 'load',
+    logContext?: DesktopLogContext,
 ) => invokeGrok<GrokSession>('grok_load_session', {
     sessionId,
     workspace,
@@ -1106,7 +1225,7 @@ export const loadGrokSession = (
     model: model || null,
     options: options || null,
     attachMode,
-});
+}, logContext);
 
 export const sendGrokPrompt = (
     sessionId: string,
@@ -1114,6 +1233,7 @@ export const sendGrokPrompt = (
     attachments: string[] = [],
     attachmentGrants: string[] = [],
     queued = false,
+    logContext?: DesktopLogContext,
 ) =>
     invokeGrok<void>('grok_send_prompt', {
         sessionId,
@@ -1121,12 +1241,13 @@ export const sendGrokPrompt = (
         attachments: attachments.length > 0 ? attachments : null,
         attachmentGrants: attachmentGrants.length > 0 ? attachmentGrants : null,
         queued,
-    });
+    }, logContext);
 
 export const applyGrokQueueAction = (
     sessionId: string,
     action: 'remove' | 'edit' | 'reorder' | 'clear' | 'send_now' | 'interject',
     options: { id?: string; expectedVersion?: number; newText?: string; orderedIds?: string[] } = {},
+    logContext?: DesktopLogContext,
 ) =>
     invokeGrok<void>('grok_queue_action', {
         sessionId,
@@ -1135,15 +1256,15 @@ export const applyGrokQueueAction = (
         expectedVersion: options.expectedVersion ?? null,
         newText: options.newText || null,
         orderedIds: options.orderedIds || null,
-    });
+    }, logContext);
 
 export interface GrokPromptAttachmentSelection {
     paths: string[];
     grantId?: string;
 }
 
-export const setGrokSessionModel = (sessionId: string, model: string) =>
-    invokeGrok<void>('grok_session_set_model', { sessionId, model });
+export const setGrokSessionModel = (sessionId: string, model: string, logContext?: DesktopLogContext) =>
+    invokeGrok<void>('grok_session_set_model', { sessionId, model }, logContext);
 
 export interface GrokRewindPoint {
     promptIndex: number;
@@ -1191,6 +1312,7 @@ export const rewindGrokFiles = (
     rules?: string,
     options?: GrokAcpOptions,
     force = false,
+    logContext?: DesktopLogContext,
 ) =>
     invokeGrok<any>('grok_rewind_files', {
         sessionId,
@@ -1200,7 +1322,7 @@ export const rewindGrokFiles = (
         rules: rules || null,
         options: options || null,
         force,
-    }).then((response) => ({
+    }, logContext).then((response) => ({
         success: Boolean(response.success),
         targetPromptIndex: response.targetPromptIndex ?? response.target_prompt_index,
         revertedFiles: response.revertedFiles ?? response.reverted_files ?? [],
@@ -1216,16 +1338,17 @@ export const rewindGrokFiles = (
 export const deleteGrokScheduledTask = (sessionId: string, taskId: string) =>
     invokeGrok<boolean>('grok_scheduled_task_delete', { sessionId, taskId });
 
-export const cancelGrokPrompt = (sessionId: string) => invokeGrok<void>('grok_cancel', { sessionId });
+export const cancelGrokPrompt = (sessionId: string, logContext?: DesktopLogContext) =>
+    invokeGrok<void>('grok_cancel', { sessionId }, logContext);
 
-export const respondGrokPermission = (sessionId: string, requestId: unknown, optionId?: string) =>
-    invokeGrok<void>('grok_respond_permission', { sessionId, requestId, optionId: optionId || null });
+export const respondGrokPermission = (sessionId: string, requestId: unknown, optionId?: string, logContext?: DesktopLogContext) =>
+    invokeGrok<void>('grok_respond_permission', { sessionId, requestId, optionId: optionId || null }, logContext);
 
-export const respondGrokUserQuestion = (sessionId: string, requestId: unknown, response: Record<string, unknown>) =>
-    invokeGrok<void>('grok_respond_user_question', { sessionId, requestId, response });
+export const respondGrokUserQuestion = (sessionId: string, requestId: unknown, response: Record<string, unknown>, logContext?: DesktopLogContext) =>
+    invokeGrok<void>('grok_respond_user_question', { sessionId, requestId, response }, logContext);
 
-export const respondGrokPlanApproval = (sessionId: string, requestId: unknown, response: Record<string, unknown>) =>
-    invokeGrok<void>('grok_respond_plan_approval', { sessionId, requestId, response });
+export const respondGrokPlanApproval = (sessionId: string, requestId: unknown, response: Record<string, unknown>, logContext?: DesktopLogContext) =>
+    invokeGrok<void>('grok_respond_plan_approval', { sessionId, requestId, response }, logContext);
 
 export const startGrokLogin = (method: 'browser' | 'oauth' | 'device' = 'browser') =>
     invokeGrok<void>('grok_start_login', { method });

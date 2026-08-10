@@ -34,6 +34,7 @@ import {
     getGrokRuntimeStatus,
     getGrokModelCatalog,
     getGrokRuntimeDiagnostics,
+    readDesktopLog,
     getGrokSessionInfo,
     listGrokBackgroundTasks,
     getGrokSubagent,
@@ -78,6 +79,7 @@ import {
     type GrokDiscoveredPlugin,
     type GrokModelCatalog,
     type GrokRuntimeDiagnostics,
+    type DesktopLogSnapshot,
     type GrokMcpServerState,
     type GrokWorkflowFile,
     type GrokWorkflowListing,
@@ -704,6 +706,7 @@ export const useArkDesktopRuntime = () => {
     const [runtimeStatus, setRuntimeStatus] = useState<GrokRuntimeStatus | null>(null);
     const [modelCatalog, setModelCatalog] = useState<GrokModelCatalog | null>(null);
     const [runtimeDiagnostics, setRuntimeDiagnostics] = useState<GrokRuntimeDiagnostics[]>([]);
+    const [desktopLog, setDesktopLog] = useState<DesktopLogSnapshot | null>(null);
     const [mcpServers, setMcpServers] = useState<GrokMcpServerState[]>([]);
     const [discoveredCommands, setDiscoveredCommands] = useState<ArkDesktopSlashCommand[]>([]);
     const [discoveredPlugins, setDiscoveredPlugins] = useState<GrokDiscoveredPlugin[]>([]);
@@ -859,6 +862,18 @@ export const useArkDesktopRuntime = () => {
         } catch {
             setRuntimeDiagnostics([]);
             return [];
+        }
+    }, []);
+
+    const refreshDesktopLog = useCallback(async () => {
+        if (!isDesktopRuntime()) return null;
+        try {
+            const snapshot = await readDesktopLog(240);
+            setDesktopLog(snapshot);
+            return snapshot;
+        } catch {
+            setDesktopLog(null);
+            return null;
         }
     }, []);
 
@@ -1234,12 +1249,16 @@ export const useArkDesktopRuntime = () => {
                 const maxRetries = Number(update.maxRetries || update.max_retries || 0);
                 const reason = redactRuntimeText(String(update.reason || update.message || '模型服务暂时不可用'));
                 const failed = update.type === 'failed' || update.type === 'exhausted';
+                const retryProgress = `${attempt}${maxRetries ? `/${maxRetries}` : ''}`;
                 updateTask(taskId, (task) => ({
                     ...upsertTaskActivity(task, {
                         id: 'inference-retry',
-                        title: failed ? '模型请求未能恢复' : `模型请求重试 ${attempt}${maxRetries ? `/${maxRetries}` : ''}`,
-                        status: failed ? '失败' : reason,
+                        title: failed ? '模型服务连接失败' : `正在重新连接模型服务（${retryProgress}）`,
+                        status: failed ? '失败' : '重试中',
                         kind: 'inference',
+                        semanticStage: failed ? '模型服务连接失败' : `正在重新连接模型服务（${retryProgress}）`,
+                        visibility: 'summary',
+                        severity: 'warning',
                         output: reason,
                     }),
                     ...(failed ? { status: 'failed' as const, error: reason } : {}),
@@ -1745,6 +1764,7 @@ export const useArkDesktopRuntime = () => {
     useEffect(() => {
         if (!isDesktopRuntime()) return;
         void refreshRuntimeStatus();
+        void refreshDesktopLog();
         void refreshModelProviders().catch((error) => {
             setRuntimeError(redactRuntimeText(error instanceof Error ? error.message : '无法读取模型连接'));
         });
@@ -1770,7 +1790,7 @@ export const useArkDesktopRuntime = () => {
             }
             pendingGrokEventsRef.current = [];
         };
-    }, [enqueueGrokEvent, refreshModelProviders, refreshRuntimeStatus]);
+    }, [enqueueGrokEvent, refreshDesktopLog, refreshModelProviders, refreshRuntimeStatus]);
 
     useEffect(() => {
         void refreshCapabilities();
@@ -1984,6 +2004,7 @@ export const useArkDesktopRuntime = () => {
                         sessionRules,
                         current.settings.grokModel,
                         buildAcpOptions(execution),
+                        { taskId },
                     );
                     void refreshModelProviders().catch(() => undefined);
                     taskByProcessIdRef.current.set(session.processId, taskId);
@@ -1997,10 +2018,10 @@ export const useArkDesktopRuntime = () => {
                         updatedAt: Date.now(),
                     }));
                     if (cancelledTaskIdsRef.current.has(taskId)) {
-                        await cancelGrokPrompt(session.sessionId).catch(() => undefined);
+                        await cancelGrokPrompt(session.sessionId, { taskId }).catch(() => undefined);
                         return;
                     }
-                    await sendGrokPrompt(session.sessionId, effectivePrompt, attachmentPaths, attachmentGrantIds);
+                    await sendGrokPrompt(session.sessionId, effectivePrompt, attachmentPaths, attachmentGrantIds, false, { taskId });
                     const info = await getGrokSessionInfo(session.sessionId).catch(() => null);
                     if (info) updateTask(taskId, (value) => ({
                         ...value,
@@ -2366,11 +2387,11 @@ export const useArkDesktopRuntime = () => {
         let recoveredFromMissingWorkspace = false;
         let session: Awaited<ReturnType<typeof loadGrokSession>>;
         try {
-            session = await loadGrokSession(task.sessionId, task.workspace, sessionRules, modelProvider.id, acpOptions, attachMode);
+            session = await loadGrokSession(task.sessionId, task.workspace, sessionRules, modelProvider.id, acpOptions, attachMode, { taskId });
         } catch (error) {
             const fallbackWorkspace = taskFallbackWorkspace(task);
             if (!fallbackWorkspace || !isWorkspacePathUnavailable(error)) throw error;
-            session = await loadGrokSession(task.sessionId, fallbackWorkspace, sessionRules, modelProvider.id, acpOptions, attachMode);
+            session = await loadGrokSession(task.sessionId, fallbackWorkspace, sessionRules, modelProvider.id, acpOptions, attachMode, { taskId });
             recoveredFromMissingWorkspace = true;
         }
         mountedSessionIdsRef.current.add(session.sessionId);
@@ -2458,6 +2479,7 @@ export const useArkDesktopRuntime = () => {
                         sessionRules,
                         modelProvider.id,
                         buildAcpOptions(execution),
+                        { taskId },
                     );
                     taskBySessionIdRef.current.delete(previousSessionId);
                     if (task.runtimeProcessId) taskByProcessIdRef.current.delete(task.runtimeProcessId);
@@ -2481,11 +2503,11 @@ export const useArkDesktopRuntime = () => {
                     let recoveredFromMissingWorkspace = false;
                     let session: Awaited<ReturnType<typeof loadGrokSession>>;
                     try {
-                        session = await loadGrokSession(sessionId, task.workspace, sessionRules, modelProvider.id, acpOptions, attachMode);
+                        session = await loadGrokSession(sessionId, task.workspace, sessionRules, modelProvider.id, acpOptions, attachMode, { taskId });
                     } catch (error) {
                         const fallbackWorkspace = taskFallbackWorkspace(task);
                         if (!fallbackWorkspace || !isWorkspacePathUnavailable(error)) throw error;
-                        session = await loadGrokSession(sessionId, fallbackWorkspace, sessionRules, modelProvider.id, acpOptions, attachMode);
+                        session = await loadGrokSession(sessionId, fallbackWorkspace, sessionRules, modelProvider.id, acpOptions, attachMode, { taskId });
                         recoveredFromMissingWorkspace = true;
                     }
                     mountedSessionIdsRef.current.add(session.sessionId);
@@ -2562,7 +2584,7 @@ export const useArkDesktopRuntime = () => {
                     updatedAt: Date.now(),
                 }));
             } else {
-                await sendGrokPrompt(sessionId, prompt, [], [], shouldQueue);
+                await sendGrokPrompt(sessionId, prompt, [], [], shouldQueue, { taskId });
                 if (!shouldQueue) {
                     const info = await getGrokSessionInfo(sessionId).catch(() => null);
                     if (info) updateTask(taskId, (value) => ({
@@ -2694,7 +2716,7 @@ export const useArkDesktopRuntime = () => {
         const task = snapshotRef.current.tasks.find((item) => item.id === taskId);
         if (!task?.sessionId) throw new Error('当前任务没有可操作的 Grok 会话');
         try {
-            await applyGrokQueueAction(task.sessionId, action, options);
+            await applyGrokQueueAction(task.sessionId, action, options, { taskId });
         } catch (error) {
             const message = redactRuntimeText(runtimeErrorText(error));
             updateTask(taskId, (value) => ({ ...value, error: message, updatedAt: Date.now() }));
@@ -2988,7 +3010,7 @@ export const useArkDesktopRuntime = () => {
         if (task.engine === 'headless' && task.cliServiceId) {
             await stopGrokCliService(task.cliServiceId);
         } else if (task.sessionId) {
-            await cancelGrokPrompt(task.sessionId);
+            await cancelGrokPrompt(task.sessionId, { taskId });
         }
         updateTask(taskId, (value) => ({
             ...settleForegroundActivities(value, 'cancelled'),
@@ -3027,6 +3049,7 @@ export const useArkDesktopRuntime = () => {
             buildSessionRules(agent, skills),
             buildAcpOptions(execution),
             shouldForce,
+            { taskId },
         );
         let result = await requestRewind(force);
         const conflicts = result.conflicts || [];
@@ -3073,7 +3096,7 @@ export const useArkDesktopRuntime = () => {
     const answerPermission = useCallback(async (optionId?: string) => {
         if (!permission) return;
         try {
-            await respondGrokPermission(permission.sessionId, permission.requestId, optionId);
+            await respondGrokPermission(permission.sessionId, permission.requestId, optionId, { taskId: permission.taskId });
             const requestKey = JSON.stringify(permission.requestId);
             setPermissions((current) => current.filter((item) => (
                 item.sessionId !== permission.sessionId || JSON.stringify(item.requestId) !== requestKey
@@ -3101,7 +3124,7 @@ export const useArkDesktopRuntime = () => {
     const answerUserQuestion = useCallback(async (response: Record<string, unknown>) => {
         if (!userQuestion) return;
         try {
-            await respondGrokUserQuestion(userQuestion.sessionId, userQuestion.requestId, response);
+            await respondGrokUserQuestion(userQuestion.sessionId, userQuestion.requestId, response, { taskId: userQuestion.taskId });
             const requestKey = JSON.stringify(userQuestion.requestId);
             setUserQuestions((current) => current.filter((item) => (
                 item.sessionId !== userQuestion.sessionId || JSON.stringify(item.requestId) !== requestKey
@@ -3129,7 +3152,7 @@ export const useArkDesktopRuntime = () => {
     const answerPlanApproval = useCallback(async (response: Record<string, unknown>) => {
         if (!planApproval) return;
         try {
-            await respondGrokPlanApproval(planApproval.sessionId, planApproval.requestId, response);
+            await respondGrokPlanApproval(planApproval.sessionId, planApproval.requestId, response, { taskId: planApproval.taskId });
             const requestKey = JSON.stringify(planApproval.requestId);
             setPlanApprovals((current) => current.filter((item) => (
                 item.sessionId !== planApproval.sessionId || JSON.stringify(item.requestId) !== requestKey
@@ -3242,11 +3265,13 @@ export const useArkDesktopRuntime = () => {
                 buildSessionRules(agent, skills),
                 modelProvider.id,
                 buildAcpOptions(execution),
+                'load',
+                { taskId },
             );
             mountedSessionIdsRef.current.add(session.sessionId);
             taskByProcessIdRef.current.set(session.processId, taskId);
             taskBySessionIdRef.current.set(session.sessionId, taskId);
-            await setGrokSessionModel(task.sessionId, modelId);
+            await setGrokSessionModel(task.sessionId, modelId, { taskId });
             updateTask(taskId, (value) => ({
                 ...value,
                 model: modelId,
@@ -3325,6 +3350,7 @@ export const useArkDesktopRuntime = () => {
                 modelProvider.id,
                 buildAcpOptions(execution),
                 attachMode,
+                { taskId },
             );
             if (task.runtimeProcessId && task.runtimeProcessId !== session.processId) {
                 taskByProcessIdRef.current.delete(task.runtimeProcessId);
@@ -3497,6 +3523,8 @@ export const useArkDesktopRuntime = () => {
         refreshModelCatalog,
         runtimeDiagnostics,
         refreshRuntimeDiagnostics,
+        desktopLog,
+        refreshDesktopLog,
         mcpServers,
         refreshMcpServers,
         selectWorkspace,

@@ -3,6 +3,7 @@ import {
     isDesktopRuntime,
     type RuntimeConfig,
 } from '@/config';
+import { invokeDesktop } from '@/services/grokDesktop';
 
 export const initializeDesktopRuntimeConfig = async () => {
     if (!isDesktopRuntime()) {
@@ -10,8 +11,7 @@ export const initializeDesktopRuntimeConfig = async () => {
     }
 
     try {
-        const { invoke } = await import('@tauri-apps/api/core');
-        const config = await invoke<RuntimeConfig | null>('load_desktop_runtime_config');
+        const config = await invokeDesktop<RuntimeConfig | null>('load_desktop_runtime_config');
         if (config) {
             applyRuntimeConfig(config);
         }
@@ -25,8 +25,7 @@ export const saveDesktopRuntimeConfig = async (config: Required<RuntimeConfig>) 
         throw new Error('当前不是桌面客户端环境');
     }
 
-    const { invoke } = await import('@tauri-apps/api/core');
-    const savedConfig = await invoke<Required<RuntimeConfig>>('save_desktop_runtime_config', { config });
+    const savedConfig = await invokeDesktop<Required<RuntimeConfig>>('save_desktop_runtime_config', { config });
     applyRuntimeConfig(savedConfig);
     return savedConfig;
 };

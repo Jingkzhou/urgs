@@ -17,7 +17,7 @@ import GrokPluginManager from './GrokPluginManager';
 import GrokConfigEditor from './GrokConfigEditor';
 import GrokExecutionSettingsPanel from './GrokExecutionSettingsPanel';
 import GrokMcpManager from './GrokMcpManager';
-import GrokRuntimeDiagnosticsPanel from './GrokRuntimeDiagnosticsPanel';
+import GrokRuntimeDiagnosticsPanel, { DesktopLogPanel } from './GrokRuntimeDiagnosticsPanel';
 import AutomationCenter from './AutomationCenter';
 import { ArkDesktopSidebarToggle, ArkDesktopTitleContent } from './ArkDesktopTitleBar';
 import { ConversationPromptInput } from './SlashCommandMenu';
@@ -1377,7 +1377,7 @@ const SettingsView: React.FC<{ runtime: ReturnType<typeof useArkDesktopRuntime>;
         {activeTab === 'execution' && <div role="tabpanel"><GrokExecutionSettingsPanel modelCatalog={runtime.modelCatalog} value={runtime.snapshot.settings.execution} onChange={(execution) => runtime.setSnapshot((current) => ({ ...current, settings: { ...current.settings, execution } }))} /></div>}
         {activeTab === 'configuration' && <div className="space-y-6" role="tabpanel"><GrokMcpManager workspace={runtime.snapshot.settings.workspace} servers={runtime.mcpServers} onToggle={runtime.toggleMcpServer} onReload={() => runtime.reloadMcpServers(runtime.snapshot.settings.workspace)} onRefresh={() => runtime.refreshMcpServers(runtime.snapshot.settings.workspace).then(() => undefined)} onError={runtime.setRuntimeError} /><GrokConfigEditor workspace={runtime.snapshot.settings.workspace} onError={runtime.setRuntimeError} /></div>}
         {activeTab === 'plugins' && <GrokPluginManager workspace={runtime.snapshot.settings.workspace} onChanged={runtime.reloadPluginCapabilities} onError={runtime.setRuntimeError} />}
-        {activeTab === 'diagnostics' && <div className="space-y-6" role="tabpanel"><GrokRuntimeDiagnosticsPanel diagnostics={runtime.runtimeDiagnostics} onRefresh={() => runtime.refreshRuntimeDiagnostics().then(() => undefined)} onError={runtime.setRuntimeError} /><GrokCliCenter workspace={runtime.snapshot.settings.workspace} onError={runtime.setRuntimeError} /><div className="rounded-2xl border border-red-200 p-5"><h3 className="font-semibold text-slate-900">重置本地数据</h3><p className="mt-1 text-sm text-slate-500">清除自定义智能体、技能、运行配置、自动化和任务历史，不会删除工作区文件。</p><button type="button" onClick={() => { if (window.confirm('确认重置智能任务中心的全部本地配置和历史？')) runtime.resetAll(); }} className="mt-4 flex items-center gap-2 rounded-lg bg-red-50 px-3 py-2 text-sm text-red-700"><Trash2 size={16} />重置数据</button></div></div>}
+        {activeTab === 'diagnostics' && <div className="space-y-6" role="tabpanel"><GrokRuntimeDiagnosticsPanel diagnostics={runtime.runtimeDiagnostics} onRefresh={() => runtime.refreshRuntimeDiagnostics().then(() => undefined)} onError={runtime.setRuntimeError} /><DesktopLogPanel snapshot={runtime.desktopLog} onRefresh={() => runtime.refreshDesktopLog().then(() => undefined)} onError={runtime.setRuntimeError} /><GrokCliCenter workspace={runtime.snapshot.settings.workspace} onError={runtime.setRuntimeError} /><div className="rounded-2xl border border-red-200 p-5"><h3 className="font-semibold text-slate-900">重置本地数据</h3><p className="mt-1 text-sm text-slate-500">清除自定义智能体、技能、运行配置、自动化和任务历史，不会删除工作区文件。</p><button type="button" onClick={() => { if (window.confirm('确认重置智能任务中心的全部本地配置和历史？')) runtime.resetAll(); }} className="mt-4 flex items-center gap-2 rounded-lg bg-red-50 px-3 py-2 text-sm text-red-700"><Trash2 size={16} />重置数据</button></div></div>}
     </div>;
 };
 

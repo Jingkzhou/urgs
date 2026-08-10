@@ -9,7 +9,7 @@ type Tool = ArkDesktopToolActivity;
 type ToolState = 'failed' | 'completed' | 'pending' | 'running';
 type ActivityKind = 'edit' | 'list' | 'read' | 'search' | 'command' | 'git' | 'browser' | 'agent' | 'workflow' | 'plan' | 'interaction' | 'other';
 
-const hiddenKinds = new Set(['diagnostic', 'context', 'memory', 'recovery', 'inference']);
+const hiddenKinds = new Set(['diagnostic', 'context', 'memory', 'recovery']);
 
 const isHidden = (tool: Tool) => tool.visibility === 'diagnostic' || hiddenKinds.has(String(tool.kind || '').toLowerCase());
 const isReasoning = (tool: Tool) => tool.kind === 'reasoning';
@@ -149,6 +149,7 @@ const commandGroupSummary = (tools: Tool[]) => {
 };
 
 const activityGroupSummary = (tools: Tool[]) => {
+    if (tools.length === 1 && tools[0].kind === 'inference') return activityDetailSummary(tools[0]);
     const commandSummary = commandGroupSummary(tools);
     if (commandSummary) return commandSummary;
     const kinds = Array.from(new Set(tools.map(activityKind)));
@@ -286,8 +287,8 @@ export const TaskActivityDetails: React.FC<{ tools: Tool[] }> = ({ tools }) => {
     const active = state === 'running';
     const ActionIcon = activityIcon(visibleTools);
     const summary = activityGroupSummary(visibleTools);
-    return <div className="py-1">
-        <button type="button" onClick={() => setOpen((value) => !value)} className="flex min-h-7 w-full min-w-0 items-center gap-2 rounded-md px-1 py-1 text-left text-[13px] leading-5 text-[#77787c] transition hover:bg-slate-50 hover:text-[#55565a]" aria-expanded={open}>
+    return <div>
+        <button type="button" onClick={() => setOpen((value) => !value)} className="flex min-h-7 w-full min-w-0 items-center gap-2 rounded-md px-1 text-left text-[13px] leading-5 text-[#77787c] transition hover:bg-slate-50 hover:text-[#55565a]" aria-expanded={open}>
             {active || state === 'failed'
                 ? <StageIcon state={state} active={active} />
                 : <ActionIcon size={15} strokeWidth={1.7} className="shrink-0 text-[#8b8b8b]" />}
@@ -385,7 +386,7 @@ const TaskActivityTimeline: React.FC<TaskActivityTimelineProps> = ({ tools, task
                 : isRunning
                     ? `处理中 ${formatCompactDuration(elapsed)}`
                     : `已处理 ${formatCompactDuration(elapsed)}`;
-    const expandedDetails = expanded && <div className="mt-1.5 space-y-2 border-l border-slate-200 pl-4">
+    const expandedDetails = expanded && <div className="mt-1.5 border-l border-slate-200 pl-4">
         {children}
         {!children && <TaskActivityDetails tools={summaryTools} />}
         {!children && summaryTools.length === 0 && <div className="py-1 text-[12px] text-slate-400">{active ? '当前阶段正在准备中' : '已完成执行步骤'}</div>}

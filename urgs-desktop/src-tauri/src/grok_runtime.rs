@@ -1,3 +1,4 @@
+use crate::desktop_log;
 use base64::{engine::general_purpose::STANDARD as BASE64_STANDARD, Engine as _};
 use keyring::Entry;
 use portable_pty::{native_pty_system, Child as PtyChild, CommandBuilder, MasterPty, PtySize};
@@ -11,7 +12,7 @@ use std::io::{Read, Write};
 use std::path::{Path, PathBuf};
 use std::sync::atomic::{AtomicBool, AtomicU64, Ordering};
 use std::sync::{Arc, Mutex, OnceLock};
-use std::time::{Duration, SystemTime, UNIX_EPOCH};
+use std::time::{Duration, Instant, SystemTime, UNIX_EPOCH};
 use tauri::{AppHandle, Emitter, Manager, State};
 use tauri_plugin_dialog::DialogExt;
 use tauri_plugin_shell::process::{CommandChild, CommandEvent};
@@ -576,6 +577,14 @@ impl GrokProcess {
         meta: Option<Value>,
     ) -> Result<Value, String> {
         let id = self.request_sequence.fetch_add(1, Ordering::Relaxed);
+        let started_at = Instant::now();
+        desktop_log::debug(
+            "grok.acp",
+            &format!(
+                "ACP request started: process={} id={} method={method}",
+                self.process_id, id
+            ),
+        );
         let (sender, receiver) = oneshot::channel();
         self.pending_requests
             .lock()
@@ -596,28 +605,89 @@ impl GrokProcess {
                 .lock()
                 .map_err(|_| "Grok 请求队列锁不可用".to_string())?
                 .remove(&id);
+            desktop_log::error(
+                "grok.acp",
+                &format!(
+                    "ACP request write failed: process={} id={} method={method} error={error}",
+                    self.process_id, id
+                ),
+            );
             return Err(error);
         }
 
         match tokio::time::timeout(request_timeout(method), receiver).await {
-            Ok(Ok(result)) => result,
-            Ok(Err(_)) => Err("Grok 本地进程在响应前退出".to_string()),
+            Ok(Ok(result)) => {
+                match &result {
+                    Ok(_) => desktop_log::debug(
+                        "grok.acp",
+                        &format!(
+                            "ACP request completed: process={} id={} method={method} elapsed_ms={}",
+                            self.process_id,
+                            id,
+                            started_at.elapsed().as_millis()
+                        ),
+                    ),
+                    Err(error) => desktop_log::warn(
+                        "grok.acp",
+                        &format!(
+                            "ACP request returned error: process={} id={} method={method} elapsed_ms={} error={error}",
+                            self.process_id,
+                            id,
+                            started_at.elapsed().as_millis()
+                        ),
+                    ),
+                }
+                result
+            }
+            Ok(Err(_)) => {
+                let error = "Grok 本地进程在响应前退出".to_string();
+                desktop_log::warn(
+                    "grok.acp",
+                    &format!(
+                        "ACP request interrupted: process={} id={} method={method} elapsed_ms={}",
+                        self.process_id,
+                        id,
+                        started_at.elapsed().as_millis()
+                    ),
+                );
+                Err(error)
+            }
             Err(_) => {
                 self.pending_requests
                     .lock()
                     .map_err(|_| "Grok 请求队列锁不可用".to_string())?
                     .remove(&id);
-                Err(format!("等待 Grok {method} 响应超时"))
+                let error = format!("等待 Grok {method} 响应超时");
+                desktop_log::error(
+                    "grok.acp",
+                    &format!(
+                        "ACP request timed out: process={} id={} method={method} elapsed_ms={}",
+                        self.process_id,
+                        id,
+                        started_at.elapsed().as_millis()
+                    ),
+                );
+                Err(error)
             }
         }
     }
 
     fn notify(&self, method: &str, params: Value) -> Result<(), String> {
-        self.write_json(json!({
+        let result = self.write_json(json!({
             "jsonrpc": "2.0",
             "method": method,
             "params": params,
-        }))
+        }));
+        if let Err(error) = &result {
+            desktop_log::error(
+                "grok.acp",
+                &format!(
+                    "ACP notification failed: process={} method={method} error={error}",
+                    self.process_id
+                ),
+            );
+        }
+        result
     }
 
     async fn initialize(&self, rules: Option<&str>) -> Result<(), String> {
@@ -625,6 +695,15 @@ impl GrokProcess {
         if *initialized {
             return Ok(());
         }
+
+        desktop_log::info(
+            "grok.process",
+            &format!(
+                "Initializing ACP process={} workspace={}",
+                self.process_id,
+                self.workspace.display()
+            ),
+        );
 
         let response = self
             .request(
@@ -665,10 +744,28 @@ impl GrokProcess {
                 }),
             )
             .await
-            .map_err(|error| format!("Grok 登录不可用，请先点击“登录 Grok”：{error}"))?;
+            .map_err(|error| {
+                desktop_log::error(
+                    "grok.auth",
+                    &format!(
+                        "Grok authentication failed for process={}: {error}",
+                        self.process_id
+                    ),
+                );
+                format!("Grok 登录不可用，请先点击“登录 Grok”：{error}")
+            })?;
         }
 
         *initialized = true;
+        desktop_log::info(
+            "grok.process",
+            &format!(
+                "ACP process initialized: process={} commands={} custom_model={}",
+                self.process_id,
+                self.available_commands().len(),
+                self.uses_custom_model
+            ),
+        );
         Ok(())
     }
 
@@ -906,6 +1003,10 @@ impl GrokProcess {
     }
 
     fn stop(&self) {
+        desktop_log::info(
+            "grok.process",
+            &format!("Stopping ACP process={}", self.process_id),
+        );
         self.alive.store(false, Ordering::Relaxed);
         let child = self.child.lock().ok().and_then(|mut child| child.take());
         if let Some(child) = child {
@@ -2254,11 +2355,12 @@ fn normalized_session_update_message(message: &Value) -> Option<Value> {
         | "x.ai/scheduled_task_fired"
         | "x.ai/scheduled_task_deleted" => params,
         "_x.ai/session/update" => params.get("params").unwrap_or(params),
-        "_x.ai/session_notification"
-            if params.get("method").and_then(Value::as_str)
-                == Some("x.ai/session_notification") =>
-        {
-            params.get("params")?
+        "_x.ai/session_notification" => {
+            if params.get("method").and_then(Value::as_str) == Some("x.ai/session_notification") {
+                params.get("params")?
+            } else {
+                params
+            }
         }
         _ => return None,
     };
@@ -2438,6 +2540,13 @@ fn handle_stdout(app: &AppHandle, process: &Arc<GrokProcess>, line: Vec<u8>) {
     let message = match serde_json::from_str::<Value>(&line) {
         Ok(message) => message,
         Err(error) => {
+            desktop_log::error(
+                "grok.protocol",
+                &format!(
+                    "Unable to parse ACP stdout: process={} error={error}",
+                    process.process_id
+                ),
+            );
             emit_process_event(
                 app,
                 process,
@@ -2464,6 +2573,13 @@ fn handle_stdout(app: &AppHandle, process: &Arc<GrokProcess>, line: Vec<u8>) {
         "x.ai/scheduled_task_inject_prompt" | "_x.ai/scheduled_task_inject_prompt"
     ) {
         let Some((session_id, prompt, task_id)) = scheduled_prompt_injection(&message) else {
+            desktop_log::warn(
+                "grok.protocol",
+                &format!(
+                    "Scheduled prompt event missing identifiers: process={}",
+                    process.process_id
+                ),
+            );
             emit_process_event(
                 app,
                 process,
@@ -2475,6 +2591,13 @@ fn handle_stdout(app: &AppHandle, process: &Arc<GrokProcess>, line: Vec<u8>) {
         let app = app.clone();
         let process = Arc::clone(process);
         tauri::async_runtime::spawn(async move {
+            desktop_log::info(
+                "grok.session",
+                &format!(
+                    "Scheduled prompt started: process={} session={} task={}",
+                    process.process_id, session_id, task_id
+                ),
+            );
             emit_process_event(
                 &app,
                 &process,
@@ -2572,6 +2695,13 @@ fn handle_stdout(app: &AppHandle, process: &Arc<GrokProcess>, line: Vec<u8>) {
                 .unwrap_or_default()
                 .to_string();
             if let Some(request_id) = request_id {
+                desktop_log::info(
+                    "grok.permission",
+                    &format!(
+                        "Permission request received: process={} session={}",
+                        process.process_id, session_id
+                    ),
+                );
                 process.remember_permission(session_id, request_id);
                 emit_process_event(app, process, "permission_request", message);
             }
@@ -2586,6 +2716,13 @@ fn handle_stdout(app: &AppHandle, process: &Arc<GrokProcess>, line: Vec<u8>) {
                 .to_string();
             if let (Some(request_id), Some(params)) = (request_id, params) {
                 if session_id.is_empty() {
+                    desktop_log::warn(
+                        "grok.protocol",
+                        &format!(
+                            "AskUserQuestion missing session id: process={}",
+                            process.process_id
+                        ),
+                    );
                     let _ = process.write_json(json!({
                         "jsonrpc": "2.0",
                         "id": request_id,
@@ -2593,6 +2730,13 @@ fn handle_stdout(app: &AppHandle, process: &Arc<GrokProcess>, line: Vec<u8>) {
                     }));
                     return;
                 }
+                desktop_log::info(
+                    "grok.user_question",
+                    &format!(
+                        "User question received: process={} session={}",
+                        process.process_id, session_id
+                    ),
+                );
                 process.remember_user_question(session_id.clone(), request_id.clone());
                 emit_process_event(
                     app,
@@ -2618,6 +2762,13 @@ fn handle_stdout(app: &AppHandle, process: &Arc<GrokProcess>, line: Vec<u8>) {
                 .to_string();
             if let (Some(request_id), Some(params)) = (request_id, params) {
                 if session_id.is_empty() {
+                    desktop_log::warn(
+                        "grok.protocol",
+                        &format!(
+                            "ExitPlanMode missing session id: process={}",
+                            process.process_id
+                        ),
+                    );
                     let _ = process.write_json(json!({
                         "jsonrpc": "2.0",
                         "id": request_id,
@@ -2625,6 +2776,13 @@ fn handle_stdout(app: &AppHandle, process: &Arc<GrokProcess>, line: Vec<u8>) {
                     }));
                     return;
                 }
+                desktop_log::info(
+                    "grok.plan",
+                    &format!(
+                        "Plan approval received: process={} session={}",
+                        process.process_id, session_id
+                    ),
+                );
                 process.remember_plan_approval(session_id.clone(), request_id.clone());
                 emit_process_event(
                     app,
@@ -2640,6 +2798,15 @@ fn handle_stdout(app: &AppHandle, process: &Arc<GrokProcess>, line: Vec<u8>) {
             }
         }
         _ => {
+            let log_message = format!(
+                "Unhandled ACP notification: process={} method={method}",
+                process.process_id
+            );
+            if method.starts_with("_x.ai/") || method.starts_with("x.ai/") {
+                desktop_log::debug("grok.protocol", &log_message);
+            } else {
+                desktop_log::warn("grok.protocol", &log_message);
+            }
             if let Some(request_id) = message.get("id").cloned() {
                 let _ = process.write_json(json!({
                     "jsonrpc": "2.0",
@@ -2782,25 +2949,51 @@ fn spawn_grok_process_with_env(
     launch_key: String,
 ) -> Result<Arc<GrokProcess>, String> {
     let uses_custom_model = !model_envs.is_empty();
+    desktop_log::info(
+        "grok.process",
+        &format!(
+            "Starting Grok sidecar: workspace={} custom_model={} argument_count={}",
+            workspace.display(),
+            uses_custom_model,
+            arguments.len()
+        ),
+    );
     let mut process_envs = offline_runtime_envs(&home);
     process_envs.extend(model_envs);
     let (mut receiver, child) = app
         .shell()
         .sidecar("grok")
-        .map_err(|error| format!("无法定位内置 Grok Build: {error}"))?
+        .map_err(|error| {
+            desktop_log::error("grok.process", &format!("Grok sidecar not found: {error}"));
+            format!("无法定位内置 Grok Build: {error}")
+        })?
         .args(arguments)
         .current_dir(workspace)
         .env_clear()
         .env("GROK_HOME", &home)
         .envs(process_envs)
         .spawn()
-        .map_err(|error| format!("启动本地 Grok Build 失败: {error}"))?;
+        .map_err(|error| {
+            desktop_log::error(
+                "grok.process",
+                &format!("Grok sidecar spawn failed: {error}"),
+            );
+            format!("启动本地 Grok Build 失败: {error}")
+        })?;
     let process = Arc::new(GrokProcess::new(
         child,
         launch_key,
         workspace.to_path_buf(),
         uses_custom_model,
     ));
+    desktop_log::info(
+        "grok.process",
+        &format!(
+            "Grok sidecar started: process={} workspace={}",
+            process.process_id,
+            process.workspace.display()
+        ),
+    );
     let reader_process = Arc::clone(&process);
     let reader_app = app.clone();
     tauri::async_runtime::spawn(async move {
@@ -2810,6 +3003,15 @@ fn spawn_grok_process_with_env(
                 CommandEvent::Stderr(line) => {
                     let message = String::from_utf8_lossy(&line).trim().to_string();
                     reader_process.remember_stderr(&message);
+                    if !message.is_empty() {
+                        desktop_log::warn(
+                            "grok.stderr",
+                            &format!(
+                                "Sidecar stderr: process={} message={message}",
+                                reader_process.process_id
+                            ),
+                        );
+                    }
                     emit_process_event(
                         &reader_app,
                         &reader_process,
@@ -2820,6 +3022,13 @@ fn spawn_grok_process_with_env(
                 CommandEvent::Error(error) => {
                     reader_process.alive.store(false, Ordering::Relaxed);
                     reader_process.remember_stderr(&error);
+                    desktop_log::error(
+                        "grok.process",
+                        &format!(
+                            "Sidecar runtime error: process={} error={error}",
+                            reader_process.process_id
+                        ),
+                    );
                     reader_process.fail_pending_requests(format!("Grok 本地进程运行失败：{error}"));
                     emit_process_event(
                         &reader_app,
@@ -2832,6 +3041,13 @@ fn spawn_grok_process_with_env(
                     reader_process.alive.store(false, Ordering::Relaxed);
                     reader_process
                         .fail_pending_requests(reader_process.termination_error(status.code));
+                    desktop_log::warn(
+                        "grok.process",
+                        &format!(
+                            "Sidecar terminated: process={} code={:?}",
+                            reader_process.process_id, status.code
+                        ),
+                    );
                     emit_event(
                         &reader_app,
                         "terminated",
@@ -3060,6 +3276,7 @@ fn trusted_workflow_path(
 
 #[tauri::command]
 pub async fn grok_runtime_status(app: AppHandle) -> Result<GrokRuntimeStatus, String> {
+    desktop_log::info("grok.runtime", "Checking bundled Grok runtime status.");
     let home = grok_home(&app)?;
     enforce_offline_config(&app)?;
     let output = app
@@ -3074,6 +3291,20 @@ pub async fn grok_runtime_status(app: AppHandle) -> Result<GrokRuntimeStatus, St
         .map_err(|error| format!("检测 Grok Build 失败: {error}"))?;
     let version = String::from_utf8_lossy(&output.stdout).trim().to_string();
     let available = output.status.success();
+    if available {
+        desktop_log::info(
+            "grok.runtime",
+            &format!("Bundled Grok runtime available: version={version}"),
+        );
+    } else {
+        desktop_log::error(
+            "grok.runtime",
+            &format!(
+                "Bundled Grok runtime unavailable: stderr={}",
+                String::from_utf8_lossy(&output.stderr).trim()
+            ),
+        );
+    }
 
     Ok(GrokRuntimeStatus {
         available,
@@ -3631,7 +3862,7 @@ pub fn grok_runtime_diagnostics(
             .1
             .push(session_id.clone());
     }
-    Ok(by_process
+    let diagnostics = by_process
         .into_values()
         .map(|(process, session_ids)| GrokRuntimeDiagnostics {
             process_id: process.process_id.clone(),
@@ -3649,7 +3880,15 @@ pub fn grok_runtime_diagnostics(
                 .map(|value| value.clone())
                 .unwrap_or_default(),
         })
-        .collect())
+        .collect::<Vec<_>>();
+    desktop_log::debug(
+        "grok.diagnostics",
+        &format!(
+            "Runtime diagnostics read: process_count={}",
+            diagnostics.len()
+        ),
+    );
+    Ok(diagnostics)
 }
 
 #[tauri::command]
@@ -4649,6 +4888,14 @@ pub async fn grok_create_session(
     options: Option<GrokAcpOptions>,
 ) -> Result<GrokSession, String> {
     let workspace = validate_workspace(&workspace)?;
+    desktop_log::info(
+        "grok.session",
+        &format!(
+            "Creating session: workspace={} model={}",
+            workspace.display(),
+            model.as_deref().unwrap_or_default()
+        ),
+    );
     let options = options.unwrap_or_default();
     let effective_options = effective_acp_options(&app, model.as_deref(), &options)?;
     let _startup = state.startup.lock().await;
@@ -4716,6 +4963,15 @@ pub async fn grok_create_session(
         }
         return Err(error);
     }
+    desktop_log::info(
+        "grok.session",
+        &format!(
+            "Session created: session={} process={} workspace={}",
+            session_id,
+            process.process_id,
+            workspace.display()
+        ),
+    );
     Ok(GrokSession {
         session_id,
         workspace: workspace.to_string_lossy().to_string(),
@@ -4744,6 +5000,16 @@ pub async fn grok_load_session(
     }
     let attach_method = session_attach_method(attach_mode.as_deref())?;
     let workspace = validate_workspace(&workspace)?;
+    desktop_log::info(
+        "grok.session",
+        &format!(
+            "Loading session: session={} attach_method={} workspace={} model={}",
+            session_id,
+            attach_method,
+            workspace.display(),
+            model.as_deref().unwrap_or_default()
+        ),
+    );
     let options = options.unwrap_or_default();
     let effective_options = effective_acp_options(&app, model.as_deref(), &options)?;
     let _startup = state.startup.lock().await;
@@ -4766,6 +5032,13 @@ pub async fn grok_load_session(
             .filter(|process| process.launch_key == launch_key)
             .cloned()
         {
+            desktop_log::debug(
+                "grok.session",
+                &format!(
+                    "Session already mounted: session={} process={}",
+                    session_id, process.process_id
+                ),
+            );
             return Ok(GrokSession {
                 session_id,
                 workspace: workspace.to_string_lossy().to_string(),
@@ -4837,6 +5110,15 @@ pub async fn grok_load_session(
         process.stop();
         return Err(error);
     }
+    desktop_log::info(
+        "grok.session",
+        &format!(
+            "Session loaded: session={} process={} replayed_events={}",
+            session_id,
+            process.process_id,
+            replayed_events.len()
+        ),
+    );
     Ok(GrokSession {
         session_id,
         workspace: workspace.to_string_lossy().to_string(),
@@ -4933,6 +5215,16 @@ pub async fn grok_send_prompt(
 ) -> Result<(), String> {
     let grants_to_consume = attachment_grants.clone().unwrap_or_default();
     let attachments = authorize_prompt_attachments(&state, attachments, attachment_grants)?;
+    desktop_log::info(
+        "grok.session",
+        &format!(
+            "Prompt requested: session={} queued={} prompt_chars={} attachments={}",
+            session_id.trim(),
+            queued.unwrap_or(false),
+            prompt.chars().count(),
+            attachments.len()
+        ),
+    );
     let content = build_prompt_content(&prompt, attachments)?;
     let process = session_process(&state, &session_id)?;
     let prompt_meta = Some(json!({ "clientIdentifier": "urgs-desktop" }));
@@ -4957,22 +5249,40 @@ pub async fn grok_send_prompt(
                 )
                 .await;
             match result {
-                Ok(_) => emit_process_event(
-                    &app,
-                    &queued_process,
-                    "queued_prompt",
-                    json!({ "sessionId": queued_session_id, "phase": "completed" }),
-                ),
-                Err(error) => emit_process_event(
-                    &app,
-                    &queued_process,
-                    "queued_prompt",
-                    json!({
-                        "sessionId": queued_session_id,
-                        "phase": "failed",
-                        "message": error,
-                    }),
-                ),
+                Ok(_) => {
+                    desktop_log::info(
+                        "grok.session",
+                        &format!(
+                            "Queued prompt completed: session={} process={}",
+                            queued_session_id, queued_process.process_id
+                        ),
+                    );
+                    emit_process_event(
+                        &app,
+                        &queued_process,
+                        "queued_prompt",
+                        json!({ "sessionId": queued_session_id, "phase": "completed" }),
+                    )
+                }
+                Err(error) => {
+                    desktop_log::error(
+                        "grok.session",
+                        &format!(
+                            "Queued prompt failed: session={} process={} error={error}",
+                            queued_session_id, queued_process.process_id
+                        ),
+                    );
+                    emit_process_event(
+                        &app,
+                        &queued_process,
+                        "queued_prompt",
+                        json!({
+                            "sessionId": queued_session_id,
+                            "phase": "failed",
+                            "message": error,
+                        }),
+                    )
+                }
             }
         });
         consume_prompt_attachment_grants(&state, &grants_to_consume);
@@ -4988,6 +5298,13 @@ pub async fn grok_send_prompt(
             prompt_meta,
         )
         .await?;
+    desktop_log::info(
+        "grok.session",
+        &format!(
+            "Prompt completed: session={} process={}",
+            session_id, process.process_id
+        ),
+    );
     consume_prompt_attachment_grants(&state, &grants_to_consume);
     Ok(())
 }
@@ -5279,6 +5596,10 @@ pub async fn grok_scheduled_task_delete(
 
 #[tauri::command]
 pub fn grok_cancel(state: State<'_, GrokRuntimeState>, session_id: String) -> Result<(), String> {
+    desktop_log::info(
+        "grok.session",
+        &format!("Cancelling session: session={}", session_id.trim()),
+    );
     let process = session_process(&state, &session_id)?;
     process.notify("session/cancel", json!({ "sessionId": session_id }))?;
     for request_id in process.cancel_permissions(&session_id) {
@@ -5302,6 +5623,13 @@ pub fn grok_cancel(state: State<'_, GrokRuntimeState>, session_id: String) -> Re
             "result": { "outcome": "abandoned" }
         }))?;
     }
+    desktop_log::info(
+        "grok.session",
+        &format!(
+            "Session cancellation sent: session={} process={}",
+            session_id, process.process_id
+        ),
+    );
     Ok(())
 }
 
@@ -5314,6 +5642,10 @@ pub async fn grok_release_session(
     if session_id.is_empty() {
         return Err("会话标识不能为空".to_string());
     }
+    desktop_log::info(
+        "grok.session",
+        &format!("Releasing session: session={session_id}"),
+    );
     let (process, shared) = {
         let mut processes = state
             .session_processes
@@ -5328,6 +5660,13 @@ pub async fn grok_release_session(
         (process, shared)
     };
     if let Some(process) = process {
+        desktop_log::debug(
+            "grok.session",
+            &format!(
+                "Releasing session from process: session={} process={} shared={shared}",
+                session_id, process.process_id
+            ),
+        );
         let _ = process
             .request("session/close", json!({ "sessionId": session_id }))
             .await;
@@ -5357,6 +5696,10 @@ pub async fn grok_release_session(
             process.stop();
         }
     }
+    desktop_log::info(
+        "grok.session",
+        &format!("Session released: session={session_id}"),
+    );
     Ok(())
 }
 
@@ -5434,6 +5777,7 @@ pub fn grok_respond_plan_approval(
 
 #[tauri::command]
 pub fn grok_shutdown(state: State<'_, GrokRuntimeState>) -> Result<(), String> {
+    desktop_log::info("grok.runtime", "Shutting down Grok runtime.");
     stop_prepared_process(&state)?;
     let processes = state
         .session_processes
@@ -5445,6 +5789,7 @@ pub fn grok_shutdown(state: State<'_, GrokRuntimeState>) -> Result<(), String> {
     for process in processes {
         process.stop();
     }
+    desktop_log::info("grok.runtime", "Grok runtime shutdown completed.");
     Ok(())
 }
 
@@ -5893,6 +6238,25 @@ mod tests {
         assert_eq!(
             nested["params"]["update"]["sessionUpdate"],
             "subagent_spawned"
+        );
+        let direct_xai = normalized_session_update_message(&json!({
+            "jsonrpc": "2.0",
+            "method": "_x.ai/session_notification",
+            "params": {
+                "sessionId": "session-3",
+                "update": {
+                    "sessionUpdate": "retry_state",
+                    "type": "retrying",
+                    "attempt": 5,
+                    "max_retries": 15
+                }
+            }
+        }))
+        .unwrap();
+        assert_eq!(direct_xai["params"]["sessionId"], "session-3");
+        assert_eq!(
+            direct_xai["params"]["update"]["sessionUpdate"],
+            "retry_state"
         );
         assert!(normalized_session_update_message(&json!({
             "method": "session/request_permission",

@@ -22,13 +22,18 @@ dayjs.locale('zh-cn');
 import App from './App';
 import DesktopConnectionSetup from './components/desktop/DesktopConnectionSetup';
 import DesktopAutoUpdater from './components/desktop/DesktopAutoUpdater';
+import DesktopErrorBoundary from './components/desktop/DesktopErrorBoundary';
 import { getCurrentWebviewWindow } from '@tauri-apps/api/webviewWindow';
 import { getApiBaseUrl, installServiceRequestAdapters, isDesktopRuntime } from './config';
+import { invokeDesktop, writeDesktopLog } from './services/grokDesktop';
 import { installDesktopDownloadAdapter } from './utils/desktopDownload';
 import { initializeDesktopAutostart } from './utils/desktopAutostart';
 import { initializeDesktopRuntimeConfig } from './utils/desktopRuntime';
+import { installDesktopErrorLogging } from './utils/desktopErrorLogging';
 import './index.css';
 import './styles/dual-platform.css';
+
+installDesktopErrorLogging();
 
 const rootElement = document.getElementById('root');
 if (!rootElement) {
@@ -47,10 +52,10 @@ const revealDesktopMainWindow = async () => {
       return;
     }
 
-    const { invoke } = await import('@tauri-apps/api/core');
-    await invoke('complete_desktop_startup');
+    await invokeDesktop('complete_desktop_startup');
   } catch (error) {
     console.error('显示桌面客户端主窗口失败', error);
+    void writeDesktopLog('ERROR', 'web.startup', `显示桌面客户端主窗口失败: ${error instanceof Error ? error.message : String(error)}`);
   }
 };
 
@@ -60,15 +65,18 @@ const startApplication = async () => {
   installServiceRequestAdapters();
   installDesktopDownloadAdapter();
   const desktopRuntime = isDesktopRuntime();
+  if (desktopRuntime) installDesktopErrorLogging();
   document.documentElement.classList.toggle('desktop-runtime', desktopRuntime);
   const editDesktopConnection = localStorage.getItem('urgs_desktop_edit_connection') === '1';
 
   root.render(
     <React.StrictMode>
-      <ConfigProvider theme={{ zeroRuntime: true, cssVar: { key: 'urgs' } }}>
-        {desktopRuntime && (!getApiBaseUrl() || editDesktopConnection) ? <DesktopConnectionSetup /> : <App />}
-        <DesktopAutoUpdater />
-      </ConfigProvider>
+      <DesktopErrorBoundary>
+        <ConfigProvider theme={{ zeroRuntime: true, cssVar: { key: 'urgs' } }}>
+          {desktopRuntime && (!getApiBaseUrl() || editDesktopConnection) ? <DesktopConnectionSetup /> : <App />}
+          <DesktopAutoUpdater />
+        </ConfigProvider>
+      </DesktopErrorBoundary>
     </React.StrictMode>
   );
 
