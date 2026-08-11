@@ -439,6 +439,7 @@ fn is_not_git_repository_error(message: &str) -> bool {
 fn is_git_unavailable_error(message: &str) -> bool {
     let normalized = message.to_ascii_lowercase();
     message.contains("无法启动 git")
+        || normalized.contains("detected dubious ownership")
         || normalized.contains("program not found")
         || normalized.contains("executable file not found")
         || normalized.contains("os error 2")
@@ -2051,6 +2052,13 @@ mod tests {
             "系统找不到指定的文件。 (os error 2)"
         ));
         assert!(!is_git_unavailable_error("fatal: not a git repository"));
+    }
+
+    #[test]
+    fn treats_untrusted_repository_ownership_as_optional_integration() {
+        assert!(is_git_unavailable_error(
+            "fatal: detected dubious ownership in repository at '//psf/Home/Documents/GitHub/Obsidian'\nTo add an exception for this directory, call:\n\tgit config --global --add safe.directory '%(prefix)///psf/Home/Documents/GitHub/Obsidian'"
+        ));
     }
 
     #[test]

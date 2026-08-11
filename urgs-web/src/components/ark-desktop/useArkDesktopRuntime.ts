@@ -163,6 +163,7 @@ const parseClientSessionCommand = (prompt: string) => {
 const isGitRepositoryUnavailable = (error: unknown) => {
     const message = runtimeErrorText(error).toLowerCase();
     return message.includes('not a git repository')
+        || message.includes('detected dubious ownership')
         || message.includes('无法启动 git')
         || message.includes('program not found')
         || message.includes('executable file not found')
