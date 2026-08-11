@@ -7,7 +7,7 @@ import { oneDark } from 'react-syntax-highlighter/dist/esm/styles/prism';
 import {
     AlertCircle, BrainCircuit, BriefcaseBusiness, Check, CheckCircle2, CheckSquare,
     ChevronDown, ChevronUp, CircleStop, Code2, Copy, Cpu, FileText, Folder, FolderOpen,
-    Hand, Info, KeyRound, Lightbulb, LoaderCircle, Paperclip, PanelBottom, PanelRight, Pencil, Plus, RefreshCw,
+    Hand, Info, KeyRound, Lightbulb, ListTree, LoaderCircle, Paperclip, PanelBottom, PanelRight, Pencil, Plus, RefreshCw,
     Puzzle, Search, Send, Settings, ShieldAlert, Trash2, Workflow, Wrench, X,
 } from 'lucide-react';
 import { copyToClipboard } from '@/utils/clipboard';
@@ -22,15 +22,15 @@ import AutomationCenter from './AutomationCenter';
 import { ArkDesktopSidebarToggle, ArkDesktopTitleContent } from './ArkDesktopTitleBar';
 import { ConversationPromptInput } from './SlashCommandMenu';
 import SessionCommandBar from './SessionCommandBar';
-import TaskActivityTimeline from './TaskActivityTimeline';
+import TaskActivityTimeline, { TaskActivityDetails } from './TaskActivityTimeline';
 import TaskChangeSummary from './TaskChangeSummary';
 import PlanApprovalDialog from './PlanApprovalDialog';
 import UserQuestionDialog from './UserQuestionDialog';
 import WorkspaceSessionSidebar from './WorkspaceSessionSidebar';
 import WorkflowCenter from './WorkflowCenter';
-import WorkflowRunControls from './WorkflowRunControls';
 import GitReviewPanel from './GitReviewPanel';
 import TaskTerminalPanel from './TaskTerminalPanel';
+import TaskSessionSummaryPanel from './TaskSessionSummaryPanel';
 import type {
     ArkDesktopAutomation, ArkDesktopSection,
     ArkDesktopInteractionMode, ArkDesktopModelProvider, ArkDesktopReasoningEffortOption, ArkDesktopTask, ArkDesktopTaskStatus, AutomationSchedule, GrokExecutionSettings,
@@ -66,27 +66,12 @@ const taskStatus: Record<ArkDesktopTaskStatus, { label: string; className: strin
 };
 
 const panelToggleClass = (active: boolean) => [
-    'flex h-8 w-8 shrink-0 items-center justify-center rounded-md border border-transparent bg-transparent transition-colors duration-150',
+    'flex h-8 w-8 shrink-0 items-center justify-center rounded-md border border-transparent transition-colors duration-150',
     'focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-slate-300 focus-visible:ring-offset-1',
     active
-        ? 'text-slate-900 hover:bg-slate-50'
-        : 'text-slate-400 hover:bg-slate-50 hover:text-slate-700',
+        ? 'bg-slate-100 text-slate-900 hover:bg-slate-200'
+        : 'bg-transparent text-slate-400 hover:bg-slate-50 hover:text-slate-700',
 ].join(' ');
-
-const workflowStatusPresentation = (status: string) => {
-    switch (status.toLowerCase()) {
-        case 'complete':
-        case 'completed': return { label: '已完成', className: 'bg-emerald-50 text-emerald-700' };
-        case 'failed': return { label: '失败', className: 'bg-red-50 text-red-700' };
-        case 'interrupted':
-        case 'cancelled': return { label: '已取消', className: 'bg-slate-100 text-slate-600' };
-        case 'stopped': return { label: '已停止', className: 'bg-slate-100 text-slate-600' };
-        case 'paused':
-        case 'user_paused': return { label: '已暂停', className: 'bg-amber-50 text-amber-700' };
-        case 'cleared': return { label: '已清理', className: 'bg-slate-100 text-slate-500' };
-        default: return { label: '运行中', className: 'bg-blue-50 text-blue-700' };
-    }
-};
 
 type PermissionMode = GrokExecutionSettings['permissionMode'];
 
@@ -176,6 +161,7 @@ const ArkDesktopPage: React.FC = () => {
     const [isSidebarCollapsed, setIsSidebarCollapsed] = useState(false);
     const [gitReviewOpen, setGitReviewOpen] = useState(false);
     const [gitReviewMounted, setGitReviewMounted] = useState(false);
+    const [sessionSummaryOpen, setSessionSummaryOpen] = useState(false);
     const [terminalPanelOpen, setTerminalPanelOpen] = useState(false);
     const [terminalPanelMounted, setTerminalPanelMounted] = useState(false);
     const [settingsTab, setSettingsTab] = useState<SettingsTab>('general');
@@ -192,7 +178,14 @@ const ArkDesktopPage: React.FC = () => {
     };
     const toggleGitReviewPanel = () => {
         setGitReviewMounted(true);
-        setGitReviewOpen((current) => !current);
+        const next = !gitReviewOpen;
+        setGitReviewOpen(next);
+        if (next) setSessionSummaryOpen(false);
+    };
+    const toggleSessionSummaryPanel = () => {
+        const next = !sessionSummaryOpen;
+        setSessionSummaryOpen(next);
+        if (next) setGitReviewOpen(false);
     };
 
     useEffect(() => {
@@ -406,6 +399,13 @@ const ArkDesktopPage: React.FC = () => {
     const activeWorkflowCount = useMemo(() => runtime.snapshot.tasks
         .flatMap((task) => task.workflowRuns || [])
         .filter((run) => !/complete|completed|failed|interrupted|cancelled|stopped|cleared/i.test(run.status)).length, [runtime.snapshot.tasks]);
+    const activeSessionSummaryCount = useMemo(() => {
+        const task = runtime.activeTask;
+        if (!task) return 0;
+        return (task.workflowRuns || []).filter((item) => !/complete|completed|failed|interrupted|cancelled|stopped|cleared/i.test(item.status)).length
+            + (task.backgroundTasks || []).filter((item) => !/完成|退出码|取消/i.test(item.status)).length
+            + (task.subagents || []).filter((item) => !/完成|失败|取消|退出/i.test(item.status)).length;
+    }, [runtime.activeTask]);
 
     useEffect(() => { document.title = headerTitle; }, [headerTitle]);
 
@@ -423,6 +423,10 @@ const ArkDesktopPage: React.FC = () => {
                 />
                 <div className="mr-3 flex shrink-0 items-center gap-1">
                     <ArkDesktopSidebarToggle collapsed={isSidebarCollapsed} onToggle={() => setIsSidebarCollapsed((current) => !current)} />
+                    <button type="button" disabled={!runtime.activeTask} onClick={toggleSessionSummaryPanel} className={`${panelToggleClass(sessionSummaryOpen)} relative disabled:cursor-not-allowed disabled:text-slate-300 disabled:hover:bg-transparent`} title="切换置顶摘要" aria-label="切换置顶摘要" aria-controls="task-session-summary-panel" aria-pressed={sessionSummaryOpen}>
+                        <ListTree size={16} strokeWidth={1.8} />
+                        {activeSessionSummaryCount > 0 && <span className="absolute -right-0.5 -top-0.5 flex h-3.5 min-w-3.5 items-center justify-center rounded-full bg-indigo-500 px-0.5 text-[8px] font-semibold leading-none text-white">{activeSessionSummaryCount > 9 ? '9+' : activeSessionSummaryCount}</span>}
+                    </button>
                     <button type="button" onClick={toggleTerminalPanel} className={panelToggleClass(terminalPanelOpen)} title={terminalPanelOpen ? '关闭底部终端面板' : '打开底部终端面板'} aria-label={terminalPanelOpen ? '关闭底部终端面板' : '打开底部终端面板'} aria-pressed={terminalPanelOpen}>
                         <PanelBottom size={16} strokeWidth={1.8} />
                     </button>
@@ -509,6 +513,7 @@ const ArkDesktopPage: React.FC = () => {
                 {terminalPanelMounted && <TaskTerminalPanel visible={terminalPanelOpen} workspace={runtime.activeTask?.workspace || runtime.snapshot.settings.workspace} onClose={() => setTerminalPanelOpen(false)} />}
             </section>
 
+            {runtime.activeTask && <TaskSessionSummaryPanel key={runtime.activeTask.id} visible={sessionSummaryOpen} task={runtime.activeTask} runtime={runtime} onClose={() => setSessionSummaryOpen(false)} />}
             {gitReviewAvailable && runtime.activeTask && gitReviewMounted && <GitReviewPanel visible={gitReviewOpen} task={runtime.activeTask} runtime={runtime} onClose={() => setGitReviewOpen(false)} />}
 
             {editor?.type === 'automation' && <AutomationEditor id={editor.id} runtime={runtime} onClose={() => setEditor(null)} />}
@@ -1294,7 +1299,6 @@ const TaskComposer: React.FC<{ task?: ArkDesktopTask; runtime: ReturnType<typeof
 
 interface TaskComposerHandle {
     setValue: (value: string) => void;
-    clear: () => void;
 }
 
 const StatefulTaskComposer = React.forwardRef<TaskComposerHandle, {
@@ -1316,11 +1320,11 @@ const StatefulTaskComposer = React.forwardRef<TaskComposerHandle, {
 
     React.useImperativeHandle(ref, () => ({
         setValue,
-        clear: () => setValue(''),
     }), [setValue]);
 
     const submit = useCallback(async () => {
-        if (await onSubmitValue(value)) setValue('');
+        setValue('');
+        if (!await onSubmitValue(value)) setValue(value);
     }, [onSubmitValue, setValue, value]);
 
     return <TaskComposer
@@ -1336,67 +1340,6 @@ const StatefulTaskComposer = React.forwardRef<TaskComposerHandle, {
 });
 
 StatefulTaskComposer.displayName = 'StatefulTaskComposer';
-
-const TaskSessionUtilityBar: React.FC<{ task: ArkDesktopTask; runtime: ReturnType<typeof useArkDesktopRuntime> }> = ({ task, runtime }) => {
-    const [pending, setPending] = useState<string | null>(null);
-    const backgroundCount = (task.backgroundTasks || []).filter((item) => !/完成|退出码|取消/i.test(item.status)).length;
-    const subagentCount = (task.subagents || []).filter((item) => !/完成|失败|取消|退出/i.test(item.status)).length;
-    const workflowCount = (task.workflowRuns || []).filter((item) => !/complete|failed|interrupted|cancelled|stopped|cleared/i.test(item.status)).length;
-    const workflowCommandAvailable = Boolean(
-        task.availableCommands?.some((command) => command.name === 'workflow')
-        || (runtime.activeTaskId === task.id && runtime.availableCommands.some((command) => command.name === 'workflow')),
-    );
-    const run = async (action: string, callback: () => Promise<unknown>) => {
-        if (pending) return;
-        setPending(action);
-        try {
-            await callback();
-        } catch (error) {
-            runtime.setRuntimeError(error instanceof Error ? error.message : String(error));
-        } finally {
-            setPending(null);
-        }
-    };
-    const hasSessionDetails = Boolean(task.runtimeMode || task.recap || task.backgroundTasks?.length || task.subagents?.length || task.workflowRuns?.length || task.mcpServers?.length);
-    if (!hasSessionDetails) return null;
-
-    return <div className="mb-4 rounded-2xl border border-slate-200 bg-white px-4 py-3 shadow-[0_4px_18px_rgba(15,23,42,0.04)]">
-        <div className="space-y-2">
-            {task.runtimeMode && <div className="flex items-center gap-2 text-[11px] text-slate-600"><span className="font-medium">当前运行模式</span><code className="rounded bg-slate-100 px-1.5 py-0.5 text-[10px] text-slate-500">{task.runtimeMode}</code></div>}
-            {task.recap && <details className="group" open>
-                <summary className="cursor-pointer list-none text-[11px] font-medium text-slate-600">最近会话 Recap</summary>
-                <p className="mt-1.5 whitespace-pre-wrap text-xs leading-5 text-slate-500">{task.recap}</p>
-            </details>}
-            {task.workflowRuns?.length ? <details className="group" open>
-                <summary className="flex cursor-pointer list-none items-center gap-2 text-[11px] font-medium text-slate-600"><Workflow size={13} className="text-[#6657d9]" /><span>工作流运行</span>{workflowCount > 0 && <span className="rounded-full bg-[#eeeaff] px-1.5 py-0.5 text-[10px] text-[#6657d9]">{workflowCount} 运行中</span>}</summary>
-                <div className="mt-2 space-y-1.5">
-                    {task.workflowRuns.map((item) => {
-                        const presentation = workflowStatusPresentation(item.status);
-                        const phase = item.currentPhase || item.phases.find((value) => value.state === 'active')?.title;
-                        return <div key={`workflow-${item.runId}`} className="rounded-lg bg-slate-50 px-2.5 py-2">
-                            <div className="flex items-center gap-2"><span className="min-w-0 flex-1 truncate text-[11px] font-medium text-slate-700">{item.name}</span><span className={`rounded-full px-1.5 py-0.5 text-[10px] ${presentation.className}`}>{presentation.label}</span>{workflowCommandAvailable && <WorkflowRunControls compact run={item} onCommand={(action) => runtime.sendWorkflowCommand(task.id, action, item.name)} onError={(error) => runtime.setRuntimeError(error instanceof Error ? error.message : String(error))} />}</div>
-                            {item.objective && <p className="mt-1 line-clamp-2 text-[10px] leading-4 text-slate-500">{item.objective}</p>}
-                            <div className="mt-1 flex flex-wrap gap-x-3 gap-y-1 text-[10px] text-slate-400"><span>{phase ? `阶段：${phase}` : '阶段：准备中'}</span><span>{item.activeAgents} 个活跃智能体</span>{item.agentBudget != null && <span>预算 {item.agentsUsed}/{item.agentBudget}</span>}</div>
-                            {item.pauseMessage && <p className="mt-1 text-[10px] leading-4 text-amber-700">{item.pauseMessage}</p>}
-                            {item.resultSummary && <p className="mt-1 max-h-10 overflow-hidden text-[10px] leading-4 text-slate-400">{item.resultSummary}</p>}
-                        </div>;
-                    })}
-                </div>
-                <p className="mt-2 text-[10px] text-slate-400">可在会话命令栏选择 <code>/workflow</code> 管理暂停、恢复或停止。</p>
-            </details> : null}
-            <details className="group">
-                <summary className="flex cursor-pointer list-none items-center gap-2 text-[11px] font-medium text-slate-600"><span>后台运行</span>{(backgroundCount + subagentCount) > 0 && <span className="rounded-full bg-[#eeeaff] px-1.5 py-0.5 text-[10px] text-[#6657d9]">{backgroundCount + subagentCount} 运行中</span>}</summary>
-                <div className="mt-2 flex items-center justify-between gap-2"><span className="text-[10px] text-slate-400">后台任务和子智能体属于当前会话，控制入口集中在这里。</span><button type="button" disabled={!task.sessionId || pending !== null} onClick={() => void run('background', () => runtime.refreshTaskBackgroundTasks(task.id))} className="flex items-center gap-1 rounded-md px-2 py-1 text-[10px] font-medium text-slate-500 hover:bg-slate-100 disabled:opacity-40"><RefreshCw size={11} />刷新</button></div>
-                <div className="mt-2 space-y-1.5">
-                    {(task.backgroundTasks || []).map((item) => <div key={`background-${item.taskId}`} className="rounded-lg bg-slate-50 px-2.5 py-2"><div className="flex items-center gap-2"><span className="min-w-0 flex-1 truncate text-[11px] font-medium text-slate-700">{item.title}</span><span className="text-[10px] text-slate-400">{item.status}</span>{!/完成|退出码|取消/i.test(item.status) && <><button type="button" onClick={() => void run(`wait:${item.taskId}`, () => runtime.waitTaskBackgroundTask(task.id, item.taskId))} className="rounded-md px-1.5 py-0.5 text-[10px] text-slate-600 hover:bg-white">等待</button><button type="button" onClick={() => void run(`kill:${item.taskId}`, () => runtime.killTaskBackgroundTask(task.id, item.taskId))} className="rounded-md px-1.5 py-0.5 text-[10px] text-red-600 hover:bg-red-50">停止</button></>}</div>{item.output && <p className="mt-1 max-h-12 overflow-hidden whitespace-pre-wrap text-[10px] leading-4 text-slate-400">{item.output}</p>}</div>)}
-                    {(task.subagents || []).map((item) => <div key={`subagent-${item.subagentId}`} className="rounded-lg bg-slate-50 px-2.5 py-2"><div className="flex items-center gap-2"><span className="min-w-0 flex-1 truncate text-[11px] font-medium text-slate-700">{item.title}</span><span className="text-[10px] text-slate-400">{item.status}</span>{!/完成|失败|取消|退出/i.test(item.status) && <><button type="button" onClick={() => void run(`wait-subagent:${item.subagentId}`, () => runtime.waitTaskSubagent(task.id, item.subagentId))} className="rounded-md px-1.5 py-0.5 text-[10px] text-slate-600 hover:bg-white">等待</button><button type="button" onClick={() => void run(`subagent:${item.subagentId}`, () => runtime.cancelTaskSubagent(task.id, item.subagentId))} className="rounded-md px-1.5 py-0.5 text-[10px] text-red-600 hover:bg-red-50">取消</button></>}</div>{item.output && <p className="mt-1 max-h-12 overflow-hidden whitespace-pre-wrap text-[10px] leading-4 text-slate-400">{item.output}</p>}</div>)}
-                    {!task.backgroundTasks?.length && !task.subagents?.length && <p className="text-[10px] text-slate-400">当前没有后台任务或子智能体。</p>}
-                </div>
-            </details>
-            {task.mcpServers?.length ? <details className="group"><summary className="flex cursor-pointer list-none items-center gap-2 text-[11px] font-medium text-slate-600"><span>当前会话 MCP</span><span className="rounded-full bg-slate-100 px-1.5 py-0.5 text-[10px] text-slate-500">{task.mcpServers.length}</span></summary><div className="mt-2 space-y-1.5">{task.mcpServers.map((server) => <div key={server.name} className="flex items-center gap-2 rounded-lg bg-slate-50 px-2.5 py-2 text-[10px] text-slate-500"><span className="min-w-0 flex-1 truncate">{server.name} · {server.transport}</span><span>{server.health || 'configured'} · {server.tools.length} tools</span></div>)}<button type="button" disabled={pending !== null} onClick={() => void run('mcp', () => runtime.reloadTaskMcp(task.id))} className="mt-1 flex items-center gap-1 rounded-md px-2 py-1 text-[10px] font-medium text-slate-500 hover:bg-slate-100 disabled:opacity-40"><RefreshCw size={11} />热更新当前会话 MCP</button></div></details> : null}
-        </div>
-    </div>;
-};
 
 const TaskView: React.FC<{ task?: ArkDesktopTask; runtime: ReturnType<typeof useArkDesktopRuntime>; scrollContainerRef: React.RefObject<HTMLDivElement | null>; composerDraftsRef: React.MutableRefObject<Record<string, string>>; locateLatestMessage: boolean; onLatestMessageLocated: () => void; newTask?: NewTaskConfig }> = ({ task, runtime, scrollContainerRef, composerDraftsRef, locateLatestMessage, onLatestMessageLocated, newTask }) => {
     const [sending, setSending] = useState(false);
@@ -1427,9 +1370,7 @@ const TaskView: React.FC<{ task?: ArkDesktopTask; runtime: ReturnType<typeof use
         if (!task) return;
         setAuthorizing(true);
         try {
-            const action = task.modelKeyAuthorization?.action;
             await runtime.authorizeTaskModel(task.id);
-            if (action === 'follow_up') composerRef.current?.clear();
         } catch {
             // 授权错误保留在当前任务中，用户可继续重试。
         } finally {
@@ -1539,11 +1480,14 @@ const TaskView: React.FC<{ task?: ArkDesktopTask; runtime: ReturnType<typeof use
     }, [locateLatestMessage, onLatestMessageLocated, scrollContainerRef, task?.id, latestMessage?.content, latestMessage?.createdAt, latestTool?.id, latestTool?.updatedAt]);
 
     return <div className="mx-auto flex min-h-full w-full max-w-[960px] flex-col px-4 py-5 font-sans sm:px-5 lg:px-0">
-        {task && <TaskSessionUtilityBar task={task} runtime={runtime} />}
         <div className="flex-1">{isNewTask ? <div className="flex min-h-[300px] flex-col items-center justify-center py-8 text-center"><img src="/ark/ark-agents-robot-cropped.png" alt="URGS 智能任务中心" className="mb-3 h-20 w-20 object-contain mix-blend-multiply" /><h2 className="text-2xl font-semibold tracking-[-0.035em] text-[#303136]">让智能体把想法变成现实</h2><p className="mt-2 text-sm text-slate-500">输入第一条消息，即可在当前会话中开始执行</p><div className="mt-5 flex w-full flex-wrap justify-center gap-2">{taskTags.map((tag) => { const Icon = tag.icon; const active = newTask?.selectedSkillIds.includes(tag.skillId); return <button key={tag.label} type="button" onClick={() => { composerRef.current?.setValue(tag.prompt); newTask?.setSelectedSkillIds((current) => active ? current.filter((id) => id !== tag.skillId) : [...current, tag.skillId]); }} className={`flex items-center gap-2 rounded-full px-4 py-2.5 text-sm font-medium transition hover:-translate-y-0.5 ${active ? 'bg-slate-900 text-white' : 'bg-[#e9e9eb] text-[#494a4f] hover:bg-[#dedee1]'}`}><Icon size={17} />{tag.label}{active && <Check size={14} />}</button>; })}</div></div> : <>{turns.map((turn, index) => {
             const isCurrentTurn = index === turns.length - 1;
             const turnIsActive = isCurrentTurn && (task!.status === 'running' || task!.status === 'waiting_authorization');
-            const responseMessages = turn.stages.flatMap((stage) => stage.message ? [stage.message] : []);
+            const responseMessages = turn.stages
+                .flatMap((stage) => stage.message ? [stage.message] : [])
+                .filter((message) => message.content.trim());
+            const finalResponse = turnIsActive ? undefined : responseMessages[responseMessages.length - 1];
+            const processMessages = turnIsActive ? responseMessages : responseMessages.slice(0, -1);
             const turnTools = turn.stages.flatMap((stage) => stage.tools);
             const toolStartedAt = turnTools.reduce((earliest, tool) => Math.min(earliest, tool.startedAt || tool.updatedAt), Number.POSITIVE_INFINITY);
             const turnStartedAt = Number.isFinite(toolStartedAt)
@@ -1565,8 +1509,15 @@ const TaskView: React.FC<{ task?: ArkDesktopTask; runtime: ReturnType<typeof use
                     runCompletedAt={turnCompletedAt || undefined}
                     isActive={turnIsActive}
                     summaryOnly
-                />
-                {responseMessages.map((message) => <TaskMessage key={message.id} message={message} scrollTarget={message.id === task!.messages[task!.messages.length - 1]?.id ? lastMessageRef : undefined} />)}
+                >
+                    {processMessages.length > 0 ? <div className="space-y-2 py-1">
+                        {processMessages.map((message) => <div key={message.id} ref={message.id === task!.messages[task!.messages.length - 1]?.id ? lastMessageRef : undefined} className="rounded-lg bg-slate-50 px-3 py-2 [&>div]:text-[13px] [&>div]:leading-6 [&>div]:text-slate-500 [&_h1]:text-[16px] [&_h1]:text-slate-700 [&_h2]:text-[15px] [&_h2]:text-slate-700 [&_h3]:text-[14px] [&_h3]:text-slate-700">
+                            <MarkdownContent content={message.content} />
+                        </div>)}
+                        <TaskActivityDetails tools={turnTools} />
+                    </div> : undefined}
+                </TaskActivityTimeline>
+                {finalResponse && <TaskMessage message={finalResponse} scrollTarget={finalResponse.id === task!.messages[task!.messages.length - 1]?.id ? lastMessageRef : undefined} />}
                 <TaskChangeSummary taskId={task!.id} workspace={task!.workspace} promptIndex={index} tools={turnTools} taskStatus={turnStatus} plan={isCurrentTurn ? task!.plan : undefined} onRewind={runtime.rewindTaskFiles} />
             </div>;
         })}{task?.modelKeyAuthorization && <div className="my-5 flex flex-wrap items-center gap-3 rounded-xl border border-amber-200 bg-amber-50 px-4 py-3 text-sm text-amber-900"><span className="flex h-8 w-8 shrink-0 items-center justify-center rounded-lg bg-white text-amber-700 shadow-sm"><KeyRound size={16} /></span><div className="min-w-0 flex-1"><div className="font-medium">解锁本地模型密钥</div><div className="mt-0.5 text-xs leading-5 text-amber-700">仅从本机 macOS 钥匙串读取，不连接 xAI。解锁后将继续当前任务。</div></div><div className="flex items-center gap-2"><button type="button" disabled={authorizing} onClick={() => void runtime.cancelTask(task.id)} className="h-8 rounded-lg px-2.5 text-xs font-medium text-amber-800 hover:bg-amber-100 disabled:opacity-60">取消任务</button><button type="button" disabled={authorizing} onClick={() => void authorizeModelKey()} className="flex h-8 items-center gap-1.5 rounded-lg bg-amber-700 px-3 text-xs font-medium text-white hover:bg-amber-800 disabled:opacity-60">{authorizing ? <LoaderCircle size={14} className="animate-spin" /> : <KeyRound size={14} />}解锁密钥</button></div></div>}{task?.error && <div className="my-5 flex gap-2 rounded-xl border border-red-200 bg-red-50 px-4 py-3 text-sm leading-6 text-red-700"><AlertCircle size={16} className="mt-0.5 shrink-0" /><span className="flex-1">{task.error}</span><button type="button" onClick={() => runtime.dismissTaskError(task.id)} className="shrink-0 text-red-500 hover:text-red-700" title="关闭提示" aria-label="关闭提示"><X size={16} /></button></div>}</>}</div>
