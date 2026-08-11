@@ -11,6 +11,7 @@ import {
     Puzzle, Search, Send, Settings, ShieldAlert, Trash2, Workflow, Wrench, X,
 } from 'lucide-react';
 import { copyToClipboard } from '@/utils/clipboard';
+import { getAvatarUrl } from '@/utils/avatarUtils';
 import { useArkDesktopRuntime } from './useArkDesktopRuntime';
 import GrokCliCenter from './GrokCliCenter';
 import GrokPluginManager from './GrokPluginManager';
@@ -56,6 +57,31 @@ const sectionItems: Array<{ id: ArkDesktopSection; label: string; icon: React.El
 ];
 
 type SettingsTab = 'general' | 'execution' | 'configuration' | 'plugins' | 'diagnostics';
+
+type AuthUser = {
+    name?: string;
+    empId?: string;
+    avatarUrl?: string;
+};
+
+const readAuthUser = (): AuthUser | null => {
+    if (typeof window === 'undefined') return null;
+    const storedUser = window.localStorage.getItem('auth_user');
+    if (!storedUser || storedUser === 'undefined') return null;
+    try {
+        return JSON.parse(storedUser) as AuthUser;
+    } catch {
+        return null;
+    }
+};
+
+const getUserInitials = (name: string) => {
+    const normalizedName = name.trim();
+    if (!normalizedName) return 'U';
+    const words = normalizedName.split(/\s+/);
+    if (words.length > 1) return words.slice(0, 2).map((word) => word[0]).join('').toUpperCase();
+    return /^[A-Za-z]/.test(normalizedName) ? normalizedName.slice(0, 2).toUpperCase() : normalizedName.slice(0, 1);
+};
 
 const taskStatus: Record<ArkDesktopTaskStatus, { label: string; className: string }> = {
     running: { label: '执行中', className: 'bg-blue-50 text-blue-600' },
@@ -149,6 +175,7 @@ const inputClass = 'w-full rounded-xl border border-slate-200 bg-white px-3 py-2
 
 const ArkDesktopPage: React.FC = () => {
     const runtime = useArkDesktopRuntime();
+    const [authUser, setAuthUser] = useState<AuthUser | null>(readAuthUser);
     const [section, setSection] = useState<ArkDesktopSection>('new-task');
     const [newTaskComposerId, setNewTaskComposerId] = useState(0);
     const composerDraftsRef = useRef<Record<string, string>>({});
@@ -172,6 +199,7 @@ const ArkDesktopPage: React.FC = () => {
     const draftWorkspaceFollowsDefaultRef = useRef(true);
     const conversationScrollRef = useRef<HTMLDivElement>(null);
     const clearLatestMessageLocation = useCallback(() => setLatestMessageTaskId(null), []);
+    const userName = authUser?.name || authUser?.empId || '用户';
     const toggleTerminalPanel = () => {
         setTerminalPanelMounted(true);
         setTerminalPanelOpen((current) => !current);
@@ -182,6 +210,14 @@ const ArkDesktopPage: React.FC = () => {
         setGitReviewOpen(next);
         if (next) setSessionSummaryOpen(false);
     };
+
+    useEffect(() => {
+        const syncAuthUser = (event: StorageEvent) => {
+            if (event.key === 'auth_user') setAuthUser(readAuthUser());
+        };
+        window.addEventListener('storage', syncAuthUser);
+        return () => window.removeEventListener('storage', syncAuthUser);
+    }, []);
     const toggleSessionSummaryPanel = () => {
         const next = !sessionSummaryOpen;
         setSessionSummaryOpen(next);
@@ -353,13 +389,6 @@ const ArkDesktopPage: React.FC = () => {
         if (wasActive) openNewTask();
     };
 
-    const renderRuntimeBadge = () => {
-        if (!runtime.runtimeStatus) return <span className="text-slate-400">检测中…</span>;
-        if (!runtime.runtimeStatus.available) return <span className="text-red-600">内置智能引擎未就绪</span>;
-        const provider = runtime.snapshot.settings.modelProviders.find((item) => item.id === runtime.snapshot.settings.grokModel);
-        if (!provider?.enabled || !provider.hasApiKey) return <span className="text-amber-600">请配置模型连接</span>;
-        return <span className="text-emerald-600">内置智能引擎已就绪</span>;
-    };
     const headerTitle = runtime.activeTask?.title || (section === 'settings' ? '设置' : sectionItems.find((item) => item.id === section)?.label || '新建任务');
     const headerStatus = runtime.activeTask ? taskStatus[runtime.activeTask.status] : undefined;
     const showGitReview = true;
@@ -473,7 +502,16 @@ const ArkDesktopPage: React.FC = () => {
                     onDeleteTask={deleteSidebarTask}
                     onError={runtime.setRuntimeError}
                 />
-                <div className="mt-3 flex items-center justify-between border-t border-[#e5e5e7] px-2 pt-3 text-xs" title={runtime.runtimeStatus?.version || runtime.runtimeStatus?.message || '正在检测内置智能引擎'}><span className="flex items-center gap-2"><span className="flex h-7 w-7 items-center justify-center rounded-full bg-[#313238] text-[10px] font-medium text-white">U</span><span className="font-medium text-[#494a4f]">本地任务</span></span><span>{renderRuntimeBadge()}</span></div>
+                <div className="mt-3 border-t border-[#e5e5e7] pt-3">
+                    <div className="flex h-12 min-w-0 items-center gap-3 rounded-xl px-2.5 text-[#303136] transition-colors hover:bg-[#eeeeef]" title={userName}>
+                        {authUser?.avatarUrl ? (
+                            <img src={getAvatarUrl(authUser.avatarUrl, userName)} alt={`${userName}头像`} className="h-8 w-8 shrink-0 rounded-full object-cover" />
+                        ) : (
+                            <span className="flex h-8 w-8 shrink-0 items-center justify-center rounded-full bg-[#c94f47] text-[11px] font-medium text-white">{getUserInitials(userName)}</span>
+                        )}
+                        <span className="min-w-0 flex-1 truncate text-[14px] font-medium">{userName}</span>
+                    </div>
+                </div>
             </aside>
             <section className="relative flex min-w-0 flex-1 flex-col overflow-hidden">
                 {runtime.runtimeError && <div className="mx-5 mt-4 flex items-start gap-2 rounded-xl border border-red-200 bg-red-50 px-4 py-3 text-sm text-red-700"><AlertCircle size={17} className="mt-0.5 shrink-0" /><span className="flex-1">{runtime.runtimeError}</span><button type="button" onClick={() => runtime.setRuntimeError('')}><X size={16} /></button></div>}

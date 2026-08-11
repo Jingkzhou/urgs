@@ -1174,6 +1174,8 @@ const ColumnLineageDiagram: React.FC<ColumnLineageDiagramProps> = ({
                     title="关系来源详情"
                     rootClassName="lineage-relation-detail-modal"
                     className="lineage-relation-detail-dialog"
+                    transitionName=""
+                    maskTransitionName=""
                     footer={!selectedRelation.link.sourceColumnId && !selectedRelation.link.targetColumnId ? (
                         <Button type="primary" onClick={() => void handleAnalyzeTableRelation()} loading={fieldLoading}>
                             字段级分析该表关系
@@ -1265,6 +1267,8 @@ const ColumnLineageDiagram: React.FC<ColumnLineageDiagramProps> = ({
                     zIndex={1100}
                     rootClassName="lineage-source-files-modal"
                     className="lineage-source-files-dialog"
+                    transitionName=""
+                    maskTransitionName=""
                     styles={{ body: { padding: 0 } }}
                     onCancel={() => setSourceFilesModalVisible(false)}
                 >

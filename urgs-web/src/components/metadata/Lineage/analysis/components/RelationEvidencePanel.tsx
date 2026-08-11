@@ -247,6 +247,8 @@ const RelationEvidencePanel: React.FC<RelationEvidencePanelProps> = ({
                 zIndex={1200}
                 rootClassName="lineage-sql-evidence-modal"
                 className="lineage-sql-evidence-dialog"
+                transitionName=""
+                maskTransitionName=""
                 style={{ top: 0, maxWidth: '100vw', paddingBottom: 0 }}
                 styles={{
                     container: { height: '100vh', borderRadius: 0 },
