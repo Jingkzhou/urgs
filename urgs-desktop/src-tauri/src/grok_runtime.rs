@@ -1205,6 +1205,27 @@ fn grok_home(app: &AppHandle) -> Result<PathBuf, String> {
     Ok(directory)
 }
 
+fn general_task_workspace(app: &AppHandle) -> Result<PathBuf, String> {
+    let directory = app
+        .path()
+        .app_data_dir()
+        .map_err(|error| format!("无法定位智能任务中心数据目录: {error}"))?
+        .join("task-center")
+        .join("general");
+    fs::create_dir_all(&directory).map_err(|error| format!("创建通用任务目录失败: {error}"))?;
+    directory
+        .canonicalize()
+        .map_err(|error| format!("无法访问通用任务目录: {error}"))
+}
+
+fn resolve_task_workspace(app: &AppHandle, workspace: &str) -> Result<PathBuf, String> {
+    if workspace.trim().is_empty() {
+        general_task_workspace(app)
+    } else {
+        validate_workspace(workspace)
+    }
+}
+
 fn persisted_session_number(value: &Value, camel_case: &str, snake_case: &str) -> u64 {
     value
         .get(camel_case)
@@ -3437,10 +3458,11 @@ pub async fn grok_runtime_status(app: AppHandle) -> Result<GrokRuntimeStatus, St
 
 #[tauri::command]
 pub async fn grok_available_commands(
+    app: AppHandle,
     state: State<'_, GrokRuntimeState>,
     workspace: String,
 ) -> Result<Vec<GrokAvailableCommand>, String> {
-    let workspace = validate_workspace(&workspace)?;
+    let workspace = resolve_task_workspace(&app, &workspace)?;
     let prepared = state
         .prepared_process
         .lock()
@@ -3532,21 +3554,23 @@ pub async fn grok_workflow_read(
 
 #[tauri::command]
 pub async fn grok_model_catalog(
+    app: AppHandle,
     state: State<'_, GrokRuntimeState>,
     workspace: String,
 ) -> Result<Option<GrokModelCatalog>, String> {
-    let workspace = validate_workspace(&workspace)?;
+    let workspace = resolve_task_workspace(&app, &workspace)?;
     Ok(workspace_process(&state, &workspace)?.model_catalog())
 }
 
 #[tauri::command]
 pub async fn grok_session_search(
+    app: AppHandle,
     state: State<'_, GrokRuntimeState>,
     workspace: String,
     query: String,
     limit: Option<usize>,
 ) -> Result<Value, String> {
-    let workspace = validate_workspace(&workspace)?;
+    let workspace = resolve_task_workspace(&app, &workspace)?;
     let query = query.trim();
     if query.is_empty() {
         return Ok(json!({ "results": [], "nextOffset": null, "totalEstimate": 0 }));
@@ -3839,7 +3863,7 @@ pub async fn grok_session_update_mcp_servers(
 
 #[tauri::command]
 pub fn grok_mcp_list(app: AppHandle, workspace: String) -> Result<Vec<GrokMcpServerState>, String> {
-    let workspace = validate_workspace(&workspace)?;
+    let workspace = resolve_task_workspace(&app, &workspace)?;
     Ok(configured_mcp_servers(&app, &workspace)?.1)
 }
 
@@ -3901,17 +3925,20 @@ pub fn grok_mcp_set_enabled(
     }
     fs::write(&path, serialize_grok_toml(&config)?)
         .map_err(|error| format!("保存 MCP 配置失败: {error}"))?;
-    let display_workspace =
-        workspace_path.unwrap_or(std::env::current_dir().map_err(|error| error.to_string())?);
+    let display_workspace = match workspace_path {
+        Some(workspace) => workspace,
+        None => general_task_workspace(&app)?,
+    };
     Ok(configured_mcp_servers(&app, &display_workspace)?.1)
 }
 
 #[tauri::command]
 pub async fn grok_reload_mcp_servers(
+    app: AppHandle,
     state: State<'_, GrokRuntimeState>,
     workspace: String,
 ) -> Result<Value, String> {
-    let workspace = validate_workspace(&workspace)?;
+    let workspace = resolve_task_workspace(&app, &workspace)?;
     workspace_process(&state, &workspace)?
         .request("x.ai/internal/reload_all_mcp_servers", json!({}))
         .await
@@ -4016,7 +4043,7 @@ pub async fn grok_runtime_prepare(
     options: Option<GrokAcpOptions>,
     rules: Option<String>,
 ) -> Result<(), String> {
-    let workspace = validate_workspace(&workspace)?;
+    let workspace = resolve_task_workspace(&app, &workspace)?;
     let model = normalize_model_id(&model)?;
     let options = options.unwrap_or_default();
     let effective_options = effective_acp_options(&app, Some(&model), &options)?;
@@ -4084,7 +4111,7 @@ pub async fn grok_cli_run(
     ensure_model_provider_ready(&app, model)?;
     let current_dir = match workspace.filter(|value| !value.trim().is_empty()) {
         Some(workspace) => validate_workspace(&workspace)?,
-        None => grok_home(&app)?,
+        None => general_task_workspace(&app)?,
     };
     let mut command_arguments = vec![
         "--no-auto-update".to_string(),
@@ -4123,6 +4150,7 @@ pub async fn grok_cli_run(
 
 #[tauri::command]
 pub async fn terminal_run_command(
+    app: AppHandle,
     workspace: Option<String>,
     command: String,
 ) -> Result<TerminalCommandResult, String> {
@@ -4133,9 +4161,7 @@ pub async fn terminal_run_command(
 
     let current_dir = match workspace.filter(|value| !value.trim().is_empty()) {
         Some(workspace) => validate_workspace(&workspace)?,
-        None => {
-            std::env::current_dir().map_err(|error| format!("无法获取终端工作目录: {error}"))?
-        }
+        None => general_task_workspace(&app)?,
     };
 
     #[cfg(windows)]
@@ -4253,9 +4279,7 @@ fn create_terminal_session_blocking(
 ) -> Result<TerminalSessionInfo, String> {
     let current_dir = match workspace.filter(|value| !value.trim().is_empty()) {
         Some(workspace) => validate_workspace(&workspace)?,
-        None => {
-            std::env::current_dir().map_err(|error| format!("无法获取终端工作目录: {error}"))?
-        }
+        None => general_task_workspace(&app)?,
     };
     let (shell, shell_command) = terminal_shell_command();
     let pty_system = native_pty_system();
@@ -4874,7 +4898,7 @@ pub fn grok_cli_service_start(
     ensure_model_provider_ready(&app, model)?;
     let current_dir = match workspace.filter(|value| !value.trim().is_empty()) {
         Some(workspace) => validate_workspace(&workspace)?,
-        None => grok_home(&app)?,
+        None => general_task_workspace(&app)?,
     };
     let mut command_arguments = vec![
         "--no-auto-update".to_string(),
@@ -5019,7 +5043,7 @@ pub async fn grok_create_session(
     model: Option<String>,
     options: Option<GrokAcpOptions>,
 ) -> Result<GrokSession, String> {
-    let workspace = validate_workspace(&workspace)?;
+    let workspace = resolve_task_workspace(&app, &workspace)?;
     desktop_log::info(
         "grok.session",
         &format!(
@@ -5131,7 +5155,7 @@ pub async fn grok_load_session(
         return Err("会话标识不能为空".to_string());
     }
     let attach_method = session_attach_method(attach_mode.as_deref())?;
-    let workspace = validate_workspace(&workspace)?;
+    let workspace = resolve_task_workspace(&app, &workspace)?;
     desktop_log::info(
         "grok.session",
         &format!(
@@ -5469,6 +5493,7 @@ pub async fn grok_session_set_mode(
 
 #[tauri::command]
 pub async fn grok_session_fork(
+    app: AppHandle,
     state: State<'_, GrokRuntimeState>,
     source_session_id: String,
     source_cwd: String,
@@ -5479,10 +5504,7 @@ pub async fn grok_session_fork(
     if source_session_id.is_empty() {
         return Err("源会话 ID 不能为空".to_string());
     }
-    let source_cwd = source_cwd.trim();
-    if source_cwd.is_empty() {
-        return Err("源会话工作区不能为空".to_string());
-    }
+    let source_cwd = resolve_task_workspace(&app, &source_cwd)?;
     let process = session_process(&state, source_session_id)?;
     process
         .request(
@@ -5652,7 +5674,7 @@ pub async fn grok_rewind_files(
     if session_id.is_empty() {
         return Err("会话标识不能为空".to_string());
     }
-    let workspace = validate_workspace(&workspace)?;
+    let workspace = resolve_task_workspace(&app, &workspace)?;
     let requested_model = normalize_model_id(&model)?;
     let (process, transient) = match session_process(&state, session_id) {
         Ok(process) => (process, false),

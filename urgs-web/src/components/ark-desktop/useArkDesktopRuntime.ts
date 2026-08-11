@@ -660,8 +660,10 @@ const selectAgentId = (snapshot: ArkDesktopSnapshot, requestedAgentId?: string, 
     return snapshot.settings.defaultAgentId || 'grok-general';
 };
 
-const buildSessionRules = (agent: ArkDesktopAgent, skills: ArkDesktopSkill[]) => [
-    '你运行在 URGS ARK Desktop 智能任务中心中。你可以操作用户明确选择的本地工作区。',
+const buildSessionRules = (agent: ArkDesktopAgent, skills: ArkDesktopSkill[], workspace?: string) => [
+    workspace?.trim()
+        ? '你运行在 URGS ARK Desktop 智能任务中心中。你可以操作用户明确选择的本地工作区。'
+        : '你运行在 URGS ARK Desktop 智能任务中心的通用会话中，当前没有绑定用户工作空间。可以完成问答、研究、写作、分析、附件处理和多步骤任务；不要假定存在代码仓库，不要扫描用户目录。系统提供的通用任务目录仅用于本会话运行和临时产物；需要操作某个项目时，先提示用户选择工作空间。',
     agent.systemPrompt,
     ...skills.map((skill) => `技能【${skill.name}】：${skill.instruction}`),
     '当需要用户在预设方向、方案或偏好中选择时，必须调用 AskUserQuestion 工具并提供结构化选项。不要在普通消息里列出题目、选项或要求用户用文字回答；调用前最多用一句话说明需要确认方向，随后等待用户在界面卡片中选择。',
@@ -669,6 +671,9 @@ const buildSessionRules = (agent: ArkDesktopAgent, skills: ArkDesktopSkill[]) =>
     '执行要求：先理解目标，再使用必要工具完成实际工作；涉及修改或命令时等待 ARK Desktop 的用户授权；结束时总结产物、修改文件和验证结果。',
     '语言要求：默认使用简体中文。除代码、命令、文件路径、API/协议字段名、专有名词及工具原始输出外，所有面向用户的自然语言内容（包括助手消息、分析过程、工作记录、计划、工具摘要、错误说明和最终总结）必须使用简体中文；只有用户明确要求其他语言时才切换。不要因为用户输入、代码或工具输出包含英文而切换语言。',
 ].filter(Boolean).join('\n\n');
+
+const resolveWorkspaceOverride = (workspaceOverride: string | undefined, fallback: string) =>
+    workspaceOverride === undefined ? fallback : workspaceOverride.trim();
 
 const buildTaskPrompt = (prompt: string, attachmentPaths: string[]) => {
     if (attachmentPaths.length === 0) return prompt;
@@ -837,9 +842,9 @@ export const useArkDesktopRuntime = () => {
         const requestId = ++capabilityRequestIdRef.current;
         setCapabilitiesLoading(true);
         setCapabilitiesError('');
-        const workspace = workspaceOverride?.trim() || snapshotRef.current.settings.workspace;
+        const workspace = resolveWorkspaceOverride(workspaceOverride, snapshotRef.current.settings.workspace);
         const results = await Promise.allSettled([
-            workspace ? listGrokAvailableCommands(workspace) : Promise.resolve([]),
+            listGrokAvailableCommands(workspace),
             inspectGrokPlugins(workspace || undefined),
         ]);
         if (requestId !== capabilityRequestIdRef.current) return;
@@ -878,8 +883,7 @@ export const useArkDesktopRuntime = () => {
 
     const refreshModelCatalog = useCallback(async (workspaceOverride?: string) => {
         if (!isDesktopRuntime()) return null;
-        const workspace = workspaceOverride?.trim() || snapshotRef.current.settings.workspace;
-        if (!workspace) return null;
+        const workspace = resolveWorkspaceOverride(workspaceOverride, snapshotRef.current.settings.workspace);
         try {
             const catalog = await getGrokModelCatalog(workspace);
             setModelCatalog(catalog || null);
@@ -892,8 +896,7 @@ export const useArkDesktopRuntime = () => {
 
     const refreshMcpServers = useCallback(async (workspaceOverride?: string) => {
         if (!isDesktopRuntime()) return [];
-        const workspace = workspaceOverride?.trim() || snapshotRef.current.settings.workspace;
-        if (!workspace) return [];
+        const workspace = resolveWorkspaceOverride(workspaceOverride, snapshotRef.current.settings.workspace);
         try {
             const servers = await listGrokMcpServers(workspace);
             setMcpServers(servers);
@@ -1946,10 +1949,9 @@ export const useArkDesktopRuntime = () => {
         if (clientCommand?.type === 'fork') throw new Error('请先进入一个已有会话再创建分支');
         if (clientCommand?.type === 'view-plan') throw new Error('请先进入一个已有会话再查看计划');
         if (clientCommand?.type === 'plan' && !clientCommand.prompt) throw new Error('请输入要规划的任务');
-        const workspace = requestedWorkspace?.trim() || current.settings.workspace;
+        const workspace = resolveWorkspaceOverride(requestedWorkspace, current.settings.workspace);
         if (!isDesktopRuntime()) throw new Error('请在 URGS 桌面客户端中运行 ARK Desktop');
         if (!runtimeStatus?.available) throw new Error('未检测到内置智能引擎，请先检查桌面安装包');
-        if (!workspace) throw new Error('请先选择本地工作区');
         const selectedProvider = current.settings.modelProviders.find((provider) => provider.id === current.settings.grokModel);
         if (!current.settings.grokModel || !selectedProvider) throw new Error('请先在设置中添加并选择模型连接');
         if (!selectedProvider.enabled) throw new Error(`模型连接“${selectedProvider.name}”已停用`);
@@ -2004,7 +2006,9 @@ export const useArkDesktopRuntime = () => {
             tasks: [task, ...value.tasks].slice(0, 50),
             settings: {
                 ...value.settings,
-                workspacePaths: Array.from(new Set([...value.settings.workspacePaths, workspace])),
+                workspacePaths: workspace
+                    ? Array.from(new Set([...value.settings.workspacePaths, workspace]))
+                    : value.settings.workspacePaths,
             },
         }));
         activePromptCountsRef.current.set(taskId, 1);
@@ -2019,11 +2023,12 @@ export const useArkDesktopRuntime = () => {
 
         void (async () => {
             try {
-                const sessionRules = buildSessionRules(agent, skills);
+                const sessionRules = buildSessionRules(agent, skills, workspace);
                 const execution = current.settings.execution;
                 const gitMode = resolveGitMode(execution.gitMode);
                 let executionWorkspace = workspace;
                 const prepareTaskGitWorkspace = async () => {
+                    if (!workspace) return '';
                     const startedAt = performance.now();
                     try {
                         const preparedWorkspace = await prepareGrokGitTask(
@@ -2066,7 +2071,9 @@ export const useArkDesktopRuntime = () => {
                         return workspace;
                     }
                 };
-                if (gitMode === 'workspace') {
+                if (!workspace) {
+                    executionWorkspace = '';
+                } else if (gitMode === 'workspace') {
                     // 当前工作区模式不改变执行目录，Git 状态扫描不应阻塞首次模型请求。
                     void prepareTaskGitWorkspace();
                 } else {
@@ -2221,6 +2228,7 @@ export const useArkDesktopRuntime = () => {
 
     const refreshTaskGitStatus = useCallback(async (taskId: string, includeStats = false) => {
         const task = taskForGit(taskId);
+        if (!task.workspace) throw new Error('通用会话未绑定工作空间');
         const requestKey = `${task.workspace}\u0000${includeStats ? 'stats' : 'fast'}`;
         let request = gitStatusRequestsRef.current.get(requestKey);
         if (!request) {
@@ -2455,9 +2463,9 @@ export const useArkDesktopRuntime = () => {
 
     const prepareEngine = useCallback(async (workspaceOverride?: string) => {
         const current = snapshotRef.current;
-        const workspace = workspaceOverride?.trim() || current.settings.workspace;
+        const workspace = resolveWorkspaceOverride(workspaceOverride, current.settings.workspace);
         const provider = current.settings.modelProviders.find((item) => item.id === current.settings.grokModel);
-        if (!isDesktopRuntime() || !runtimeStatus?.available || !workspace || !provider?.enabled || !provider.hasApiKey) return false;
+        if (!isDesktopRuntime() || !runtimeStatus?.available || !provider?.enabled || !provider.hasApiKey) return false;
         setRuntimeError('');
         const execution = current.settings.execution;
         const agentId = selectAgentId(current, undefined, current.settings.defaultSkillIds);
@@ -2470,7 +2478,7 @@ export const useArkDesktopRuntime = () => {
             workspace,
             provider.id,
             buildAcpOptions(execution),
-            buildSessionRules(agent, skills),
+            buildSessionRules(agent, skills, workspace),
         );
         await Promise.allSettled([
             refreshCapabilities(workspace),
@@ -2510,7 +2518,7 @@ export const useArkDesktopRuntime = () => {
         const modelProvider = resolveModelProvider(current, task.model || current.settings.grokModel);
         if (!modelProvider) throw new Error(`历史会话使用的模型连接“${task.model || current.settings.grokModel}”不存在，请在设置中配置对应连接`);
         if (!modelProvider.enabled) throw new Error(`模型连接“${modelProvider.name}”已停用`);
-        const sessionRules = buildSessionRules(agent, skills);
+        const sessionRules = buildSessionRules(agent, skills, task.workspace);
         const acpOptions = buildAcpOptions(execution);
         const attachMode = task.messages.length > 0 ? 'resume' : 'load';
         let recoveredFromMissingWorkspace = false;
@@ -2528,7 +2536,7 @@ export const useArkDesktopRuntime = () => {
         taskBySessionIdRef.current.set(session.sessionId, taskId);
         updateTask(taskId, (value) => ({
             ...value,
-            workspace: session.workspace,
+            workspace: task.workspace ? session.workspace : '',
             ...(recoveredFromMissingWorkspace ? { sourceWorkspace: session.workspace, gitContext: undefined, error: undefined } : {}),
             runtimeProcessId: session.processId,
             availableCommands: session.availableCommands,
@@ -2567,7 +2575,7 @@ export const useArkDesktopRuntime = () => {
             id: forkedTaskId,
             title: `${task.title}（分支）`.slice(0, 80),
             sessionId: result.newSessionId,
-            workspace: result.newCwd || task.workspace,
+            workspace: task.workspace ? result.newCwd || task.workspace : '',
             runtimeProcessId: undefined,
             cliServiceId: undefined,
             status: 'completed',
@@ -2689,7 +2697,7 @@ export const useArkDesktopRuntime = () => {
                 );
                 if (resetImageSessionForTextContinuation) {
                     const previousSessionId = sessionId;
-                    const sessionRules = buildSessionRules(agent, skills);
+                    const sessionRules = buildSessionRules(agent, skills, task.workspace);
                     const freshSession = await createGrokSession(
                         task.workspace,
                         sessionRules,
@@ -2714,7 +2722,7 @@ export const useArkDesktopRuntime = () => {
                         updatedAt: Date.now(),
                     }));
                 } else if (!mountedSessionIdsRef.current.has(sessionId)) {
-                    const sessionRules = buildSessionRules(agent, skills);
+                    const sessionRules = buildSessionRules(agent, skills, task.workspace);
                     const acpOptions = buildAcpOptions(execution);
                     const attachMode = task.messages.length > 0 ? 'resume' : 'load';
                     let recoveredFromMissingWorkspace = false;
@@ -2732,7 +2740,7 @@ export const useArkDesktopRuntime = () => {
                     taskBySessionIdRef.current.set(session.sessionId, taskId);
                     updateTask(taskId, (value) => ({
                         ...value,
-                        workspace: session.workspace,
+                        workspace: task.workspace ? session.workspace : '',
                         ...(recoveredFromMissingWorkspace ? { sourceWorkspace: session.workspace, gitContext: undefined, error: undefined } : {}),
                         runtimeProcessId: session.processId,
                         availableCommands: session.availableCommands,
@@ -3269,7 +3277,7 @@ export const useArkDesktopRuntime = () => {
             promptIndex,
             task.workspace,
             model,
-            buildSessionRules(agent, skills),
+            buildSessionRules(agent, skills, task.workspace),
             buildAcpOptions(execution),
             shouldForce,
             { taskId },
@@ -3490,7 +3498,7 @@ export const useArkDesktopRuntime = () => {
             const session = await loadGrokSession(
                 task.sessionId,
                 task.workspace,
-                buildSessionRules(agent, skills),
+                buildSessionRules(agent, skills, task.workspace),
                 modelProvider.id,
                 buildAcpOptions(execution),
                 'load',
@@ -3577,7 +3585,7 @@ export const useArkDesktopRuntime = () => {
             const session = await loadGrokSession(
                 task.sessionId,
                 task.workspace,
-                buildSessionRules(agent, skills),
+                buildSessionRules(agent, skills, task.workspace),
                 modelProvider.id,
                 buildAcpOptions(execution),
                 attachMode,

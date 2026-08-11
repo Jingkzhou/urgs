@@ -1,7 +1,7 @@
 import React, { useEffect, useMemo, useRef, useState } from 'react';
 import {
     Archive, ArchiveRestore, Check, Copy, Ellipsis, Folder,
-    FolderOpen, GitBranch, GitFork, LoaderCircle, Pencil, Pin, PinOff, Plus, Trash2, X,
+    FolderOpen, GitBranch, GitFork, LoaderCircle, MessageSquare, Pencil, Pin, PinOff, Plus, Trash2, X,
 } from 'lucide-react';
 import { copyToClipboard } from '@/utils/clipboard';
 import type { ArkDesktopTask } from './types';
@@ -34,7 +34,7 @@ const DEFAULT_VISIBLE_TASK_COUNT = 5;
 const TASK_PREVIEW_WIDTH = 300;
 const TASK_PREVIEW_HEIGHT = 112;
 const taskWorkspace = (task: ArkDesktopTask) => task.sourceWorkspace || task.gitContext?.repoRoot || task.workspace;
-const workspaceBasename = (workspace: string) => workspace.split(/[\\/]/).filter(Boolean).pop() || workspace;
+const workspaceBasename = (workspace: string) => workspace.split(/[\\/]/).filter(Boolean).pop() || '通用会话';
 const formatTaskAge = (timestamp: number) => {
     const elapsed = Math.max(0, Date.now() - timestamp);
     const minutes = Math.floor(elapsed / 60_000);
@@ -135,7 +135,7 @@ const WorkspaceSessionSidebar: React.FC<WorkspaceSessionSidebarProps> = ({
     const query = searchValue.trim().toLowerCase();
     const pinnedTasks = useMemo(() => tasks.filter((task) => Boolean(task.pinnedAt) && taskMatchesView(task, query, view)), [query, tasks, view]);
     const groups = useMemo(() => {
-        return workspaces.map((workspace) => {
+        const workspaceGroups = workspaces.filter(Boolean).map((workspace) => {
             const workspaceTasks = tasks.filter((task) => taskWorkspace(task) === workspace);
             const filtered = workspaceTasks
                 .filter((task) => taskMatchesView(task, query, view))
@@ -149,11 +149,26 @@ const WorkspaceSessionSidebar: React.FC<WorkspaceSessionSidebarProps> = ({
                 visibleTaskCount: workspaceTasks.filter((task) => taskMatchesView(task, query, view)).length,
                 default: workspace === defaultWorkspace,
                 busyCount,
+                general: false,
             };
-        }).filter((group) => {
+        });
+        const generalTasks = tasks.filter((task) => !taskWorkspace(task));
+        const generalGroup = {
+            workspace: '',
+            label: '通用会话',
+            tasks: generalTasks
+                .filter((task) => taskMatchesView(task, query, view))
+                .filter((task) => !task.pinnedAt),
+            visibleTaskCount: generalTasks.filter((task) => taskMatchesView(task, query, view)).length,
+            default: false,
+            busyCount: generalTasks.filter((task) => !task.archivedAt && isBusyTask(task)).length,
+            general: true,
+        };
+        return [generalGroup, ...workspaceGroups].filter((group) => {
             if (query || view !== 'active') return group.tasks.length > 0;
             return group.tasks.length > 0 || group.visibleTaskCount === 0;
         }).sort((left, right) => {
+            if (left.general !== right.general) return left.general ? -1 : 1;
             if (left.default !== right.default) return left.default ? -1 : 1;
             // Preserve the user's workspace order. Task updates must not move
             // an entire workspace while several jobs are running.
@@ -342,7 +357,7 @@ const WorkspaceSessionSidebar: React.FC<WorkspaceSessionSidebarProps> = ({
 
     return <div className="relative mt-5 flex min-h-0 flex-1 flex-col">
         <div className="flex items-center justify-between px-2">
-            <span className="text-[11px] font-medium text-slate-400">工作空间</span>
+            <span className="text-[11px] font-medium text-slate-400">会话空间</span>
             <button
                 type="button"
                 disabled={addingWorkspace}
@@ -392,7 +407,7 @@ const WorkspaceSessionSidebar: React.FC<WorkspaceSessionSidebarProps> = ({
                     ? group.tasks
                     : group.tasks.slice(0, DEFAULT_VISIBLE_TASK_COUNT);
                 const selectedWorkspace = taskWorkspace(tasks.find((task) => task.id === activeTaskId) || ({} as ArkDesktopTask)) === group.workspace;
-                return <section key={group.workspace} className="group/workspace relative">
+                return <section key={group.workspace || 'general-session'} className="group/workspace relative">
                     <div className={`relative flex items-center rounded-lg transition ${selectedWorkspace ? 'bg-[#efedff]' : 'hover:bg-[#eeeeef]'}`}>
                         <button
                             type="button"
@@ -403,13 +418,15 @@ const WorkspaceSessionSidebar: React.FC<WorkspaceSessionSidebarProps> = ({
                                 return next;
                             })}
                             className="flex min-w-0 flex-1 items-center gap-2 px-2 py-2 text-left"
-                            title={group.workspace}
+                            title={group.workspace || '通用会话，不绑定工作空间'}
                             aria-expanded={!collapsed}
-                            aria-label={`${collapsed ? '展开' : '收起'} ${group.label} 工作区`}
+                            aria-label={`${collapsed ? '展开' : '收起'} ${group.label}`}
                         >
-                            {collapsed
-                                ? <Folder size={17} strokeWidth={1.7} className="shrink-0 text-slate-500" />
-                                : <FolderOpen size={17} strokeWidth={1.7} className="shrink-0 text-slate-600" />}
+                            {group.general
+                                ? <MessageSquare size={17} strokeWidth={1.7} className="shrink-0 text-[#6657d9]" />
+                                : collapsed
+                                    ? <Folder size={17} strokeWidth={1.7} className="shrink-0 text-slate-500" />
+                                    : <FolderOpen size={17} strokeWidth={1.7} className="shrink-0 text-slate-600" />}
                             <span className="min-w-0 flex-1 truncate text-[13px] font-medium text-[#47484e]">{group.label}</span>
                             {group.default && <span className="rounded bg-[#e8e4ff] px-1 py-0.5 text-[9px] font-medium text-[#6657d9]">默认</span>}
                             {view !== 'archived' && group.busyCount > 0 && <span className="shrink-0 rounded-full bg-[#eeeaff] px-1.5 py-0.5 text-[9px] font-medium text-[#6657d9]" aria-label={`${group.label} 中有 ${group.busyCount} 个进行中的会话`}>
@@ -419,9 +436,9 @@ const WorkspaceSessionSidebar: React.FC<WorkspaceSessionSidebarProps> = ({
                         </button>
                         <div className="mr-1 flex items-center opacity-0 transition group-hover/workspace:opacity-100 focus-within:opacity-100">
                             <button type="button" onClick={() => onCreateInWorkspace(group.workspace)} className="rounded-md p-1.5 text-slate-400 hover:bg-white hover:text-[#6657d9]" title={`在 ${group.label} 中新建会话`} aria-label={`在 ${group.label} 中新建会话`}><Plus size={13} /></button>
-                            <button type="button" onClick={() => setOpenMenu((current) => current?.kind === 'workspace' && current.id === group.workspace ? null : { kind: 'workspace', id: group.workspace })} className="rounded-md p-1.5 text-slate-400 hover:bg-white hover:text-slate-700" title={`${group.label} 工作区操作`} aria-label={`${group.label} 工作区操作`}><Ellipsis size={14} /></button>
+                            {!group.general && <button type="button" onClick={() => setOpenMenu((current) => current?.kind === 'workspace' && current.id === group.workspace ? null : { kind: 'workspace', id: group.workspace })} className="rounded-md p-1.5 text-slate-400 hover:bg-white hover:text-slate-700" title={`${group.label} 工作区操作`} aria-label={`${group.label} 工作区操作`}><Ellipsis size={14} /></button>}
                         </div>
-                        {openMenu?.kind === 'workspace' && openMenu.id === group.workspace && <div ref={menuRef} role="menu" className="absolute right-1 top-9 z-50 w-44 rounded-xl border border-slate-200 bg-white p-1.5 shadow-[0_16px_45px_rgba(15,23,42,0.16)]">
+                        {!group.general && openMenu?.kind === 'workspace' && openMenu.id === group.workspace && <div ref={menuRef} role="menu" className="absolute right-1 top-9 z-50 w-44 rounded-xl border border-slate-200 bg-white p-1.5 shadow-[0_16px_45px_rgba(15,23,42,0.16)]">
                             <MenuButton icon={Plus} label="新建会话" onClick={() => runAction(() => onCreateInWorkspace(group.workspace))} />
                             <MenuButton icon={Check} label={group.default ? '当前默认工作区' : '设为默认工作区'} disabled={group.default} onClick={() => runAction(() => onSetDefaultWorkspace(group.workspace))} />
                             <MenuButton icon={FolderOpen} label="在 Finder 中打开" onClick={() => runAction(() => onRevealWorkspace(group.workspace))} />
@@ -445,7 +462,7 @@ const WorkspaceSessionSidebar: React.FC<WorkspaceSessionSidebarProps> = ({
 
                     {!collapsed && <div className="mt-0.5 space-y-0.5 pl-2">
                         {visibleTasks.map(renderTaskRow)}
-                        {group.tasks.length === 0 && <div className="px-3 py-3 text-[11px] text-slate-400">该工作区暂无会话，点击文件夹旁的 + 开始。</div>}
+                        {group.tasks.length === 0 && <div className="px-3 py-3 text-[11px] text-slate-400">{group.general ? '无需选择工作空间，点击旁边的 + 即可开始。' : '该工作区暂无会话，点击文件夹旁的 + 开始。'}</div>}
                         {!query && group.tasks.length > DEFAULT_VISIBLE_TASK_COUNT && <button
                             type="button"
                             aria-expanded={expandedTasks}

@@ -7,7 +7,7 @@ import { oneDark } from 'react-syntax-highlighter/dist/esm/styles/prism';
 import {
     AlertCircle, BrainCircuit, BriefcaseBusiness, Check, CheckCircle2, CheckSquare,
     ChevronDown, ChevronUp, CircleStop, Code2, Copy, Cpu, FileText, Folder, FolderOpen,
-    Hand, Info, KeyRound, Lightbulb, ListTree, LoaderCircle, Paperclip, PanelBottom, PanelRight, Pencil, Plus, RefreshCw,
+    Hand, Info, KeyRound, Lightbulb, ListTree, LoaderCircle, MessageSquare, Paperclip, PanelBottom, PanelRight, Pencil, Plus, RefreshCw,
     Puzzle, Search, Send, Settings, ShieldAlert, Trash2, Workflow, Wrench, X,
 } from 'lucide-react';
 import { copyToClipboard } from '@/utils/clipboard';
@@ -272,7 +272,7 @@ const ArkDesktopPage: React.FC = () => {
     }, [runtime.setSnapshot, runtime.snapshot.automations, runtime.snapshot.tasks, runtime.startTask, runtime.setRuntimeError]);
 
     useEffect(() => {
-        if (draftWorkspace) void runtime.prepareEngine(draftWorkspace).catch(() => undefined);
+        void runtime.prepareEngine(draftWorkspace).catch(() => undefined);
     }, [draftWorkspace, runtime.prepareEngine]);
 
     useEffect(() => {
@@ -286,8 +286,8 @@ const ArkDesktopPage: React.FC = () => {
     }, [runtime.activeTaskId]);
 
     const openNewTask = (workspace?: string) => {
-        const nextWorkspace = workspace || runtime.snapshot.settings.workspace;
-        draftWorkspaceFollowsDefaultRef.current = !workspace;
+        const nextWorkspace = workspace === undefined ? runtime.snapshot.settings.workspace : workspace;
+        draftWorkspaceFollowsDefaultRef.current = workspace === undefined;
         runtime.setActiveTaskId(null);
         setSection('new-task');
         setNewTaskComposerId((current) => current + 1);
@@ -398,6 +398,8 @@ const ArkDesktopPage: React.FC = () => {
     );
     const gitReviewDisabledReason = !runtime.activeTask
         ? '请先打开一个任务'
+        : !runtime.activeTask.workspace
+            ? '通用会话未绑定工作空间'
         : !gitReviewAvailable
             ? '当前工作区不是 Git 仓库或 Git 尚未可用'
             : undefined;
@@ -407,7 +409,11 @@ const ArkDesktopPage: React.FC = () => {
             runtime.activeTask.gitContext?.branch,
             runtime.snapshot.settings.modelProviders.find((provider) => provider.id === runtime.activeTask?.model)?.name || runtime.activeTask.model,
             runtime.activeTask.engine === 'headless' ? '后台模式' : '实时会话',
-            runtime.activeTask.gitContext?.status?.isDirty ? `${runtime.activeTask.gitContext.status.files.length} 项变更` : '工作区干净',
+            runtime.activeTask.workspace
+                ? runtime.activeTask.gitContext?.status?.isDirty
+                    ? `${runtime.activeTask.gitContext.status.files.length} 项变更`
+                    : '工作区干净'
+                : undefined,
         ].filter(Boolean).join(' · ')
         : undefined;
     const workspaceOptions = useMemo(() => {
@@ -548,7 +554,7 @@ const ArkDesktopPage: React.FC = () => {
                         <AutomationCenter runtime={runtime} onEdit={(id) => setEditor({ type: 'automation', id })} />
                     ) : <SettingsView runtime={runtime} chooseWorkspace={chooseDefaultWorkspace} initialTab={settingsTab} />}
                 </main>
-                {terminalPanelMounted && <TaskTerminalPanel visible={terminalPanelOpen} workspace={runtime.activeTask?.workspace || runtime.snapshot.settings.workspace} onClose={() => setTerminalPanelOpen(false)} />}
+                {terminalPanelMounted && <TaskTerminalPanel visible={terminalPanelOpen} workspace={runtime.activeTask ? runtime.activeTask.workspace : runtime.snapshot.settings.workspace} onClose={() => setTerminalPanelOpen(false)} />}
             </section>
 
             {runtime.activeTask && <TaskSessionSummaryPanel key={runtime.activeTask.id} visible={sessionSummaryOpen} task={runtime.activeTask} runtime={runtime} onClose={() => setSessionSummaryOpen(false)} />}
@@ -991,7 +997,7 @@ const isInternalGoalHarnessPrompt = (content: string) => [
     'You are an **adversarial verifier** for the xAI Grok Build harness.',
 ].some((prefix) => content.trimStart().startsWith(prefix));
 
-const workspaceName = (workspace: string) => workspace.split(/[\\/]/).filter(Boolean).pop() || workspace;
+const workspaceName = (workspace: string) => workspace.split(/[\\/]/).filter(Boolean).pop() || '通用会话';
 
 const WorkspacePicker: React.FC<{
     workspace: string;
@@ -1005,10 +1011,13 @@ const WorkspacePicker: React.FC<{
     const [activeIndex, setActiveIndex] = useState(0);
     const menuRef = useRef<HTMLDivElement>(null);
     const searchRef = useRef<HTMLInputElement>(null);
-    const label = workspaceName(workspace) || '选择工作空间';
+    const label = workspaceName(workspace);
     const normalizedQuery = query.trim().toLowerCase();
-    const filteredWorkspaces = workspaces.filter((item) => !normalizedQuery
-        || `${workspaceName(item)} ${item}`.toLowerCase().includes(normalizedQuery));
+    const filteredWorkspaces = [
+        { workspace: '', label: '通用会话' },
+        ...workspaces.filter(Boolean).map((item) => ({ workspace: item, label: workspaceName(item) })),
+    ].filter((item) => !normalizedQuery
+        || `${item.label} ${item.workspace} 无工作区`.toLowerCase().includes(normalizedQuery));
 
     useEffect(() => {
         if (!open) return undefined;
@@ -1049,7 +1058,7 @@ const WorkspacePicker: React.FC<{
             setActiveIndex((current) => Math.max(current - 1, 0));
         } else if (event.key === 'Enter' && filteredWorkspaces[activeIndex]) {
             event.preventDefault();
-            select(filteredWorkspaces[activeIndex]);
+            select(filteredWorkspaces[activeIndex].workspace);
         }
     };
 
@@ -1073,19 +1082,22 @@ const WorkspacePicker: React.FC<{
             </label>
             <div role="listbox" aria-label="工作区项目" className="custom-scrollbar max-h-[280px] overflow-y-auto">
                 {filteredWorkspaces.length ? filteredWorkspaces.map((item, index) => {
-                    const selected = item === workspace;
+                    const selected = item.workspace === workspace;
                     return <button
-                        key={item}
+                        key={item.workspace || 'general-session'}
                         type="button"
                         role="option"
                         aria-selected={selected}
-                        title={item}
+                        title={item.workspace || '不绑定工作空间'}
                         onMouseEnter={() => setActiveIndex(index)}
-                        onClick={() => select(item)}
+                        onClick={() => select(item.workspace)}
                         className={`flex h-14 w-full items-center gap-3 rounded-[13px] px-3 text-left text-[#303136] transition ${activeIndex === index ? 'bg-[#f0f0f1]' : 'hover:bg-[#f4f4f5]'}`}
                     >
-                        <Folder size={19} strokeWidth={1.8} className="shrink-0 text-[#55565b]" />
-                        <span className="min-w-0 flex-1 truncate text-[15px] font-medium">{workspaceName(item)}</span>
+                        {item.workspace
+                            ? <Folder size={19} strokeWidth={1.8} className="shrink-0 text-[#55565b]" />
+                            : <MessageSquare size={19} strokeWidth={1.8} className="shrink-0 text-[#6657d9]" />}
+                        <span className="min-w-0 flex-1 truncate text-[15px] font-medium">{item.label}</span>
+                        {!item.workspace && <span className="text-[11px] text-slate-400">不绑定项目</span>}
                         {selected && <Check size={18} strokeWidth={1.8} className="shrink-0 text-[#55565b]" />}
                     </button>;
                 }) : <div className="flex h-20 items-center justify-center text-sm text-slate-400">没有匹配的项目</div>}
@@ -1113,9 +1125,11 @@ const WorkspacePicker: React.FC<{
             aria-expanded={open}
             aria-label={`选择工作区，当前为 ${label}`}
             className={`flex h-8 max-w-48 items-center gap-1.5 rounded-lg px-2 text-[#5b5c61] transition hover:bg-[#f1f1f2] hover:text-[#303136] disabled:cursor-not-allowed disabled:opacity-50 ${open ? 'bg-[#eeeeef] text-[#303136]' : ''}`}
-            title={workspace || '选择任务工作空间'}
+            title={workspace || '通用会话，不绑定工作空间'}
         >
-            <Folder size={15} strokeWidth={1.8} className="shrink-0 text-[#6b6c71]" />
+            {workspace
+                ? <Folder size={15} strokeWidth={1.8} className="shrink-0 text-[#6b6c71]" />
+                : <MessageSquare size={15} strokeWidth={1.8} className="shrink-0 text-[#6657d9]" />}
             <span className="min-w-0 flex-1 truncate text-[12px] font-medium">{label}</span>
             <ChevronDown size={11} strokeWidth={1.8} className={`shrink-0 text-[#9a9ba0] transition-transform ${open ? 'rotate-180' : ''}`} />
         </button>
@@ -1281,14 +1295,18 @@ const TaskComposer: React.FC<{ task?: ArkDesktopTask; runtime: ReturnType<typeof
     const isWaitingAuthorization = task?.status === 'waiting_authorization';
     const canQueuePrompt = Boolean(isRunning && task?.engine !== 'headless' && task.sessionId);
     const execution = runtime.snapshot.settings.execution;
-    const workspace = isNewTask ? newTask?.workspace || '' : task?.workspace || runtime.snapshot.settings.workspace;
+    const workspace = isNewTask
+        ? newTask?.workspace || ''
+        : task
+            ? task.workspace
+            : runtime.snapshot.settings.workspace;
     const canSubmit = isNewTask
-        ? Boolean(workspace) && !sending && (!!value.trim() || (execution.engine === 'headless' && execution.promptMode !== 'text'))
+        ? !sending && (!!value.trim() || (execution.engine === 'headless' && execution.promptMode !== 'text'))
         : !isWaitingAuthorization && !sending && !!value.trim();
     return <div className="sticky bottom-0 mt-7 bg-gradient-to-t from-white via-white to-white/85 pt-5">
         {isNewTask && newTask?.attachments.length ? <div className="mb-2 flex flex-wrap gap-2">{newTask.attachments.map((path) => <span key={path} title={path} className="flex max-w-72 items-center gap-1.5 rounded-lg border border-slate-200 bg-white px-2.5 py-1.5 text-xs text-slate-600"><Paperclip size={13} /><span className="truncate">{path.split(/[\\/]/).pop()}</span><button type="button" onClick={() => newTask.setAttachments((current) => current.filter((item) => item !== path))} aria-label="移除附件"><X size={13} /></button></span>)}</div> : null}
         <div className="rounded-[22px] border border-slate-200 bg-white p-2 shadow-[0_10px_28px_rgba(15,23,42,0.09)] transition focus-within:border-slate-300 focus-within:shadow-[0_12px_34px_rgba(15,23,42,0.12)]">
-            <ConversationPromptInput value={value} commands={task?.availableCommands?.length ? task.availableCommands : runtime.availableCommands} onChange={onChange} onSubmit={onSubmit} disabled={(isRunning && !canQueuePrompt) || isWaitingAuthorization || sending} slashDisabled={task?.engine === 'headless' || (isNewTask && execution.engine === 'headless')} placeholder={isNewTask ? '描述希望智能体在本地完成的任务，输入 / 查看会话命令…' : isWaitingAuthorization ? '请先解锁本地模型密钥…' : canQueuePrompt ? '继续补充消息，将按发送顺序执行…' : task?.sessionId ? '继续补充任务要求，输入 / 查看会话命令…' : '输入指令，将尝试恢复原历史会话…'} rows={2} />
+            <ConversationPromptInput value={value} commands={task?.availableCommands?.length ? task.availableCommands : runtime.availableCommands} onChange={onChange} onSubmit={onSubmit} disabled={(isRunning && !canQueuePrompt) || isWaitingAuthorization || sending} slashDisabled={task?.engine === 'headless' || (isNewTask && execution.engine === 'headless')} placeholder={isNewTask ? '描述希望智能体完成的任务，输入 / 查看会话命令…' : isWaitingAuthorization ? '请先解锁本地模型密钥…' : canQueuePrompt ? '继续补充消息，将按发送顺序执行…' : task?.sessionId ? '继续补充任务要求，输入 / 查看会话命令…' : '输入指令，将尝试恢复原历史会话…'} rows={2} />
             <div className={`flex flex-nowrap items-center gap-2 px-1 ${isNewTask ? 'pt-1' : 'pb-1'}`}>
                 <div className="relative flex min-w-0 flex-1 flex-nowrap items-center gap-1 [&>div]:min-w-0">
                     {isNewTask && newTask ? <>
@@ -1556,7 +1574,7 @@ const TaskView: React.FC<{ task?: ArkDesktopTask; runtime: ReturnType<typeof use
                     </div> : undefined}
                 </TaskActivityTimeline>
                 {finalResponse && <TaskMessage message={finalResponse} scrollTarget={finalResponse.id === task!.messages[task!.messages.length - 1]?.id ? lastMessageRef : undefined} />}
-                <TaskChangeSummary taskId={task!.id} workspace={task!.workspace} promptIndex={index} tools={turnTools} taskStatus={turnStatus} plan={isCurrentTurn ? task!.plan : undefined} onRewind={runtime.rewindTaskFiles} />
+                {task!.workspace && <TaskChangeSummary taskId={task!.id} workspace={task!.workspace} promptIndex={index} tools={turnTools} taskStatus={turnStatus} plan={isCurrentTurn ? task!.plan : undefined} onRewind={runtime.rewindTaskFiles} />}
             </div>;
         })}{task?.modelKeyAuthorization && <div className="my-5 flex flex-wrap items-center gap-3 rounded-xl border border-amber-200 bg-amber-50 px-4 py-3 text-sm text-amber-900"><span className="flex h-8 w-8 shrink-0 items-center justify-center rounded-lg bg-white text-amber-700 shadow-sm"><KeyRound size={16} /></span><div className="min-w-0 flex-1"><div className="font-medium">解锁本地模型密钥</div><div className="mt-0.5 text-xs leading-5 text-amber-700">仅从本机 macOS 钥匙串读取，不连接 xAI。解锁后将继续当前任务。</div></div><div className="flex items-center gap-2"><button type="button" disabled={authorizing} onClick={() => void runtime.cancelTask(task.id)} className="h-8 rounded-lg px-2.5 text-xs font-medium text-amber-800 hover:bg-amber-100 disabled:opacity-60">取消任务</button><button type="button" disabled={authorizing} onClick={() => void authorizeModelKey()} className="flex h-8 items-center gap-1.5 rounded-lg bg-amber-700 px-3 text-xs font-medium text-white hover:bg-amber-800 disabled:opacity-60">{authorizing ? <LoaderCircle size={14} className="animate-spin" /> : <KeyRound size={14} />}解锁密钥</button></div></div>}{task?.error && <div className="my-5 flex gap-2 rounded-xl border border-red-200 bg-red-50 px-4 py-3 text-sm leading-6 text-red-700"><AlertCircle size={16} className="mt-0.5 shrink-0" /><span className="flex-1">{task.error}</span><button type="button" onClick={() => runtime.dismissTaskError(task.id)} className="shrink-0 text-red-500 hover:text-red-700" title="关闭提示" aria-label="关闭提示"><X size={16} /></button></div>}</>}</div>
         {task && <QueuePanel task={task} runtime={runtime} />}
