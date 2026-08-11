@@ -1510,8 +1510,8 @@ const TaskView: React.FC<{ task?: ArkDesktopTask; runtime: ReturnType<typeof use
                     isActive={turnIsActive}
                     summaryOnly
                 >
-                    {processMessages.length > 0 ? <div className="space-y-2 py-1">
-                        {processMessages.map((message) => <div key={message.id} ref={message.id === task!.messages[task!.messages.length - 1]?.id ? lastMessageRef : undefined} className="rounded-lg bg-slate-50 px-3 py-2 [&>div]:text-[13px] [&>div]:leading-6 [&>div]:text-slate-500 [&_h1]:text-[16px] [&_h1]:text-slate-700 [&_h2]:text-[15px] [&_h2]:text-slate-700 [&_h3]:text-[14px] [&_h3]:text-slate-700">
+                    {processMessages.length > 0 ? <div className="space-y-0.5 py-0.5">
+                        {processMessages.map((message) => <div key={message.id} ref={message.id === task!.messages[task!.messages.length - 1]?.id ? lastMessageRef : undefined} className="py-0.5 [&>div]:text-[13px] [&>div]:leading-5 [&>div]:text-slate-500 [&_h1]:text-[16px] [&_h1]:text-slate-700 [&_h2]:text-[15px] [&_h2]:text-slate-700 [&_h3]:text-[14px] [&_h3]:text-slate-700">
                             <MarkdownContent content={message.content} />
                         </div>)}
                         <TaskActivityDetails tools={turnTools} />
