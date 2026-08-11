@@ -274,6 +274,7 @@ export interface ArkDesktopTask {
     agentId: string;
     skillIds: string[];
     workspace: string;
+    runtimeWorkspace?: string;
     sourceWorkspace?: string;
     gitContext?: ArkDesktopGitContext;
     attachmentPaths: string[];

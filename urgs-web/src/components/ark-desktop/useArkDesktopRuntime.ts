@@ -27,6 +27,7 @@ import {
     listGrokGitWorktrees,
     removeGrokGitWorktree,
     gcGrokGitWorktrees,
+    generalGrokSessionWorkspace,
     applyGrokGitWorktree,
     listGrokGitAudit,
     deleteGrokModelProvider,
@@ -185,6 +186,9 @@ const taskFallbackWorkspace = (task: ArkDesktopTask) => {
         .map((value) => value?.trim())
         .find((value): value is string => Boolean(value) && value !== current);
 };
+
+const taskRuntimeWorkspace = (task: ArkDesktopTask) =>
+    task.workspace.trim() || task.runtimeWorkspace?.trim() || '';
 
 const resolveGitMode = (value?: GrokExecutionSettings['gitMode']): ArkDesktopGitMode =>
     value === 'worktree' || value === 'readonly' ? value : 'workspace';
@@ -1979,6 +1983,7 @@ export const useArkDesktopRuntime = () => {
             agentId: agent.id,
             skillIds: resolvedSkillIds,
             workspace,
+            runtimeWorkspace: workspace ? undefined : generalGrokSessionWorkspace(taskId),
             sourceWorkspace: workspace,
             attachmentPaths,
             attachmentGrantIds,
@@ -2026,7 +2031,7 @@ export const useArkDesktopRuntime = () => {
                 const sessionRules = buildSessionRules(agent, skills, workspace);
                 const execution = current.settings.execution;
                 const gitMode = resolveGitMode(execution.gitMode);
-                let executionWorkspace = workspace;
+                let executionWorkspace = taskRuntimeWorkspace(task);
                 const prepareTaskGitWorkspace = async () => {
                     if (!workspace) return '';
                     const startedAt = performance.now();
@@ -2071,12 +2076,10 @@ export const useArkDesktopRuntime = () => {
                         return workspace;
                     }
                 };
-                if (!workspace) {
-                    executionWorkspace = '';
-                } else if (gitMode === 'workspace') {
+                if (workspace && gitMode === 'workspace') {
                     // 当前工作区模式不改变执行目录，Git 状态扫描不应阻塞首次模型请求。
                     void prepareTaskGitWorkspace();
-                } else {
+                } else if (workspace) {
                     executionWorkspace = await prepareTaskGitWorkspace();
                 }
                 if (current.settings.execution.engine === 'headless') {
@@ -2524,7 +2527,7 @@ export const useArkDesktopRuntime = () => {
         let recoveredFromMissingWorkspace = false;
         let session: Awaited<ReturnType<typeof loadGrokSession>>;
         try {
-            session = await loadGrokSession(task.sessionId, task.workspace, sessionRules, modelProvider.id, acpOptions, attachMode, { taskId });
+            session = await loadGrokSession(task.sessionId, taskRuntimeWorkspace(task), sessionRules, modelProvider.id, acpOptions, attachMode, { taskId });
         } catch (error) {
             const fallbackWorkspace = taskFallbackWorkspace(task);
             if (!fallbackWorkspace || !isWorkspacePathUnavailable(error)) throw error;
@@ -2567,15 +2570,24 @@ export const useArkDesktopRuntime = () => {
             throw new Error('请先等待当前任务结束或停止任务');
         }
         await ensureTaskSessionMounted(taskId);
-        const result = await forkGrokSession(task.sessionId, task.workspace, undefined, task.model, { taskId });
         const now = Date.now();
         const forkedTaskId = createId('task');
+        const forkedRuntimeWorkspace = task.workspace ? undefined : generalGrokSessionWorkspace(forkedTaskId);
+        const result = await forkGrokSession(
+            task.sessionId,
+            taskRuntimeWorkspace(task),
+            undefined,
+            task.model,
+            forkedRuntimeWorkspace,
+            { taskId },
+        );
         const forkedTask: ArkDesktopTask = {
             ...task,
             id: forkedTaskId,
             title: `${task.title}（分支）`.slice(0, 80),
             sessionId: result.newSessionId,
             workspace: task.workspace ? result.newCwd || task.workspace : '',
+            runtimeWorkspace: forkedRuntimeWorkspace,
             runtimeProcessId: undefined,
             cliServiceId: undefined,
             status: 'completed',
@@ -2660,7 +2672,7 @@ export const useArkDesktopRuntime = () => {
             let sessionId = task.sessionId
                 || await (async () => {
                     try {
-                        return await findHistoricalSessionId(task.workspace, task.title || task.prompt);
+                        return await findHistoricalSessionId(taskRuntimeWorkspace(task), task.title || task.prompt);
                     } catch (error) {
                         const fallbackWorkspace = taskFallbackWorkspace(task);
                         if (!fallbackWorkspace || !isWorkspacePathUnavailable(error)) throw error;
@@ -2699,7 +2711,7 @@ export const useArkDesktopRuntime = () => {
                     const previousSessionId = sessionId;
                     const sessionRules = buildSessionRules(agent, skills, task.workspace);
                     const freshSession = await createGrokSession(
-                        task.workspace,
+                        taskRuntimeWorkspace(task),
                         sessionRules,
                         modelProvider.id,
                         buildAcpOptions(execution),
@@ -2728,7 +2740,7 @@ export const useArkDesktopRuntime = () => {
                     let recoveredFromMissingWorkspace = false;
                     let session: Awaited<ReturnType<typeof loadGrokSession>>;
                     try {
-                        session = await loadGrokSession(sessionId, task.workspace, sessionRules, modelProvider.id, acpOptions, attachMode, { taskId });
+                        session = await loadGrokSession(sessionId, taskRuntimeWorkspace(task), sessionRules, modelProvider.id, acpOptions, attachMode, { taskId });
                     } catch (error) {
                         const fallbackWorkspace = taskFallbackWorkspace(task);
                         if (!fallbackWorkspace || !isWorkspacePathUnavailable(error)) throw error;
@@ -2786,7 +2798,7 @@ export const useArkDesktopRuntime = () => {
                 ];
                 let service: Awaited<ReturnType<typeof startGrokCliService>>;
                 try {
-                    service = await startGrokCliService(headlessArguments, task.workspace);
+                    service = await startGrokCliService(headlessArguments, taskRuntimeWorkspace(task));
                 } catch (error) {
                     const fallbackWorkspace = taskFallbackWorkspace(task);
                     if (!fallbackWorkspace || !isWorkspacePathUnavailable(error)) throw error;
@@ -3141,8 +3153,9 @@ export const useArkDesktopRuntime = () => {
     const reloadTaskMcp = useCallback(async (taskId: string) => {
         const task = snapshotRef.current.tasks.find((item) => item.id === taskId);
         if (!task?.sessionId) throw new Error('当前任务还没有本地会话');
-        await reloadGrokMcpServers(task.workspace);
-        const servers = await refreshMcpServers(task.workspace);
+        const runtimeWorkspace = taskRuntimeWorkspace(task);
+        await reloadGrokMcpServers(runtimeWorkspace);
+        const servers = await refreshMcpServers(runtimeWorkspace);
         updateTask(taskId, (value) => ({
             ...value,
             mcpServers: servers.map((server) => ({ name: server.name, transport: server.transport, health: server.health, tools: server.tools })),
@@ -3275,7 +3288,7 @@ export const useArkDesktopRuntime = () => {
         const requestRewind = (shouldForce: boolean) => rewindGrokFiles(
             task.sessionId,
             promptIndex,
-            task.workspace,
+            taskRuntimeWorkspace(task),
             model,
             buildSessionRules(agent, skills, task.workspace),
             buildAcpOptions(execution),
@@ -3497,7 +3510,7 @@ export const useArkDesktopRuntime = () => {
             if (!modelProvider.enabled) throw new Error(`模型连接“${modelProvider.name}”已停用`);
             const session = await loadGrokSession(
                 task.sessionId,
-                task.workspace,
+                taskRuntimeWorkspace(task),
                 buildSessionRules(agent, skills, task.workspace),
                 modelProvider.id,
                 buildAcpOptions(execution),
@@ -3584,7 +3597,7 @@ export const useArkDesktopRuntime = () => {
             const attachMode = task.messages.length > 0 ? 'resume' : 'load';
             const session = await loadGrokSession(
                 task.sessionId,
-                task.workspace,
+                taskRuntimeWorkspace(task),
                 buildSessionRules(agent, skills, task.workspace),
                 modelProvider.id,
                 buildAcpOptions(execution),
@@ -3694,7 +3707,7 @@ export const useArkDesktopRuntime = () => {
         const task = snapshotRef.current.tasks.find((item) => item.id === taskId);
         if (!task) throw new Error('会话不存在');
         if (task.sessionId) {
-            await renameGrokSession(task.sessionId, normalized, task.workspace);
+            await renameGrokSession(task.sessionId, normalized, taskRuntimeWorkspace(task));
         }
         updateTask(taskId, (task) => ({ ...task, title: normalized }));
     }, [updateTask]);
@@ -3729,7 +3742,7 @@ export const useArkDesktopRuntime = () => {
         if (task.sessionId) {
             await releaseGrokSession(task.sessionId);
             try {
-                await deleteGrokSession(task.sessionId, task.workspace);
+                await deleteGrokSession(task.sessionId, taskRuntimeWorkspace(task));
             } catch (error) {
                 // Keep the CLI fallback for older bundled binaries that do not
                 // expose x.ai/session/delete yet.

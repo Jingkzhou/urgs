@@ -554,7 +554,7 @@ const ArkDesktopPage: React.FC = () => {
                         <AutomationCenter runtime={runtime} onEdit={(id) => setEditor({ type: 'automation', id })} />
                     ) : <SettingsView runtime={runtime} chooseWorkspace={chooseDefaultWorkspace} initialTab={settingsTab} />}
                 </main>
-                {terminalPanelMounted && <TaskTerminalPanel visible={terminalPanelOpen} workspace={runtime.activeTask ? runtime.activeTask.workspace : runtime.snapshot.settings.workspace} onClose={() => setTerminalPanelOpen(false)} />}
+                {terminalPanelMounted && <TaskTerminalPanel visible={terminalPanelOpen} workspace={runtime.activeTask ? runtime.activeTask.workspace || runtime.activeTask.runtimeWorkspace : runtime.snapshot.settings.workspace} onClose={() => setTerminalPanelOpen(false)} />}
             </section>
 
             {runtime.activeTask && <TaskSessionSummaryPanel key={runtime.activeTask.id} visible={sessionSummaryOpen} task={runtime.activeTask} runtime={runtime} onClose={() => setSessionSummaryOpen(false)} />}

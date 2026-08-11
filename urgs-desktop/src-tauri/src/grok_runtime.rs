@@ -1218,9 +1218,43 @@ fn general_task_workspace(app: &AppHandle) -> Result<PathBuf, String> {
         .map_err(|error| format!("无法访问通用任务目录: {error}"))
 }
 
+const GENERAL_SESSION_WORKSPACE_PREFIX: &str = "urgs-general-session://";
+
+fn general_session_key(workspace: &str) -> Result<Option<&str>, String> {
+    let workspace = workspace.trim();
+    let Some(key) = workspace.strip_prefix(GENERAL_SESSION_WORKSPACE_PREFIX) else {
+        return Ok(None);
+    };
+    if key.is_empty()
+        || key.len() > 128
+        || !key
+            .bytes()
+            .all(|value| value.is_ascii_alphanumeric() || matches!(value, b'-' | b'_'))
+    {
+        return Err("通用会话目录标识不合法".to_string());
+    }
+    Ok(Some(key))
+}
+
+fn general_session_workspace(app: &AppHandle, key: &str) -> Result<PathBuf, String> {
+    let root = general_task_workspace(app)?;
+    let directory = root.join(key);
+    fs::create_dir_all(&directory).map_err(|error| format!("创建会话隔离目录失败: {error}"))?;
+    let directory = directory
+        .canonicalize()
+        .map_err(|error| format!("无法访问会话隔离目录: {error}"))?;
+    if !directory.starts_with(&root) {
+        return Err("通用会话目录超出允许范围".to_string());
+    }
+    Ok(directory)
+}
+
 fn resolve_task_workspace(app: &AppHandle, workspace: &str) -> Result<PathBuf, String> {
-    if workspace.trim().is_empty() {
+    let workspace = workspace.trim();
+    if workspace.is_empty() {
         general_task_workspace(app)
+    } else if let Some(key) = general_session_key(workspace)? {
+        general_session_workspace(app, key)
     } else {
         validate_workspace(workspace)
     }
@@ -3691,6 +3725,7 @@ pub async fn grok_recap_session(
 
 #[tauri::command]
 pub async fn grok_session_rename(
+    app: AppHandle,
     state: State<'_, GrokRuntimeState>,
     session_id: String,
     title: String,
@@ -3701,11 +3736,13 @@ pub async fn grok_session_rename(
     if session_id.is_empty() || title.is_empty() {
         return Err("会话标识和名称不能为空".to_string());
     }
-    let process = if let Some(workspace_value) = workspace
+    let workspace = workspace
         .as_deref()
         .filter(|value| !value.trim().is_empty())
-    {
-        workspace_process(&state, &validate_workspace(workspace_value)?)?
+        .map(|workspace| resolve_task_workspace(&app, workspace))
+        .transpose()?;
+    let process = if let Some(workspace) = workspace.as_ref() {
+        workspace_process(&state, workspace)?
     } else {
         session_process(&state, session_id)?
     };
@@ -3719,6 +3756,7 @@ pub async fn grok_session_rename(
 
 #[tauri::command]
 pub async fn grok_session_delete(
+    app: AppHandle,
     state: State<'_, GrokRuntimeState>,
     session_id: String,
     workspace: Option<String>,
@@ -3727,11 +3765,13 @@ pub async fn grok_session_delete(
     if session_id.is_empty() {
         return Err("会话标识不能为空".to_string());
     }
-    let process = if let Some(workspace_value) = workspace
+    let workspace = workspace
         .as_deref()
         .filter(|value| !value.trim().is_empty())
-    {
-        workspace_process(&state, &validate_workspace(workspace_value)?)?
+        .map(|workspace| resolve_task_workspace(&app, workspace))
+        .transpose()?;
+    let process = if let Some(workspace) = workspace.as_ref() {
+        workspace_process(&state, workspace)?
     } else {
         session_process(&state, session_id)?
     };
@@ -4110,7 +4150,7 @@ pub async fn grok_cli_run(
     let model = model_from_arguments(&arguments);
     ensure_model_provider_ready(&app, model)?;
     let current_dir = match workspace.filter(|value| !value.trim().is_empty()) {
-        Some(workspace) => validate_workspace(&workspace)?,
+        Some(workspace) => resolve_task_workspace(&app, &workspace)?,
         None => general_task_workspace(&app)?,
     };
     let mut command_arguments = vec![
@@ -4160,7 +4200,7 @@ pub async fn terminal_run_command(
     }
 
     let current_dir = match workspace.filter(|value| !value.trim().is_empty()) {
-        Some(workspace) => validate_workspace(&workspace)?,
+        Some(workspace) => resolve_task_workspace(&app, &workspace)?,
         None => general_task_workspace(&app)?,
     };
 
@@ -4278,7 +4318,7 @@ fn create_terminal_session_blocking(
     rows: Option<u16>,
 ) -> Result<TerminalSessionInfo, String> {
     let current_dir = match workspace.filter(|value| !value.trim().is_empty()) {
-        Some(workspace) => validate_workspace(&workspace)?,
+        Some(workspace) => resolve_task_workspace(&app, &workspace)?,
         None => general_task_workspace(&app)?,
     };
     let (shell, shell_command) = terminal_shell_command();
@@ -4897,7 +4937,7 @@ pub fn grok_cli_service_start(
     let model = model_from_arguments(&arguments);
     ensure_model_provider_ready(&app, model)?;
     let current_dir = match workspace.filter(|value| !value.trim().is_empty()) {
-        Some(workspace) => validate_workspace(&workspace)?,
+        Some(workspace) => resolve_task_workspace(&app, &workspace)?,
         None => general_task_workspace(&app)?,
     };
     let mut command_arguments = vec![
@@ -5497,6 +5537,7 @@ pub async fn grok_session_fork(
     state: State<'_, GrokRuntimeState>,
     source_session_id: String,
     source_cwd: String,
+    new_cwd: Option<String>,
     target_prompt_index: Option<u64>,
     new_model_id: Option<String>,
 ) -> Result<Value, String> {
@@ -5505,6 +5546,10 @@ pub async fn grok_session_fork(
         return Err("源会话 ID 不能为空".to_string());
     }
     let source_cwd = resolve_task_workspace(&app, &source_cwd)?;
+    let new_cwd = match new_cwd.filter(|value| !value.trim().is_empty()) {
+        Some(workspace) => resolve_task_workspace(&app, &workspace)?,
+        None => source_cwd.clone(),
+    };
     let process = session_process(&state, source_session_id)?;
     process
         .request(
@@ -5512,7 +5557,7 @@ pub async fn grok_session_fork(
             json!({
                 "sourceSessionId": source_session_id,
                 "sourceCwd": source_cwd,
-                "newCwd": source_cwd,
+                "newCwd": new_cwd,
                 "newModelId": new_model_id.and_then(|value| {
                     let value = value.trim().to_string();
                     (!value.is_empty()).then_some(value)
@@ -6037,7 +6082,7 @@ mod tests {
         available_commands_from_list, available_commands_from_session_update, build_prompt_content,
         cache_provider_api_key, consume_prompt_attachment_grants, direct_model_api_endpoint,
         direct_model_api_payload, direct_model_api_response_text, forget_cached_provider_api_key,
-        format_rpc_error, grok_agent_arguments, initialize_client_meta,
+        format_rpc_error, general_session_key, grok_agent_arguments, initialize_client_meta,
         is_unsupported_acp_method_error, model_key_env_name, normalize_model_id,
         normalize_model_provider, normalize_reasoning_effort, normalized_interjection_params,
         normalized_queue_changed_params, normalized_session_update_message, parse_grok_toml,
@@ -6063,6 +6108,18 @@ mod tests {
         assert_eq!(validate_session_mode(" plan ").unwrap(), "plan");
         assert_eq!(validate_session_mode("ask").unwrap(), "ask");
         assert!(validate_session_mode("unsafe").is_err());
+    }
+
+    #[test]
+    fn validates_isolated_general_session_workspace_keys() {
+        assert_eq!(
+            general_session_key("urgs-general-session://task-123_ab").unwrap(),
+            Some("task-123_ab")
+        );
+        assert_eq!(general_session_key("/tmp/project").unwrap(), None);
+        assert!(general_session_key("urgs-general-session://").is_err());
+        assert!(general_session_key("urgs-general-session://../escape").is_err());
+        assert!(general_session_key("urgs-general-session://task/name").is_err());
     }
 
     #[test]

@@ -1,5 +1,15 @@
 import { isDesktopRuntime } from '@/config';
 
+const GENERAL_SESSION_WORKSPACE_PREFIX = 'urgs-general-session://';
+
+export const generalGrokSessionWorkspace = (taskId: string) => {
+    const normalized = taskId.trim();
+    if (!/^[A-Za-z0-9_-]{1,128}$/.test(normalized)) {
+        throw new Error('通用会话目录标识不合法');
+    }
+    return `${GENERAL_SESSION_WORKSPACE_PREFIX}${normalized}`;
+};
+
 export interface GrokRuntimeStatus {
     available: boolean;
     authenticated: boolean;
@@ -1308,10 +1318,12 @@ export const forkGrokSession = (
     sourceCwd: string,
     targetPromptIndex?: number,
     newModelId?: string,
+    newCwd?: string,
     logContext?: DesktopLogContext,
 ) => invokeGrok<GrokSessionForkResult>('grok_session_fork', {
     sourceSessionId,
     sourceCwd,
+    newCwd: newCwd || null,
     targetPromptIndex: targetPromptIndex ?? null,
     newModelId: newModelId || null,
 }, logContext);
