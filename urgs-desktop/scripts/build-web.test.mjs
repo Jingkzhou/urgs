@@ -4,6 +4,7 @@ import {
     deriveWebSocketUrl,
     parseDeployEnv,
     resolveDesktopRuntimeConfig,
+    resolvePnpmBuildInvocation,
 } from './build-web.mjs';
 
 test('parseDeployEnv ignores comments and supports quoted values', () => {
@@ -54,4 +55,19 @@ DESKTOP_WS_URL=ws://127.0.0.1:18080/custom-im
         apiBaseUrl: 'http://127.0.0.1:18080',
         wsUrl: 'ws://127.0.0.1:18080/custom-im',
     });
+});
+
+test('resolvePnpmBuildInvocation uses cmd.exe for the pnpm Windows shim', () => {
+    const invocation = resolvePnpmBuildInvocation('win32', 'C:\\Windows\\System32\\cmd.exe');
+
+    assert.equal(invocation.command, 'C:\\Windows\\System32\\cmd.exe');
+    assert.deepEqual(invocation.args.slice(0, 4), ['/d', '/s', '/c', 'pnpm.cmd']);
+    assert.deepEqual(invocation.args.slice(-3), ['build', '--mode', 'desktop']);
+});
+
+test('resolvePnpmBuildInvocation runs pnpm directly outside Windows', () => {
+    const invocation = resolvePnpmBuildInvocation('darwin');
+
+    assert.equal(invocation.command, 'pnpm');
+    assert.deepEqual(invocation.args.slice(-3), ['build', '--mode', 'desktop']);
 });

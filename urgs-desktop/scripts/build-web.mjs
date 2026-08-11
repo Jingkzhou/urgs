@@ -74,6 +74,26 @@ export const resolveDesktopRuntimeConfig = (content) => {
     return { apiBaseUrl, wsUrl };
 };
 
+export const resolvePnpmBuildInvocation = (
+    platform = process.platform,
+    commandInterpreter = process.env.ComSpec,
+) => {
+    const pnpmArgs = [
+        '--dir',
+        resolve(REPOSITORY_ROOT, 'urgs-web'),
+        'build',
+        '--mode',
+        'desktop',
+    ];
+    if (platform === 'win32') {
+        return {
+            command: commandInterpreter || 'cmd.exe',
+            args: ['/d', '/s', '/c', 'pnpm.cmd', ...pnpmArgs],
+        };
+    }
+    return { command: 'pnpm', args: pnpmArgs };
+};
+
 const buildWeb = () => {
     const environment = (process.env.DEPLOY_ENV || 'local').trim().toLowerCase();
     if (!SUPPORTED_ENVIRONMENTS.has(environment)) {
@@ -85,10 +105,10 @@ const buildWeb = () => {
     console.log(`Desktop ${environment} 默认 API: ${runtimeConfig.apiBaseUrl}`);
     console.log(`Desktop ${environment} 默认 WebSocket: ${runtimeConfig.wsUrl}`);
 
-    const pnpmCommand = process.platform === 'win32' ? 'pnpm.cmd' : 'pnpm';
+    const pnpmInvocation = resolvePnpmBuildInvocation();
     const result = spawnSync(
-        pnpmCommand,
-        ['--dir', resolve(REPOSITORY_ROOT, 'urgs-web'), 'build', '--mode', 'desktop'],
+        pnpmInvocation.command,
+        pnpmInvocation.args,
         {
             stdio: 'inherit',
             env: {
