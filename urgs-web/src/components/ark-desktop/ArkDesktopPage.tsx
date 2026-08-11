@@ -809,12 +809,13 @@ const TaskModelPicker: React.FC<{ task: ArkDesktopTask; runtime: ReturnType<type
 };
 
 const fallbackReasoningEfforts: ArkDesktopReasoningEffortOption[] = [
-    { id: 'minimal', value: 'minimal', label: 'Minimal', description: '最少思考，优先获得更快响应', default: false },
-    { id: 'low', value: 'low', label: 'Low', description: '适合简单、明确的任务', default: false },
-    { id: 'medium', value: 'medium', label: 'Medium', description: '兼顾响应速度与任务质量', default: false },
-    { id: 'high', value: 'high', label: 'High', description: '适合复杂实现、分析和验证', default: false },
-    { id: 'xhigh', value: 'xhigh', label: 'X-High', description: '投入更多推理完成高难度任务', default: false },
+    { id: 'none', value: 'none', label: '关闭', description: '关闭思考，优先获得最快响应', default: false },
+    { id: 'low', value: 'low', label: '低', description: '适合简单、明确的任务', default: false },
+    { id: 'high', value: 'high', label: '高', description: '默认级别，适合复杂实现、分析和验证', default: true },
+    { id: 'max', value: 'max', label: '最大', description: '使用最大推理投入处理高难度任务', default: false },
 ];
+
+const visibleReasoningEffortValues = new Set(fallbackReasoningEfforts.map((option) => option.value));
 
 const reasoningEffortLabels: Record<string, string> = {
     none: '关闭',
@@ -840,12 +841,15 @@ const ReasoningEffortPicker: React.FC<{
     const [open, setOpen] = useState(false);
     const [switching, setSwitching] = useState(false);
     const menuRef = useRef<HTMLDivElement>(null);
-    const availableOptions = options.length > 0 ? options : supportsReasoningEffort ? fallbackReasoningEfforts : [];
+    const declaredOptions = options.length > 0 ? options : supportsReasoningEffort ? fallbackReasoningEfforts : [];
+    const availableOptions = declaredOptions
+        .filter((option) => visibleReasoningEffortValues.has(option.value))
+        .map((option) => {
+            const fallback = fallbackReasoningEfforts.find((item) => item.value === option.value);
+            return fallback ? { ...fallback, ...option, label: fallback.label, description: option.description || fallback.description } : option;
+        });
     const selected = availableOptions.find((option) => option.value === value);
-    const defaultOption = availableOptions.find((option) => option.default);
-    const displayLabel = value
-        ? reasoningEffortLabel(value, selected?.label)
-        : defaultOption ? `默认 · ${reasoningEffortLabel(defaultOption.value, defaultOption.label)}` : '模型默认';
+    const displayLabel = reasoningEffortLabel(selected?.value || value || 'high', selected?.label);
     const unavailable = !supportsReasoningEffort || availableOptions.length === 0;
 
     useEffect(() => {
@@ -891,11 +895,6 @@ const ReasoningEffortPicker: React.FC<{
         </button>
         {open && !unavailable && <div role="menu" className="absolute bottom-[calc(100%+8px)] left-0 z-40 w-[min(320px,calc(100vw-32px))] overflow-hidden rounded-2xl border border-slate-200 bg-white p-2 shadow-[0_20px_55px_rgba(15,23,42,0.18)]">
             <div className="px-2.5 pb-2 pt-1 text-xs font-semibold text-slate-500">模型思考级别</div>
-            <button type="button" role="menuitemradio" aria-checked={!value} disabled={switching} onClick={() => void selectEffort('')} className={`flex w-full items-center gap-3 rounded-xl px-2.5 py-2.5 text-left transition ${!value ? 'bg-slate-100' : 'hover:bg-slate-50'}`}>
-                <span className="flex h-8 w-8 shrink-0 items-center justify-center rounded-lg bg-slate-100 text-slate-500"><BrainCircuit size={16} /></span>
-                <span className="min-w-0 flex-1"><span className="block text-sm font-medium text-slate-700">模型默认</span><span className="mt-0.5 block text-xs leading-5 text-slate-400">使用当前模型配置的默认级别{defaultOption ? `（${reasoningEffortLabel(defaultOption.value, defaultOption.label)}）` : ''}</span></span>
-                {!value && <Check size={16} className="shrink-0 text-slate-700" />}
-            </button>
             {availableOptions.map((option) => { const active = option.value === value; return <button key={option.id || option.value} type="button" role="menuitemradio" aria-checked={active} disabled={switching} onClick={() => void selectEffort(option.value)} className={`flex w-full items-center gap-3 rounded-xl px-2.5 py-2.5 text-left transition ${active ? 'bg-slate-100' : 'hover:bg-slate-50'}`}><span className="flex h-8 w-8 shrink-0 items-center justify-center rounded-lg bg-slate-100 text-xs font-semibold text-slate-500">{reasoningEffortLabel(option.value, option.label).slice(0, 2)}</span><span className="min-w-0 flex-1"><span className="block text-sm font-medium text-slate-700">{reasoningEffortLabel(option.value, option.label)}</span><span className="mt-0.5 block text-xs leading-5 text-slate-400">{option.description || '使用模型声明的思考级别'}</span></span>{active && <Check size={16} className="shrink-0 text-slate-700" />}</button>; })}
         </div>}
     </div>;

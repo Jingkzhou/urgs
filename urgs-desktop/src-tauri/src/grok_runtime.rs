@@ -357,8 +357,8 @@ pub struct GrokModelProviderInput {
     pub api_key: Option<String>,
 }
 
-const CUSTOM_MODEL_REASONING_EFFORTS: [&str; 7] =
-    ["none", "minimal", "low", "medium", "high", "xhigh", "max"];
+const CUSTOM_MODEL_REASONING_EFFORTS: [&str; 4] = ["none", "low", "high", "max"];
+const CUSTOM_MODEL_DEFAULT_REASONING_EFFORT: &str = "high";
 
 #[derive(Debug, Deserialize)]
 #[serde(rename_all = "camelCase")]
@@ -1909,9 +1909,14 @@ fn sync_provider_reasoning_capability(
                     .collect(),
             ),
         );
+        entry.insert(
+            "reasoning_effort".to_string(),
+            toml::Value::String(CUSTOM_MODEL_DEFAULT_REASONING_EFFORT.to_string()),
+        );
     } else {
         entry.remove("supports_reasoning_effort");
         entry.remove("reasoning_efforts");
+        entry.remove("reasoning_effort");
     }
 }
 
@@ -1948,8 +1953,10 @@ fn provider_is_registered_in_grok_config(
                 .unwrap_or(false)
                 == provider.supports_reasoning_effort
             && (!provider.supports_reasoning_effort
-                || toml_string_list(entry.get("reasoning_efforts"))
-                    == CUSTOM_MODEL_REASONING_EFFORTS)
+                || (toml_string_list(entry.get("reasoning_efforts"))
+                    == CUSTOM_MODEL_REASONING_EFFORTS
+                    && entry.get("reasoning_effort").and_then(toml::Value::as_str)
+                        == Some(CUSTOM_MODEL_DEFAULT_REASONING_EFFORT)))
             && !entry.contains_key("auth_scheme")
     }))
 }
@@ -6019,9 +6026,9 @@ mod tests {
         validate_service_arguments, validate_session_mode, workflow_listings_from_response,
         GrokAcpOptions, GrokCliService, GrokModelProvider, GrokModelProviderInput,
         GrokRuntimeState, PromptAttachmentGrant, AUTHENTICATE_TIMEOUT,
-        CUSTOM_MODEL_REASONING_EFFORTS, GROK_INTERJECT_METHOD, GROK_RECAP_METHOD,
-        INITIALIZE_TIMEOUT, MAX_PROMPT_ATTACHMENT_BYTES, REQUEST_TIMEOUT, SESSION_CLOSE_TIMEOUT,
-        SESSION_START_TIMEOUT,
+        CUSTOM_MODEL_DEFAULT_REASONING_EFFORT, CUSTOM_MODEL_REASONING_EFFORTS,
+        GROK_INTERJECT_METHOD, GROK_RECAP_METHOD, INITIALIZE_TIMEOUT, MAX_PROMPT_ATTACHMENT_BYTES,
+        REQUEST_TIMEOUT, SESSION_CLOSE_TIMEOUT, SESSION_START_TIMEOUT,
     };
     use serde_json::json;
     use std::fs;
@@ -6821,10 +6828,15 @@ mod tests {
             super::toml_string_list(entry.get("reasoning_efforts")),
             CUSTOM_MODEL_REASONING_EFFORTS
         );
+        assert_eq!(
+            entry.get("reasoning_effort").and_then(toml::Value::as_str),
+            Some(CUSTOM_MODEL_DEFAULT_REASONING_EFFORT)
+        );
 
         sync_provider_reasoning_capability(&mut entry, false);
         assert!(!entry.contains_key("supports_reasoning_effort"));
         assert!(!entry.contains_key("reasoning_efforts"));
+        assert!(!entry.contains_key("reasoning_effort"));
     }
 
     fn test_model_provider(api_backend: &str, base_url: &str) -> GrokModelProvider {

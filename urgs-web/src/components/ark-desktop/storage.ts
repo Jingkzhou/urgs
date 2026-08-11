@@ -27,6 +27,19 @@ let pageHideListenerInstalled = false;
 
 const clone = <T>(value: T): T => JSON.parse(JSON.stringify(value));
 
+const normalizeReasoningEffort = (value?: string) => {
+    switch (value?.trim()) {
+        case 'none': return 'none';
+        case 'minimal':
+        case 'low': return 'low';
+        case 'medium':
+        case 'high': return 'high';
+        case 'xhigh':
+        case 'max': return 'max';
+        default: return 'high';
+    }
+};
+
 const refreshLegacyBuiltInAgent = (agent: ArkDesktopSnapshot['agents'][number]) => {
     const current = DEFAULT_ARK_DESKTOP_AGENTS.find((item) => item.id === agent.id);
     if (!current || !agent.builtIn || !/^grok\b/i.test(agent.name.trim())) return agent;
@@ -49,7 +62,7 @@ export const createDefaultArkDesktopSnapshot = (): ArkDesktopSnapshot => ({
         execution: {
             engine: 'acp',
             gitMode: 'workspace',
-            reasoningEffort: '',
+            reasoningEffort: 'high',
             permissionMode: 'default',
             interactionMode: 'default',
             sandboxProfile: '',
@@ -139,6 +152,7 @@ export const loadArkDesktopSnapshot = (): ArkDesktopSnapshot => {
                     : 'failed' as const;
             return {
                 ...task,
+                reasoningEffort: normalizeReasoningEffort(task.reasoningEffort),
                 ...(interrupted ? { status: 'failed' as const, error: '桌面客户端已重新启动，本次执行已中断', updatedAt: Date.now() } : {}),
                 execution: task.execution || {
                     status: executionStatus,
@@ -205,6 +219,7 @@ export const loadArkDesktopSnapshot = (): ArkDesktopSnapshot => {
                 execution: {
                     ...defaults.settings.execution,
                     ...(stored.settings?.execution || {}),
+                    reasoningEffort: normalizeReasoningEffort(stored.settings?.execution?.reasoningEffort),
                     gitMode,
                     permissionMode: stored.settings?.execution?.alwaysApprove || stored.settings?.execution?.permissionMode === 'bypassPermissions'
                         ? 'bypassPermissions'

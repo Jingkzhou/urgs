@@ -3427,7 +3427,7 @@ export const useArkDesktopRuntime = () => {
                 ...current.settings,
                 grokModel: modelId,
                 modelOptions: current.settings.modelProviders.filter((item) => item.enabled).map((item) => item.id),
-                execution: { ...current.settings.execution, reasoningEffort: '' },
+                execution: { ...current.settings.execution, reasoningEffort: 'high' },
             },
         }));
     }, []);
@@ -3503,7 +3503,7 @@ export const useArkDesktopRuntime = () => {
             updateTask(taskId, (value) => ({
                 ...value,
                 model: modelId,
-                reasoningEffort: '',
+                reasoningEffort: 'high',
                 runtimeProcessId: session.processId,
                 availableCommands: session.availableCommands,
                 ...reasoningCapabilityFromCatalog(session.modelCatalog, modelId),
