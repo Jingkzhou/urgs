@@ -467,6 +467,24 @@ const workflowStatusLabel = (status: string) => {
     }
 };
 
+const isCompletedDeepResearchWorkflow = (workflow: Pick<ArkDesktopWorkflowRun, 'name' | 'status'>) => {
+    const status = String(workflow.status || '').toLowerCase();
+    return /^deep-research(?:-\d+)?$/i.test(String(workflow.name || '').trim())
+        && (status === 'complete' || status === 'completed');
+};
+
+const completePlanSteps = (plan: ArkDesktopPlanStep[] | undefined) => {
+    if (!plan?.length || plan.every((step) => step.status === 'completed')) return plan;
+    return plan.map((step) => step.status === 'completed' ? step : { ...step, status: 'completed' as const });
+};
+
+const normalizeCompletedDeepResearchPlan = (task: ArkDesktopTask) => {
+    if (['failed', 'cancelled'].includes(task.status)
+        || !task.workflowRuns?.some(isCompletedDeepResearchWorkflow)) return task;
+    const plan = completePlanSteps(task.plan);
+    return plan === task.plan ? task : { ...task, plan };
+};
+
 const upsertTaskActivity = (
     task: ArkDesktopTask,
     activity: Omit<ArkDesktopToolActivity, 'startedAt' | 'updatedAt'>,
@@ -728,7 +746,11 @@ const findHistoricalSessionId = async (workspace: string, firstPrompt: string) =
 };
 
 export const useArkDesktopRuntime = () => {
-    const [snapshot, setSnapshot] = useState<ArkDesktopSnapshot>(loadArkDesktopSnapshot);
+    const [snapshot, setSnapshot] = useState<ArkDesktopSnapshot>(() => {
+        const loaded = loadArkDesktopSnapshot();
+        const tasks = loaded.tasks.map(normalizeCompletedDeepResearchPlan);
+        return tasks.some((task, index) => task !== loaded.tasks[index]) ? { ...loaded, tasks } : loaded;
+    });
     const [runtimeStatus, setRuntimeStatus] = useState<GrokRuntimeStatus | null>(null);
     const [modelCatalog, setModelCatalog] = useState<GrokModelCatalog | null>(null);
     const [runtimeDiagnostics, setRuntimeDiagnostics] = useState<GrokRuntimeDiagnostics[]>([]);
@@ -1473,9 +1495,11 @@ export const useArkDesktopRuntime = () => {
             if (updateType === 'workflow_updated') {
                 const workflow = normalizeWorkflowRun(update);
                 if (!workflow.runId) return;
+                const workflowStatus = workflow.status.toLowerCase();
+                const deepResearchCompleted = isCompletedDeepResearchWorkflow(workflow);
                 updateTask(taskId, (task) => {
                     const existing = (task.workflowRuns || []).find((item) => item.runId === workflow.runId);
-                    const isCleared = workflow.status.toLowerCase() === 'cleared';
+                    const isCleared = workflowStatus === 'cleared';
                     if (!isCleared && existing && ((workflow.revision === 0 && existing.revision > 0)
                         || (workflow.revision > 0 && workflow.revision <= existing.revision))) {
                         return task;
@@ -1498,7 +1522,13 @@ export const useArkDesktopRuntime = () => {
                     const workflowRuns = isCleared
                         ? (task.workflowRuns || []).filter((item) => item.runId !== workflow.runId)
                         : [...(task.workflowRuns || []).filter((item) => item.runId !== workflow.runId), workflow];
-                    return { ...next, workflowRuns, updatedAt: Date.now() };
+                    // `/deep-research` ends its foreground slash-command turn before the
+                    // background workflow finishes, so TodoWrite may still contain stale
+                    // pending items when the durable workflow completion arrives.
+                    const plan = deepResearchCompleted && !['failed', 'cancelled'].includes(task.status)
+                        ? completePlanSteps(task.plan)
+                        : task.plan;
+                    return { ...next, ...(plan ? { plan } : {}), workflowRuns, updatedAt: Date.now() };
                 });
                 return;
             }
