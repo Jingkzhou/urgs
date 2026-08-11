@@ -346,7 +346,7 @@ const App: React.FC = () => {
         <div className={`app-shell flex min-h-0 min-w-0 bg-slate-50 ${layoutMode === 'topbar' ? 'flex-col' : 'flex-row'}`}>
             {layoutMode === 'sidebar' && (
                 <aside
-                    className="m-4 mr-0 flex w-[72px] shrink-0 flex-col rounded-[1.5rem] border border-slate-200/70 bg-white/85 text-slate-800 shadow-[0_24px_70px_-38px_rgba(15,23,42,0.45)] backdrop-blur-2xl z-[120] relative overflow-visible"
+                    className="relative z-0 m-4 mr-0 flex w-[72px] shrink-0 flex-col overflow-visible rounded-[1.5rem] border border-slate-200/70 bg-white/85 text-slate-800 shadow-[0_24px_70px_-38px_rgba(15,23,42,0.45)] backdrop-blur-2xl"
                 >
                     <div className="flex h-20 shrink-0 items-center justify-center border-b border-slate-100">
                         <button
@@ -421,7 +421,7 @@ const App: React.FC = () => {
 
             <div className="flex-1 flex flex-col min-w-0 overflow-hidden relative">
                 {layoutMode === 'topbar' && (
-                    <header className="h-[72px] bg-white/92 backdrop-blur-xl border-b border-slate-200/80 px-6 xl:px-8 z-[100] relative shrink-0 shadow-[0_18px_45px_-38px_rgba(15,23,42,0.55)]">
+                    <header className="relative z-0 h-[72px] shrink-0 border-b border-slate-200/80 bg-white/92 px-6 shadow-[0_18px_45px_-38px_rgba(15,23,42,0.55)] backdrop-blur-xl xl:px-8">
                         <div className="h-full flex items-center justify-between gap-6">
                             <div className="flex items-center gap-7 min-w-0">
                                 <div className="flex items-center gap-3 shrink-0">
