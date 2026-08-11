@@ -431,6 +431,7 @@ export interface GrokModelProvider {
     authScheme: 'bearer' | 'x_api_key';
     contextWindow: number;
     enabled: boolean;
+    supportsReasoningEffort: boolean;
     hasApiKey: boolean;
 }
 
@@ -1284,6 +1285,17 @@ export interface GrokPromptAttachmentSelection {
 
 export const setGrokSessionModel = (sessionId: string, model: string, logContext?: DesktopLogContext) =>
     invokeGrok<void>('grok_session_set_model', { sessionId, model }, logContext);
+
+export const setGrokSessionReasoningEffort = (
+    sessionId: string,
+    model: string,
+    reasoningEffort: string,
+    logContext?: DesktopLogContext,
+) => invokeGrok<void>('grok_session_set_model', {
+    sessionId,
+    model,
+    reasoningEffort: reasoningEffort || null,
+}, logContext);
 
 export const setGrokSessionMode = (sessionId: string, mode: GrokSessionMode, logContext?: DesktopLogContext) =>
     invokeGrok<void>('grok_session_set_mode', { sessionId, mode }, logContext);

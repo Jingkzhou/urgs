@@ -288,7 +288,7 @@ export const TaskActivityDetails: React.FC<{ tools: Tool[] }> = ({ tools }) => {
     const ActionIcon = activityIcon(visibleTools);
     const summary = activityGroupSummary(visibleTools);
     return <div>
-        <button type="button" onClick={() => setOpen((value) => !value)} className="flex min-h-7 w-full min-w-0 items-center gap-2 rounded-md px-1 text-left text-[13px] leading-5 text-[#77787c] transition hover:bg-slate-50 hover:text-[#55565a]" aria-expanded={open}>
+        <button type="button" onClick={() => setOpen((value) => !value)} className="flex min-h-6 w-full min-w-0 items-center gap-2 rounded-md px-1 py-0.5 text-left text-[13px] leading-5 text-[#77787c] transition hover:bg-slate-50 hover:text-[#55565a]" aria-expanded={open}>
             {active || state === 'failed'
                 ? <StageIcon state={state} active={active} />
                 : <ActionIcon size={15} strokeWidth={1.7} className="shrink-0 text-[#8b8b8b]" />}
@@ -386,7 +386,7 @@ const TaskActivityTimeline: React.FC<TaskActivityTimelineProps> = ({ tools, task
                 : isRunning
                     ? `处理中 ${formatCompactDuration(elapsed)}`
                     : `已处理 ${formatCompactDuration(elapsed)}`;
-    const expandedDetails = expanded && <div className="mt-1.5 border-l border-slate-200 pl-4">
+    const expandedDetails = expanded && <div className="mt-1 border-l border-slate-200 pl-4">
         {children}
         {!children && <TaskActivityDetails tools={summaryTools} />}
         {!children && summaryTools.length === 0 && <div className="py-1 text-[12px] text-slate-400">{active ? '当前阶段正在准备中' : '已完成执行步骤'}</div>}
@@ -405,8 +405,8 @@ const TaskActivityTimeline: React.FC<TaskActivityTimelineProps> = ({ tools, task
         </div>}
     </div>;
 
-    if (summaryOnly) return <section className="my-2" aria-label="执行记录">
-        <button type="button" onClick={() => setExpanded((value) => !value)} className="group flex w-full items-center border-b border-slate-200 py-3 text-left text-[15px] font-medium text-slate-500 transition hover:text-slate-700" aria-expanded={expanded} aria-label={compactSummary}>
+    if (summaryOnly) return <section className="my-1" aria-label="执行记录">
+        <button type="button" onClick={() => setExpanded((value) => !value)} className="group flex w-full items-center border-b border-slate-200 py-1.5 text-left text-[15px] font-medium text-slate-500 transition hover:text-slate-700" aria-expanded={expanded} aria-label={compactSummary}>
             <span className="group/summary inline-flex min-w-0 max-w-full items-center gap-1.5">
                 <span className="min-w-0 truncate">{compactSummary}</span>
                 <ChevronRight size={16} strokeWidth={1.8} className={`shrink-0 text-slate-400 opacity-0 transition-[transform,opacity] group-hover/summary:opacity-100 ${expanded ? 'rotate-90' : ''}`} />
@@ -416,7 +416,7 @@ const TaskActivityTimeline: React.FC<TaskActivityTimelineProps> = ({ tools, task
     </section>;
 
     return (
-        <section className="my-1.5" aria-label="执行过程">
+        <section className="my-1" aria-label="执行过程">
             <button type="button" onClick={() => setExpanded((value) => !value)} className={`group flex w-full min-w-0 items-center gap-2 rounded-lg px-2 py-2 text-left transition hover:bg-slate-50 ${failedTool || taskStatus === 'failed' ? 'text-amber-700' : 'text-slate-600'}`} aria-expanded={expanded}>
                 <span className="flex h-6 w-6 shrink-0 items-center justify-center rounded-md bg-slate-50">
                     <SummaryIcon size={16} className={isRunning ? 'animate-spin text-blue-500' : failedTool || taskStatus === 'failed' ? 'text-amber-500' : 'text-slate-400'} />

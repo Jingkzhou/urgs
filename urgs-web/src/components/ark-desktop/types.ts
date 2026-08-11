@@ -259,6 +259,14 @@ export interface ArkDesktopGitContext {
 
 export type ArkDesktopInteractionMode = 'default' | 'plan' | 'ask';
 
+export interface ArkDesktopReasoningEffortOption {
+    id: string;
+    value: string;
+    label: string;
+    description: string;
+    default: boolean;
+}
+
 export interface ArkDesktopTask {
     id: string;
     title: string;
@@ -272,6 +280,9 @@ export interface ArkDesktopTask {
     attachmentGrantIds?: string[];
     engine?: 'acp' | 'headless';
     model?: string;
+    reasoningEffort?: string;
+    supportsReasoningEffort?: boolean;
+    reasoningEfforts?: ArkDesktopReasoningEffortOption[];
     permissionMode?: GrokExecutionSettings['permissionMode'];
     interactionMode?: ArkDesktopInteractionMode;
     alwaysApprove?: boolean;
@@ -325,6 +336,7 @@ export interface ArkDesktopModelProvider {
     authScheme: 'bearer' | 'x_api_key';
     contextWindow: number;
     enabled: boolean;
+    supportsReasoningEffort: boolean;
     hasApiKey: boolean;
 }
 

@@ -5,9 +5,9 @@ import remarkGfm from 'remark-gfm';
 import { Prism as SyntaxHighlighter } from 'react-syntax-highlighter';
 import { oneDark } from 'react-syntax-highlighter/dist/esm/styles/prism';
 import {
-    AlertCircle, BriefcaseBusiness, Check, CheckCircle2, CheckSquare,
+    AlertCircle, BrainCircuit, BriefcaseBusiness, Check, CheckCircle2, CheckSquare,
     ChevronDown, ChevronUp, CircleStop, Code2, Copy, Cpu, FileText, Folder, FolderOpen,
-    Hand, KeyRound, Lightbulb, LoaderCircle, Paperclip, PanelBottom, PanelRight, Pencil, Plus, RefreshCw,
+    Hand, Info, KeyRound, Lightbulb, LoaderCircle, Paperclip, PanelBottom, PanelRight, Pencil, Plus, RefreshCw,
     Puzzle, Search, Send, Settings, ShieldAlert, Trash2, Workflow, Wrench, X,
 } from 'lucide-react';
 import { copyToClipboard } from '@/utils/clipboard';
@@ -33,7 +33,7 @@ import GitReviewPanel from './GitReviewPanel';
 import TaskTerminalPanel from './TaskTerminalPanel';
 import type {
     ArkDesktopAutomation, ArkDesktopSection,
-    ArkDesktopInteractionMode, ArkDesktopModelProvider, ArkDesktopTask, ArkDesktopTaskStatus, AutomationSchedule, GrokExecutionSettings,
+    ArkDesktopInteractionMode, ArkDesktopModelProvider, ArkDesktopReasoningEffortOption, ArkDesktopTask, ArkDesktopTaskStatus, AutomationSchedule, GrokExecutionSettings,
 } from './types';
 import { nextAutomationRunAt } from './automationSchedule';
 
@@ -105,11 +105,38 @@ const interactionModeOptions: Array<{
     value: ArkDesktopInteractionMode;
     label: string;
     description: string;
+    recommendation: string;
+    behaviors: string[];
+    suitableFor: string;
     icon: React.ElementType;
 }> = [
-    { value: 'default', label: '正常执行', description: '分析后直接使用工具完成任务', icon: CheckSquare },
-    { value: 'plan', label: '计划模式', description: '只读分析并生成计划，批准后再实现', icon: FileText },
-    { value: 'ask', label: '询问模式', description: '遇到关键选择时优先向你确认', icon: Lightbulb },
+    {
+        value: 'default',
+        label: '正常执行',
+        description: '分析后直接使用工具完成任务。',
+        recommendation: '推荐',
+        behaviors: ['分析与编辑', '运行命令', '验证并交付'],
+        suitableFor: '目标明确，希望智能体直接完成任务',
+        icon: CheckSquare,
+    },
+    {
+        value: 'plan',
+        label: '计划模式',
+        description: '只读分析并生成计划，批准后再实现。',
+        recommendation: '先规划后实施',
+        behaviors: ['只读分析', '生成实施计划', '等待批准'],
+        suitableFor: '范围较大，需要先确认实现路径',
+        icon: FileText,
+    },
+    {
+        value: 'ask',
+        label: '询问模式',
+        description: '遇到关键选择时优先向你确认。',
+        recommendation: '主动确认',
+        behaviors: ['识别关键选择', '暂停并提问', '确认后继续'],
+        suitableFor: '需求存在不确定性或重要取舍',
+        icon: Lightbulb,
+    },
 ];
 
 const createLocalId = (prefix: string) => `${prefix}-${Date.now()}-${Math.random().toString(16).slice(2)}`;
@@ -616,18 +643,28 @@ const InteractionModePicker: React.FC<{
 }> = ({ value, disabled = false, onChange }) => {
     const [open, setOpen] = useState(false);
     const [switching, setSwitching] = useState(false);
+    const [previewedValue, setPreviewedValue] = useState<ArkDesktopInteractionMode>(value);
     const menuRef = useRef<HTMLDivElement>(null);
     const selected = interactionModeOptions.find((option) => option.value === value) || interactionModeOptions[0];
+    const previewed = interactionModeOptions.find((option) => option.value === previewedValue) || selected;
     const SelectedIcon = selected.icon;
+    const PreviewedIcon = previewed.icon;
 
     useEffect(() => {
         if (!open) return undefined;
         const close = (event: MouseEvent) => {
             if (!menuRef.current?.contains(event.target as Node)) setOpen(false);
         };
+        const closeOnEscape = (event: KeyboardEvent) => {
+            if (event.key === 'Escape') setOpen(false);
+        };
         window.addEventListener('mousedown', close);
-        return () => window.removeEventListener('mousedown', close);
-    }, [open]);
+        window.addEventListener('keydown', closeOnEscape);
+        return () => {
+            window.removeEventListener('mousedown', close);
+            window.removeEventListener('keydown', closeOnEscape);
+        };
+    }, [open, value]);
 
     const selectMode = async (option: typeof interactionModeOptions[number]) => {
         if (option.value === value) {
@@ -644,14 +681,54 @@ const InteractionModePicker: React.FC<{
     };
 
     return <div ref={menuRef} className="relative">
-        <button type="button" disabled={disabled || switching} onClick={() => setOpen((current) => !current)} title="设置 Grok 交互模式" className={`flex max-w-40 items-center gap-1.5 rounded-lg px-2.5 py-2 text-xs font-medium transition disabled:cursor-default disabled:opacity-50 ${value === 'plan' ? 'bg-indigo-50 text-indigo-700 hover:bg-indigo-100' : value === 'ask' ? 'bg-amber-50 text-amber-700 hover:bg-amber-100' : 'text-slate-500 hover:bg-slate-100 hover:text-slate-700'}`}>
+        <button type="button" disabled={disabled || switching} aria-haspopup="menu" aria-expanded={open} onClick={() => { setPreviewedValue(value); setOpen((current) => !current); }} title="设置 Grok 交互模式" className={`flex max-w-40 items-center gap-1.5 rounded-lg px-2.5 py-2 text-xs font-medium transition focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-slate-300 disabled:cursor-default disabled:opacity-50 ${value === 'plan' ? 'bg-indigo-50 text-indigo-700 hover:bg-indigo-100' : value === 'ask' ? 'bg-amber-50 text-amber-700 hover:bg-amber-100' : 'text-slate-500 hover:bg-slate-100 hover:text-slate-700'}`}>
             <SelectedIcon size={15} className="shrink-0" />
             <span className="truncate">{switching ? '正在切换' : selected.label}</span>
             <ChevronDown size={13} className={`shrink-0 text-slate-400 transition-transform ${open ? 'rotate-180' : ''}`} />
         </button>
-        {open && <div className="absolute bottom-[calc(100%+8px)] left-0 z-40 w-[min(380px,calc(100vw-40px))] overflow-hidden rounded-2xl border border-slate-200 bg-white p-2 shadow-[0_20px_55px_rgba(15,23,42,0.18)]">
-            <div className="px-2.5 pb-2 pt-1 text-xs font-semibold text-slate-500">智能体交互模式</div>
-            {interactionModeOptions.map((option) => { const Icon = option.icon; const active = option.value === value; return <button key={option.value} type="button" disabled={switching} onClick={() => void selectMode(option)} className={`flex w-full items-center gap-3 rounded-xl px-2.5 py-2.5 text-left transition disabled:cursor-wait disabled:opacity-60 ${active ? 'bg-slate-100' : 'hover:bg-slate-50'}`}><span className="flex h-8 w-8 shrink-0 items-center justify-center rounded-lg text-slate-500"><Icon size={18} /></span><span className="min-w-0 flex-1"><span className="block text-sm font-medium text-slate-800">{option.label}</span><span className="mt-0.5 block text-xs leading-5 text-slate-400">{option.description}</span></span>{active && <Check size={17} className="text-slate-700" />}</button>; })}
+        {open && <div className="absolute bottom-[calc(100%+8px)] left-0 z-40 grid w-[min(520px,calc(100vw-40px))] grid-cols-[minmax(0,220px)_minmax(0,1fr)] overflow-hidden rounded-xl border border-slate-200 bg-white shadow-[0_18px_48px_rgba(15,23,42,0.16)] max-[560px]:w-[min(248px,calc(100vw-32px))] max-[560px]:grid-cols-1">
+            <div aria-label="智能体交互模式" className="p-1.5" onMouseLeave={() => setPreviewedValue(value)}>
+                {interactionModeOptions.map((option) => {
+                    const Icon = option.icon;
+                    const active = option.value === value;
+                    const previewing = option.value === previewedValue;
+                    return <button
+                        key={option.value}
+                        type="button"
+                        aria-pressed={active}
+                        disabled={switching}
+                        onMouseEnter={() => setPreviewedValue(option.value)}
+                        onFocus={() => setPreviewedValue(option.value)}
+                        onClick={() => void selectMode(option)}
+                        className={`flex h-11 w-full items-center gap-2.5 rounded-lg px-2.5 text-left text-sm transition-colors focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-inset focus-visible:ring-slate-300 disabled:cursor-wait disabled:opacity-60 ${active ? 'bg-slate-100 text-slate-900' : previewing ? 'bg-slate-50 text-slate-900' : 'text-slate-700 hover:bg-slate-50'}`}
+                    >
+                        <span className="flex h-7 w-7 shrink-0 items-center justify-center text-slate-500"><Icon size={18} strokeWidth={1.8} /></span>
+                        <span className="min-w-0 flex-1 truncate font-medium">{option.label}</span>
+                        {active && <Check size={16} strokeWidth={2.2} className="shrink-0 text-slate-700" />}
+                        <Info size={15} strokeWidth={1.8} className="shrink-0 text-slate-400" aria-hidden="true" />
+                    </button>;
+                })}
+            </div>
+            <div className="min-w-0 border-l border-slate-200 bg-slate-50/55 px-4 py-3.5 max-[560px]:hidden" aria-live="polite">
+                <div className="flex items-center gap-2.5">
+                    <span className="flex h-8 w-8 shrink-0 items-center justify-center rounded-lg bg-white text-slate-600 shadow-[0_1px_3px_rgba(15,23,42,0.12)]"><PreviewedIcon size={17} strokeWidth={1.8} /></span>
+                    <div className="min-w-0">
+                        <div className="truncate text-sm font-semibold text-slate-900">{previewed.label}</div>
+                        <div className="text-xs text-slate-500">{previewed.recommendation}</div>
+                    </div>
+                </div>
+                <p className="mt-3 text-xs leading-5 text-slate-600">{previewed.description}</p>
+                <div className="mt-3 border-t border-slate-200 pt-3">
+                    <div className="text-[11px] font-medium text-slate-500">执行方式</div>
+                    <div className="mt-1.5 space-y-1 text-xs leading-5 text-slate-700">
+                        {previewed.behaviors.map((behavior) => <div key={behavior}>{behavior}</div>)}
+                    </div>
+                </div>
+                <div className="mt-3 border-t border-slate-200 pt-3">
+                    <div className="text-[11px] font-medium text-slate-500">适合</div>
+                    <p className="mt-1.5 text-xs leading-5 text-slate-700">{previewed.suitableFor}</p>
+                </div>
+            </div>
         </div>}
     </div>;
 };
@@ -729,11 +806,135 @@ const TaskModelPicker: React.FC<{ task: ArkDesktopTask; runtime: ReturnType<type
     />;
 };
 
+const fallbackReasoningEfforts: ArkDesktopReasoningEffortOption[] = [
+    { id: 'minimal', value: 'minimal', label: 'Minimal', description: '最少思考，优先获得更快响应', default: false },
+    { id: 'low', value: 'low', label: 'Low', description: '适合简单、明确的任务', default: false },
+    { id: 'medium', value: 'medium', label: 'Medium', description: '兼顾响应速度与任务质量', default: false },
+    { id: 'high', value: 'high', label: 'High', description: '适合复杂实现、分析和验证', default: false },
+    { id: 'xhigh', value: 'xhigh', label: 'X-High', description: '投入更多推理完成高难度任务', default: false },
+];
+
+const reasoningEffortLabels: Record<string, string> = {
+    none: '关闭',
+    minimal: '最低',
+    low: '低',
+    medium: '中',
+    high: '高',
+    xhigh: '超高',
+    max: '最大',
+};
+
+const reasoningEffortLabel = (value: string, fallback = '') => reasoningEffortLabels[value] || fallback || value;
+
+const ReasoningEffortPicker: React.FC<{
+    value: string;
+    supportsReasoningEffort: boolean;
+    options: ArkDesktopReasoningEffortOption[];
+    disabled?: boolean;
+    disabledReason?: string;
+    onChange: (reasoningEffort: string) => Promise<void> | void;
+    onError: (error: unknown) => void;
+}> = ({ value, supportsReasoningEffort, options, disabled = false, disabledReason, onChange, onError }) => {
+    const [open, setOpen] = useState(false);
+    const [switching, setSwitching] = useState(false);
+    const menuRef = useRef<HTMLDivElement>(null);
+    const availableOptions = options.length > 0 ? options : supportsReasoningEffort ? fallbackReasoningEfforts : [];
+    const selected = availableOptions.find((option) => option.value === value);
+    const defaultOption = availableOptions.find((option) => option.default);
+    const displayLabel = value
+        ? reasoningEffortLabel(value, selected?.label)
+        : defaultOption ? `默认 · ${reasoningEffortLabel(defaultOption.value, defaultOption.label)}` : '模型默认';
+    const unavailable = !supportsReasoningEffort || availableOptions.length === 0;
+
+    useEffect(() => {
+        if (!open) return undefined;
+        const close = (event: MouseEvent) => {
+            if (!menuRef.current?.contains(event.target as Node)) setOpen(false);
+        };
+        const closeOnEscape = (event: KeyboardEvent) => {
+            if (event.key === 'Escape') setOpen(false);
+        };
+        window.addEventListener('mousedown', close);
+        window.addEventListener('keydown', closeOnEscape);
+        return () => {
+            window.removeEventListener('mousedown', close);
+            window.removeEventListener('keydown', closeOnEscape);
+        };
+    }, [open]);
+
+    const selectEffort = async (reasoningEffort: string) => {
+        if (switching || reasoningEffort === value) {
+            setOpen(false);
+            return;
+        }
+        setSwitching(true);
+        try {
+            await onChange(reasoningEffort);
+            setOpen(false);
+        } catch (error) {
+            onError(error);
+        } finally {
+            setSwitching(false);
+        }
+    };
+
+    const title = unavailable
+        ? '当前模型未声明可选思考级别'
+        : disabled ? disabledReason || '当前不可切换思考级别' : '选择模型思考级别';
+    return <div ref={menuRef} className="relative">
+        <button type="button" disabled={disabled || switching || unavailable} aria-haspopup="menu" aria-expanded={open} onClick={() => setOpen((current) => !current)} title={title} className="flex max-w-44 items-center gap-1.5 rounded-lg px-2.5 py-2 text-xs font-medium text-slate-500 transition hover:bg-slate-100 hover:text-slate-700 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-slate-300 disabled:cursor-default disabled:opacity-50">
+            {switching ? <LoaderCircle size={15} className="shrink-0 animate-spin" /> : <BrainCircuit size={15} className="shrink-0" />}
+            <span className="truncate">思考：{displayLabel}</span>
+            <ChevronDown size={13} className={`shrink-0 text-slate-400 transition-transform ${open ? 'rotate-180' : ''}`} />
+        </button>
+        {open && !unavailable && <div role="menu" className="absolute bottom-[calc(100%+8px)] left-0 z-40 w-[min(320px,calc(100vw-32px))] overflow-hidden rounded-2xl border border-slate-200 bg-white p-2 shadow-[0_20px_55px_rgba(15,23,42,0.18)]">
+            <div className="px-2.5 pb-2 pt-1 text-xs font-semibold text-slate-500">模型思考级别</div>
+            <button type="button" role="menuitemradio" aria-checked={!value} disabled={switching} onClick={() => void selectEffort('')} className={`flex w-full items-center gap-3 rounded-xl px-2.5 py-2.5 text-left transition ${!value ? 'bg-slate-100' : 'hover:bg-slate-50'}`}>
+                <span className="flex h-8 w-8 shrink-0 items-center justify-center rounded-lg bg-slate-100 text-slate-500"><BrainCircuit size={16} /></span>
+                <span className="min-w-0 flex-1"><span className="block text-sm font-medium text-slate-700">模型默认</span><span className="mt-0.5 block text-xs leading-5 text-slate-400">使用当前模型配置的默认级别{defaultOption ? `（${reasoningEffortLabel(defaultOption.value, defaultOption.label)}）` : ''}</span></span>
+                {!value && <Check size={16} className="shrink-0 text-slate-700" />}
+            </button>
+            {availableOptions.map((option) => { const active = option.value === value; return <button key={option.id || option.value} type="button" role="menuitemradio" aria-checked={active} disabled={switching} onClick={() => void selectEffort(option.value)} className={`flex w-full items-center gap-3 rounded-xl px-2.5 py-2.5 text-left transition ${active ? 'bg-slate-100' : 'hover:bg-slate-50'}`}><span className="flex h-8 w-8 shrink-0 items-center justify-center rounded-lg bg-slate-100 text-xs font-semibold text-slate-500">{reasoningEffortLabel(option.value, option.label).slice(0, 2)}</span><span className="min-w-0 flex-1"><span className="block text-sm font-medium text-slate-700">{reasoningEffortLabel(option.value, option.label)}</span><span className="mt-0.5 block text-xs leading-5 text-slate-400">{option.description || '使用模型声明的思考级别'}</span></span>{active && <Check size={16} className="shrink-0 text-slate-700" />}</button>; })}
+        </div>}
+    </div>;
+};
+
+const DefaultReasoningEffortPicker: React.FC<{ runtime: ReturnType<typeof useArkDesktopRuntime>; disabled?: boolean }> = ({ runtime, disabled }) => {
+    const selectedModel = runtime.snapshot.settings.grokModel;
+    const model = runtime.modelCatalog?.availableModels.find((item) => item.modelId === selectedModel)
+        || runtime.modelCatalog?.availableModels.find((item) => item.modelId === runtime.modelCatalog?.currentModelId);
+    const provider = runtime.snapshot.settings.modelProviders.find((item) => item.id === selectedModel);
+    return <ReasoningEffortPicker
+        value={runtime.snapshot.settings.execution.reasoningEffort}
+        supportsReasoningEffort={Boolean(model?.supportsReasoningEffort || provider?.supportsReasoningEffort)}
+        options={model?.reasoningEfforts || []}
+        disabled={disabled}
+        onChange={(reasoningEffort) => runtime.setSnapshot((current) => ({ ...current, settings: { ...current.settings, execution: { ...current.settings.execution, reasoningEffort } } }))}
+        onError={(error) => runtime.setRuntimeError(error instanceof Error ? error.message : String(error))}
+    />;
+};
+
+const TaskReasoningEffortPicker: React.FC<{ task: ArkDesktopTask; runtime: ReturnType<typeof useArkDesktopRuntime>; disabled?: boolean }> = ({ task, runtime, disabled }) => {
+    const unavailable = task.engine === 'headless' || !task.sessionId;
+    const catalogModel = runtime.modelCatalog?.availableModels.find((item) => item.modelId === task.model)
+        || runtime.modelCatalog?.availableModels.find((item) => item.modelId === runtime.modelCatalog?.currentModelId);
+    return <ReasoningEffortPicker
+        value={task.reasoningEffort || ''}
+        supportsReasoningEffort={task.supportsReasoningEffort ?? Boolean(catalogModel?.supportsReasoningEffort)}
+        options={task.reasoningEfforts?.length ? task.reasoningEfforts : catalogModel?.reasoningEfforts || []}
+        disabled={disabled || unavailable}
+        disabledReason={task.engine === 'headless' ? '后台模式会话仅支持在新任务中选择思考级别' : '会话建立后可切换思考级别'}
+        onChange={(reasoningEffort) => runtime.setTaskReasoningEffort(task.id, reasoningEffort)}
+        onError={() => undefined}
+    />;
+};
+
 const TaskMessage: React.FC<{ message: ArkDesktopTask['messages'][number]; attachments?: string[]; scrollTarget?: React.RefObject<HTMLDivElement> }> = ({ message, attachments = [], scrollTarget }) => {
     const isLongUserMessage = message.role === 'user'
         && (message.content.length > LONG_USER_MESSAGE_CHAR_LIMIT || message.content.split(/\r?\n/).length > LONG_USER_MESSAGE_LINE_LIMIT);
     const [expanded, setExpanded] = useState(false);
 
+    if (message.role === 'assistant' && !message.content.trim()) return null;
     if (message.role === 'user') return <div ref={scrollTarget} className="flex scroll-mt-6 justify-end py-2.5"><div className="max-w-[min(86%,680px)] rounded-[20px] rounded-br-md bg-[#f0f1f3] px-4 py-2.5 text-[14px] leading-7 text-slate-800"><div className={isLongUserMessage && !expanded ? 'relative max-h-56 overflow-hidden' : 'relative'}><span className="whitespace-pre-wrap break-words">{message.content}</span>{isLongUserMessage && !expanded && <div aria-hidden="true" className="pointer-events-none absolute inset-x-0 bottom-0 h-16 bg-gradient-to-t from-[#f0f1f3] to-transparent" />}</div>{isLongUserMessage && <button type="button" aria-expanded={expanded} onClick={() => setExpanded((current) => !current)} className="mt-1 flex items-center gap-1 text-xs font-medium text-slate-500 transition hover:text-slate-800">{expanded ? <ChevronUp size={13} /> : <ChevronDown size={13} />}{expanded ? '收起全文' : '展开全文'}</button>}{attachments.length > 0 && <div className="mt-2 flex flex-wrap justify-end gap-1.5">{attachments.map((path) => <span key={path} title={path} className="flex max-w-56 items-center gap-1 rounded-md bg-white/80 px-2 py-1 text-[11px] leading-4 text-slate-500"><Paperclip size={11} /><span className="truncate">{path.split(/[\\/]/).pop()}</span></span>)}</div>}</div></div>;
     return <div ref={scrollTarget} className="scroll-mt-6 py-2"><MarkdownContent content={message.content} /></div>;
 };
@@ -1074,11 +1275,13 @@ const TaskComposer: React.FC<{ task?: ArkDesktopTask; runtime: ReturnType<typeof
                         <PermissionModePicker value={execution.permissionMode} onChange={(permissionMode) => runtime.setSnapshot((current) => ({ ...current, settings: { ...current.settings, execution: { ...current.settings.execution, permissionMode, alwaysApprove: false } } }))} />
                         <InteractionModePicker value={execution.interactionMode} onChange={(interactionMode) => runtime.setSnapshot((current) => ({ ...current, settings: { ...current.settings, execution: { ...current.settings.execution, interactionMode } } }))} />
                         <DefaultModelPicker runtime={runtime} />
+                        <DefaultReasoningEffortPicker runtime={runtime} disabled={sending} />
                     </> : task ? <>
                         {task.engine !== 'headless' && <SessionCommandBar commands={task.availableCommands?.length ? task.availableCommands : runtime.availableCommands} disabled={isRunning || isWaitingAuthorization || sending} onSelect={onChange} />}
                         <PermissionModePicker value={task.permissionMode || execution.permissionMode} disabled={isRunning || isWaitingAuthorization} onChange={(permissionMode) => runtime.setTaskPermissionMode(task.id, permissionMode)} />
                         <InteractionModePicker value={task.interactionMode || 'default'} disabled={isWaitingAuthorization || sending} onChange={(interactionMode) => runtime.setTaskInteractionMode(task.id, interactionMode)} />
                         <TaskModelPicker task={task} runtime={runtime} />
+                        <TaskReasoningEffortPicker task={task} runtime={runtime} disabled={isRunning || isWaitingAuthorization || sending} />
                     </> : null}
                 </div>
                 <div className="flex items-center gap-2">{task && <ContextUsageMenu task={task} runtime={runtime} />}<span className="hidden text-[11px] text-slate-400 sm:inline">{canQueuePrompt ? '执行中，可继续追加消息' : isRunning ? '任务正在执行' : isWaitingAuthorization ? '等待本地密钥解锁' : isNewTask ? 'Enter 发送' : task?.sessionId ? 'Enter 发送' : '发送时恢复历史会话'}</span>{isRunning ? <><button type="button" onClick={() => void onCancel?.()} className="flex h-8 items-center gap-1.5 rounded-lg px-2.5 text-xs font-medium text-red-600 hover:bg-red-50"><CircleStop size={15} />停止任务</button>{canQueuePrompt ? <button type="button" disabled={!canSubmit} onClick={() => void onSubmit()} aria-label="追加消息" title="追加消息" className="flex h-8 w-8 items-center justify-center rounded-full bg-slate-900 text-white transition hover:bg-slate-700 disabled:cursor-not-allowed disabled:opacity-35">{sending ? <LoaderCircle size={15} className="animate-spin" /> : <Send size={15} />}</button> : null}</> : <button type="button" disabled={!canSubmit} onClick={() => void onSubmit()} className="flex h-8 w-8 items-center justify-center rounded-full bg-slate-900 text-white transition hover:bg-slate-700 disabled:cursor-not-allowed disabled:opacity-35">{sending ? <LoaderCircle size={15} className="animate-spin" /> : <Send size={15} />}</button>}</div>
@@ -1340,6 +1543,7 @@ const ModelProviderPanel: React.FC<{ providers: ArkDesktopModelProvider[]; curre
     const [apiBackend, setApiBackend] = useState<ArkDesktopModelProvider['apiBackend']>('chat_completions');
     const [authScheme, setAuthScheme] = useState<ArkDesktopModelProvider['authScheme']>('bearer');
     const [contextWindow, setContextWindow] = useState('128000');
+    const [supportsReasoningEffort, setSupportsReasoningEffort] = useState(false);
     const [editingProviderId, setEditingProviderId] = useState<string>();
     const [saving, setSaving] = useState(false);
     const apply = async (action: () => Promise<void>) => {
@@ -1364,12 +1568,14 @@ const ModelProviderPanel: React.FC<{ providers: ArkDesktopModelProvider[]; curre
                 authScheme,
                 contextWindow: Number(contextWindow) || 128000,
                 enabled: true,
+                supportsReasoningEffort,
                 apiKey: apiKey.trim() || undefined,
             });
             setName('');
             setModel('');
             setBaseUrl('');
             setApiKey('');
+            setSupportsReasoningEffort(false);
             setEditingProviderId(undefined);
         });
     };
@@ -1381,13 +1587,14 @@ const ModelProviderPanel: React.FC<{ providers: ArkDesktopModelProvider[]; curre
         setApiBackend(provider.apiBackend);
         setAuthScheme(provider.authScheme);
         setContextWindow(String(provider.contextWindow));
+        setSupportsReasoningEffort(provider.supportsReasoningEffort);
         setApiKey('');
     };
     const remove = async (provider: ArkDesktopModelProvider) => {
         if (!window.confirm(`确认删除模型连接“${provider.name}”吗？系统凭据库中的密钥也会一并删除。`)) return;
         await apply(() => onDelete(provider.id));
     };
-    return <div className="rounded-2xl border border-slate-200 p-5"><div><h3 className="font-semibold text-slate-900">模型连接</h3><p className="mt-1 text-sm leading-6 text-slate-500">添加 OpenAI 兼容、Responses 或 Messages 协议的模型。任务仍由内置智能引擎执行工具和工作区操作，仅推理由这里配置的模型完成。</p></div><div className="mt-5 grid gap-3 md:grid-cols-2"><Field label="连接名称"><input value={name} onChange={(event) => setName(event.target.value)} placeholder="例如：通义千问" className={inputClass} /></Field><Field label="模型标识"><input value={model} onChange={(event) => setModel(event.target.value)} placeholder="例如：qwen-plus" className={inputClass} /></Field><Field label="API Base URL"><input value={baseUrl} onChange={(event) => setBaseUrl(event.target.value)} placeholder="例如：http://127.0.0.1:1234/v1" className={inputClass} /></Field><Field label="API Key"><input type="password" value={apiKey} onChange={(event) => setApiKey(event.target.value)} placeholder={editingProviderId ? '留空则保留已有密钥' : '仅保存到系统凭据库'} className={inputClass} /></Field><Field label="API 协议"><select value={apiBackend} onChange={(event) => setApiBackend(event.target.value as ArkDesktopModelProvider['apiBackend'])} className={inputClass}><option value="chat_completions">Chat Completions（Kimi / Qwen / OpenAI）</option><option value="responses">Responses</option><option value="messages">Messages</option></select></Field><Field label="认证方式"><select value={authScheme} onChange={(event) => setAuthScheme(event.target.value as ArkDesktopModelProvider['authScheme'])} className={inputClass}><option value="bearer">Bearer Token</option><option value="x_api_key">x-api-key</option></select></Field><Field label="上下文窗口"><input type="number" min="4096" max="2000000" value={contextWindow} onChange={(event) => setContextWindow(event.target.value)} className={inputClass} /></Field></div><div className="mt-4 flex justify-end gap-2">{editingProviderId && <button type="button" disabled={saving} onClick={() => { setEditingProviderId(undefined); setName(''); setModel(''); setBaseUrl(''); setApiKey(''); }} className="rounded-xl border border-slate-200 px-3.5 py-2.5 text-sm text-slate-600">取消编辑</button>}<button type="button" disabled={saving || !name.trim() || !model.trim() || !baseUrl.trim()} onClick={() => void add()} className="flex items-center gap-1.5 rounded-xl bg-slate-900 px-3.5 py-2.5 text-sm text-white disabled:opacity-40">{saving ? <LoaderCircle size={15} className="animate-spin" /> : <Plus size={15} />}{editingProviderId ? '保存连接' : '添加并设为默认'}</button></div><div className="mt-5 space-y-2">{providers.length === 0 ? <div className="rounded-xl bg-slate-50 px-3 py-3 text-sm text-slate-400">暂未添加模型连接。添加后即可在新任务和会话中选择。</div> : providers.map((provider) => <div key={provider.id} className={`flex flex-wrap items-center justify-between gap-3 rounded-xl border px-3.5 py-3 ${provider.id === currentModel ? 'border-slate-800 bg-slate-50' : 'border-slate-200'}`}><div className="min-w-0"><div className="flex items-center gap-2"><span className="font-medium text-slate-800">{provider.name}</span>{provider.id === currentModel && <span className="rounded bg-slate-900 px-1.5 py-0.5 text-[10px] text-white">默认</span>}{provider.hasApiKey ? <span className="text-xs text-emerald-600">密钥已保存</span> : <span className="text-xs text-amber-600">未配置密钥</span>}</div><p className="mt-1 truncate text-xs text-slate-500">{provider.model} · {provider.baseUrl}</p></div><div className="flex items-center gap-2"><button type="button" disabled={saving} onClick={() => edit(provider)} className="rounded-lg border border-slate-200 px-2.5 py-1.5 text-xs text-slate-600 disabled:opacity-40">编辑</button><button type="button" disabled={saving || provider.id === currentModel} onClick={() => void apply(() => onSelect(provider.id))} className="rounded-lg border border-slate-200 px-2.5 py-1.5 text-xs text-slate-600 disabled:opacity-40">设为默认</button><button type="button" disabled={saving} onClick={() => void remove(provider)} className="rounded-lg p-1.5 text-slate-400 hover:bg-red-50 hover:text-red-600 disabled:opacity-40" title="删除模型连接"><Trash2 size={16} /></button></div></div>)}</div></div>;
+    return <div className="rounded-2xl border border-slate-200 p-5"><div><h3 className="font-semibold text-slate-900">模型连接</h3><p className="mt-1 text-sm leading-6 text-slate-500">添加 OpenAI 兼容、Responses 或 Messages 协议的模型。任务仍由内置智能引擎执行工具和工作区操作，仅推理由这里配置的模型完成。</p></div><div className="mt-5 grid gap-3 md:grid-cols-2"><Field label="连接名称"><input value={name} onChange={(event) => setName(event.target.value)} placeholder="例如：通义千问" className={inputClass} /></Field><Field label="模型标识"><input value={model} onChange={(event) => setModel(event.target.value)} placeholder="例如：qwen-plus" className={inputClass} /></Field><Field label="API Base URL"><input value={baseUrl} onChange={(event) => setBaseUrl(event.target.value)} placeholder="例如：http://127.0.0.1:1234/v1" className={inputClass} /></Field><Field label="API Key"><input type="password" value={apiKey} onChange={(event) => setApiKey(event.target.value)} placeholder={editingProviderId ? '留空则保留已有密钥' : '仅保存到系统凭据库'} className={inputClass} /></Field><Field label="API 协议"><select value={apiBackend} onChange={(event) => setApiBackend(event.target.value as ArkDesktopModelProvider['apiBackend'])} className={inputClass}><option value="chat_completions">Chat Completions（Kimi / Qwen / OpenAI）</option><option value="responses">Responses</option><option value="messages">Messages</option></select></Field><Field label="认证方式"><select value={authScheme} onChange={(event) => setAuthScheme(event.target.value as ArkDesktopModelProvider['authScheme'])} className={inputClass}><option value="bearer">Bearer Token</option><option value="x_api_key">x-api-key</option></select></Field><Field label="上下文窗口"><input type="number" min="4096" max="2000000" value={contextWindow} onChange={(event) => setContextWindow(event.target.value)} className={inputClass} /></Field><label className="flex min-h-11 items-start gap-3 rounded-xl border border-slate-200 px-3.5 py-3"><input type="checkbox" checked={supportsReasoningEffort} onChange={(event) => setSupportsReasoningEffort(event.target.checked)} className="mt-0.5 h-4 w-4 rounded border-slate-300 text-slate-900 focus:ring-slate-400" /><span className="min-w-0"><span className="block text-sm font-medium text-slate-700">支持可调思考级别</span><span className="mt-0.5 block text-xs leading-5 text-slate-500">仅当该端点接受 reasoning_effort 参数时启用</span></span></label></div><div className="mt-4 flex justify-end gap-2">{editingProviderId && <button type="button" disabled={saving} onClick={() => { setEditingProviderId(undefined); setName(''); setModel(''); setBaseUrl(''); setApiKey(''); setSupportsReasoningEffort(false); }} className="rounded-xl border border-slate-200 px-3.5 py-2.5 text-sm text-slate-600">取消编辑</button>}<button type="button" disabled={saving || !name.trim() || !model.trim() || !baseUrl.trim()} onClick={() => void add()} className="flex items-center gap-1.5 rounded-xl bg-slate-900 px-3.5 py-2.5 text-sm text-white disabled:opacity-40">{saving ? <LoaderCircle size={15} className="animate-spin" /> : <Plus size={15} />}{editingProviderId ? '保存连接' : '添加并设为默认'}</button></div><div className="mt-5 space-y-2">{providers.length === 0 ? <div className="rounded-xl bg-slate-50 px-3 py-3 text-sm text-slate-400">暂未添加模型连接。添加后即可在新任务和会话中选择。</div> : providers.map((provider) => <div key={provider.id} className={`flex flex-wrap items-center justify-between gap-3 rounded-xl border px-3.5 py-3 ${provider.id === currentModel ? 'border-slate-800 bg-slate-50' : 'border-slate-200'}`}><div className="min-w-0"><div className="flex flex-wrap items-center gap-2"><span className="font-medium text-slate-800">{provider.name}</span>{provider.id === currentModel && <span className="rounded bg-slate-900 px-1.5 py-0.5 text-[10px] text-white">默认</span>}{provider.supportsReasoningEffort && <span className="rounded border border-slate-200 px-1.5 py-0.5 text-[10px] text-slate-600">可调思考</span>}{provider.hasApiKey ? <span className="text-xs text-emerald-600">密钥已保存</span> : <span className="text-xs text-amber-600">未配置密钥</span>}</div><p className="mt-1 truncate text-xs text-slate-500">{provider.model} · {provider.baseUrl}</p></div><div className="flex items-center gap-2"><button type="button" disabled={saving} onClick={() => edit(provider)} className="rounded-lg border border-slate-200 px-2.5 py-1.5 text-xs text-slate-600 disabled:opacity-40">编辑</button><button type="button" disabled={saving || provider.id === currentModel} onClick={() => void apply(() => onSelect(provider.id))} className="rounded-lg border border-slate-200 px-2.5 py-1.5 text-xs text-slate-600 disabled:opacity-40">设为默认</button><button type="button" disabled={saving} onClick={() => void remove(provider)} className="rounded-lg p-1.5 text-slate-400 hover:bg-red-50 hover:text-red-600 disabled:opacity-40" title="删除模型连接"><Trash2 size={16} /></button></div></div>)}</div></div>;
 };
 
 const SettingsView: React.FC<{ runtime: ReturnType<typeof useArkDesktopRuntime>; chooseWorkspace: () => Promise<void>; initialTab?: SettingsTab }> = ({ runtime, chooseWorkspace, initialTab = 'general' }) => {

@@ -71,6 +71,7 @@ import {
     sendGrokPrompt,
     setGrokSessionMode,
     setGrokSessionModel,
+    setGrokSessionReasoningEffort,
     saveGrokModelProvider,
     generateLlmText,
     subscribeGrokEvents,
@@ -671,6 +672,15 @@ const buildAcpOptions = (execution: GrokExecutionSettings): GrokAcpOptions => ({
     debugFile: execution.debugFile,
     leaderSocket: execution.leaderSocket,
 });
+
+const reasoningCapabilityFromCatalog = (catalog: GrokModelCatalog | null | undefined, modelId: string) => {
+    const model = catalog?.availableModels.find((item) => item.modelId === modelId)
+        || catalog?.availableModels.find((item) => item.modelId === catalog.currentModelId);
+    return model ? {
+        supportsReasoningEffort: model.supportsReasoningEffort,
+        reasoningEfforts: model.reasoningEfforts,
+    } : {};
+};
 
 const eventProcessId = (event: GrokBridgeEvent) => String(event.payload?.processId || '');
 
@@ -1288,7 +1298,14 @@ export const useArkDesktopRuntime = () => {
             }
             if (updateType === 'model_changed' || updateType === 'model_auto_switched') {
                 const model = String(update.model_id || update.new_model_id || '').trim();
-                if (model) updateTask(taskId, (task) => ({ ...task, model, updatedAt: Date.now() }));
+                const hasReasoningEffort = typeof update.reasoning_effort === 'string';
+                const reasoningEffort = hasReasoningEffort ? update.reasoning_effort.trim() : undefined;
+                if (model || hasReasoningEffort) updateTask(taskId, (task) => ({
+                    ...task,
+                    ...(model ? { model } : {}),
+                    ...(hasReasoningEffort ? { reasoningEffort } : {}),
+                    updatedAt: Date.now(),
+                }));
                 return;
             }
             if (updateType === 'task_backgrounded') {
@@ -1932,6 +1949,7 @@ export const useArkDesktopRuntime = () => {
             attachmentGrantIds,
             engine: current.settings.execution.engine,
             model: current.settings.grokModel || undefined,
+            reasoningEffort: current.settings.execution.reasoningEffort,
             permissionMode: current.settings.execution.permissionMode,
             interactionMode,
             alwaysApprove: false,
@@ -2048,6 +2066,7 @@ export const useArkDesktopRuntime = () => {
                         sessionId: session.sessionId,
                         runtimeProcessId: session.processId,
                         availableCommands: session.availableCommands,
+                        ...reasoningCapabilityFromCatalog(session.modelCatalog, current.settings.grokModel),
                         updatedAt: Date.now(),
                     }));
                     if (cancelledTaskIdsRef.current.has(taskId)) {
@@ -2411,6 +2430,7 @@ export const useArkDesktopRuntime = () => {
         const skills = current.skills.filter((skill) => task.skillIds.includes(skill.id) && skill.enabled);
         const execution = {
             ...current.settings.execution,
+            reasoningEffort: task.reasoningEffort ?? current.settings.execution.reasoningEffort,
             permissionMode: task.permissionMode || current.settings.execution.permissionMode,
             alwaysApprove: false,
         };
@@ -2439,6 +2459,7 @@ export const useArkDesktopRuntime = () => {
             ...(recoveredFromMissingWorkspace ? { sourceWorkspace: session.workspace, gitContext: undefined, error: undefined } : {}),
             runtimeProcessId: session.processId,
             availableCommands: session.availableCommands,
+            ...reasoningCapabilityFromCatalog(session.modelCatalog, modelProvider.id),
             mcpServers: session.mcpServers.map((server) => ({
                 name: server.name,
                 transport: server.transport,
@@ -2586,6 +2607,7 @@ export const useArkDesktopRuntime = () => {
                 const skills = current.skills.filter((skill) => task.skillIds.includes(skill.id) && skill.enabled);
                 const execution = {
                     ...current.settings.execution,
+                    reasoningEffort: task.reasoningEffort ?? current.settings.execution.reasoningEffort,
                     permissionMode: task.permissionMode || current.settings.execution.permissionMode,
                     alwaysApprove: false,
                 };
@@ -2614,6 +2636,7 @@ export const useArkDesktopRuntime = () => {
                         sessionId: freshSession.sessionId,
                         runtimeProcessId: freshSession.processId,
                         availableCommands: freshSession.availableCommands,
+                        ...reasoningCapabilityFromCatalog(freshSession.modelCatalog, modelProvider.id),
                         error: undefined,
                         updatedAt: Date.now(),
                     }));
@@ -2640,6 +2663,7 @@ export const useArkDesktopRuntime = () => {
                         ...(recoveredFromMissingWorkspace ? { sourceWorkspace: session.workspace, gitContext: undefined, error: undefined } : {}),
                         runtimeProcessId: session.processId,
                         availableCommands: session.availableCommands,
+                        ...reasoningCapabilityFromCatalog(session.modelCatalog, modelProvider.id),
                         updatedAt: Date.now(),
                     }));
                 }
@@ -3161,6 +3185,7 @@ export const useArkDesktopRuntime = () => {
         const skills = current.skills.filter((skill) => task.skillIds.includes(skill.id) && skill.enabled);
         const execution = {
             ...current.settings.execution,
+            reasoningEffort: task.reasoningEffort ?? current.settings.execution.reasoningEffort,
             permissionMode: task.permissionMode || current.settings.execution.permissionMode,
             alwaysApprove: false,
         };
@@ -3329,6 +3354,7 @@ export const useArkDesktopRuntime = () => {
                 ...current.settings,
                 grokModel: modelId,
                 modelOptions: current.settings.modelProviders.filter((item) => item.enabled).map((item) => item.id),
+                execution: { ...current.settings.execution, reasoningEffort: '' },
             },
         }));
     }, []);
@@ -3381,6 +3407,7 @@ export const useArkDesktopRuntime = () => {
             const skills = current.skills.filter((skill) => task.skillIds.includes(skill.id) && skill.enabled);
             const execution = {
                 ...current.settings.execution,
+                reasoningEffort: task.reasoningEffort ?? current.settings.execution.reasoningEffort,
                 permissionMode: task.permissionMode || current.settings.execution.permissionMode,
                 alwaysApprove: false,
             };
@@ -3403,8 +3430,10 @@ export const useArkDesktopRuntime = () => {
             updateTask(taskId, (value) => ({
                 ...value,
                 model: modelId,
+                reasoningEffort: '',
                 runtimeProcessId: session.processId,
                 availableCommands: session.availableCommands,
+                ...reasoningCapabilityFromCatalog(session.modelCatalog, modelId),
                 error: undefined,
                 updatedAt: Date.now(),
             }));
@@ -3467,6 +3496,7 @@ export const useArkDesktopRuntime = () => {
             const skills = current.skills.filter((skill) => task.skillIds.includes(skill.id) && skill.enabled);
             const execution = {
                 ...current.settings.execution,
+                reasoningEffort: task.reasoningEffort ?? current.settings.execution.reasoningEffort,
                 permissionMode,
                 alwaysApprove: false,
             };
@@ -3492,6 +3522,7 @@ export const useArkDesktopRuntime = () => {
                 alwaysApprove: false,
                 runtimeProcessId: session.processId,
                 availableCommands: session.availableCommands,
+                ...reasoningCapabilityFromCatalog(session.modelCatalog, modelProvider.id),
                 error: undefined,
                 updatedAt: Date.now(),
             }));
@@ -3525,6 +3556,34 @@ export const useArkDesktopRuntime = () => {
             throw finalError;
         }
     }, [updateTask]);
+
+    const setTaskReasoningEffort = useCallback(async (taskId: string, reasoningEffort: string) => {
+        const task = snapshotRef.current.tasks.find((item) => item.id === taskId);
+        if (!task) throw new Error('会话不存在');
+        if (task.engine === 'headless') throw new Error('后台模式会话仅支持在发起新任务时选择思考级别');
+        if (!task.sessionId) throw new Error('当前会话尚未建立，无法切换思考级别');
+        if (task.status === 'running' || task.status === 'waiting_authorization') {
+            throw new Error('请先等待当前任务结束或停止任务');
+        }
+        if ((task.reasoningEffort || '') === reasoningEffort) return;
+        const current = snapshotRef.current;
+        const model = task.model || current.settings.grokModel;
+        if (!model) throw new Error('该历史任务没有可用的模型连接元数据');
+        try {
+            await ensureTaskSessionMounted(taskId);
+            await setGrokSessionReasoningEffort(task.sessionId, model, reasoningEffort, { taskId });
+            updateTask(taskId, (value) => ({
+                ...value,
+                reasoningEffort,
+                error: undefined,
+                updatedAt: Date.now(),
+            }));
+        } catch (error) {
+            const message = redactRuntimeText(error instanceof Error ? error.message : String(error));
+            updateTask(taskId, (value) => ({ ...value, error: message, updatedAt: Date.now() }));
+            throw error;
+        }
+    }, [ensureTaskSessionMounted, updateTask]);
 
     const setTaskInteractionMode = useCallback(async (taskId: string, interactionMode: ArkDesktopInteractionMode) => {
         const task = snapshotRef.current.tasks.find((item) => item.id === taskId);
@@ -3741,6 +3800,7 @@ export const useArkDesktopRuntime = () => {
         refreshModelProviders,
         switchTaskModel,
         setTaskPermissionMode,
+        setTaskReasoningEffort,
         setTaskInteractionMode,
         forkTask,
         renameTask,

@@ -332,6 +332,8 @@ pub struct GrokModelProvider {
     pub context_window: u64,
     pub enabled: bool,
     #[serde(default)]
+    pub supports_reasoning_effort: bool,
+    #[serde(default)]
     pub has_api_key: bool,
 }
 
@@ -346,8 +348,13 @@ pub struct GrokModelProviderInput {
     pub auth_scheme: String,
     pub context_window: u64,
     pub enabled: bool,
+    #[serde(default)]
+    pub supports_reasoning_effort: bool,
     pub api_key: Option<String>,
 }
+
+const CUSTOM_MODEL_REASONING_EFFORTS: [&str; 7] =
+    ["none", "minimal", "low", "medium", "high", "xhigh", "max"];
 
 #[derive(Debug, Deserialize)]
 #[serde(rename_all = "camelCase")]
@@ -1533,6 +1540,7 @@ fn normalize_model_provider(
             auth_scheme: input.auth_scheme,
             context_window: input.context_window,
             enabled: input.enabled,
+            supports_reasoning_effort: input.supports_reasoning_effort,
             has_api_key: false,
         },
         input.api_key,
@@ -1864,6 +1872,7 @@ fn sync_provider_to_grok_config(
         toml::Value::String("grok-build".to_string()),
     );
     entry.insert("supported_in_api".to_string(), toml::Value::Boolean(true));
+    sync_provider_reasoning_capability(entry, provider.supports_reasoning_effort);
     entry.remove("api_key");
     entry.remove("auth_scheme");
     let parent = path
@@ -1876,6 +1885,30 @@ fn sync_provider_to_grok_config(
     }
     fs::write(path, serialize_grok_toml(&config)?)
         .map_err(|error| format!("保存本地智能引擎配置失败: {error}"))
+}
+
+fn sync_provider_reasoning_capability(
+    entry: &mut toml::map::Map<String, toml::Value>,
+    supports_reasoning_effort: bool,
+) {
+    if supports_reasoning_effort {
+        entry.insert(
+            "supports_reasoning_effort".to_string(),
+            toml::Value::Boolean(true),
+        );
+        entry.insert(
+            "reasoning_efforts".to_string(),
+            toml::Value::Array(
+                CUSTOM_MODEL_REASONING_EFFORTS
+                    .iter()
+                    .map(|value| toml::Value::String((*value).to_string()))
+                    .collect(),
+            ),
+        );
+    } else {
+        entry.remove("supports_reasoning_effort");
+        entry.remove("reasoning_efforts");
+    }
 }
 
 fn provider_is_registered_in_grok_config(
@@ -1905,6 +1938,14 @@ fn provider_is_registered_in_grok_config(
                 == Some(model_key_env_name(&provider.id).as_str())
             && entry.get("api_backend").and_then(toml::Value::as_str)
                 == Some(provider.api_backend.as_str())
+            && entry
+                .get("supports_reasoning_effort")
+                .and_then(toml::Value::as_bool)
+                .unwrap_or(false)
+                == provider.supports_reasoning_effort
+            && (!provider.supports_reasoning_effort
+                || toml_string_list(entry.get("reasoning_efforts"))
+                    == CUSTOM_MODEL_REASONING_EFFORTS)
             && !entry.contains_key("auth_scheme")
     }))
 }
@@ -4461,6 +4502,22 @@ fn normalize_model_id(model: &str) -> Result<String, String> {
     Ok(model.to_string())
 }
 
+fn normalize_reasoning_effort(reasoning_effort: Option<String>) -> Result<Option<String>, String> {
+    let Some(reasoning_effort) = reasoning_effort else {
+        return Ok(None);
+    };
+    let reasoning_effort = reasoning_effort.trim();
+    if reasoning_effort.is_empty() {
+        return Ok(None);
+    }
+    match reasoning_effort {
+        "none" | "minimal" | "low" | "medium" | "high" | "xhigh" | "max" => {
+            Ok(Some(reasoning_effort.to_string()))
+        }
+        _ => Err("不支持的模型思考级别".to_string()),
+    }
+}
+
 fn direct_model_api_endpoint(provider: &GrokModelProvider) -> Result<String, String> {
     let mut endpoint =
         url::Url::parse(&provider.base_url).map_err(|_| "模型服务地址格式不正确".to_string())?;
@@ -5522,8 +5579,10 @@ pub async fn grok_session_set_model(
     state: State<'_, GrokRuntimeState>,
     session_id: String,
     model: String,
+    reasoning_effort: Option<String>,
 ) -> Result<(), String> {
     let model = normalize_model_id(&model)?;
+    let reasoning_effort = normalize_reasoning_effort(reasoning_effort)?;
     ensure_model_provider_ready(&app, Some(&model))?;
     let session_id = session_id.trim();
     if session_id.is_empty() {
@@ -5531,9 +5590,10 @@ pub async fn grok_session_set_model(
     }
     let process = session_process(&state, session_id)?;
     process
-        .request(
+        .request_with_meta(
             "session/set_model",
             json!({ "sessionId": session_id, "modelId": model }),
+            reasoning_effort.map(|reasoning_effort| json!({ "reasoningEffort": reasoning_effort })),
         )
         .await?;
     Ok(())
@@ -5946,16 +6006,18 @@ mod tests {
         direct_model_api_payload, direct_model_api_response_text, forget_cached_provider_api_key,
         format_rpc_error, grok_agent_arguments, initialize_client_meta,
         is_unsupported_acp_method_error, model_key_env_name, normalize_model_id,
-        normalize_model_provider, normalized_interjection_params, normalized_queue_changed_params,
-        normalized_session_update_message, parse_grok_toml, plan_approval_params,
-        process_launch_key, read_provider_api_key, request_timeout, rewind_model_provider,
-        scheduled_prompt_injection, select_auth_method, serialize_grok_toml, session_attach_method,
-        session_request_meta, user_question_params, validate_cli_arguments,
-        validate_persisted_session_id, validate_service_arguments, validate_session_mode,
-        workflow_listings_from_response, GrokAcpOptions, GrokCliService, GrokModelProvider,
-        GrokModelProviderInput, GrokRuntimeState, PromptAttachmentGrant, AUTHENTICATE_TIMEOUT,
-        GROK_INTERJECT_METHOD, GROK_RECAP_METHOD, INITIALIZE_TIMEOUT, MAX_PROMPT_ATTACHMENT_BYTES,
-        REQUEST_TIMEOUT, SESSION_CLOSE_TIMEOUT, SESSION_START_TIMEOUT,
+        normalize_model_provider, normalize_reasoning_effort, normalized_interjection_params,
+        normalized_queue_changed_params, normalized_session_update_message, parse_grok_toml,
+        plan_approval_params, process_launch_key, read_provider_api_key, request_timeout,
+        rewind_model_provider, scheduled_prompt_injection, select_auth_method, serialize_grok_toml,
+        session_attach_method, session_request_meta, sync_provider_reasoning_capability,
+        user_question_params, validate_cli_arguments, validate_persisted_session_id,
+        validate_service_arguments, validate_session_mode, workflow_listings_from_response,
+        GrokAcpOptions, GrokCliService, GrokModelProvider, GrokModelProviderInput,
+        GrokRuntimeState, PromptAttachmentGrant, AUTHENTICATE_TIMEOUT,
+        CUSTOM_MODEL_REASONING_EFFORTS, GROK_INTERJECT_METHOD, GROK_RECAP_METHOD,
+        INITIALIZE_TIMEOUT, MAX_PROMPT_ATTACHMENT_BYTES, REQUEST_TIMEOUT, SESSION_CLOSE_TIMEOUT,
+        SESSION_START_TIMEOUT,
     };
     use serde_json::json;
     use std::fs;
@@ -5968,6 +6030,20 @@ mod tests {
         assert_eq!(validate_session_mode(" plan ").unwrap(), "plan");
         assert_eq!(validate_session_mode("ask").unwrap(), "ask");
         assert!(validate_session_mode("unsafe").is_err());
+    }
+
+    #[test]
+    fn validates_supported_reasoning_efforts() {
+        assert_eq!(
+            normalize_reasoning_effort(Some(" high ".to_string())).unwrap(),
+            Some("high".to_string())
+        );
+        assert_eq!(
+            normalize_reasoning_effort(Some(" ".to_string())).unwrap(),
+            None
+        );
+        assert_eq!(normalize_reasoning_effort(None).unwrap(), None);
+        assert!(normalize_reasoning_effort(Some("ultra".to_string())).is_err());
     }
 
     #[test]
@@ -6687,6 +6763,7 @@ mod tests {
             auth_scheme: "bearer".into(),
             context_window: 128_000,
             enabled: true,
+            supports_reasoning_effort: true,
             api_key: Some("secret".into()),
         })
         .unwrap();
@@ -6699,6 +6776,28 @@ mod tests {
             "URGS_GROK_MODEL_QWEN_PLUS"
         );
         assert_eq!(api_key.as_deref(), Some("secret"));
+        assert!(provider.supports_reasoning_effort);
+    }
+
+    #[test]
+    fn syncs_custom_model_reasoning_capability_to_grok_config() {
+        let mut entry = toml::map::Map::new();
+        sync_provider_reasoning_capability(&mut entry, true);
+
+        assert_eq!(
+            entry
+                .get("supports_reasoning_effort")
+                .and_then(toml::Value::as_bool),
+            Some(true)
+        );
+        assert_eq!(
+            super::toml_string_list(entry.get("reasoning_efforts")),
+            CUSTOM_MODEL_REASONING_EFFORTS
+        );
+
+        sync_provider_reasoning_capability(&mut entry, false);
+        assert!(!entry.contains_key("supports_reasoning_effort"));
+        assert!(!entry.contains_key("reasoning_efforts"));
     }
 
     fn test_model_provider(api_backend: &str, base_url: &str) -> GrokModelProvider {
@@ -6711,6 +6810,7 @@ mod tests {
             auth_scheme: "bearer".into(),
             context_window: 128_000,
             enabled: true,
+            supports_reasoning_effort: false,
             has_api_key: true,
         }
     }
