@@ -523,7 +523,7 @@ export const writeDesktopLog = async (
     ));
     try {
         const { invoke } = await import('@tauri-apps/api/core');
-        await invoke('desktop_log_write', { level, component, message: safeMessage });
+        await invoke('desktop_log_write', { request: { level, component, message: safeMessage } });
     } catch {
         // 日志写入不能反过来制造未处理异常，原始错误仍由调用方继续处理。
     }

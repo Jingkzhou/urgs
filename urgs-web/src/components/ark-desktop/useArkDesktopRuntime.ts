@@ -35,6 +35,7 @@ import {
     getGrokModelCatalog,
     getGrokRuntimeDiagnostics,
     readDesktopLog,
+    writeDesktopLog,
     getGrokSessionInfo,
     listGrokBackgroundTasks,
     getGrokSubagent,
@@ -87,6 +88,7 @@ import {
     type GrokMcpServerState,
     type GrokWorkflowFile,
     type GrokWorkflowListing,
+    type GrokGitDiff,
     type GrokGitStatus,
     type GrokGitMutationResult,
     type GrokGitRemote,
@@ -776,6 +778,7 @@ export const useArkDesktopRuntime = () => {
     const capabilityRequestIdRef = useRef(0);
     const gitStatusTaskStateRef = useRef(new Map<string, ArkDesktopTaskStatus>());
     const gitStatusRequestsRef = useRef(new Map<string, Promise<GrokGitStatus>>());
+    const gitDiffRequestsRef = useRef(new Map<string, Promise<GrokGitDiff>>());
     const pendingGrokEventsRef = useRef<GrokBridgeEvent[]>([]);
     const grokEventTimerRef = useRef<number | null>(null);
 
@@ -2007,6 +2010,12 @@ export const useArkDesktopRuntime = () => {
         activePromptCountsRef.current.set(taskId, 1);
         setActiveTaskId(taskId);
         setRuntimeError('');
+        void writeDesktopLog(
+            'INFO',
+            'web.grok.task',
+            `Task accepted: engine=${task.engine} git_mode=${resolveGitMode(current.settings.execution.gitMode)}`,
+            { taskId },
+        );
 
         void (async () => {
             try {
@@ -2014,31 +2023,54 @@ export const useArkDesktopRuntime = () => {
                 const execution = current.settings.execution;
                 const gitMode = resolveGitMode(execution.gitMode);
                 let executionWorkspace = workspace;
-                try {
-                    const preparedWorkspace = await prepareGrokGitTask(
-                        workspace,
-                        taskId,
-                        gitMode,
-                        execution.worktreeName || effectivePrompt.slice(0, 36),
-                        execution.worktreeRef,
-                    );
-                    executionWorkspace = preparedWorkspace.workspacePath;
-                    updateTask(taskId, (value) => ({
-                        ...value,
-                        workspace: executionWorkspace,
-                        sourceWorkspace: workspace,
-                        gitContext: toTaskGitContext(preparedWorkspace, workspace),
-                        updatedAt: Date.now(),
-                    }));
-                } catch (error) {
-                    if (!isGitRepositoryUnavailable(error)) throw error;
-                    updateTask(taskId, (value) => ({
-                        ...value,
-                        workspace,
-                        sourceWorkspace: workspace,
-                        gitContext: undefined,
-                        updatedAt: Date.now(),
-                    }));
+                const prepareTaskGitWorkspace = async () => {
+                    const startedAt = performance.now();
+                    try {
+                        const preparedWorkspace = await prepareGrokGitTask(
+                            workspace,
+                            taskId,
+                            gitMode,
+                            execution.worktreeName || effectivePrompt.slice(0, 36),
+                            execution.worktreeRef,
+                        );
+                        updateTask(taskId, (value) => ({
+                            ...value,
+                            workspace: preparedWorkspace.workspacePath,
+                            sourceWorkspace: workspace,
+                            gitContext: toTaskGitContext(preparedWorkspace, workspace),
+                            updatedAt: Date.now(),
+                        }));
+                        void writeDesktopLog(
+                            'INFO',
+                            'web.grok.git',
+                            `Task Git workspace prepared: mode=${gitMode} elapsed_ms=${Math.round(performance.now() - startedAt)}`,
+                            { taskId },
+                        );
+                        return preparedWorkspace.workspacePath;
+                    } catch (error) {
+                        const repositoryUnavailable = isGitRepositoryUnavailable(error);
+                        if (!repositoryUnavailable && gitMode !== 'workspace') throw error;
+                        void writeDesktopLog(
+                            repositoryUnavailable ? 'INFO' : 'WARN',
+                            'web.grok.git',
+                            `Task Git workspace unavailable: mode=${gitMode} elapsed_ms=${Math.round(performance.now() - startedAt)}`,
+                            { taskId },
+                        );
+                        updateTask(taskId, (value) => ({
+                            ...value,
+                            workspace,
+                            sourceWorkspace: workspace,
+                            gitContext: undefined,
+                            updatedAt: Date.now(),
+                        }));
+                        return workspace;
+                    }
+                };
+                if (gitMode === 'workspace') {
+                    // 当前工作区模式不改变执行目录，Git 状态扫描不应阻塞首次模型请求。
+                    void prepareTaskGitWorkspace();
+                } else {
+                    executionWorkspace = await prepareTaskGitWorkspace();
                 }
                 if (current.settings.execution.engine === 'headless') {
                     const headlessExecution = execution.sessionMode === 'new' && !execution.newSessionId.trim()
@@ -2211,9 +2243,20 @@ export const useArkDesktopRuntime = () => {
         }
     }, [taskForGit, updateTaskGitStatus]);
 
-    const loadTaskGitDiff = useCallback(async (taskId: string, path?: string, staged = false) => {
+    const loadTaskGitDiff = useCallback((taskId: string, path?: string, staged = false) => {
         const task = taskForGit(taskId);
-        return getGrokGitDiff(task.workspace, path, staged, false);
+        const requestKey = `${task.workspace}\u0000${path || ''}\u0000${staged ? 'staged' : 'working'}`;
+        let request = gitDiffRequestsRef.current.get(requestKey);
+        if (!request) {
+            request = getGrokGitDiff(task.workspace, path, staged, false);
+            gitDiffRequestsRef.current.set(requestKey, request);
+            void request.finally(() => {
+                if (gitDiffRequestsRef.current.get(requestKey) === request) {
+                    gitDiffRequestsRef.current.delete(requestKey);
+                }
+            }).catch(() => undefined);
+        }
+        return request;
     }, [taskForGit]);
 
     const openTaskGitFile = useCallback((taskId: string, path: string, revision?: 'HEAD') => {

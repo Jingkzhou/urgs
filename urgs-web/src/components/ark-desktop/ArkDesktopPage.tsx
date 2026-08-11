@@ -165,8 +165,8 @@ const inputClass = 'w-full rounded-xl border border-slate-200 bg-white px-3 py-2
 const ArkDesktopPage: React.FC = () => {
     const runtime = useArkDesktopRuntime();
     const [section, setSection] = useState<ArkDesktopSection>('new-task');
-    const [draft, setDraft] = useState('');
-    const [followUpDrafts, setFollowUpDrafts] = useState<Record<string, string>>({});
+    const [newTaskComposerId, setNewTaskComposerId] = useState(0);
+    const composerDraftsRef = useRef<Record<string, string>>({});
     const [searchValue, setSearchValue] = useState('');
     const [selectedSkillIds, setSelectedSkillIds] = useState<string[]>(runtime.snapshot.settings.defaultSkillIds);
     const [attachments, setAttachments] = useState<string[]>([]);
@@ -261,7 +261,7 @@ const ArkDesktopPage: React.FC = () => {
         draftWorkspaceFollowsDefaultRef.current = !workspace;
         runtime.setActiveTaskId(null);
         setSection('new-task');
-        setDraft('');
+        setNewTaskComposerId((current) => current + 1);
         setDraftWorkspace(nextWorkspace);
         setAttachments([]);
         setAttachmentGrantIds([]);
@@ -282,25 +282,26 @@ const ArkDesktopPage: React.FC = () => {
         setSection(nextSection);
     };
 
-    const runTask = async () => {
+    const runTask = async (prompt: string) => {
         const execution = runtime.snapshot.settings.execution;
         if (execution.permissionMode === 'bypassPermissions') {
-            if (!window.confirm('当前任务已启用完全访问权限，将无需逐次授权执行本地操作。确认发起任务？')) return;
+            if (!window.confirm('当前任务已启用完全访问权限，将无需逐次授权执行本地操作。确认发起任务？')) return false;
         }
         setActionPending(true);
         try {
             await runtime.startTask({
-                prompt: draft,
+                prompt,
                 workspace: draftWorkspace,
                 skillIds: selectedSkillIds,
                 attachmentPaths: attachments,
                 attachmentGrantIds,
             });
-            setDraft('');
             setAttachments([]);
             setAttachmentGrantIds([]);
+            return true;
         } catch (error) {
             runtime.setRuntimeError(error instanceof Error ? error.message : String(error));
+            return false;
         } finally {
             setActionPending(false);
         }
@@ -478,13 +479,13 @@ const ArkDesktopPage: React.FC = () => {
                         task={runtime.activeTask}
                         runtime={runtime}
                         scrollContainerRef={conversationScrollRef}
-                        followUp={runtime.activeTask ? followUpDrafts[runtime.activeTask.id] || '' : draft}
-                        setFollowUp={runtime.activeTask ? (value) => setFollowUpDrafts((current) => ({ ...current, [runtime.activeTask!.id]: value })) : setDraft}
+                        composerDraftsRef={composerDraftsRef}
                         locateLatestMessage={latestMessageTaskId === runtime.activeTask?.id}
                         onLatestMessageLocated={clearLatestMessageLocation}
                         newTask={!runtime.activeTask ? {
                             selectedSkillIds,
                             setSelectedSkillIds,
+                            composerId: newTaskComposerId,
                             workspace: draftWorkspace,
                             attachments,
                             setAttachments,
@@ -521,10 +522,11 @@ const ArkDesktopPage: React.FC = () => {
 interface NewTaskConfig {
     selectedSkillIds: string[];
     setSelectedSkillIds: React.Dispatch<React.SetStateAction<string[]>>;
+    composerId: number;
     workspace: string;
     attachments: string[];
     setAttachments: React.Dispatch<React.SetStateAction<string[]>>;
-    runTask: () => Promise<void>;
+    runTask: (prompt: string) => Promise<boolean>;
     chooseAttachments: () => Promise<void>;
     chooseWorkspace: () => Promise<void>;
     workspaceOptions: string[];
@@ -1245,8 +1247,8 @@ const TaskComposer: React.FC<{ task?: ArkDesktopTask; runtime: ReturnType<typeof
         {isNewTask && newTask?.attachments.length ? <div className="mb-2 flex flex-wrap gap-2">{newTask.attachments.map((path) => <span key={path} title={path} className="flex max-w-72 items-center gap-1.5 rounded-lg border border-slate-200 bg-white px-2.5 py-1.5 text-xs text-slate-600"><Paperclip size={13} /><span className="truncate">{path.split(/[\\/]/).pop()}</span><button type="button" onClick={() => newTask.setAttachments((current) => current.filter((item) => item !== path))} aria-label="移除附件"><X size={13} /></button></span>)}</div> : null}
         <div className="rounded-[22px] border border-slate-200 bg-white p-2 shadow-[0_10px_28px_rgba(15,23,42,0.09)] transition focus-within:border-slate-300 focus-within:shadow-[0_12px_34px_rgba(15,23,42,0.12)]">
             <ConversationPromptInput value={value} commands={task?.availableCommands?.length ? task.availableCommands : runtime.availableCommands} onChange={onChange} onSubmit={onSubmit} disabled={(isRunning && !canQueuePrompt) || isWaitingAuthorization || sending} slashDisabled={task?.engine === 'headless' || (isNewTask && execution.engine === 'headless')} placeholder={isNewTask ? '描述希望智能体在本地完成的任务，输入 / 查看会话命令…' : isWaitingAuthorization ? '请先解锁本地模型密钥…' : canQueuePrompt ? '继续补充消息，将按发送顺序执行…' : task?.sessionId ? '继续补充任务要求，输入 / 查看会话命令…' : '输入指令，将尝试恢复原历史会话…'} rows={2} />
-            <div className={`flex flex-wrap items-center justify-between gap-2 px-1 ${isNewTask ? 'pt-1' : 'pb-1'}`}>
-                <div className="relative flex min-w-0 flex-wrap items-center gap-1">
+            <div className={`flex flex-nowrap items-center gap-2 px-1 ${isNewTask ? 'pt-1' : 'pb-1'}`}>
+                <div className="relative flex min-w-0 flex-1 flex-nowrap items-center gap-1 [&>div]:min-w-0">
                     {isNewTask && newTask ? <>
                         <SessionCommandBar
                             commands={runtime.availableCommands}
@@ -1284,12 +1286,57 @@ const TaskComposer: React.FC<{ task?: ArkDesktopTask; runtime: ReturnType<typeof
                         <TaskReasoningEffortPicker task={task} runtime={runtime} disabled={isRunning || isWaitingAuthorization || sending} />
                     </> : null}
                 </div>
-                <div className="flex items-center gap-2">{task && <ContextUsageMenu task={task} runtime={runtime} />}<span className="hidden text-[11px] text-slate-400 sm:inline">{canQueuePrompt ? '执行中，可继续追加消息' : isRunning ? '任务正在执行' : isWaitingAuthorization ? '等待本地密钥解锁' : isNewTask ? 'Enter 发送' : task?.sessionId ? 'Enter 发送' : '发送时恢复历史会话'}</span>{isRunning ? <><button type="button" onClick={() => void onCancel?.()} className="flex h-8 items-center gap-1.5 rounded-lg px-2.5 text-xs font-medium text-red-600 hover:bg-red-50"><CircleStop size={15} />停止任务</button>{canQueuePrompt ? <button type="button" disabled={!canSubmit} onClick={() => void onSubmit()} aria-label="追加消息" title="追加消息" className="flex h-8 w-8 items-center justify-center rounded-full bg-slate-900 text-white transition hover:bg-slate-700 disabled:cursor-not-allowed disabled:opacity-35">{sending ? <LoaderCircle size={15} className="animate-spin" /> : <Send size={15} />}</button> : null}</> : <button type="button" disabled={!canSubmit} onClick={() => void onSubmit()} className="flex h-8 w-8 items-center justify-center rounded-full bg-slate-900 text-white transition hover:bg-slate-700 disabled:cursor-not-allowed disabled:opacity-35">{sending ? <LoaderCircle size={15} className="animate-spin" /> : <Send size={15} />}</button>}</div>
+                <div className="flex shrink-0 flex-nowrap items-center gap-2 whitespace-nowrap">{task && <ContextUsageMenu task={task} runtime={runtime} />}<span className="hidden max-w-40 truncate text-[11px] text-slate-400 sm:inline">{canQueuePrompt ? '执行中，可继续追加消息' : isRunning ? '任务正在执行' : isWaitingAuthorization ? '等待本地密钥解锁' : isNewTask ? 'Enter 发送' : task?.sessionId ? 'Enter 发送' : '发送时恢复历史会话'}</span>{isRunning ? <><button type="button" onClick={() => void onCancel?.()} className="flex h-8 shrink-0 items-center gap-1.5 rounded-lg px-2.5 text-xs font-medium text-red-600 hover:bg-red-50"><CircleStop size={15} />停止任务</button>{canQueuePrompt ? <button type="button" disabled={!canSubmit} onClick={() => void onSubmit()} aria-label="追加消息" title="追加消息" className="flex h-8 w-8 shrink-0 items-center justify-center rounded-full bg-slate-900 text-white transition hover:bg-slate-700 disabled:cursor-not-allowed disabled:opacity-35">{sending ? <LoaderCircle size={15} className="animate-spin" /> : <Send size={15} />}</button> : null}</> : <button type="button" disabled={!canSubmit} onClick={() => void onSubmit()} className="flex h-8 w-8 shrink-0 items-center justify-center rounded-full bg-slate-900 text-white transition hover:bg-slate-700 disabled:cursor-not-allowed disabled:opacity-35">{sending ? <LoaderCircle size={15} className="animate-spin" /> : <Send size={15} />}</button>}</div>
             </div>
         </div>
         <p className="mt-2 text-center text-[11px] text-slate-400">智能体可能会出错，请核实重要信息与工具操作。</p>
     </div>;
 };
+
+interface TaskComposerHandle {
+    setValue: (value: string) => void;
+    clear: () => void;
+}
+
+const StatefulTaskComposer = React.forwardRef<TaskComposerHandle, {
+    task?: ArkDesktopTask;
+    runtime: ReturnType<typeof useArkDesktopRuntime>;
+    draftsRef: React.MutableRefObject<Record<string, string>>;
+    sending: boolean;
+    newTask?: NewTaskConfig;
+    onSubmitValue: (value: string) => Promise<boolean>;
+}>(({ task, runtime, draftsRef, sending, newTask, onSubmitValue }, ref) => {
+    const draftKey = task?.id || `new-task-${newTask?.composerId ?? 0}`;
+    const [, rerender] = React.useReducer((current) => current + 1, 0);
+    const value = draftsRef.current[draftKey] || '';
+    const setValue = useCallback((nextValue: string) => {
+        if (draftsRef.current[draftKey] === nextValue) return;
+        draftsRef.current[draftKey] = nextValue;
+        rerender();
+    }, [draftKey, draftsRef]);
+
+    React.useImperativeHandle(ref, () => ({
+        setValue,
+        clear: () => setValue(''),
+    }), [setValue]);
+
+    const submit = useCallback(async () => {
+        if (await onSubmitValue(value)) setValue('');
+    }, [onSubmitValue, setValue, value]);
+
+    return <TaskComposer
+        task={task}
+        runtime={runtime}
+        value={value}
+        onChange={setValue}
+        onSubmit={submit}
+        onCancel={task ? () => runtime.cancelTask(task.id) : undefined}
+        sending={sending}
+        newTask={newTask}
+    />;
+});
+
+StatefulTaskComposer.displayName = 'StatefulTaskComposer';
 
 const TaskSessionUtilityBar: React.FC<{ task: ArkDesktopTask; runtime: ReturnType<typeof useArkDesktopRuntime> }> = ({ task, runtime }) => {
     const [pending, setPending] = useState<string | null>(null);
@@ -1352,22 +1399,21 @@ const TaskSessionUtilityBar: React.FC<{ task: ArkDesktopTask; runtime: ReturnTyp
     </div>;
 };
 
-const TaskView: React.FC<{ task?: ArkDesktopTask; runtime: ReturnType<typeof useArkDesktopRuntime>; scrollContainerRef: React.RefObject<HTMLDivElement | null>; followUp: string; setFollowUp: (value: string) => void; locateLatestMessage: boolean; onLatestMessageLocated: () => void; newTask?: NewTaskConfig }> = ({ task, runtime, scrollContainerRef, followUp, setFollowUp, locateLatestMessage, onLatestMessageLocated, newTask }) => {
+const TaskView: React.FC<{ task?: ArkDesktopTask; runtime: ReturnType<typeof useArkDesktopRuntime>; scrollContainerRef: React.RefObject<HTMLDivElement | null>; composerDraftsRef: React.MutableRefObject<Record<string, string>>; locateLatestMessage: boolean; onLatestMessageLocated: () => void; newTask?: NewTaskConfig }> = ({ task, runtime, scrollContainerRef, composerDraftsRef, locateLatestMessage, onLatestMessageLocated, newTask }) => {
     const [sending, setSending] = useState(false);
     const [authorizing, setAuthorizing] = useState(false);
     const lastMessageRef = useRef<HTMLDivElement>(null);
+    const composerRef = useRef<TaskComposerHandle>(null);
     const isNewTask = !task;
     useEffect(() => {
         if (task?.status === 'running') setSending(false);
     }, [task?.status]);
-    const submit = async () => {
+    const submit = async (value: string) => {
         if (isNewTask) {
-            await newTask?.runTask();
-            return;
+            return newTask ? newTask.runTask(value) : false;
         }
-        const prompt = followUp.trim();
-        if (!prompt) return;
-        setFollowUp('');
+        const prompt = value.trim();
+        if (!prompt) return false;
         setSending(true);
         try {
             await runtime.sendFollowUp(task!.id, prompt);
@@ -1376,6 +1422,7 @@ const TaskView: React.FC<{ task?: ArkDesktopTask; runtime: ReturnType<typeof use
         } finally {
             setSending(false);
         }
+        return true;
     };
     const authorizeModelKey = async () => {
         if (!task) return;
@@ -1383,7 +1430,7 @@ const TaskView: React.FC<{ task?: ArkDesktopTask; runtime: ReturnType<typeof use
         try {
             const action = task.modelKeyAuthorization?.action;
             await runtime.authorizeTaskModel(task.id);
-            if (action === 'follow_up') setFollowUp('');
+            if (action === 'follow_up') composerRef.current?.clear();
         } catch {
             // 授权错误保留在当前任务中，用户可继续重试。
         } finally {
@@ -1494,7 +1541,7 @@ const TaskView: React.FC<{ task?: ArkDesktopTask; runtime: ReturnType<typeof use
 
     return <div className="mx-auto flex min-h-full w-full max-w-[960px] flex-col px-4 py-5 font-sans sm:px-5 lg:px-0">
         {task && <TaskSessionUtilityBar task={task} runtime={runtime} />}
-        <div className="flex-1">{isNewTask ? <div className="flex min-h-[300px] flex-col items-center justify-center py-8 text-center"><img src="/ark/ark-agents-robot-cropped.png" alt="URGS 智能任务中心" className="mb-3 h-20 w-20 object-contain mix-blend-multiply" /><h2 className="text-2xl font-semibold tracking-[-0.035em] text-[#303136]">让智能体把想法变成现实</h2><p className="mt-2 text-sm text-slate-500">输入第一条消息，即可在当前会话中开始执行</p><div className="mt-5 flex w-full flex-wrap justify-center gap-2">{taskTags.map((tag) => { const Icon = tag.icon; const active = newTask?.selectedSkillIds.includes(tag.skillId); return <button key={tag.label} type="button" onClick={() => { setFollowUp(tag.prompt); newTask?.setSelectedSkillIds((current) => active ? current.filter((id) => id !== tag.skillId) : [...current, tag.skillId]); }} className={`flex items-center gap-2 rounded-full px-4 py-2.5 text-sm font-medium transition hover:-translate-y-0.5 ${active ? 'bg-slate-900 text-white' : 'bg-[#e9e9eb] text-[#494a4f] hover:bg-[#dedee1]'}`}><Icon size={17} />{tag.label}{active && <Check size={14} />}</button>; })}</div></div> : <>{turns.map((turn, index) => {
+        <div className="flex-1">{isNewTask ? <div className="flex min-h-[300px] flex-col items-center justify-center py-8 text-center"><img src="/ark/ark-agents-robot-cropped.png" alt="URGS 智能任务中心" className="mb-3 h-20 w-20 object-contain mix-blend-multiply" /><h2 className="text-2xl font-semibold tracking-[-0.035em] text-[#303136]">让智能体把想法变成现实</h2><p className="mt-2 text-sm text-slate-500">输入第一条消息，即可在当前会话中开始执行</p><div className="mt-5 flex w-full flex-wrap justify-center gap-2">{taskTags.map((tag) => { const Icon = tag.icon; const active = newTask?.selectedSkillIds.includes(tag.skillId); return <button key={tag.label} type="button" onClick={() => { composerRef.current?.setValue(tag.prompt); newTask?.setSelectedSkillIds((current) => active ? current.filter((id) => id !== tag.skillId) : [...current, tag.skillId]); }} className={`flex items-center gap-2 rounded-full px-4 py-2.5 text-sm font-medium transition hover:-translate-y-0.5 ${active ? 'bg-slate-900 text-white' : 'bg-[#e9e9eb] text-[#494a4f] hover:bg-[#dedee1]'}`}><Icon size={17} />{tag.label}{active && <Check size={14} />}</button>; })}</div></div> : <>{turns.map((turn, index) => {
             const isCurrentTurn = index === turns.length - 1;
             const turnIsActive = isCurrentTurn && (task!.status === 'running' || task!.status === 'waiting_authorization');
             const finalStageIndex = turnIsActive ? -1 : turn.stages.reduce((last, stage, stageIndex) => stage.message ? stageIndex : last, -1);
@@ -1531,7 +1578,7 @@ const TaskView: React.FC<{ task?: ArkDesktopTask; runtime: ReturnType<typeof use
             </div>;
         })}{task?.modelKeyAuthorization && <div className="my-5 flex flex-wrap items-center gap-3 rounded-xl border border-amber-200 bg-amber-50 px-4 py-3 text-sm text-amber-900"><span className="flex h-8 w-8 shrink-0 items-center justify-center rounded-lg bg-white text-amber-700 shadow-sm"><KeyRound size={16} /></span><div className="min-w-0 flex-1"><div className="font-medium">解锁本地模型密钥</div><div className="mt-0.5 text-xs leading-5 text-amber-700">仅从本机 macOS 钥匙串读取，不连接 xAI。解锁后将继续当前任务。</div></div><div className="flex items-center gap-2"><button type="button" disabled={authorizing} onClick={() => void runtime.cancelTask(task.id)} className="h-8 rounded-lg px-2.5 text-xs font-medium text-amber-800 hover:bg-amber-100 disabled:opacity-60">取消任务</button><button type="button" disabled={authorizing} onClick={() => void authorizeModelKey()} className="flex h-8 items-center gap-1.5 rounded-lg bg-amber-700 px-3 text-xs font-medium text-white hover:bg-amber-800 disabled:opacity-60">{authorizing ? <LoaderCircle size={14} className="animate-spin" /> : <KeyRound size={14} />}解锁密钥</button></div></div>}{task?.error && <div className="my-5 flex gap-2 rounded-xl border border-red-200 bg-red-50 px-4 py-3 text-sm leading-6 text-red-700"><AlertCircle size={16} className="mt-0.5 shrink-0" /><span className="flex-1">{task.error}</span><button type="button" onClick={() => runtime.dismissTaskError(task.id)} className="shrink-0 text-red-500 hover:text-red-700" title="关闭提示" aria-label="关闭提示"><X size={16} /></button></div>}</>}</div>
         {task && <QueuePanel task={task} runtime={runtime} />}
-        <TaskComposer task={task} runtime={runtime} value={followUp} onChange={setFollowUp} onSubmit={submit} onCancel={task ? () => runtime.cancelTask(task.id) : undefined} sending={isNewTask ? newTask?.actionPending || false : sending} newTask={newTask} />
+        <StatefulTaskComposer ref={composerRef} task={task} runtime={runtime} draftsRef={composerDraftsRef} onSubmitValue={submit} sending={isNewTask ? newTask?.actionPending || false : sending} newTask={newTask} />
     </div>;
 };
 

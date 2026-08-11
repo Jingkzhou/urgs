@@ -331,10 +331,14 @@ pub struct GrokModelProvider {
     pub auth_scheme: String,
     pub context_window: u64,
     pub enabled: bool,
-    #[serde(default)]
+    #[serde(default = "legacy_model_provider_supports_reasoning_effort")]
     pub supports_reasoning_effort: bool,
     #[serde(default)]
     pub has_api_key: bool,
+}
+
+fn legacy_model_provider_supports_reasoning_effort() -> bool {
+    true
 }
 
 #[derive(Debug, Deserialize)]
@@ -6777,6 +6781,29 @@ mod tests {
         );
         assert_eq!(api_key.as_deref(), Some("secret"));
         assert!(provider.supports_reasoning_effort);
+    }
+
+    #[test]
+    fn legacy_model_provider_without_reasoning_flag_remains_selectable() {
+        let legacy_provider = serde_json::from_value::<GrokModelProvider>(json!({
+            "id": "legacy-provider",
+            "name": "旧版连接",
+            "model": "deepseek-v4-flash-dspark",
+            "baseUrl": "http://127.0.0.1:18080/v1",
+            "apiBackend": "chat_completions",
+            "authScheme": "bearer",
+            "contextWindow": 256000,
+            "enabled": true,
+            "hasApiKey": true
+        }))
+        .unwrap();
+        assert!(legacy_provider.supports_reasoning_effort);
+
+        let mut explicitly_disabled_value = serde_json::to_value(&legacy_provider).unwrap();
+        explicitly_disabled_value["supportsReasoningEffort"] = json!(false);
+        let explicitly_disabled =
+            serde_json::from_value::<GrokModelProvider>(explicitly_disabled_value).unwrap();
+        assert!(!explicitly_disabled.supports_reasoning_effort);
     }
 
     #[test]

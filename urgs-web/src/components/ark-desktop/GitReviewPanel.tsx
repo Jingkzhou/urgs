@@ -30,16 +30,38 @@ const isNonGitRepositoryError = (message: string) => {
         || normalized.includes('os error 2')
         || /不是(?:一个)?\s*git\s*仓库/.test(message);
 };
+const summarizeGitPatch = (patch: string, fallbackPath = '') => {
+    const files = new Map<string, { additions: number; deletions: number }>();
+    let currentPath = fallbackPath;
+    let additions = 0;
+    let deletions = 0;
+    const increment = (kind: 'additions' | 'deletions') => {
+        if (!currentPath) return;
+        const current = files.get(currentPath) || { additions: 0, deletions: 0 };
+        current[kind] += 1;
+        files.set(currentPath, current);
+    };
+    patch.replace(/\r\n/g, '\n').split('\n').forEach((line) => {
+        if (line.startsWith('diff --git ')) {
+            const match = line.match(/^diff --git a\/(.*) b\/(.*)$/);
+            currentPath = match?.[2] || fallbackPath;
+            return;
+        }
+        if (line.startsWith('+++ ') || line.startsWith('--- ')) return;
+        if (line.startsWith('+')) {
+            additions += 1;
+            increment('additions');
+        } else if (line.startsWith('-')) {
+            deletions += 1;
+            increment('deletions');
+        }
+    });
+    return { additions, deletions, files };
+};
 const DEFAULT_PANEL_WIDTH = 560;
 const MIN_PANEL_WIDTH = 420;
 const MAX_PANEL_WIDTH = 720;
 const PANEL_WIDTH_STORAGE_KEY = 'urgs_ark_desktop_git_review_panel_width_v1';
-const DIFF_LOAD_TIMEOUT_MS = 35_000;
-
-const withTimeout = <T,>(promise: Promise<T>, timeoutMs: number, message: string) => new Promise<T>((resolve, reject) => {
-    const timer = window.setTimeout(() => reject(new Error(message)), timeoutMs);
-    promise.then(resolve, reject).finally(() => window.clearTimeout(timer)).catch(() => undefined);
-});
 
 const clampPanelWidthValue = (value: number) => {
     const viewportMax = typeof window === 'undefined' ? MAX_PANEL_WIDTH : Math.floor(window.innerWidth * 0.65);
@@ -76,6 +98,7 @@ const GitReviewPanel: React.FC<GitReviewPanelProps> = ({ task, runtime, onClose,
     const [selectedPaths, setSelectedPaths] = useState<string[]>([]);
     const [showStagedDiff, setShowStagedDiff] = useState(false);
     const [isDiffLoading, setIsDiffLoading] = useState(false);
+    const [statusRefreshState, setStatusRefreshState] = useState<'loading' | 'ready' | 'error'>('loading');
     const [worktrees, setWorktrees] = useState<GrokGitWorktree[]>([]);
     const [remotes, setRemotes] = useState<GrokGitRemote[]>([]);
     const [auditEntries, setAuditEntries] = useState<GrokGitAuditEntry[]>([]);
@@ -162,12 +185,14 @@ const GitReviewPanel: React.FC<GitReviewPanelProps> = ({ task, runtime, onClose,
         };
     }, [clampPanelWidth, isResizing]);
 
-    const refresh = useCallback(async () => {
+    const refresh = useCallback(async (includeStats = true) => {
         setBusy('refresh');
         setError('');
+        setStatusRefreshState('loading');
         try {
-            const nextStatus = await refreshTaskGitStatus(task.id, true);
+            const nextStatus = await refreshTaskGitStatus(task.id, includeStats);
             setStatus(nextStatus);
+            setStatusRefreshState('ready');
             setGitRepositoryUnavailable(false);
             setSelectedPaths((current) => current.filter((path) => nextStatus.files.some((file) => file.path === path)));
             setSelectedFile((current) => current && nextStatus.files.some((file) => file.path === current)
@@ -185,6 +210,7 @@ const GitReviewPanel: React.FC<GitReviewPanelProps> = ({ task, runtime, onClose,
                 setAuditEntries(nextAudit);
             }
         } catch (nextError) {
+            setStatusRefreshState('error');
             const message = nextError instanceof Error ? nextError.message : String(nextError);
             if (task.gitContext?.mode !== 'workspace' && /工作区不存在|does not exist|not found/i.test(message)) {
                 setWorktreeRemoved(true);
@@ -207,10 +233,13 @@ const GitReviewPanel: React.FC<GitReviewPanelProps> = ({ task, runtime, onClose,
     refreshRef.current = refresh;
 
     useEffect(() => {
+        setStatus(task.gitContext?.status);
         setDiffPath('');
         setDiff(null);
         setGitRepositoryUnavailable(false);
-        void refreshRef.current();
+        setStatusRefreshState('loading');
+        // 首次进入先做快速状态检查，避免与完整 Diff/numstat 同时遍历整个仓库。
+        void refreshRef.current(false);
         return () => {
             diffRequestIdRef.current += 1;
         };
@@ -230,16 +259,27 @@ const GitReviewPanel: React.FC<GitReviewPanelProps> = ({ task, runtime, onClose,
         setIsDiffLoading(true);
         setError('');
         try {
-            const nextDiff = await withTimeout(
-                loadTaskGitDiff(task.id, path, staged),
-                DIFF_LOAD_TIMEOUT_MS,
-                '读取 Diff 超时。Git 命令可能被杀毒软件、凭据助手或外部 Diff 驱动阻塞，请重试。',
-            );
+            // 底层 Git 命令自身负责超时和终止；这里不能只让 UI 超时、却把进程留在后台。
+            const nextDiff = await loadTaskGitDiff(task.id, path, staged);
             if (diffRequestIdRef.current !== requestId) return;
             if (!nextDiff.patch.trim() && !staged && (currentStatusRef.current?.stagedCount || 0) > 0) {
                 setShowStagedDiff(true);
                 return;
             }
+            const patchStats = summarizeGitPatch(nextDiff.patch, path);
+            setStatus((current) => {
+                if (!current) return current;
+                const nextFiles = current.files.map((file) => {
+                    const stats = patchStats.files.get(file.path);
+                    return stats ? { ...file, ...stats } : file;
+                });
+                return {
+                    ...current,
+                    additions: path ? nextFiles.reduce((total, file) => total + file.additions, 0) : patchStats.additions,
+                    deletions: path ? nextFiles.reduce((total, file) => total + file.deletions, 0) : patchStats.deletions,
+                    files: nextFiles,
+                };
+            });
             setDiff(nextDiff);
         } catch (nextError) {
             if (diffRequestIdRef.current !== requestId) return;
@@ -257,8 +297,14 @@ const GitReviewPanel: React.FC<GitReviewPanelProps> = ({ task, runtime, onClose,
     }, [loadTaskGitDiff, task.id]);
 
     useEffect(() => {
-        if (tab === 'review') void loadDiff(diffPath || undefined, showStagedDiff);
-    }, [diffPath, loadDiff, showStagedDiff, tab]);
+        if (tab !== 'review' || statusRefreshState !== 'ready' || gitRepositoryUnavailable) return;
+        if (files.length === 0) {
+            setDiff(null);
+            setIsDiffLoading(false);
+            return;
+        }
+        void loadDiff(diffPath || undefined, showStagedDiff);
+    }, [diffPath, files.length, gitRepositoryUnavailable, loadDiff, showStagedDiff, statusRefreshState, tab]);
 
     const runSafe = async (label: string, action: () => Promise<unknown>, refreshAfter = true) => {
         setBusy(label);
@@ -530,7 +576,7 @@ const GitReviewPanel: React.FC<GitReviewPanelProps> = ({ task, runtime, onClose,
             {tab === 'review' && <section className="flex min-h-0 flex-1 flex-col gap-2">
                 <div className="flex shrink-0 items-center gap-1.5">
                     <button type="button" onClick={() => setIsFileNavOpen((current) => !current)} aria-expanded={isFileNavOpen} aria-controls="git-file-navigation" className={`flex items-center gap-1.5 rounded-lg border px-2.5 py-2 text-[11px] font-medium transition ${isFileNavOpen ? 'border-indigo-200 bg-indigo-50 text-indigo-700' : 'border-slate-200 bg-white text-slate-600 hover:bg-slate-50'}`} title={isFileNavOpen ? '关闭文件导航' : '打开文件导航'}>{isFileNavOpen ? <PanelLeftClose size={13} /> : <PanelLeftOpen size={13} />}{isFileNavOpen ? '隐藏文件导航' : '文件导航'}</button>
-                    <button type="button" onClick={() => void refresh()} disabled={busy !== null} className="flex items-center gap-1.5 rounded-lg border border-slate-200 bg-white px-2.5 py-2 text-[11px] font-medium text-slate-600 hover:bg-slate-50 disabled:opacity-50"><RefreshCw size={13} className={busy === 'refresh' ? 'animate-spin' : ''} />刷新</button>
+                    <button type="button" onClick={() => void refresh()} disabled={busy !== null || isDiffLoading} className="flex items-center gap-1.5 rounded-lg border border-slate-200 bg-white px-2.5 py-2 text-[11px] font-medium text-slate-600 hover:bg-slate-50 disabled:opacity-50"><RefreshCw size={13} className={busy === 'refresh' ? 'animate-spin' : ''} />刷新</button>
                     <button type="button" onClick={stageAllChanges} disabled={isReadonly || busy !== null || files.length === 0} className="rounded-lg bg-slate-900 px-2.5 py-2 text-[11px] font-medium text-white hover:bg-slate-700 disabled:opacity-40">暂存全部</button>
                     <button type="button" onClick={() => void runSafe('fetch', () => runtime.fetchTaskGit(task.id))} disabled={isReadonly || busy !== null} className="ml-auto flex items-center gap-1 rounded-lg px-2 py-2 text-[11px] text-slate-500 hover:bg-slate-100 disabled:opacity-40">{isFetching ? <LoaderCircle size={13} className="animate-spin" /> : <Download size={13} />}{isFetching ? '正在拉取…' : `拉取 ${behindCount}`}</button>
                 </div>
@@ -583,9 +629,9 @@ const GitReviewPanel: React.FC<GitReviewPanelProps> = ({ task, runtime, onClose,
                                 onStagedChange: setShowStagedDiff,
                             }}
                         /> : <EmptyState
-                            text={isDiffLoading ? '正在读取 Diff…' : '当前工作区没有可展示的 Diff'}
-                            loading={isDiffLoading}
-                            onRetry={isDiffLoading ? undefined : () => void loadDiff(diffPath || undefined, showStagedDiff)}
+                            text={statusRefreshState === 'loading' ? '正在检查工作区…' : isDiffLoading ? '正在读取 Diff…' : '当前工作区没有可展示的 Diff'}
+                            loading={statusRefreshState === 'loading' || isDiffLoading}
+                            onRetry={statusRefreshState === 'ready' && files.length > 0 && !isDiffLoading ? () => void loadDiff(diffPath || undefined, showStagedDiff) : undefined}
                         />}
                     </div>
                 </div>
