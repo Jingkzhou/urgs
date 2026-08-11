@@ -346,7 +346,7 @@ const App: React.FC = () => {
         <div className={`app-shell flex min-h-0 min-w-0 bg-slate-50 ${layoutMode === 'topbar' ? 'flex-col' : 'flex-row'}`}>
             {layoutMode === 'sidebar' && (
                 <aside
-                    className="relative z-0 m-4 mr-0 flex w-[72px] shrink-0 flex-col overflow-visible rounded-[1.5rem] border border-slate-200/70 bg-white/85 text-slate-800 shadow-[0_24px_70px_-38px_rgba(15,23,42,0.45)] backdrop-blur-2xl"
+                    className="relative z-30 m-4 mr-0 flex w-[72px] shrink-0 flex-col overflow-visible rounded-[1.5rem] border border-slate-200/70 bg-white/85 text-slate-800 shadow-[0_24px_70px_-38px_rgba(15,23,42,0.45)] backdrop-blur-2xl"
                 >
                     <div className="flex h-20 shrink-0 items-center justify-center border-b border-slate-100">
                         <button

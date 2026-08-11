@@ -1,7 +1,9 @@
-import React, { useMemo, useState } from 'react';
+import React, { useEffect, useMemo, useState } from 'react';
+import { getVersion } from '@tauri-apps/api/app';
 import {
     deriveWebSocketUrl,
     getApiBaseUrl,
+    isDesktopRuntime,
     WS_URL,
     type RuntimeConfig,
 } from '@/config';
@@ -24,8 +26,37 @@ const validateUrl = (value: string, protocols: string[], fieldName: string) => {
 const DesktopConnectionSetup: React.FC = () => {
     const [apiUrl, setApiUrl] = useState(() => getApiBaseUrl() || 'http://localhost:8080');
     const [wsUrl, setWsUrl] = useState(() => WS_URL || 'ws://localhost:8080/ws/im');
+    const [clientVersion, setClientVersion] = useState('读取中...');
     const [saving, setSaving] = useState(false);
     const [error, setError] = useState('');
+
+    useEffect(() => {
+        let active = true;
+
+        if (!isDesktopRuntime()) {
+            setClientVersion('—');
+            return () => {
+                active = false;
+            };
+        }
+
+        void getVersion()
+            .then((version) => {
+                if (active) {
+                    setClientVersion(`v${version}`);
+                }
+            })
+            .catch((versionError) => {
+                console.warn('读取客户端版本失败', versionError);
+                if (active) {
+                    setClientVersion('未知');
+                }
+            });
+
+        return () => {
+            active = false;
+        };
+    }, []);
 
     const suggestedWsUrl = useMemo(() => {
         try {
@@ -100,6 +131,11 @@ const DesktopConnectionSetup: React.FC = () => {
                     </label>
 
                     <DesktopAutostartSetting />
+
+                    <div className="flex items-center justify-between rounded-xl border border-slate-100 bg-slate-50 px-4 py-3">
+                        <span className="text-sm font-bold text-slate-700">当前版本</span>
+                        <span className="font-mono text-sm font-semibold text-slate-500">{clientVersion}</span>
+                    </div>
 
                     {error && (
                         <div className="rounded-xl border border-red-200 bg-red-50 px-4 py-3 text-sm text-red-700">
