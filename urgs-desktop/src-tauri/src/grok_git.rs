@@ -711,6 +711,23 @@ fn git_untracked_patch(workspace: &Path, path: &str) -> Option<String> {
         .filter(|patch| !patch.trim().is_empty())
 }
 
+fn git_untracked_status_args(path: &str) -> Vec<String> {
+    vec![
+        "-c".to_string(),
+        "color.ui=false".to_string(),
+        "status".to_string(),
+        "--porcelain=v1".to_string(),
+        "--untracked-files=all".to_string(),
+        "--".to_string(),
+        path.to_string(),
+    ]
+}
+
+fn is_untracked_path(workspace: &Path, path: &str) -> Result<bool, String> {
+    let result = run_git(workspace, &git_untracked_status_args(path))?;
+    Ok(result.stdout.lines().any(|line| line.starts_with("?? ")))
+}
+
 fn append_patch(target: &mut String, patch: &str) {
     if patch.trim().is_empty() {
         return;
@@ -1230,17 +1247,23 @@ pub fn grok_git_diff(
     };
     let mut patch = result.stdout;
     if !staged {
-        let status = git_status_at_with_stats(&workspace, false)?;
-        let untracked_paths = status
-            .files
-            .iter()
-            .filter(|file| file.untracked)
-            .filter(|file| relative.as_deref().map_or(true, |path| path == file.path))
-            .map(|file| file.path.as_str())
-            .collect::<Vec<_>>();
-        for path in untracked_paths {
-            if let Some(untracked_patch) = git_untracked_patch(&workspace, path) {
-                append_patch(&mut patch, &untracked_patch);
+        if let Some(path) = relative.as_deref() {
+            if is_untracked_path(&workspace, path)? {
+                if let Some(untracked_patch) = git_untracked_patch(&workspace, path) {
+                    append_patch(&mut patch, &untracked_patch);
+                }
+            }
+        } else {
+            let status = git_status_at_with_stats(&workspace, false)?;
+            for path in status
+                .files
+                .iter()
+                .filter(|file| file.untracked)
+                .map(|file| file.path.as_str())
+            {
+                if let Some(untracked_patch) = git_untracked_patch(&workspace, path) {
+                    append_patch(&mut patch, &untracked_patch);
+                }
             }
         }
     }
@@ -2270,9 +2293,9 @@ pub fn grok_git_audit_list(
 #[cfg(test)]
 mod tests {
     use super::{
-        git_command_timeout, git_diff_args, is_git_unavailable_error, parse_branches,
-        parse_remotes, parse_tracking, parse_worktrees, relative_path, LOCAL_GIT_TIMEOUT,
-        LONG_GIT_TIMEOUT,
+        git_command_timeout, git_diff_args, git_untracked_status_args, is_git_unavailable_error,
+        parse_branches, parse_remotes, parse_tracking, parse_worktrees, relative_path,
+        LOCAL_GIT_TIMEOUT, LONG_GIT_TIMEOUT,
     };
 
     #[test]
@@ -2303,6 +2326,15 @@ mod tests {
         let staged = git_diff_args(None, true, true);
         assert!(staged.contains(&"--cached".to_string()));
         assert!(!staged.contains(&"HEAD".to_string()));
+    }
+
+    #[test]
+    fn scopes_untracked_status_checks_to_the_selected_file() {
+        let args = git_untracked_status_args("src/main.rs");
+        assert!(args.contains(&"--porcelain=v1".to_string()));
+        assert!(args.contains(&"--untracked-files=all".to_string()));
+        assert_eq!(args[args.len() - 2], "--");
+        assert_eq!(args.last().map(String::as_str), Some("src/main.rs"));
     }
 
     #[test]
