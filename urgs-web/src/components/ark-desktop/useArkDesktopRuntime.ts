@@ -2403,6 +2403,33 @@ export const useArkDesktopRuntime = () => {
         return request;
     }, []);
 
+    // 基于工作空间的 Git 操作：不依赖已创建的任务，供新建任务视图直接对所选项目执行。
+    const requireWorkspace = useCallback((workspace: string) => {
+        const target = workspace.trim();
+        if (!target) throw new Error('未选择工作空间');
+        return target;
+    }, []);
+
+    const listWorkspaceGitBranches = useCallback((workspace: string): Promise<GrokGitBranch[]> => {
+        return listGrokGitBranches(requireWorkspace(workspace));
+    }, [requireWorkspace]);
+
+    const commitWorkspaceGit = useCallback((workspace: string, message: string, options: { amend?: boolean; signoff?: boolean; stageAll?: boolean } = {}) => {
+        return commitGrokGit(requireWorkspace(workspace), message, { ...options });
+    }, [requireWorkspace]);
+
+    const pullWorkspaceGit = useCallback((workspace: string) => {
+        return pullGrokGit(requireWorkspace(workspace));
+    }, [requireWorkspace]);
+
+    const switchWorkspaceGitBranch = useCallback((workspace: string, branch: string) => {
+        return switchGrokGitBranch(requireWorkspace(workspace), branch);
+    }, [requireWorkspace]);
+
+    const pushWorkspaceGit = useCallback((workspace: string, setUpstream = false) => {
+        return pushGrokGit(requireWorkspace(workspace), { setUpstream });
+    }, [requireWorkspace]);
+
     const openTaskGitFile = useCallback((taskId: string, path: string, revision?: 'HEAD') => {
         const task = taskForGit(taskId);
         return openGrokGitFile(task.workspace, path, revision);
@@ -2413,17 +2440,14 @@ export const useArkDesktopRuntime = () => {
         return revealGrokGitFile(task.workspace, path);
     }, [taskForGit]);
 
-    const generateTaskGitCommitMessage = useCallback(async (taskId: string) => {
-        const task = taskForGit(taskId);
+    const generateCommitMessageText = useCallback(async (diff: GrokGitDiff, selectedModel: string) => {
         const current = snapshotRef.current;
-        const selectedModel = task.model?.trim() || current.settings.grokModel.trim();
         if (!selectedModel) throw new Error('请先在设置中选择模型连接');
         const provider = resolveModelProvider(current, selectedModel);
         if (!provider) {
             throw new Error(`模型连接“${selectedModel}”不存在，请在设置中重新选择已保存的连接`);
         }
         if (!provider.enabled) throw new Error(`模型连接“${provider.name}”已停用，请在设置中启用后再使用`);
-        const diff = await getGrokGitDiff(task.workspace);
         if (!diff.patch.trim()) throw new Error('当前工作区没有可用于生成 Commit message 的 Diff');
 
         const fileSummary = truncateUtf8(diff.files
@@ -2455,7 +2479,22 @@ export const useArkDesktopRuntime = () => {
         const message = normalizeGeneratedCommitMessage(result.text);
         if (!message) throw new Error('AI 没有返回有效的 Commit message');
         return message;
-    }, [taskForGit]);
+    }, []);
+
+    const generateWorkspaceGitCommitMessage = useCallback(async (workspace: string) => {
+        const current = snapshotRef.current;
+        const selectedModel = current.settings.grokModel.trim();
+        const diff = await getGrokGitDiff(requireWorkspace(workspace));
+        return generateCommitMessageText(diff, selectedModel);
+    }, [generateCommitMessageText, requireWorkspace]);
+
+    const generateTaskGitCommitMessage = useCallback(async (taskId: string) => {
+        const task = taskForGit(taskId);
+        const current = snapshotRef.current;
+        const selectedModel = task.model?.trim() || current.settings.grokModel.trim();
+        const diff = await getGrokGitDiff(task.workspace);
+        return generateCommitMessageText(diff, selectedModel);
+    }, [generateCommitMessageText, taskForGit]);
 
     const assertTaskGitWritable = useCallback((task: ArkDesktopTask) => {
         if (task.gitContext?.mode === 'readonly') throw new Error('只读分析任务不能修改 Git 文件');
@@ -4012,6 +4051,12 @@ export const useArkDesktopRuntime = () => {
         loadTaskGitDiff,
         refreshWorkspaceGitStatus,
         loadWorkspaceGitDiff,
+        listWorkspaceGitBranches,
+        generateWorkspaceGitCommitMessage,
+        commitWorkspaceGit,
+        pullWorkspaceGit,
+        switchWorkspaceGitBranch,
+        pushWorkspaceGit,
         openTaskGitFile,
         revealTaskGitFile,
         generateTaskGitCommitMessage,

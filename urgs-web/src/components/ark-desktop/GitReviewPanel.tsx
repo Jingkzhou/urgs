@@ -378,7 +378,7 @@ const GitReviewPanel: React.FC<GitReviewPanelProps> = ({ task, workspace: worksp
                         : selectedFile ? <div className="flex h-40 items-center justify-center px-6 text-center text-xs leading-5 text-slate-400">该文件没有可显示的文本 Diff，可能是二进制文件、空文件或仅包含 Git 元数据变更。</div>
                             : <div className="flex h-40 items-center justify-center text-xs text-slate-500">从左侧选择变更文件</div>}
             </section>
-        </div> : <GitOperationsPanel task={task} runtime={runtime} status={status} workspaceKey={workspaceKey} onStatusChange={applyStatus} />}
+        </div> : <GitOperationsPanel task={task} workspace={workspace} runtime={runtime} status={status} workspaceKey={workspaceKey} onStatusChange={applyStatus} />}
     </aside>;
 };
 

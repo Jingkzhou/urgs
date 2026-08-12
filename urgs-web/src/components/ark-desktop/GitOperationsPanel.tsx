@@ -10,6 +10,7 @@ import { gitReviewCacheFor } from './gitReviewCache';
 
 interface GitOperationsPanelProps {
     task: ArkDesktopTask | null;
+    workspace: string;
     runtime: ArkDesktopRuntime;
     status?: GrokGitStatus;
     workspaceKey: string;
@@ -19,7 +20,7 @@ interface GitOperationsPanelProps {
 type GitAction = 'branches' | 'switch' | 'pull' | 'generate' | 'commit' | 'push';
 
 const GitOperationsPanel: React.FC<GitOperationsPanelProps> = ({
-    task, runtime, status, workspaceKey, onStatusChange,
+    task, workspace, runtime, status, workspaceKey, onStatusChange,
 }) => {
     const cache = gitReviewCacheFor(workspaceKey);
     const [branches, setBranches] = useState(cache.branches || []);
@@ -32,6 +33,8 @@ const GitOperationsPanel: React.FC<GitOperationsPanelProps> = ({
     const {
         listTaskGitBranches, switchTaskGitBranch, pullTaskGit,
         generateTaskGitCommitMessage, commitTaskGit, pushTaskGit,
+        listWorkspaceGitBranches, switchWorkspaceGitBranch, pullWorkspaceGit,
+        generateWorkspaceGitCommitMessage, commitWorkspaceGit, pushWorkspaceGit,
     } = runtime;
 
     const runAction = async <T,>(name: GitAction, operation: () => Promise<T>) => {
@@ -54,13 +57,14 @@ const GitOperationsPanel: React.FC<GitOperationsPanelProps> = ({
             setBranches(currentCache.branches);
             return currentCache.branches;
         }
-        if (!task) throw new Error('未创建任务');
-        const nextBranches = await listTaskGitBranches(task.id);
+        const nextBranches = task
+            ? await listTaskGitBranches(task.id)
+            : await listWorkspaceGitBranches(workspace);
         currentCache.branches = nextBranches;
         currentCache.branchesUpdatedAt = Date.now();
         setBranches(nextBranches);
         return nextBranches;
-    }, [listTaskGitBranches, task, workspaceKey]);
+    }, [listTaskGitBranches, listWorkspaceGitBranches, task, workspace, workspaceKey]);
 
     useEffect(() => {
         const currentCache = gitReviewCacheFor(workspaceKey);
@@ -69,7 +73,7 @@ const GitOperationsPanel: React.FC<GitOperationsPanelProps> = ({
         setSelectedBranch(status?.branch || '');
         setNotice('');
         setError('');
-        if (!currentCache.branches && task) {
+        if (!currentCache.branches) {
             void runAction('branches', () => refreshBranches()).catch(() => undefined);
         }
     }, [refreshBranches, status?.branch, task, workspaceKey]);
@@ -80,7 +84,9 @@ const GitOperationsPanel: React.FC<GitOperationsPanelProps> = ({
     };
 
     const generateMessage = async () => {
-        const message = await runAction('generate', () => generateTaskGitCommitMessage(task.id));
+        const message = await runAction('generate', () => task
+            ? generateTaskGitCommitMessage(task.id)
+            : generateWorkspaceGitCommitMessage(workspace));
         if (!message) return;
         updateCommitMessage(message);
         setNotice('已生成提交说明，可直接修改后提交。');
@@ -89,7 +95,9 @@ const GitOperationsPanel: React.FC<GitOperationsPanelProps> = ({
     const commit = async () => {
         const message = commitMessage.trim();
         if (!message) return;
-        const result = await runAction('commit', () => commitTaskGit(task.id, message, { stageAll: true }));
+        const result = await runAction('commit', () => task
+            ? commitTaskGit(task.id, message, { stageAll: true })
+            : commitWorkspaceGit(workspace, message, { stageAll: true }));
         if (!result) return;
         updateCommitMessage('');
         onStatusChange(result.status, { clearDiffs: true });
@@ -97,7 +105,7 @@ const GitOperationsPanel: React.FC<GitOperationsPanelProps> = ({
     };
 
     const pull = async () => {
-        const result = await runAction('pull', () => pullTaskGit(task.id));
+        const result = await runAction('pull', () => task ? pullTaskGit(task.id) : pullWorkspaceGit(workspace));
         if (!result) return;
         onStatusChange(result.status, { clearDiffs: true });
         setNotice(result.message || '拉取完成。');
@@ -105,7 +113,9 @@ const GitOperationsPanel: React.FC<GitOperationsPanelProps> = ({
 
     const switchBranch = async () => {
         if (!selectedBranch || selectedBranch === status?.branch) return;
-        const result = await runAction('switch', () => switchTaskGitBranch(task.id, selectedBranch));
+        const result = await runAction('switch', () => task
+            ? switchTaskGitBranch(task.id, selectedBranch)
+            : switchWorkspaceGitBranch(workspace, selectedBranch));
         if (!result) return;
         onStatusChange(result.status, { clearDiffs: true, clearBranches: true });
         setSelectedBranch(result.status.branch || '');
@@ -114,7 +124,9 @@ const GitOperationsPanel: React.FC<GitOperationsPanelProps> = ({
     };
 
     const push = async () => {
-        const result = await runAction('push', () => pushTaskGit(task.id, !status?.upstream));
+        const result = await runAction('push', () => task
+            ? pushTaskGit(task.id, !status?.upstream)
+            : pushWorkspaceGit(workspace, !status?.upstream));
         if (!result) return;
         onStatusChange(result.status);
         setNotice(result.message || '推送成功。');
@@ -127,17 +139,6 @@ const GitOperationsPanel: React.FC<GitOperationsPanelProps> = ({
     const canPull = Boolean(status?.branch && status?.upstream && !worktreeDirty && !busy);
     const canCommit = Boolean(hasChanges && commitMessage.trim() && !busy);
     const canPush = Boolean(status?.branch && status.ahead > 0 && !busy);
-
-    if (!task) {
-        return <div className="min-h-0 flex-1 overflow-y-auto bg-slate-50/60 px-5 py-5">
-            <div className="mx-auto flex w-full max-w-2xl flex-col gap-5">
-                <div className="flex items-start gap-2 rounded-xl bg-indigo-50 px-3 py-2.5 text-xs leading-5 text-indigo-700">
-                    <AlertCircle size={15} className="mt-0.5 shrink-0" />
-                    <span className="min-w-0 flex-1 break-words">当前为新建任务的工作区预览，仅可查看代码变更。提交、推送、分支切换等 Git 操作请在创建并打开任务后使用。</span>
-                </div>
-            </div>
-        </div>;
-    }
 
     return <div className="min-h-0 flex-1 overflow-y-auto bg-slate-50/60 px-5 py-5">
         <div className="mx-auto flex w-full max-w-2xl flex-col gap-5">
