@@ -4399,7 +4399,14 @@ fn create_terminal_session_blocking(
     command.env("COLORTERM", "truecolor");
     command.env("CLICOLOR", "1");
     #[cfg(windows)]
-    command.arg("-NoLogo");
+    {
+        command.arg("-NoLogo");
+        // 自定义提示符:只显示当前目录最后一段(项目名),避免 UNC 长路径
+        // 默认的 FileSystem::\\?\UNC\... 前缀显示过长,截短为 PS 项目名>
+        command.arg("-NoExit");
+        command.arg("-Command");
+        command.arg("function global:prompt { $leaf = Split-Path -Leaf $PWD.ProviderPath; if (-not $leaf) { $leaf = $PWD.Path }; 'PS ' + $leaf + '> ' }");
+    }
     #[cfg(not(windows))]
     command.arg("-i");
 

@@ -9,7 +9,7 @@ import type { ArkDesktopRuntime } from './useArkDesktopRuntime';
 import { gitReviewCacheFor } from './gitReviewCache';
 
 interface GitOperationsPanelProps {
-    task: ArkDesktopTask;
+    task: ArkDesktopTask | null;
     runtime: ArkDesktopRuntime;
     status?: GrokGitStatus;
     workspaceKey: string;
@@ -54,12 +54,13 @@ const GitOperationsPanel: React.FC<GitOperationsPanelProps> = ({
             setBranches(currentCache.branches);
             return currentCache.branches;
         }
+        if (!task) throw new Error('未创建任务');
         const nextBranches = await listTaskGitBranches(task.id);
         currentCache.branches = nextBranches;
         currentCache.branchesUpdatedAt = Date.now();
         setBranches(nextBranches);
         return nextBranches;
-    }, [listTaskGitBranches, task.id, workspaceKey]);
+    }, [listTaskGitBranches, task, workspaceKey]);
 
     useEffect(() => {
         const currentCache = gitReviewCacheFor(workspaceKey);
@@ -68,10 +69,10 @@ const GitOperationsPanel: React.FC<GitOperationsPanelProps> = ({
         setSelectedBranch(status?.branch || '');
         setNotice('');
         setError('');
-        if (!currentCache.branches) {
+        if (!currentCache.branches && task) {
             void runAction('branches', () => refreshBranches()).catch(() => undefined);
         }
-    }, [refreshBranches, status?.branch, task.id, workspaceKey]);
+    }, [refreshBranches, status?.branch, task, workspaceKey]);
 
     const updateCommitMessage = (value: string) => {
         setCommitMessage(value);
@@ -126,6 +127,17 @@ const GitOperationsPanel: React.FC<GitOperationsPanelProps> = ({
     const canPull = Boolean(status?.branch && status?.upstream && !worktreeDirty && !busy);
     const canCommit = Boolean(hasChanges && commitMessage.trim() && !busy);
     const canPush = Boolean(status?.branch && status.ahead > 0 && !busy);
+
+    if (!task) {
+        return <div className="min-h-0 flex-1 overflow-y-auto bg-slate-50/60 px-5 py-5">
+            <div className="mx-auto flex w-full max-w-2xl flex-col gap-5">
+                <div className="flex items-start gap-2 rounded-xl bg-indigo-50 px-3 py-2.5 text-xs leading-5 text-indigo-700">
+                    <AlertCircle size={15} className="mt-0.5 shrink-0" />
+                    <span className="min-w-0 flex-1 break-words">当前为新建任务的工作区预览，仅可查看代码变更。提交、推送、分支切换等 Git 操作请在创建并打开任务后使用。</span>
+                </div>
+            </div>
+        </div>;
+    }
 
     return <div className="min-h-0 flex-1 overflow-y-auto bg-slate-50/60 px-5 py-5">
         <div className="mx-auto flex w-full max-w-2xl flex-col gap-5">

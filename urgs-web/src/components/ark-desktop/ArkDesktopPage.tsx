@@ -392,11 +392,14 @@ const ArkDesktopPage: React.FC = () => {
     const headerStatus = runtime.activeTask ? taskStatus[runtime.activeTask.status] : undefined;
     const showGitReview = true;
     const gitReviewAvailable = Boolean(
-        runtime.activeTask?.gitContext
-        && runtime.activeTask.gitContext.status?.isRepository !== false,
+        runtime.activeTask
+            ? runtime.activeTask.gitContext && runtime.activeTask.gitContext.status?.isRepository !== false
+            : draftWorkspace.trim() !== '',
     );
     const gitReviewDisabledReason = !runtime.activeTask
-        ? '请先打开一个任务'
+        ? !draftWorkspace.trim()
+            ? '请先选择项目或打开一个任务'
+            : undefined
         : !runtime.activeTask.workspace
             ? '通用会话未绑定工作空间'
         : !gitReviewAvailable
@@ -553,11 +556,17 @@ const ArkDesktopPage: React.FC = () => {
                         <AutomationCenter runtime={runtime} onEdit={(id) => setEditor({ type: 'automation', id })} />
                     ) : <SettingsView runtime={runtime} chooseWorkspace={chooseDefaultWorkspace} initialTab={settingsTab} />}
                 </main>
-                {terminalPanelMounted && <TaskTerminalPanel visible={terminalPanelOpen} workspace={runtime.activeTask ? runtime.activeTask.workspace || runtime.activeTask.runtimeWorkspace : runtime.snapshot.settings.workspace} onClose={() => setTerminalPanelOpen(false)} />}
+                {terminalPanelMounted && <TaskTerminalPanel visible={terminalPanelOpen} workspace={runtime.activeTask ? runtime.activeTask.workspace || runtime.activeTask.runtimeWorkspace : draftWorkspace} onClose={() => setTerminalPanelOpen(false)} />}
             </section>
 
             {runtime.activeTask && <TaskSessionSummaryPanel key={runtime.activeTask.id} visible={sessionSummaryOpen} task={runtime.activeTask} runtime={runtime} onClose={() => setSessionSummaryOpen(false)} />}
-            {gitReviewAvailable && runtime.activeTask && gitReviewMounted && <GitReviewPanel visible={gitReviewOpen} task={runtime.activeTask} runtime={runtime} onClose={() => setGitReviewOpen(false)} />}
+            {gitReviewMounted && (runtime.activeTask || section === 'new-task') && <GitReviewPanel
+                visible={gitReviewOpen}
+                task={runtime.activeTask}
+                workspace={runtime.activeTask?.workspace || draftWorkspace}
+                runtime={runtime}
+                onClose={() => setGitReviewOpen(false)}
+            />}
 
             {editor?.type === 'automation' && <AutomationEditor id={editor.id} runtime={runtime} onClose={() => setEditor(null)} />}
             {runtime.permission && <Modal title={`允许“${runtime.permission.taskTitle}”执行本地操作？`} onClose={() => void runtime.answerPermission()}><p className="mb-5 text-sm leading-6 text-slate-600">{runtime.permission.title}</p><div className="flex flex-wrap justify-end gap-2"><button type="button" onClick={() => void runtime.answerPermission()} className="rounded-lg border border-slate-200 px-4 py-2 text-sm text-slate-600">拒绝</button>{runtime.permission.options.map((option) => <button key={option.optionId} type="button" onClick={() => void runtime.answerPermission(option.optionId)} className="rounded-lg bg-slate-900 px-4 py-2 text-sm text-white">{option.name}</button>)}</div></Modal>}

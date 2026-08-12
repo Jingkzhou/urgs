@@ -8,7 +8,8 @@ import GitOperationsPanel from './GitOperationsPanel';
 import { gitReviewCacheFor, gitStatusSignature, normalizeGitWorkspaceKey } from './gitReviewCache';
 
 interface GitReviewPanelProps {
-    task: ArkDesktopTask;
+    task: ArkDesktopTask | null;
+    workspace: string;
     runtime: ArkDesktopRuntime;
     onClose: () => void;
     visible: boolean;
@@ -70,11 +71,11 @@ const formatRefreshTime = (timestamp?: number) => {
     return new Intl.DateTimeFormat('zh-CN', { hour: '2-digit', minute: '2-digit', second: '2-digit' }).format(timestamp);
 };
 
-const GitReviewPanel: React.FC<GitReviewPanelProps> = ({ task, runtime, onClose, visible }) => {
-    const workspace = task.workspace.trim();
+const GitReviewPanel: React.FC<GitReviewPanelProps> = ({ task, workspace: workspaceProp, runtime, onClose, visible }) => {
+    const workspace = workspaceProp.trim();
     const workspaceKey = normalizeGitWorkspaceKey(workspace);
     const initialCache = gitReviewCacheFor(workspaceKey);
-    const persistedStatus = task.gitContext?.status as GrokGitStatus | undefined;
+    const persistedStatus = task?.gitContext?.status as GrokGitStatus | undefined;
     const [status, setStatus] = useState<GrokGitStatus | undefined>(initialCache.status || persistedStatus);
     const [selectedPath, setSelectedPath] = useState(initialCache.selectedPath || initialCache.status?.files[0]?.path || persistedStatus?.files[0]?.path || '');
     const [diff, setDiff] = useState<GrokGitDiff | null>(() => initialCache.selectedPath ? initialCache.diffs.get(initialCache.selectedPath) || null : null);
@@ -98,7 +99,7 @@ const GitReviewPanel: React.FC<GitReviewPanelProps> = ({ task, runtime, onClose,
     const activeViewRef = useRef(activeView);
     activeViewRef.current = activeView;
 
-    const { refreshTaskGitStatus, loadTaskGitDiff } = runtime;
+    const { refreshTaskGitStatus, loadTaskGitDiff, refreshWorkspaceGitStatus, loadWorkspaceGitDiff } = runtime;
     const files = status?.files || [];
     const selectedFile = files.find((file) => file.path === selectedPath);
     const isRepository = status?.isRepository !== false;
@@ -134,7 +135,7 @@ const GitReviewPanel: React.FC<GitReviewPanelProps> = ({ task, runtime, onClose,
         if (!workspace || statusRequestRef.current) return statusRequestRef.current;
         if (foreground || !gitReviewCacheFor(workspaceKey).status) setStatusLoading(true);
         setError('');
-        const request = refreshTaskGitStatus(task.id, false);
+        const request = task ? refreshTaskGitStatus(task.id, false) : refreshWorkspaceGitStatus(workspace, false);
         statusRequestRef.current = request;
         try {
             const nextStatus = await request;
@@ -148,7 +149,7 @@ const GitReviewPanel: React.FC<GitReviewPanelProps> = ({ task, runtime, onClose,
             if (statusRequestRef.current === request) statusRequestRef.current = null;
             setStatusLoading(false);
         }
-    }, [applyStatus, refreshTaskGitStatus, task.id, workspace, workspaceKey]);
+    }, [applyStatus, refreshTaskGitStatus, refreshWorkspaceGitStatus, task?.id, workspace, workspaceKey]);
 
     const loadDiff = useCallback(async (path: string, force = false, silent = false) => {
         if (!path) {
@@ -168,10 +169,14 @@ const GitReviewPanel: React.FC<GitReviewPanelProps> = ({ task, runtime, onClose,
         if (!silent) setDiffLoading(true);
         setError('');
         try {
-            let nextDiff = await loadTaskGitDiff(task.id, path, false);
+            let nextDiff = task
+                ? await loadTaskGitDiff(task.id, path, false)
+                : await loadWorkspaceGitDiff(workspace, path, false);
             const currentFile = cache.status?.files.find((file) => file.path === path);
             if (!nextDiff.patch.trim() && currentFile?.staged) {
-                nextDiff = await loadTaskGitDiff(task.id, path, true);
+                nextDiff = task
+                    ? await loadTaskGitDiff(task.id, path, true)
+                    : await loadWorkspaceGitDiff(workspace, path, true);
             }
             if (diffRequestIdRef.current !== requestId) return;
             const currentDiff = cache.diffs.get(path);
@@ -184,7 +189,7 @@ const GitReviewPanel: React.FC<GitReviewPanelProps> = ({ task, runtime, onClose,
         } finally {
             if (!silent && diffRequestIdRef.current === requestId) setDiffLoading(false);
         }
-    }, [loadTaskGitDiff, task.id, workspaceKey]);
+    }, [loadTaskGitDiff, loadWorkspaceGitDiff, task?.id, workspace, workspaceKey]);
 
     useEffect(() => {
         const cache = gitReviewCacheFor(workspaceKey);
@@ -200,7 +205,7 @@ const GitReviewPanel: React.FC<GitReviewPanelProps> = ({ task, runtime, onClose,
         setStatusLoading(!nextStatus);
         setSyncMode('connecting');
         diffRequestIdRef.current += 1;
-    }, [task.id, workspaceKey]);
+    }, [task?.id, workspaceKey]);
 
     useEffect(() => {
         if (!visible || !workspace) return undefined;

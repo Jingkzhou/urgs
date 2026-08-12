@@ -2368,6 +2368,41 @@ export const useArkDesktopRuntime = () => {
         return request;
     }, [taskForGit]);
 
+    // 基于工作空间的只读 Git 查询：不依赖已创建的任务，供新建任务视图的代码变更预览使用。
+    const refreshWorkspaceGitStatus = useCallback(async (workspace: string, includeStats = false) => {
+        const target = workspace.trim();
+        if (!target) throw new Error('未选择工作空间');
+        const requestKey = `${target}\u0000${includeStats ? 'stats' : 'fast'}`;
+        let request = gitStatusRequestsRef.current.get(requestKey);
+        if (!request) {
+            request = getGrokGitStatus(target, includeStats);
+            gitStatusRequestsRef.current.set(requestKey, request);
+            void request.finally(() => {
+                if (gitStatusRequestsRef.current.get(requestKey) === request) {
+                    gitStatusRequestsRef.current.delete(requestKey);
+                }
+            }).catch(() => undefined);
+        }
+        return request;
+    }, []);
+
+    const loadWorkspaceGitDiff = useCallback((workspace: string, path?: string, staged = false) => {
+        const target = workspace.trim();
+        if (!target) throw new Error('未选择工作空间');
+        const requestKey = `${target}\u0000${path || ''}\u0000${staged ? 'staged' : 'working'}`;
+        let request = gitDiffRequestsRef.current.get(requestKey);
+        if (!request) {
+            request = getGrokGitDiff(target, path, staged, false);
+            gitDiffRequestsRef.current.set(requestKey, request);
+            void request.finally(() => {
+                if (gitDiffRequestsRef.current.get(requestKey) === request) {
+                    gitDiffRequestsRef.current.delete(requestKey);
+                }
+            }).catch(() => undefined);
+        }
+        return request;
+    }, []);
+
     const openTaskGitFile = useCallback((taskId: string, path: string, revision?: 'HEAD') => {
         const task = taskForGit(taskId);
         return openGrokGitFile(task.workspace, path, revision);
@@ -3975,6 +4010,8 @@ export const useArkDesktopRuntime = () => {
         startTask,
         refreshTaskGitStatus,
         loadTaskGitDiff,
+        refreshWorkspaceGitStatus,
+        loadWorkspaceGitDiff,
         openTaskGitFile,
         revealTaskGitFile,
         generateTaskGitCommitMessage,
