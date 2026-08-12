@@ -606,6 +606,70 @@ fn git_diff_args(path: Option<&str>, staged: bool, has_head: bool) -> Vec<String
     args
 }
 
+fn git_null_device() -> &'static str {
+    if cfg!(windows) {
+        "NUL"
+    } else {
+        "/dev/null"
+    }
+}
+
+fn git_untracked_diff_args(path: &str, numstat: bool) -> Vec<String> {
+    vec![
+        "diff".to_string(),
+        "--no-ext-diff".to_string(),
+        "--no-textconv".to_string(),
+        "--no-renames".to_string(),
+        "--no-index".to_string(),
+        if numstat {
+            "--numstat".to_string()
+        } else {
+            "--unified=3".to_string()
+        },
+        "--".to_string(),
+        git_null_device().to_string(),
+        path.to_string(),
+    ]
+}
+
+fn git_untracked_numstat(workspace: &Path, path: &str) -> (u32, u32) {
+    let args = git_untracked_diff_args(path, true);
+    let Ok(result) = run_git_allow_failure(workspace, &args) else {
+        return (0, 0);
+    };
+    result
+        .stdout
+        .lines()
+        .find_map(|line| {
+            let mut fields = line.split('\t');
+            let additions = fields.next()?.parse::<u32>().ok()?;
+            let deletions = fields.next()?.parse::<u32>().ok()?;
+            Some((additions, deletions))
+        })
+        .unwrap_or_default()
+}
+
+fn git_untracked_patch(workspace: &Path, path: &str) -> Option<String> {
+    let args = git_untracked_diff_args(path, false);
+    run_git_allow_failure(workspace, &args)
+        .ok()
+        .map(|result| result.stdout)
+        .filter(|patch| !patch.trim().is_empty())
+}
+
+fn append_patch(target: &mut String, patch: &str) {
+    if patch.trim().is_empty() {
+        return;
+    }
+    if !target.is_empty() && !target.ends_with('\n') {
+        target.push('\n');
+    }
+    target.push_str(patch);
+    if !target.ends_with('\n') {
+        target.push('\n');
+    }
+}
+
 fn git_status_at_with_stats(
     workspace: &Path,
     include_stats: bool,
@@ -618,6 +682,7 @@ fn git_status_at_with_stats(
         "color.ui=false".to_string(),
         "status".to_string(),
         "--porcelain=v1".to_string(),
+        "--untracked-files=all".to_string(),
         "-b".to_string(),
     ];
     let result = run_git(&workspace, &args)?;
@@ -662,7 +727,11 @@ fn git_status_at_with_stats(
             || worktree_status == "U";
         let staged = index_status != " " && index_status != "?";
         let modified = worktree_status != " " && worktree_status != "?";
-        let (additions, deletions) = numstat.get(&path).copied().unwrap_or_default();
+        let (additions, deletions) = if is_untracked && include_stats {
+            git_untracked_numstat(&workspace, &path)
+        } else {
+            numstat.get(&path).copied().unwrap_or_default()
+        };
         files.push(GrokGitFile {
             path,
             index_status,
@@ -1105,7 +1174,23 @@ pub fn grok_git_diff(
         }
         Err(error) => return Err(error),
     };
-    let (patch, truncated) = trim_output(result.stdout, MAX_DIFF_OUTPUT);
+    let mut patch = result.stdout;
+    if !staged {
+        let status = git_status_at_with_stats(&workspace, false)?;
+        let untracked_paths = status
+            .files
+            .iter()
+            .filter(|file| file.untracked)
+            .filter(|file| relative.as_deref().map_or(true, |path| path == file.path))
+            .map(|file| file.path.as_str())
+            .collect::<Vec<_>>();
+        for path in untracked_paths {
+            if let Some(untracked_patch) = git_untracked_patch(&workspace, path) {
+                append_patch(&mut patch, &untracked_patch);
+            }
+        }
+    }
+    let (patch, truncated) = trim_output(patch, MAX_DIFF_OUTPUT);
     let files = if include_status.unwrap_or(true) {
         git_status_at(&workspace)?.files
     } else {

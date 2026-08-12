@@ -109,7 +109,9 @@ const parsePatch = (patch: string, fallbackPath: string): ParsedFileDiff[] => {
         if (kind === 'deletion') file.deletions += 1;
     });
 
-    return parsed.filter((file) => file.hunks.length > 0);
+    // Binary files and empty untracked files may only have a Git header and no hunk.
+    // Keep those headers visible so the file count matches the Git status list.
+    return parsed;
 };
 
 const languageForPath = (path: string) => {

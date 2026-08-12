@@ -491,6 +491,12 @@ const normalizeCompletedDeepResearchPlan = (task: ArkDesktopTask) => {
     return plan === task.plan ? task : { ...task, plan };
 };
 
+const normalizeCompletedPlanState = (task: ArkDesktopTask) => {
+    if (task.status !== 'completed') return task;
+    const plan = completePlanSteps(task.plan);
+    return plan === task.plan ? task : { ...task, plan };
+};
+
 const upsertTaskActivity = (
     task: ArkDesktopTask,
     activity: Omit<ArkDesktopToolActivity, 'startedAt' | 'updatedAt'>,
@@ -562,9 +568,11 @@ const settleForegroundActivities = (
         if (tool.id === 'session-recap' || isSettledActivityStatus(tool.status) || ['background_task', 'monitor', 'goal', 'workflow'].includes(tool.kind || '')) return tool;
         return { ...tool, status: nextStatus, updatedAt: now };
     });
+    const plan = terminalStatus === 'completed' ? completePlanSteps(task.plan) : task.plan;
     return {
         ...task,
         status: terminalStatus,
+        ...(plan ? { plan } : {}),
         tools,
         execution: {
             ...task.execution,
@@ -759,7 +767,7 @@ const findHistoricalSessionId = async (workspace: string, firstPrompt: string) =
 export const useArkDesktopRuntime = () => {
     const [snapshot, setSnapshot] = useState<ArkDesktopSnapshot>(() => {
         const loaded = loadArkDesktopSnapshot();
-        const tasks = loaded.tasks.map(normalizeCompletedDeepResearchPlan);
+        const tasks = loaded.tasks.map((task) => normalizeCompletedPlanState(normalizeCompletedDeepResearchPlan(task)));
         return tasks.some((task, index) => task !== loaded.tasks[index]) ? { ...loaded, tasks } : loaded;
     });
     const [runtimeStatus, setRuntimeStatus] = useState<GrokRuntimeStatus | null>(null);
@@ -1254,7 +1262,11 @@ export const useArkDesktopRuntime = () => {
             if (updateType === 'plan') {
                 if (isTransientPlanCleanup) return;
                 const plan = parsePlanSteps(update.entries);
-                updateTask(taskId, (task) => ({ ...task, plan, updatedAt: Date.now() }));
+                updateTask(taskId, (task) => ({
+                    ...task,
+                    plan: task.status === 'completed' ? completePlanSteps(plan) || [] : plan,
+                    updatedAt: Date.now(),
+                }));
                 return;
             }
             if (updateType === 'tool_call' || updateType === 'tool_call_update') {

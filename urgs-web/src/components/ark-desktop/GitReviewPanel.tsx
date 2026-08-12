@@ -4,7 +4,10 @@ import {
     GitBranch, GitCommitHorizontal, GitMerge, LoaderCircle, RefreshCw, Sparkles,
     ShieldCheck, Trash2, Upload, X,
 } from 'lucide-react';
-import { type GrokGitAuditEntry, type GrokGitDiff, type GrokGitRemote, type GrokGitStatus, type GrokGitWorktree } from '@/services/grokDesktop';
+import {
+    getGrokGitDiff, getGrokGitStatus, openGrokGitFile, revealGrokGitFile,
+    type GrokGitAuditEntry, type GrokGitDiff, type GrokGitRemote, type GrokGitStatus, type GrokGitWorktree,
+} from '@/services/grokDesktop';
 import type { ArkDesktopTask } from './types';
 import type { ArkDesktopRuntime } from './useArkDesktopRuntime';
 import GitFileTree from './GitFileTree';
@@ -20,6 +23,10 @@ interface GitReviewPanelProps {
 }
 
 const workspaceName = (value: string) => value.split(/[\\/]/).filter(Boolean).pop() || value;
+const normalizeWorkspacePath = (value: string) => {
+    const trimmed = value.trim();
+    return trimmed.length > 1 ? trimmed.replace(/[\\/]+$/, '') : trimmed;
+};
 const NON_GIT_REPOSITORY_NOTICE = '当前工作区不是 Git 仓库，代码变更审查仅适用于 Git 仓库。';
 const isNonGitRepositoryError = (message: string) => {
     const normalized = message.toLowerCase();
@@ -90,8 +97,15 @@ const persistPanelWidth = (value: number) => {
 };
 
 const GitReviewPanel: React.FC<GitReviewPanelProps> = ({ task, runtime, onClose, visible }) => {
+    const taskWorkspace = task.workspace.trim();
+    const reviewWorkspace = (task.sourceWorkspace || task.gitContext?.sourceWorkspace || task.gitContext?.repoRoot || task.workspace).trim();
+    const isSourceReview = Boolean(
+        reviewWorkspace
+        && taskWorkspace
+        && normalizeWorkspacePath(reviewWorkspace) !== normalizeWorkspacePath(taskWorkspace),
+    );
     const [tab, setTab] = useState<ReviewTab>('review');
-    const [status, setStatus] = useState<GrokGitStatus | undefined>(task.gitContext?.status);
+    const [status, setStatus] = useState<GrokGitStatus | undefined>(isSourceReview ? undefined : task.gitContext?.status);
     const [diff, setDiff] = useState<GrokGitDiff | null>(null);
     const [selectedFile, setSelectedFile] = useState('');
     const [diffPath, setDiffPath] = useState('');
@@ -120,7 +134,7 @@ const GitReviewPanel: React.FC<GitReviewPanelProps> = ({ task, runtime, onClose,
 
     const { refreshTaskGitStatus, listTaskGitWorktrees, listTaskGitAudit, listTaskGitRemotes, loadTaskGitDiff } = runtime;
 
-    const currentStatus = status || task.gitContext?.status;
+    const currentStatus = status || (isSourceReview ? undefined : task.gitContext?.status);
     const currentStatusRef = useRef(currentStatus);
     currentStatusRef.current = currentStatus;
     const files = currentStatus?.files || [];
@@ -131,7 +145,8 @@ const GitReviewPanel: React.FC<GitReviewPanelProps> = ({ task, runtime, onClose,
     const selectedFileSet = useMemo(() => new Set(selectedPaths), [selectedPaths]);
     const isReadonly = task.gitContext?.mode === 'readonly';
     const isWorktree = task.gitContext?.mode === 'worktree';
-    const repoRoot = task.gitContext?.repoRoot || task.sourceWorkspace || task.workspace;
+    const repoRoot = reviewWorkspace || task.gitContext?.repoRoot || task.workspace;
+    const isReviewReadonly = isReadonly || isSourceReview;
     const isGitRepository = !gitRepositoryUnavailable && currentStatus?.isRepository !== false;
 
     const clampPanelWidth = useCallback((value: number) => {
@@ -190,7 +205,9 @@ const GitReviewPanel: React.FC<GitReviewPanelProps> = ({ task, runtime, onClose,
         setError('');
         setStatusRefreshState('loading');
         try {
-            const nextStatus = await refreshTaskGitStatus(task.id, includeStats);
+            const nextStatus = isSourceReview
+                ? await getGrokGitStatus(reviewWorkspace, includeStats)
+                : await refreshTaskGitStatus(task.id, includeStats);
             setStatus(nextStatus);
             setStatusRefreshState('ready');
             setGitRepositoryUnavailable(false);
@@ -212,6 +229,10 @@ const GitReviewPanel: React.FC<GitReviewPanelProps> = ({ task, runtime, onClose,
         } catch (nextError) {
             setStatusRefreshState('error');
             const message = nextError instanceof Error ? nextError.message : String(nextError);
+            if (isSourceReview && /工作区不存在|does not exist|not found/i.test(message)) {
+                setNotice('源仓库目录不可用，请重新选择项目目录后刷新。');
+                return;
+            }
             if (task.gitContext?.mode !== 'workspace' && /工作区不存在|does not exist|not found/i.test(message)) {
                 setWorktreeRemoved(true);
                 setNotice('此任务 Worktree 已清理，源仓库仍然保留。');
@@ -227,13 +248,13 @@ const GitReviewPanel: React.FC<GitReviewPanelProps> = ({ task, runtime, onClose,
         } finally {
             setBusy(null);
         }
-    }, [listTaskGitAudit, listTaskGitRemotes, listTaskGitWorktrees, refreshTaskGitStatus, tab, task.gitContext?.mode, task.id]);
+    }, [isSourceReview, listTaskGitAudit, listTaskGitRemotes, listTaskGitWorktrees, refreshTaskGitStatus, reviewWorkspace, tab, task.gitContext?.mode, task.id]);
 
     const refreshRef = useRef(refresh);
     refreshRef.current = refresh;
 
     useEffect(() => {
-        setStatus(task.gitContext?.status);
+        setStatus(isSourceReview ? undefined : task.gitContext?.status);
         setDiffPath('');
         setDiff(null);
         setGitRepositoryUnavailable(false);
@@ -243,7 +264,7 @@ const GitReviewPanel: React.FC<GitReviewPanelProps> = ({ task, runtime, onClose,
         return () => {
             diffRequestIdRef.current += 1;
         };
-    }, [task.id]);
+    }, [isSourceReview, reviewWorkspace, task.id]);
 
     useEffect(() => {
         if (tab !== 'review') void refreshRef.current();
@@ -260,7 +281,9 @@ const GitReviewPanel: React.FC<GitReviewPanelProps> = ({ task, runtime, onClose,
         setError('');
         try {
             // 底层 Git 命令自身负责超时和终止；这里不能只让 UI 超时、却把进程留在后台。
-            const nextDiff = await loadTaskGitDiff(task.id, path, staged);
+            const nextDiff = isSourceReview
+                ? await getGrokGitDiff(reviewWorkspace, path, staged, false)
+                : await loadTaskGitDiff(task.id, path, staged);
             if (diffRequestIdRef.current !== requestId) return;
             if (!nextDiff.patch.trim() && !staged && (currentStatusRef.current?.stagedCount || 0) > 0) {
                 setShowStagedDiff(true);
@@ -294,7 +317,7 @@ const GitReviewPanel: React.FC<GitReviewPanelProps> = ({ task, runtime, onClose,
         } finally {
             if (diffRequestIdRef.current === requestId) setIsDiffLoading(false);
         }
-    }, [loadTaskGitDiff, task.id]);
+    }, [isSourceReview, loadTaskGitDiff, reviewWorkspace, task.id]);
 
     useEffect(() => {
         if (tab !== 'review' || statusRefreshState !== 'ready' || gitRepositoryUnavailable) return;
@@ -336,7 +359,7 @@ const GitReviewPanel: React.FC<GitReviewPanelProps> = ({ task, runtime, onClose,
     const pathsForAction = selectedPaths.length > 0 ? selectedPaths : selectedFile ? [selectedFile] : [];
 
     const stageSelected = () => {
-        if (!pathsForAction.length) return;
+        if (isReviewReadonly || !pathsForAction.length) return;
         askApproval(
             '确认暂存变更',
             `将把 ${pathsForAction.length} 个文件加入 ${workspaceName(task.workspace)} 的 Git 暂存区，不会创建提交。`,
@@ -346,7 +369,7 @@ const GitReviewPanel: React.FC<GitReviewPanelProps> = ({ task, runtime, onClose,
     };
 
     const unstageSelected = () => {
-        if (!pathsForAction.length) return;
+        if (isReviewReadonly || !pathsForAction.length) return;
         askApproval(
             '确认取消暂存',
             `将把 ${pathsForAction.length} 个文件移出暂存区，工作区文件内容不会被删除。`,
@@ -355,12 +378,15 @@ const GitReviewPanel: React.FC<GitReviewPanelProps> = ({ task, runtime, onClose,
         );
     };
 
-    const stageAllChanges = () => askApproval(
-        '确认暂存全部变更',
-        `将把 ${files.length} 个变更文件加入 ${workspaceName(task.workspace)} 的 Git 暂存区，不会创建提交。`,
-        '暂存全部',
-        async () => { await runtime.stageTaskGit(task.id, [], true); },
-    );
+    const stageAllChanges = () => {
+        if (isReviewReadonly) return;
+        return askApproval(
+            '确认暂存全部变更',
+            `将把 ${files.length} 个变更文件加入 ${workspaceName(task.workspace)} 的 Git 暂存区，不会创建提交。`,
+            '暂存全部',
+            async () => { await runtime.stageTaskGit(task.id, [], true); },
+        );
+    };
 
     const gcWorktrees = () => askApproval(
         '确认清理 Worktree 记录',
@@ -370,7 +396,7 @@ const GitReviewPanel: React.FC<GitReviewPanelProps> = ({ task, runtime, onClose,
     );
 
     const discardSelected = () => {
-        if (!pathsForAction.length) return;
+        if (isReviewReadonly || !pathsForAction.length) return;
         askApproval(
             '确认丢弃本地变更',
             `将从 ${workspaceName(task.workspace)} 丢弃 ${pathsForAction.length} 个文件的工作区变更；此操作不会进入 Git 历史，未跟踪文件也不会自动删除。`,
@@ -406,36 +432,44 @@ const GitReviewPanel: React.FC<GitReviewPanelProps> = ({ task, runtime, onClose,
     };
 
     const openFile = (path: string) => {
-        void runFileAction('open-file', () => runtime.openTaskGitFile(task.id, path), '已在系统默认编辑器中打开文件。');
+        void runFileAction('open-file', () => isSourceReview ? openGrokGitFile(reviewWorkspace, path) : runtime.openTaskGitFile(task.id, path), '已在系统默认编辑器中打开文件。');
     };
 
     const openHeadFile = (path: string) => {
-        void runFileAction('open-head-file', () => runtime.openTaskGitFile(task.id, path, 'HEAD'), '已在系统默认编辑器中打开 HEAD 版本。');
+        void runFileAction('open-head-file', () => isSourceReview ? openGrokGitFile(reviewWorkspace, path, 'HEAD') : runtime.openTaskGitFile(task.id, path, 'HEAD'), '已在系统默认编辑器中打开 HEAD 版本。');
     };
 
     const revealInFinder = (path: string) => {
-        void runFileAction('reveal-file', () => runtime.revealTaskGitFile(task.id, path), '已在查找器中显示文件。');
+        void runFileAction('reveal-file', () => isSourceReview ? revealGrokGitFile(reviewWorkspace, path) : runtime.revealTaskGitFile(task.id, path), '已在查找器中显示文件。');
     };
 
-    const stageFile = (path: string) => askApproval(
-        '确认暂存变更',
-        '将把文件 ' + path + ' 加入 ' + workspaceName(task.workspace) + ' 的 Git 暂存区，不会创建提交。',
-        '暂存变更',
-        async () => { await runtime.stageTaskGit(task.id, [path]); },
-    );
+    const stageFile = (path: string) => {
+        if (isReviewReadonly) return;
+        return askApproval(
+            '确认暂存变更',
+            '将把文件 ' + path + ' 加入 ' + workspaceName(task.workspace) + ' 的 Git 暂存区，不会创建提交。',
+            '暂存变更',
+            async () => { await runtime.stageTaskGit(task.id, [path]); },
+        );
+    };
 
-    const discardFile = (path: string) => askApproval(
-        '确认放弃本地变更',
-        '将从 ' + workspaceName(task.workspace) + ' 放弃文件 ' + path + ' 的工作区变更；此操作不会进入 Git 历史。',
-        '放弃更改',
-        async () => { await runtime.discardTaskGit(task.id, [path], false, true); },
-    );
+    const discardFile = (path: string) => {
+        if (isReviewReadonly) return;
+        return askApproval(
+            '确认放弃本地变更',
+            '将从 ' + workspaceName(task.workspace) + ' 放弃文件 ' + path + ' 的工作区变更；此操作不会进入 Git 历史。',
+            '放弃更改',
+            async () => { await runtime.discardTaskGit(task.id, [path], false, true); },
+        );
+    };
 
     const addToGitignore = (path: string) => {
+        if (isReviewReadonly) return;
         void runSafe('gitignore', () => runtime.addTaskGitToIgnore(task.id, path));
     };
 
     const submitCommit = () => {
+        if (isReviewReadonly) return;
         const message = commitMessage.trim();
         if (!message) {
             setError('请填写 Commit message');
@@ -454,6 +488,7 @@ const GitReviewPanel: React.FC<GitReviewPanelProps> = ({ task, runtime, onClose,
     };
 
     const generateCommitMessage = async () => {
+        if (isReviewReadonly) return;
         setBusy('commit-message-ai');
         setError('');
         setNotice('');
@@ -469,6 +504,7 @@ const GitReviewPanel: React.FC<GitReviewPanelProps> = ({ task, runtime, onClose,
     };
 
     const push = () => {
+        if (isReviewReadonly) return;
         const branch = task.gitContext?.branch || currentStatus?.branch || '当前分支';
         askApproval(
             '确认推送到远端',
@@ -480,12 +516,15 @@ const GitReviewPanel: React.FC<GitReviewPanelProps> = ({ task, runtime, onClose,
         );
     };
 
-    const stash = () => askApproval(
-        '确认收入 Stash',
-        `将把 ${workspaceName(task.workspace)} 的当前变更保存到本地 Stash，工作区会恢复干净；不会推送到远端。`,
-        '创建 Stash',
-        async () => { await runtime.stashTaskGit(task.id, `URGS task ${task.id}`, true); },
-    );
+    const stash = () => {
+        if (isReviewReadonly) return;
+        return askApproval(
+            '确认收入 Stash',
+            `将把 ${workspaceName(task.workspace)} 的当前变更保存到本地 Stash，工作区会恢复干净；不会推送到远端。`,
+            '创建 Stash',
+            async () => { await runtime.stashTaskGit(task.id, `URGS task ${task.id}`, true); },
+        );
+    };
 
     const syncBase = () => {
         const baseRef = task.gitContext?.baseRef || 'main';
@@ -577,10 +616,11 @@ const GitReviewPanel: React.FC<GitReviewPanelProps> = ({ task, runtime, onClose,
                 <div className="flex shrink-0 items-center gap-1.5">
                     <button type="button" onClick={() => setIsFileNavOpen((current) => !current)} aria-expanded={isFileNavOpen} aria-controls="git-file-navigation" className={`flex items-center gap-1.5 rounded-lg border px-2.5 py-2 text-[11px] font-medium transition ${isFileNavOpen ? 'border-indigo-200 bg-indigo-50 text-indigo-700' : 'border-slate-200 bg-white text-slate-600 hover:bg-slate-50'}`} title={isFileNavOpen ? '关闭文件导航' : '打开文件导航'}>{isFileNavOpen ? <PanelLeftClose size={13} /> : <PanelLeftOpen size={13} />}{isFileNavOpen ? '隐藏文件导航' : '文件导航'}</button>
                     <button type="button" onClick={() => void refresh()} disabled={busy !== null || isDiffLoading} className="flex items-center gap-1.5 rounded-lg border border-slate-200 bg-white px-2.5 py-2 text-[11px] font-medium text-slate-600 hover:bg-slate-50 disabled:opacity-50"><RefreshCw size={13} className={busy === 'refresh' ? 'animate-spin' : ''} />刷新</button>
-                    <button type="button" onClick={stageAllChanges} disabled={isReadonly || busy !== null || files.length === 0} className="rounded-lg bg-slate-900 px-2.5 py-2 text-[11px] font-medium text-white hover:bg-slate-700 disabled:opacity-40">暂存全部</button>
-                    <button type="button" onClick={() => void runSafe('fetch', () => runtime.fetchTaskGit(task.id))} disabled={isReadonly || busy !== null} className="ml-auto flex items-center gap-1 rounded-lg px-2 py-2 text-[11px] text-slate-500 hover:bg-slate-100 disabled:opacity-40">{isFetching ? <LoaderCircle size={13} className="animate-spin" /> : <Download size={13} />}{isFetching ? '正在拉取…' : `拉取 ${behindCount}`}</button>
+                    <button type="button" onClick={stageAllChanges} disabled={isReviewReadonly || busy !== null || files.length === 0} className="rounded-lg bg-slate-900 px-2.5 py-2 text-[11px] font-medium text-white hover:bg-slate-700 disabled:opacity-40">暂存全部</button>
+                    <button type="button" onClick={() => void runSafe('fetch', () => runtime.fetchTaskGit(task.id))} disabled={isReviewReadonly || busy !== null} className="ml-auto flex items-center gap-1 rounded-lg px-2 py-2 text-[11px] text-slate-500 hover:bg-slate-100 disabled:opacity-40">{isFetching ? <LoaderCircle size={13} className="animate-spin" /> : <Download size={13} />}{isFetching ? '正在拉取…' : `拉取 ${behindCount}`}</button>
                 </div>
                 {isReadonly && <div className="flex shrink-0 items-start gap-2 rounded-xl border border-slate-200 bg-slate-50 px-3 py-2.5 text-[11px] leading-5 text-slate-500"><Eye size={14} className="mt-0.5 shrink-0" />只读分析任务只提供状态和 Diff，不允许修改仓库。</div>}
+                {isSourceReview && <div className="flex shrink-0 items-start gap-2 rounded-xl border border-indigo-200 bg-indigo-50 px-3 py-2.5 text-[11px] leading-5 text-indigo-700"><Eye size={14} className="mt-0.5 shrink-0" /><span>当前按源仓库目录对比全部 Git 变更：<span className="font-mono">{reviewWorkspace}</span>。任务实际目录为 <span className="font-mono">{taskWorkspace}</span>；为避免误操作，本视图只读。</span></div>}
                 <div className={`grid min-h-0 flex-1 ${isFileNavOpen ? 'grid-cols-[minmax(132px,36%)_minmax(0,1fr)] gap-2' : 'grid-cols-1'}`}>
                     {isFileNavOpen && <div id="git-file-navigation" className="flex min-h-0 flex-col overflow-hidden rounded-xl border border-slate-200 bg-white">
                         <div className="shrink-0 border-b border-slate-100 p-1.5">
@@ -609,10 +649,10 @@ const GitReviewPanel: React.FC<GitReviewPanelProps> = ({ task, runtime, onClose,
                                 onStageFile={stageFile}
                                 onAddToGitignore={addToGitignore}
                                 onRevealInFinder={revealInFinder}
-                                readonly={isReadonly}
+                                readonly={isReviewReadonly}
                             />
                         </div>
-                        {files.length > 0 && <div className="flex shrink-0 flex-wrap items-center gap-1 border-t border-slate-100 p-1.5"><span className="mr-auto w-full truncate px-1 text-[10px] text-slate-400">已选 {selectedPaths.length || (selectedFile ? 1 : 0)} 个文件</span><button type="button" onClick={stageSelected} disabled={isReadonly || busy !== null || !pathsForAction.length} className="rounded-lg border border-slate-200 bg-white px-2 py-1.5 text-[10px] text-slate-600 hover:bg-slate-50 disabled:opacity-40">暂存</button><button type="button" onClick={unstageSelected} disabled={isReadonly || busy !== null || !pathsForAction.length} className="rounded-lg border border-slate-200 bg-white px-2 py-1.5 text-[10px] text-slate-600 hover:bg-slate-50 disabled:opacity-40">取消暂存</button><button type="button" onClick={discardSelected} disabled={isReadonly || busy !== null || !pathsForAction.length} className="rounded-lg border border-red-200 bg-white px-2 py-1.5 text-[10px] text-red-600 hover:bg-red-50 disabled:opacity-40">丢弃</button></div>}
+                        {files.length > 0 && <div className="flex shrink-0 flex-wrap items-center gap-1 border-t border-slate-100 p-1.5"><span className="mr-auto w-full truncate px-1 text-[10px] text-slate-400">已选 {selectedPaths.length || (selectedFile ? 1 : 0)} 个文件</span><button type="button" onClick={stageSelected} disabled={isReviewReadonly || busy !== null || !pathsForAction.length} className="rounded-lg border border-slate-200 bg-white px-2 py-1.5 text-[10px] text-slate-600 hover:bg-slate-50 disabled:opacity-40">暂存</button><button type="button" onClick={unstageSelected} disabled={isReviewReadonly || busy !== null || !pathsForAction.length} className="rounded-lg border border-slate-200 bg-white px-2 py-1.5 text-[10px] text-slate-600 hover:bg-slate-50 disabled:opacity-40">取消暂存</button><button type="button" onClick={discardSelected} disabled={isReviewReadonly || busy !== null || !pathsForAction.length} className="rounded-lg border border-red-200 bg-white px-2 py-1.5 text-[10px] text-red-600 hover:bg-red-50 disabled:opacity-40">丢弃</button></div>}
                     </div>}
                     <div className="min-h-0 overflow-y-auto rounded-xl border border-slate-200 bg-[#fbfbfc] p-2">
                         {diff?.patch ? <GitDiffViewer
@@ -639,11 +679,11 @@ const GitReviewPanel: React.FC<GitReviewPanelProps> = ({ task, runtime, onClose,
 
             {tab === 'commit' && <section className="space-y-3">
                 <div className="rounded-xl border border-slate-200 bg-white p-3"><div className="flex items-center gap-2 text-xs font-semibold text-slate-700"><GitCommitHorizontal size={15} className="text-indigo-600" />提交前检查</div><p className="mt-2 text-[11px] leading-5 text-slate-500">{currentStatus?.stagedCount || 0} 个已暂存文件，{currentStatus?.modifiedCount || 0} 个工作区修改，{currentStatus?.untrackedCount || 0} 个未跟踪文件。</p>{remotes.length > 0 ? <div className="mt-3 space-y-1.5 border-t border-slate-100 pt-3">{remotes.map((remote) => <div key={remote.name} className="rounded-lg bg-slate-50 px-2.5 py-2"><div className="flex items-center gap-2 text-[10px]"><span className="rounded-full bg-indigo-50 px-1.5 py-0.5 font-medium text-indigo-700">{remote.provider}</span><span className="font-medium text-slate-700">{remote.name}</span><span className="text-slate-400">{remote.host || '本地/自定义远端'}</span><span className="ml-auto text-slate-400">{remote.capabilities.join(' · ')}</span></div><p className="mt-1 truncate font-mono text-[10px] text-slate-500" title={remote.repository || remote.fetchUrl || remote.pushUrl || undefined}>{remote.repository || remote.fetchUrl || remote.pushUrl}</p>{remote.webUrl && <p className="mt-1 truncate text-[10px] text-slate-400">Web：{remote.webUrl}</p>}</div>)}</div> : <p className="mt-2 text-[10px] text-slate-400">未配置远端；Fetch/Push/Provider 操作不可用。</p>}<p className="mt-3 border-t border-slate-100 pt-3 text-[10px] leading-4 text-slate-400">当前 Provider 适配器只负责识别远端并提供 Git Fetch/Push 能力；PR/MR 不会被伪装成原生 Git 操作，后续需接入对应 Provider API。</p></div>
-                <div className="rounded-xl border border-slate-200 bg-white p-3"><div className="mb-2 flex items-center justify-between gap-2"><label htmlFor="git-commit-message" className="text-xs font-semibold text-slate-700">Commit message</label><button type="button" onClick={() => void generateCommitMessage()} disabled={isReadonly || busy !== null || files.length === 0} className="flex h-7 w-7 items-center justify-center rounded-lg border border-indigo-100 bg-indigo-50 text-indigo-600 hover:bg-indigo-100 disabled:opacity-40" title="根据当前 Diff 生成 Commit message" aria-label="根据当前 Diff 生成 Commit message">{busy === 'commit-message-ai' ? <LoaderCircle size={14} className="animate-spin" /> : <Sparkles size={14} />}</button></div><textarea id="git-commit-message" value={commitMessage} onChange={(event) => setCommitMessage(event.target.value)} rows={4} placeholder="Commit message" className="w-full resize-y rounded-lg border border-slate-200 bg-white px-3 py-2.5 text-sm text-slate-800 outline-none focus:border-indigo-300 focus:ring-2 focus:ring-indigo-100" /></div>
-                <div className="space-y-2 rounded-xl border border-slate-200 bg-white p-3 text-[11px] text-slate-600"><label className="flex items-center gap-2"><input type="checkbox" checked={stageAll} onChange={(event) => setStageAll(event.target.checked)} />提交前暂存全部变更</label><label className="flex items-center gap-2"><input type="checkbox" checked={amend} onChange={(event) => setAmend(event.target.checked)} />修改最近一次提交（Amend）</label><label className="flex items-center gap-2"><input type="checkbox" checked={signoff} onChange={(event) => setSignoff(event.target.checked)} />追加 Signed-off-by</label></div>
-                <button type="button" onClick={submitCommit} disabled={isReadonly || busy !== null || !commitMessage.trim()} className="flex w-full items-center justify-center gap-2 rounded-xl bg-slate-900 px-3 py-2.5 text-xs font-medium text-white hover:bg-slate-700 disabled:opacity-40"><GitCommitHorizontal size={14} />创建提交</button>
-                <div className="flex gap-2"><button type="button" onClick={() => void runSafe('fetch', () => runtime.fetchTaskGit(task.id))} disabled={isReadonly || busy !== null} className="flex flex-1 items-center justify-center gap-1.5 rounded-lg border border-slate-200 bg-white px-2.5 py-2 text-[11px] text-slate-600 hover:bg-slate-50 disabled:opacity-40" aria-label={isFetching ? '正在拉取' : `拉取 ${behindCount} 个提交`}>{isFetching ? <LoaderCircle size={13} className="animate-spin" /> : <Download size={13} />}{isFetching ? '正在拉取…' : `拉取 ${behindCount}`}</button><button type="button" onClick={push} disabled={isReadonly || busy !== null || !currentStatus?.headCommit} className="flex flex-1 items-center justify-center gap-1.5 rounded-lg border border-indigo-200 bg-indigo-50 text-[11px] text-indigo-700 hover:bg-indigo-100 disabled:opacity-40" aria-label={isPushing ? '正在推送' : `推送 ${aheadCount} 个提交`}>{isPushing ? <LoaderCircle size={13} className="animate-spin" /> : <Upload size={13} />}{isPushing ? '正在推送…' : `推送 ${aheadCount}`}</button></div>
-                <button type="button" onClick={stash} disabled={isReadonly || busy !== null || !currentStatus?.isDirty} className="flex w-full items-center justify-center gap-1.5 rounded-lg border border-slate-200 bg-white px-2.5 py-2 text-[11px] text-slate-600 hover:bg-slate-50 disabled:opacity-40"><Archive size={13} />Stash 当前变更</button>
+                <div className="rounded-xl border border-slate-200 bg-white p-3"><div className="mb-2 flex items-center justify-between gap-2"><label htmlFor="git-commit-message" className="text-xs font-semibold text-slate-700">Commit message</label><button type="button" onClick={() => void generateCommitMessage()} disabled={isReviewReadonly || busy !== null || files.length === 0} className="flex h-7 w-7 items-center justify-center rounded-lg border border-indigo-100 bg-indigo-50 text-indigo-600 hover:bg-indigo-100 disabled:opacity-40" title="根据当前 Diff 生成 Commit message" aria-label="根据当前 Diff 生成 Commit message">{busy === 'commit-message-ai' ? <LoaderCircle size={14} className="animate-spin" /> : <Sparkles size={14} />}</button></div><textarea id="git-commit-message" value={commitMessage} onChange={(event) => setCommitMessage(event.target.value)} rows={4} placeholder="Commit message" className="w-full resize-y rounded-lg border border-slate-200 bg-white px-3 py-2.5 text-sm text-slate-800 outline-none focus:border-indigo-300 focus:ring-2 focus:ring-indigo-100" /></div>
+                <div className="space-y-2 rounded-xl border border-slate-200 bg-white p-3 text-[11px] text-slate-600"><label className="flex items-center gap-2"><input type="checkbox" checked={stageAll} onChange={(event) => setStageAll(event.target.checked)} disabled={isReviewReadonly} />提交前暂存全部变更</label><label className="flex items-center gap-2"><input type="checkbox" checked={amend} onChange={(event) => setAmend(event.target.checked)} disabled={isReviewReadonly} />修改最近一次提交（Amend）</label><label className="flex items-center gap-2"><input type="checkbox" checked={signoff} onChange={(event) => setSignoff(event.target.checked)} disabled={isReviewReadonly} />追加 Signed-off-by</label></div>
+                <button type="button" onClick={submitCommit} disabled={isReviewReadonly || busy !== null || !commitMessage.trim()} className="flex w-full items-center justify-center gap-2 rounded-xl bg-slate-900 px-3 py-2.5 text-xs font-medium text-white hover:bg-slate-700 disabled:opacity-40"><GitCommitHorizontal size={14} />创建提交</button>
+                <div className="flex gap-2"><button type="button" onClick={() => void runSafe('fetch', () => runtime.fetchTaskGit(task.id))} disabled={isReviewReadonly || busy !== null} className="flex flex-1 items-center justify-center gap-1.5 rounded-lg border border-slate-200 bg-white px-2.5 py-2 text-[11px] text-slate-600 hover:bg-slate-50 disabled:opacity-40" aria-label={isFetching ? '正在拉取' : `拉取 ${behindCount} 个提交`}>{isFetching ? <LoaderCircle size={13} className="animate-spin" /> : <Download size={13} />}{isFetching ? '正在拉取…' : `拉取 ${behindCount}`}</button><button type="button" onClick={push} disabled={isReviewReadonly || busy !== null || !currentStatus?.headCommit} className="flex flex-1 items-center justify-center gap-1.5 rounded-lg border border-indigo-200 bg-indigo-50 text-[11px] text-indigo-700 hover:bg-indigo-100 disabled:opacity-40" aria-label={isPushing ? '正在推送' : `推送 ${aheadCount} 个提交`}>{isPushing ? <LoaderCircle size={13} className="animate-spin" /> : <Upload size={13} />}{isPushing ? '正在推送…' : `推送 ${aheadCount}`}</button></div>
+                <button type="button" onClick={stash} disabled={isReviewReadonly || busy !== null || !currentStatus?.isDirty} className="flex w-full items-center justify-center gap-1.5 rounded-lg border border-slate-200 bg-white px-2.5 py-2 text-[11px] text-slate-600 hover:bg-slate-50 disabled:opacity-40"><Archive size={13} />Stash 当前变更</button>
                 <div className="rounded-xl border border-amber-200 bg-amber-50 px-3 py-2.5 text-[11px] leading-5 text-amber-800"><ShieldCheck size={13} className="mr-1 inline" />提交、推送和丢弃都会弹出明确审批，并记录操作者、任务、分支和目标路径。</div>
             </section>}
 

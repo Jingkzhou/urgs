@@ -64,6 +64,15 @@ const TaskPlanPanel: React.FC<TaskPlanPanelProps> = ({ plan, taskStatus, trigger
     const activeStepIndex = taskStatus === 'running' || taskStatus === 'waiting_authorization'
         ? plan.findIndex((step) => step.status === 'in_progress')
         : -1;
+    const stageStatusText = activeStepIndex >= 0
+        ? followCurrentStep ? '已锁定当前执行阶段' : '已解除阶段锁定'
+        : taskStatus === 'completed'
+            ? '执行已完成'
+            : taskStatus === 'failed'
+                ? '执行未完成'
+                : taskStatus === 'cancelled'
+                    ? '执行已停止'
+                    : '等待执行阶段更新';
 
     useLayoutEffect(() => {
         if (!open) return undefined;
@@ -159,7 +168,7 @@ const TaskPlanPanel: React.FC<TaskPlanPanelProps> = ({ plan, taskStatus, trigger
                 <div className="flex shrink-0 items-center gap-2"><span className="text-xs text-slate-400">{statusText}</span><button type="button" onClick={() => setOpen(false)} className="rounded-md p-1 text-slate-400 hover:bg-slate-100 hover:text-slate-700" aria-label="关闭执行计划"><X size={15} /></button></div>
             </div>
             <div className="shrink-0 border-b border-slate-100 px-4 py-3"><div className="h-1.5 overflow-hidden rounded-full bg-slate-100"><div className="h-full rounded-full bg-slate-800 transition-all duration-300" style={{ width: `${progress}%` }} /></div></div>
-            <div className="flex shrink-0 items-center justify-between gap-3 border-b border-slate-100 px-4 py-2 text-xs"><span className={followCurrentStep ? 'text-blue-600' : 'text-slate-400'}>{activeStepIndex >= 0 ? followCurrentStep ? '已锁定当前执行阶段' : '已解除阶段锁定' : '等待执行阶段更新'}</span>{activeStepIndex >= 0 && !followCurrentStep && <button type="button" onClick={() => setFollowCurrentStep(true)} className="flex shrink-0 items-center gap-1 rounded-md px-1.5 py-1 font-medium text-slate-600 hover:bg-slate-100 hover:text-slate-900"><LocateFixed size={13} />定位当前阶段</button>}</div>
+            <div className="flex shrink-0 items-center justify-between gap-3 border-b border-slate-100 px-4 py-2 text-xs"><span className={activeStepIndex >= 0 && followCurrentStep ? 'text-blue-600' : 'text-slate-400'}>{stageStatusText}</span>{activeStepIndex >= 0 && !followCurrentStep && <button type="button" onClick={() => setFollowCurrentStep(true)} className="flex shrink-0 items-center gap-1 rounded-md px-1.5 py-1 font-medium text-slate-600 hover:bg-slate-100 hover:text-slate-900"><LocateFixed size={13} />定位当前阶段</button>}</div>
             <div ref={planListRef} className="min-h-0 flex-1 overflow-y-auto overscroll-contain px-2 py-2" aria-label="执行计划步骤" onScroll={() => { if (!autoScrollingRef.current) setFollowCurrentStep(false); }}>{plan.length ? plan.map((step, index) => { const displayStatus = getDisplayStepStatus(step.status, taskStatus); return <div key={`${step.content}-${index}`} ref={index === activeStepIndex ? activeStepRef : undefined} className={`flex gap-2.5 rounded-xl px-2.5 py-2.5 ${index === activeStepIndex ? 'bg-blue-50/80' : ''}`}><span className="mt-0.5 shrink-0">{stepIcon(displayStatus)}</span><div className="min-w-0 flex-1"><div className={`text-sm leading-5 ${displayStatus === 'completed' || displayStatus === 'cancelled' ? 'text-slate-400 line-through' : 'text-slate-700'}`}>{step.content}</div><div className="mt-0.5 text-[11px] text-slate-400">{getDisplayStepLabel(step.status, taskStatus)}{step.priority ? ` · ${step.priority === 'high' ? '高优先级' : step.priority === 'low' ? '低优先级' : '中优先级'}` : ''}</div></div></div>; }) : <div className="px-3 py-8 text-center text-sm text-slate-400">{taskStatus === 'running' ? '智能体正在梳理任务，计划生成后会实时显示在这里。' : '本次任务没有生成执行计划。'}</div>}</div>
         </div>
     </>, document.body) : null;
