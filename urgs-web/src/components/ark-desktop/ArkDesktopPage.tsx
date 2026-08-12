@@ -1301,7 +1301,10 @@ const TaskComposer: React.FC<{ task?: ArkDesktopTask; runtime: ReturnType<typeof
     const isNewTask = !task;
     const isRunning = task?.status === 'running';
     const isWaitingAuthorization = task?.status === 'waiting_authorization';
-    const canQueuePrompt = Boolean(isRunning && task?.engine !== 'headless' && task.sessionId);
+    const isHeadlessRunning = isRunning && task?.engine === 'headless';
+    // 会话未就绪时消息进入前端待发队列，会话就绪后按序补发，因此无需等待 sessionId。
+    const canQueuePrompt = isRunning && task?.engine !== 'headless';
+    const pendingCount = task?.messages.filter((message) => message.pendingPromptId).length || 0;
     const execution = runtime.snapshot.settings.execution;
     const workspace = isNewTask
         ? newTask?.workspace || ''
@@ -1309,12 +1312,12 @@ const TaskComposer: React.FC<{ task?: ArkDesktopTask; runtime: ReturnType<typeof
             ? task.workspace
             : runtime.snapshot.settings.workspace;
     const canSubmit = isNewTask
-        ? !sending && (!!value.trim() || (execution.engine === 'headless' && execution.promptMode !== 'text'))
-        : !isWaitingAuthorization && !sending && !!value.trim();
+        ? (!!value.trim() || (execution.engine === 'headless' && execution.promptMode !== 'text'))
+        : !isWaitingAuthorization && !!value.trim();
     return <div className="sticky bottom-0 mt-7 bg-gradient-to-t from-white via-white to-white/85 pt-5">
         {isNewTask && newTask?.attachments.length ? <div className="mb-2 flex flex-wrap gap-2">{newTask.attachments.map((path) => <span key={path} title={path} className="flex max-w-72 items-center gap-1.5 rounded-lg border border-slate-200 bg-white px-2.5 py-1.5 text-xs text-slate-600"><Paperclip size={13} /><span className="truncate">{path.split(/[\\/]/).pop()}</span><button type="button" onClick={() => newTask.setAttachments((current) => current.filter((item) => item !== path))} aria-label="移除附件"><X size={13} /></button></span>)}</div> : null}
         <div className="rounded-[22px] border border-slate-200 bg-white p-2 shadow-[0_10px_28px_rgba(15,23,42,0.09)] transition focus-within:border-slate-300 focus-within:shadow-[0_12px_34px_rgba(15,23,42,0.12)]">
-            <ConversationPromptInput value={value} commands={task?.availableCommands?.length ? task.availableCommands : runtime.availableCommands} onChange={onChange} onSubmit={onSubmit} disabled={(isRunning && !canQueuePrompt) || isWaitingAuthorization || sending} slashDisabled={task?.engine === 'headless' || (isNewTask && execution.engine === 'headless')} placeholder={isNewTask ? '描述希望智能体完成的任务，输入 / 查看会话命令…' : isWaitingAuthorization ? '请先解锁本地模型密钥…' : canQueuePrompt ? '继续补充消息，将按发送顺序执行…' : task?.sessionId ? '继续补充任务要求，输入 / 查看会话命令…' : '输入指令，将尝试恢复原历史会话…'} rows={2} />
+            <ConversationPromptInput value={value} commands={task?.availableCommands?.length ? task.availableCommands : runtime.availableCommands} onChange={onChange} onSubmit={onSubmit} disabled={isWaitingAuthorization || isHeadlessRunning} slashDisabled={task?.engine === 'headless' || (isNewTask && execution.engine === 'headless')} placeholder={isNewTask ? '描述希望智能体完成的任务，输入 / 查看会话命令…' : isWaitingAuthorization ? '请先解锁本地模型密钥…' : canQueuePrompt ? '继续补充消息，将按发送顺序执行…' : isHeadlessRunning ? '任务正在执行，完成后可继续输入…' : task?.sessionId ? '继续补充任务要求，输入 / 查看会话命令…' : '输入指令，将尝试恢复原历史会话…'} rows={2} />
             <div className={`flex flex-nowrap items-center gap-2 px-1 ${isNewTask ? 'pt-1' : 'pb-1'}`}>
                 <div className="relative flex min-w-0 flex-1 flex-nowrap items-center gap-1 [&>div]:min-w-0">
                     {isNewTask && newTask ? <>
@@ -1354,7 +1357,7 @@ const TaskComposer: React.FC<{ task?: ArkDesktopTask; runtime: ReturnType<typeof
                         <TaskReasoningEffortPicker task={task} runtime={runtime} disabled={isRunning || isWaitingAuthorization || sending} />
                     </> : null}
                 </div>
-                <div className="flex shrink-0 flex-nowrap items-center gap-2 whitespace-nowrap">{task && <ContextUsageMenu task={task} runtime={runtime} />}<span className="hidden max-w-40 truncate text-[11px] text-slate-400 sm:inline">{canQueuePrompt ? '执行中，可继续追加消息' : isRunning ? '任务正在执行' : isWaitingAuthorization ? '等待本地密钥解锁' : isNewTask ? 'Enter 发送' : task?.sessionId ? 'Enter 发送' : '发送时恢复历史会话'}</span>{isRunning ? <><button type="button" onClick={() => void onCancel?.()} className="flex h-8 shrink-0 items-center gap-1.5 rounded-lg px-2.5 text-xs font-medium text-red-600 hover:bg-red-50"><CircleStop size={15} />停止任务</button>{canQueuePrompt ? <button type="button" disabled={!canSubmit} onClick={() => void onSubmit()} aria-label="追加消息" title="追加消息" className="flex h-8 w-8 shrink-0 items-center justify-center rounded-full bg-slate-900 text-white transition hover:bg-slate-700 disabled:cursor-not-allowed disabled:opacity-35">{sending ? <LoaderCircle size={15} className="animate-spin" /> : <Send size={15} />}</button> : null}</> : <button type="button" disabled={!canSubmit} onClick={() => void onSubmit()} className="flex h-8 w-8 shrink-0 items-center justify-center rounded-full bg-slate-900 text-white transition hover:bg-slate-700 disabled:cursor-not-allowed disabled:opacity-35">{sending ? <LoaderCircle size={15} className="animate-spin" /> : <Send size={15} />}</button>}</div>
+                <div className="flex shrink-0 flex-nowrap items-center gap-2 whitespace-nowrap">{task && <ContextUsageMenu task={task} runtime={runtime} />}<span className="hidden max-w-40 truncate text-[11px] text-slate-400 sm:inline">{pendingCount > 0 ? `已排队 ${pendingCount} 条，会话就绪后按序发送…` : canQueuePrompt ? '执行中，可继续追加消息' : isRunning ? '任务正在执行' : isWaitingAuthorization ? '等待本地密钥解锁' : isNewTask ? 'Enter 发送' : task?.sessionId ? 'Enter 发送' : '发送时恢复历史会话'}</span>{isRunning ? <><button type="button" onClick={() => void onCancel?.()} className="flex h-8 shrink-0 items-center gap-1.5 rounded-lg px-2.5 text-xs font-medium text-red-600 hover:bg-red-50"><CircleStop size={15} />停止任务</button><button type="button" disabled={!canSubmit} onClick={() => void onSubmit()} aria-label="追加消息" title="追加消息" className="flex h-8 w-8 shrink-0 items-center justify-center rounded-full bg-slate-900 text-white transition hover:bg-slate-700 disabled:cursor-not-allowed disabled:opacity-35">{sending ? <LoaderCircle size={15} className="animate-spin" /> : <Send size={15} />}</button></> : <button type="button" disabled={!canSubmit} onClick={() => void onSubmit()} className="flex h-8 w-8 shrink-0 items-center justify-center rounded-full bg-slate-900 text-white transition hover:bg-slate-700 disabled:cursor-not-allowed disabled:opacity-35">{sending ? <LoaderCircle size={15} className="animate-spin" /> : <Send size={15} />}</button>}</div>
             </div>
         </div>
         <p className="mt-2 text-center text-[11px] text-slate-400">智能体可能会出错，请核实重要信息与工具操作。</p>
@@ -1420,13 +1423,19 @@ const TaskView: React.FC<{ task?: ArkDesktopTask; runtime: ReturnType<typeof use
         }
         const prompt = value.trim();
         if (!prompt) return false;
-        setSending(true);
-        try {
-            await runtime.sendFollowUp(task!.id, prompt);
-        } catch {
-            // 会话级错误由运行时写入当前任务，避免影响其他并发任务。
-        } finally {
-            setSending(false);
+        if (task?.sessionId || task?.engine === 'headless') {
+            setSending(true);
+            try {
+                await runtime.sendFollowUp(task!.id, prompt);
+            } catch {
+                // 会话级错误由运行时写入当前任务，避免影响其他并发任务。
+            } finally {
+                setSending(false);
+            }
+        } else {
+            // 会话尚未就绪（新任务启动中/历史会话待恢复）：进入前端待发队列，
+            // 会话就绪后按发送顺序自动补发，输入框立即可继续输入。
+            runtime.enqueuePendingPrompt(task!.id, prompt);
         }
         return true;
     };

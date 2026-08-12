@@ -799,6 +799,10 @@ export const useArkDesktopRuntime = () => {
     const subagentBySessionIdRef = useRef(new Map<string, string>());
     const activePromptRequestsRef = useRef(new Map<string, string[]>());
     const pendingTaskCancellationsRef = useRef(new Map<string, Promise<void>>());
+    // 会话尚未就绪时前端缓存的待发消息队列（按任务先进先出），会话就绪后由
+    // flushPendingPromptsRef 逐条补发到 Rust 执行队列。
+    const pendingPromptsRef = useRef(new Map<string, Array<{ prompt: string; displayPrompt: string }>>());
+    const flushPendingPromptsRef = useRef<(taskId: string) => void>(() => undefined);
     const planByTaskIdRef = useRef(new Map<string, ArkDesktopPlanStep[]>());
     const snapshotRef = useRef(snapshot);
     const capabilityRequestIdRef = useRef(0);
@@ -846,11 +850,17 @@ export const useArkDesktopRuntime = () => {
                 const settled = settleForegroundActivities(task, terminalStatus);
                 return error ? { ...settled, error } : settled;
             });
+            // 兜底收尾（如会话整体结束事件）：该任务已无进行中的 prompt，接续待发队列。
+            flushPendingPromptsRef.current(taskId);
             return;
         }
         const remainingRequests = activeRequests.filter((_, index) => index !== requestIndex);
         if (remainingRequests.length > 0) activePromptRequestsRef.current.set(taskId, remainingRequests);
-        else activePromptRequestsRef.current.delete(taskId);
+        else {
+            activePromptRequestsRef.current.delete(taskId);
+            // 最后一条 prompt 已结束：接续前端待发队列中的下一条消息。
+            flushPendingPromptsRef.current(taskId);
+        }
         updateTask(taskId, (task) => {
             if (cancelledTaskIdsRef.current.has(taskId)) return task;
             if (remainingRequests.length > 0) {
@@ -1073,10 +1083,18 @@ export const useArkDesktopRuntime = () => {
                 const latestMessage = task.messages[task.messages.length - 1];
                 const alreadyRendered = startedEntry && latestMessage?.role === 'user'
                     && latestMessage.content.trim() === startedEntry.text.trim();
+                const pendingMessage = startedEntry
+                    ? task.messages.find((message) => message.pendingPromptId
+                        && message.content.trim() === startedEntry.text.trim())
+                    : undefined;
                 const messages = startedEntry
                     && !alreadyRendered
                     && !task.messages.some((message) => message.queueEntryId === startedEntry.id)
-                    ? [...task.messages, {
+                    ? pendingMessage
+                        ? task.messages.map((message) => message.id === pendingMessage.id
+                            ? { ...message, pendingPromptId: undefined, queueEntryId: startedEntry.id }
+                            : message)
+                        : [...task.messages, {
                         id: createId('message'),
                         role: 'user' as const,
                         content: startedEntry.text,
@@ -2834,6 +2852,7 @@ export const useArkDesktopRuntime = () => {
         const clientCommand = task.engine === 'headless' ? undefined : parseClientSessionCommand(prompt);
         if (clientCommand?.type === 'fork') {
             await forkTask(taskId);
+            flushPendingPromptsRef.current(taskId);
             return;
         }
         if (clientCommand?.type === 'view-plan') {
@@ -2852,6 +2871,7 @@ export const useArkDesktopRuntime = () => {
                 }],
                 updatedAt: Date.now(),
             }));
+            flushPendingPromptsRef.current(taskId);
             return;
         }
         if (clientCommand?.type === 'plan' && !clientCommand.prompt) {
@@ -2859,6 +2879,7 @@ export const useArkDesktopRuntime = () => {
             await ensureTaskSessionMounted(taskId);
             await setGrokSessionMode(task.sessionId, 'plan', { taskId });
             updateTask(taskId, (value) => ({ ...value, interactionMode: 'plan', error: undefined, updatedAt: Date.now() }));
+            flushPendingPromptsRef.current(taskId);
             return;
         }
         const effectivePrompt = clientCommand?.type === 'plan' ? clientCommand.prompt : prompt;
@@ -2973,7 +2994,11 @@ export const useArkDesktopRuntime = () => {
                 modelKeyAuthorization: undefined,
                 messages: shouldQueue
                     ? value.messages
-                    : [...value.messages, { id: createId('message'), role: 'user', content: displayPrompt, createdAt: promptStartedAt }],
+                    : value.messages.some((message) => message.pendingPromptId && message.content.trim() === displayPrompt.trim())
+                        ? value.messages.map((message) => message.pendingPromptId && message.content.trim() === displayPrompt.trim()
+                            ? { ...message, pendingPromptId: undefined }
+                            : message)
+                        : [...value.messages, { id: createId('message'), role: 'user', content: displayPrompt, createdAt: promptStartedAt }],
                 updatedAt: promptStartedAt,
             }));
             if (task.engine === 'headless') {
@@ -3030,6 +3055,9 @@ export const useArkDesktopRuntime = () => {
             if (task.engine === 'headless' || !shouldQueue) {
                 finishForegroundPrompt(taskId, 'completed', undefined, clientPromptId);
             }
+            // 本条消息已入执行流程：无论进入 Rust 队列还是直接执行，
+            // 均由 finishForegroundPrompt 在结束时接续下一条待发消息。
+            flushPendingPromptsRef.current(taskId);
         } catch (error) {
             if (!cancelledTaskIdsRef.current.has(taskId)) {
                 const providerId = modelKeyAuthorizationProviderId(error);
@@ -3060,9 +3088,93 @@ export const useArkDesktopRuntime = () => {
                     finishForegroundPrompt(taskId, 'failed', message, clientPromptId);
                 }
             }
+            // 发送失败：交由 flush 清理该任务待发队列（避免悬挂），随后向调用方抛出。
+            flushPendingPromptsRef.current(taskId);
             throw error;
         }
     }, [ensureTaskSessionMounted, finishForegroundPrompt, forkTask, updateTask]);
+
+    const enqueuePendingPrompt = useCallback((taskId: string, prompt: string, displayPrompt = prompt) => {
+        const task = snapshotRef.current.tasks.find((item) => item.id === taskId);
+        if (!task) return;
+        const queue = pendingPromptsRef.current.get(taskId) || [];
+        pendingPromptsRef.current.set(taskId, [...queue, { prompt, displayPrompt }]);
+        updateTask(taskId, (value) => ({
+            ...value,
+            messages: [...value.messages, {
+                id: createId('message'),
+                role: 'user',
+                content: displayPrompt,
+                pendingPromptId: createId('pending-prompt'),
+                createdAt: Date.now(),
+            }],
+            updatedAt: Date.now(),
+        }));
+        // 立即尝试补发：会话已就绪则马上发送，未就绪则等待后续钩子再次触发。
+        flushPendingPromptsRef.current(taskId);
+    }, [updateTask]);
+
+    const flushPendingPrompts = useCallback(async (taskId: string) => {
+        const queue = pendingPromptsRef.current.get(taskId);
+        if (!queue?.length) return;
+        if (cancelledTaskIdsRef.current.has(taskId)) {
+            pendingPromptsRef.current.delete(taskId);
+            return;
+        }
+        if ((activePromptRequestsRef.current.get(taskId) || []).length > 0) return;
+        // 等待会话就绪（React 渲染完成使 snapshot.sessionId 可见），避免补发时
+        // 读到陈旧任务状态而误判为“历史会话待恢复”。上限 5 秒，超时静默保留队列，
+        // 由 startTask/sendFollowUp 完成时的补发钩子再次触发。
+        const deadline = Date.now() + 5000;
+        let readiness: 'ready' | 'failed' | 'cancelled' | 'idle' | 'timeout' = 'timeout';
+        while (Date.now() < deadline) {
+            const task = snapshotRef.current.tasks.find((item) => item.id === taskId);
+            if (!task) {
+                readiness = 'failed';
+                break;
+            }
+            if (task.sessionId) {
+                readiness = 'ready';
+                break;
+            }
+            if (task.status === 'failed' || task.status === 'cancelled') {
+                readiness = task.status;
+                break;
+            }
+            if (task.status !== 'running') {
+                // 历史任务会话待恢复：直接交给 sendFollowUp 查找并恢复原会话。
+                readiness = 'idle';
+                break;
+            }
+            await new Promise((resolve) => setTimeout(resolve, 30));
+        }
+        if (readiness !== 'ready' && readiness !== 'idle') {
+            // 会话不可用（创建失败/任务已取消）：清空队列并移除待发消息，
+            // 任务错误已在任务上展示，用户可重新输入。
+            pendingPromptsRef.current.delete(taskId);
+            updateTask(taskId, (value) => ({
+                ...value,
+                messages: value.messages.filter((message) => !message.pendingPromptId),
+                updatedAt: Date.now(),
+            }));
+            return;
+        }
+        const entry = queue[0];
+        pendingPromptsRef.current.set(taskId, queue.slice(1));
+        try {
+            await sendFollowUp(taskId, entry.prompt, entry.displayPrompt);
+        } catch {
+            // 单条补发失败（错误已写入任务）：后续消息同样无法发送，清空队列并移除待发消息。
+            pendingPromptsRef.current.delete(taskId);
+            updateTask(taskId, (value) => ({
+                ...value,
+                messages: value.messages.filter((message) => !message.pendingPromptId),
+                updatedAt: Date.now(),
+            }));
+        }
+    }, [sendFollowUp, updateTask]);
+
+    flushPendingPromptsRef.current = flushPendingPrompts;
 
     const sendWorkflowCommand = useCallback(async (
         taskId: string,
@@ -3438,8 +3550,10 @@ export const useArkDesktopRuntime = () => {
         if (!task) return;
         cancelledTaskIdsRef.current.add(taskId);
         activePromptRequestsRef.current.delete(taskId);
+        pendingPromptsRef.current.delete(taskId);
         updateTask(taskId, (value) => ({
             ...settleForegroundActivities(value, 'cancelled'),
+            messages: value.messages.filter((message) => !message.pendingPromptId),
             error: undefined,
             modelKeyAuthorization: undefined,
             runtimeProcessId: undefined,
@@ -3961,6 +4075,7 @@ export const useArkDesktopRuntime = () => {
                 }
             }
         }
+        pendingPromptsRef.current.delete(taskId);
         setSnapshot((current) => ({
             ...current,
             tasks: current.tasks.filter((item) => item.id !== taskId),
@@ -4081,6 +4196,7 @@ export const useArkDesktopRuntime = () => {
         listTaskGitAudit,
         prepareEngine,
         sendFollowUp,
+        enqueuePendingPrompt,
         sendWorkflowCommand,
         listTaskWorkflows,
         readTaskWorkflow,

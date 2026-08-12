@@ -104,6 +104,8 @@ export interface ArkDesktopMessage {
     content: string;
     createdAt: number;
     queueEntryId?: string;
+    /** 会话尚未就绪时前端排队待发的消息标记，发送成功后移除。 */
+    pendingPromptId?: string;
 }
 
 export interface ArkDesktopSlashCommand {
