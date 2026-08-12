@@ -98,6 +98,8 @@ const GitReviewPanel: React.FC<GitReviewPanelProps> = ({ task, workspace: worksp
     selectedPathRef.current = selectedPath;
     const activeViewRef = useRef(activeView);
     activeViewRef.current = activeView;
+    const onCloseRef = useRef(onClose);
+    onCloseRef.current = onClose;
 
     const { refreshTaskGitStatus, loadTaskGitDiff, refreshWorkspaceGitStatus, loadWorkspaceGitDiff } = runtime;
     const files = status?.files || [];
@@ -206,6 +208,18 @@ const GitReviewPanel: React.FC<GitReviewPanelProps> = ({ task, workspace: worksp
         setSyncMode('connecting');
         diffRequestIdRef.current += 1;
     }, [task?.id, workspaceKey]);
+
+    // 点击面板外部任意区域时关闭代码变更窗口
+    useEffect(() => {
+        if (!visible) return undefined;
+        const handlePointerDown = (event: PointerEvent) => {
+            if (panelRef.current && !panelRef.current.contains(event.target as Node)) {
+                onCloseRef.current();
+            }
+        };
+        document.addEventListener('pointerdown', handlePointerDown);
+        return () => document.removeEventListener('pointerdown', handlePointerDown);
+    }, [visible]);
 
     useEffect(() => {
         if (!visible || !workspace) return undefined;
