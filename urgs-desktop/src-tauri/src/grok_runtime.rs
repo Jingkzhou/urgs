@@ -5592,6 +5592,7 @@ pub async fn grok_send_prompt(
     attachment_grants: Option<Vec<String>>,
     queued: Option<bool>,
     session_mode: Option<String>,
+    client_prompt_id: Option<String>,
 ) -> Result<(), String> {
     let grants_to_consume = attachment_grants.clone().unwrap_or_default();
     let attachments = authorize_prompt_attachments(&state, attachments, attachment_grants)?;
@@ -5615,11 +5616,16 @@ pub async fn grok_send_prompt(
     if queued.unwrap_or(false) {
         let queued_session_id = session_id.clone();
         let queued_process = Arc::clone(&process);
+        let queued_client_prompt_id = client_prompt_id.clone();
         emit_process_event(
             &app,
             &queued_process,
             "queued_prompt",
-            json!({ "sessionId": queued_session_id, "phase": "accepted" }),
+            json!({
+                "sessionId": queued_session_id,
+                "clientPromptId": queued_client_prompt_id,
+                "phase": "accepted"
+            }),
         );
         tauri::async_runtime::spawn(async move {
             let result = queued_process
@@ -5645,7 +5651,11 @@ pub async fn grok_send_prompt(
                         &app,
                         &queued_process,
                         "queued_prompt",
-                        json!({ "sessionId": queued_session_id, "phase": "completed" }),
+                        json!({
+                            "sessionId": queued_session_id,
+                            "clientPromptId": queued_client_prompt_id,
+                            "phase": "completed"
+                        }),
                     )
                 }
                 Err(error) => {
@@ -5662,6 +5672,7 @@ pub async fn grok_send_prompt(
                         "queued_prompt",
                         json!({
                             "sessionId": queued_session_id,
+                            "clientPromptId": queued_client_prompt_id,
                             "phase": "failed",
                             "message": error,
                         }),
@@ -6048,6 +6059,7 @@ pub fn grok_cancel(state: State<'_, GrokRuntimeState>, session_id: String) -> Re
         &format!("Cancelling session: session={}", session_id.trim()),
     );
     let process = session_process(&state, &session_id)?;
+    process.notify("_x.ai/queue/clear", json!({ "sessionId": session_id }))?;
     process.notify("session/cancel", json!({ "sessionId": session_id }))?;
     for request_id in process.cancel_permissions(&session_id) {
         process.write_json(json!({

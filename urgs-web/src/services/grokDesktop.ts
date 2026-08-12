@@ -1578,6 +1578,7 @@ export const sendGrokPrompt = (
     attachmentGrants: string[] = [],
     queued = false,
     mode: GrokSessionMode = 'default',
+    clientPromptId?: string,
     logContext?: DesktopLogContext,
 ) =>
     invokeGrok<void>('grok_send_prompt', {
@@ -1587,6 +1588,7 @@ export const sendGrokPrompt = (
         attachmentGrants: attachmentGrants.length > 0 ? attachmentGrants : null,
         queued,
         sessionMode: mode,
+        clientPromptId: clientPromptId || null,
     }, logContext);
 
 export const applyGrokQueueAction = (

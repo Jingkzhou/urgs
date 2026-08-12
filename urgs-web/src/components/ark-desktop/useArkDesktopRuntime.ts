@@ -786,10 +786,13 @@ export const useArkDesktopRuntime = () => {
     const [runtimeError, setRuntimeError] = useState('');
     const cancelledTaskIdsRef = useRef(new Set<string>());
     const taskByProcessIdRef = useRef(new Map<string, string>());
+    const processByTaskIdRef = useRef(new Map<string, string>());
     const taskBySessionIdRef = useRef(new Map<string, string>());
     const mountedSessionIdsRef = useRef(new Set<string>());
+    const forceLoadSessionIdsRef = useRef(new Set<string>());
     const subagentBySessionIdRef = useRef(new Map<string, string>());
-    const activePromptCountsRef = useRef(new Map<string, number>());
+    const activePromptRequestsRef = useRef(new Map<string, string[]>());
+    const pendingTaskCancellationsRef = useRef(new Map<string, Promise<void>>());
     const planByTaskIdRef = useRef(new Map<string, ArkDesktopPlanStep[]>());
     const snapshotRef = useRef(snapshot);
     const capabilityRequestIdRef = useRef(0);
@@ -803,7 +806,10 @@ export const useArkDesktopRuntime = () => {
         snapshotRef.current = snapshot;
         saveArkDesktopSnapshot(snapshot);
         snapshot.tasks.forEach((task) => {
-            if (task.runtimeProcessId) taskByProcessIdRef.current.set(task.runtimeProcessId, task.id);
+            if (task.runtimeProcessId) {
+                taskByProcessIdRef.current.set(task.runtimeProcessId, task.id);
+                processByTaskIdRef.current.set(task.id, task.runtimeProcessId);
+            }
             if (task.sessionId) taskBySessionIdRef.current.set(task.sessionId, task.id);
             if (task.plan?.length) planByTaskIdRef.current.set(task.id, task.plan);
         });
@@ -818,15 +824,30 @@ export const useArkDesktopRuntime = () => {
 
     const finishForegroundPrompt = useCallback((
         taskId: string,
-        terminalStatus: Extract<ArkDesktopTaskStatus, 'completed' | 'failed'>,
+        terminalStatus: Extract<ArkDesktopTaskStatus, 'completed' | 'failed' | 'cancelled'>,
         error?: string,
+        clientPromptId?: string,
     ) => {
-        const remaining = Math.max(0, (activePromptCountsRef.current.get(taskId) || 1) - 1);
-        if (remaining > 0) activePromptCountsRef.current.set(taskId, remaining);
-        else activePromptCountsRef.current.delete(taskId);
+        const activeRequests = activePromptRequestsRef.current.get(taskId) || [];
+        const requestIndex = clientPromptId
+            ? activeRequests.indexOf(clientPromptId)
+            : activeRequests.length > 0 ? 0 : -1;
+        if (requestIndex < 0) {
+            if (clientPromptId) return;
+            updateTask(taskId, (task) => {
+                if (cancelledTaskIdsRef.current.has(taskId)
+                    || ['completed', 'failed', 'cancelled'].includes(task.status)) return task;
+                const settled = settleForegroundActivities(task, terminalStatus);
+                return error ? { ...settled, error } : settled;
+            });
+            return;
+        }
+        const remainingRequests = activeRequests.filter((_, index) => index !== requestIndex);
+        if (remainingRequests.length > 0) activePromptRequestsRef.current.set(taskId, remainingRequests);
+        else activePromptRequestsRef.current.delete(taskId);
         updateTask(taskId, (task) => {
             if (cancelledTaskIdsRef.current.has(taskId)) return task;
-            if (remaining > 0) {
+            if (remainingRequests.length > 0) {
                 return {
                     ...task,
                     status: 'running',
@@ -974,22 +995,26 @@ export const useArkDesktopRuntime = () => {
         const taskSessionId = taskId
             ? snapshotRef.current.tasks.find((task) => task.id === taskId)?.sessionId
             : undefined;
+        const expectedProcessId = taskId ? processByTaskIdRef.current.get(taskId) : undefined;
+        if (taskId && processId && expectedProcessId && processId !== expectedProcessId) return;
         const isChildSession = Boolean(sessionId && taskSessionId && sessionId !== taskSessionId);
         if (taskId && isChildSession && ['queue_changed', 'interjection', 'scheduled_prompt'].includes(event.eventType)) {
             return;
         }
         if (event.eventType === 'queued_prompt' && taskId) {
             const phase = String(event.payload?.phase || '');
+            const clientPromptId = String(event.payload?.clientPromptId || '').trim() || undefined;
             if (phase === 'accepted') {
                 return;
             }
             if (phase === 'completed') {
-                finishForegroundPrompt(taskId, 'completed');
+                finishForegroundPrompt(taskId, 'completed', undefined, clientPromptId);
             } else if (phase === 'failed') {
                 finishForegroundPrompt(
                     taskId,
                     'failed',
                     redactRuntimeText(String(event.payload?.message || '补充消息执行失败')),
+                    clientPromptId,
                 );
             }
             return;
@@ -1621,6 +1646,8 @@ export const useArkDesktopRuntime = () => {
                     update.status,
                     update.reason,
                     update.error,
+                    update.agentResult,
+                    update.agent_result,
                 ]);
                 const terminalKind = classifyActivityStatus(terminalSignal);
                 const status: ArkDesktopTask['status'] = terminalKind === 'cancelled'
@@ -1628,7 +1655,10 @@ export const useArkDesktopRuntime = () => {
                     : terminalKind === 'failed'
                         ? 'failed'
                         : 'completed';
-                updateTask(taskId, (task) => settleForegroundActivities(task, status));
+                const error = status === 'failed'
+                    ? redactRuntimeText(String(update.agentResult || update.agent_result || update.error || terminalSignal || '任务执行失败'))
+                    : undefined;
+                finishForegroundPrompt(taskId, status, error);
                 return;
             }
             if (updateType === 'current_mode_update') {
@@ -1851,6 +1881,7 @@ export const useArkDesktopRuntime = () => {
         if (event.eventType === 'terminated' && taskId) {
             if (!processId) return;
             taskByProcessIdRef.current.delete(processId);
+            if (processByTaskIdRef.current.get(taskId) === processId) processByTaskIdRef.current.delete(taskId);
             const taskSessionId = snapshotRef.current.tasks.find((task) => task.id === taskId)?.sessionId;
             if (taskSessionId) mountedSessionIdsRef.current.delete(taskSessionId);
             setPermissions((current) => current.filter((item) => item.taskId !== taskId));
@@ -2015,6 +2046,7 @@ export const useArkDesktopRuntime = () => {
             : current.settings.execution.interactionMode;
         const now = Date.now();
         const taskId = createId('task');
+        const clientPromptId = createId('prompt');
         const task: ArkDesktopTask = {
             id: taskId,
             title: effectivePrompt.slice(0, 36),
@@ -2055,7 +2087,7 @@ export const useArkDesktopRuntime = () => {
                     : value.settings.workspacePaths,
             },
         }));
-        activePromptCountsRef.current.set(taskId, 1);
+        activePromptRequestsRef.current.set(taskId, [clientPromptId]);
         setActiveTaskId(taskId);
         setRuntimeError('');
         void writeDesktopLog(
@@ -2170,6 +2202,7 @@ export const useArkDesktopRuntime = () => {
                     );
                     void refreshModelProviders().catch(() => undefined);
                     taskByProcessIdRef.current.set(session.processId, taskId);
+                    processByTaskIdRef.current.set(taskId, session.processId);
                     taskBySessionIdRef.current.set(session.sessionId, taskId);
                     mountedSessionIdsRef.current.add(session.sessionId);
                     updateTask(taskId, (value) => ({
@@ -2182,12 +2215,27 @@ export const useArkDesktopRuntime = () => {
                     }));
                     if (cancelledTaskIdsRef.current.has(taskId)) {
                         await cancelGrokPrompt(session.sessionId, { taskId }).catch(() => undefined);
+                        mountedSessionIdsRef.current.delete(session.sessionId);
+                        forceLoadSessionIdsRef.current.add(session.sessionId);
+                        taskByProcessIdRef.current.delete(session.processId);
+                        processByTaskIdRef.current.delete(taskId);
+                        await releaseGrokSession(session.sessionId).catch(() => undefined);
+                        updateTask(taskId, (value) => ({ ...value, runtimeProcessId: undefined, updatedAt: Date.now() }));
                         return;
                     }
                     if (interactionMode !== 'default') {
                         await setGrokSessionMode(session.sessionId, interactionMode, { taskId });
                     }
-                    await sendGrokPrompt(session.sessionId, effectivePrompt, attachmentPaths, attachmentGrantIds, false, interactionMode, { taskId });
+                    await sendGrokPrompt(
+                        session.sessionId,
+                        effectivePrompt,
+                        attachmentPaths,
+                        attachmentGrantIds,
+                        false,
+                        interactionMode,
+                        clientPromptId,
+                        { taskId },
+                    );
                     const info = await getGrokSessionInfo(session.sessionId).catch(() => null);
                     if (info) updateTask(taskId, (value) => ({
                         ...value,
@@ -2195,7 +2243,7 @@ export const useArkDesktopRuntime = () => {
                         updatedAt: Date.now(),
                     }));
                 }
-                finishForegroundPrompt(taskId, 'completed');
+                finishForegroundPrompt(taskId, 'completed', undefined, clientPromptId);
                 if (automationId) {
                     setSnapshot((value) => ({
                         ...value,
@@ -2208,7 +2256,7 @@ export const useArkDesktopRuntime = () => {
                 if (!cancelledTaskIdsRef.current.has(taskId)) {
                     const providerId = modelKeyAuthorizationProviderId(error);
                     if (providerId) {
-                        activePromptCountsRef.current.delete(taskId);
+                        activePromptRequestsRef.current.delete(taskId);
                         updateTask(taskId, (value) => ({
                             ...value,
                             status: 'waiting_authorization',
@@ -2224,7 +2272,7 @@ export const useArkDesktopRuntime = () => {
                         }));
                     } else {
                         const message = redactRuntimeText(runtimeErrorText(error));
-                        finishForegroundPrompt(taskId, 'failed', message);
+                        finishForegroundPrompt(taskId, 'failed', message, clientPromptId);
                     }
                 }
             }
@@ -2562,7 +2610,9 @@ export const useArkDesktopRuntime = () => {
         if (!modelProvider.enabled) throw new Error(`模型连接“${modelProvider.name}”已停用`);
         const sessionRules = buildSessionRules(agent, skills, task.workspace);
         const acpOptions = buildAcpOptions(execution);
-        const attachMode = task.messages.length > 0 ? 'resume' : 'load';
+        const attachMode = forceLoadSessionIdsRef.current.delete(task.sessionId)
+            ? 'load'
+            : task.messages.length > 0 ? 'resume' : 'load';
         let recoveredFromMissingWorkspace = false;
         let session: Awaited<ReturnType<typeof loadGrokSession>>;
         try {
@@ -2575,6 +2625,7 @@ export const useArkDesktopRuntime = () => {
         }
         mountedSessionIdsRef.current.add(session.sessionId);
         taskByProcessIdRef.current.set(session.processId, taskId);
+        processByTaskIdRef.current.set(taskId, session.processId);
         taskBySessionIdRef.current.set(session.sessionId, taskId);
         updateTask(taskId, (value) => ({
             ...value,
@@ -2658,6 +2709,8 @@ export const useArkDesktopRuntime = () => {
     }, [ensureTaskSessionMounted]);
 
     const sendFollowUp = useCallback(async (taskId: string, prompt: string, displayPrompt = prompt) => {
+        const pendingCancellation = pendingTaskCancellationsRef.current.get(taskId);
+        if (pendingCancellation) await pendingCancellation;
         const task = snapshotRef.current.tasks.find((item) => item.id === taskId);
         if (!task) throw new Error('历史任务不存在');
         const clientCommand = task.engine === 'headless' ? undefined : parseClientSessionCommand(prompt);
@@ -2694,8 +2747,9 @@ export const useArkDesktopRuntime = () => {
         const interactionMode: ArkDesktopInteractionMode = clientCommand?.type === 'plan'
             ? 'plan'
             : task.interactionMode || 'default';
-        const activePromptCount = activePromptCountsRef.current.get(taskId) || 0;
-        const startsNewPrompt = activePromptCount === 0;
+        const activePromptRequests = activePromptRequestsRef.current.get(taskId) || [];
+        const startsNewPrompt = activePromptRequests.length === 0;
+        const clientPromptId = createId('prompt');
         const clearPromptPlan = () => {
             planByTaskIdRef.current.delete(taskId);
             updateTask(taskId, (value) => ({
@@ -2704,7 +2758,7 @@ export const useArkDesktopRuntime = () => {
                 updatedAt: Date.now(),
             }));
         };
-        activePromptCountsRef.current.set(taskId, activePromptCount + 1);
+        activePromptRequestsRef.current.set(taskId, [...activePromptRequests, clientPromptId]);
         if (startsNewPrompt) clearPromptPlan();
         try {
             const current = snapshotRef.current;
@@ -2757,11 +2811,15 @@ export const useArkDesktopRuntime = () => {
                         { taskId },
                     );
                     taskBySessionIdRef.current.delete(previousSessionId);
-                    if (task.runtimeProcessId) taskByProcessIdRef.current.delete(task.runtimeProcessId);
+                    if (task.runtimeProcessId) {
+                        taskByProcessIdRef.current.delete(task.runtimeProcessId);
+                        if (processByTaskIdRef.current.get(taskId) === task.runtimeProcessId) processByTaskIdRef.current.delete(taskId);
+                    }
                     await releaseGrokSession(previousSessionId).catch(() => undefined);
                     sessionId = freshSession.sessionId;
                     mountedSessionIdsRef.current.add(freshSession.sessionId);
                     taskByProcessIdRef.current.set(freshSession.processId, taskId);
+                    processByTaskIdRef.current.set(taskId, freshSession.processId);
                     taskBySessionIdRef.current.set(freshSession.sessionId, taskId);
                     updateTask(taskId, (value) => ({
                         ...value,
@@ -2775,7 +2833,9 @@ export const useArkDesktopRuntime = () => {
                 } else if (!mountedSessionIdsRef.current.has(sessionId)) {
                     const sessionRules = buildSessionRules(agent, skills, task.workspace);
                     const acpOptions = buildAcpOptions(execution);
-                    const attachMode = task.messages.length > 0 ? 'resume' : 'load';
+                    const attachMode = forceLoadSessionIdsRef.current.delete(sessionId)
+                        ? 'load'
+                        : task.messages.length > 0 ? 'resume' : 'load';
                     let recoveredFromMissingWorkspace = false;
                     let session: Awaited<ReturnType<typeof loadGrokSession>>;
                     try {
@@ -2788,6 +2848,7 @@ export const useArkDesktopRuntime = () => {
                     }
                     mountedSessionIdsRef.current.add(session.sessionId);
                     taskByProcessIdRef.current.set(session.processId, taskId);
+                    processByTaskIdRef.current.set(taskId, session.processId);
                     taskBySessionIdRef.current.set(session.sessionId, taskId);
                     updateTask(taskId, (value) => ({
                         ...value,
@@ -2865,7 +2926,7 @@ export const useArkDesktopRuntime = () => {
                     await setGrokSessionMode(sessionId, interactionMode, { taskId });
                     updateTask(taskId, (value) => ({ ...value, interactionMode, updatedAt: Date.now() }));
                 }
-                await sendGrokPrompt(sessionId, effectivePrompt, [], [], shouldQueue, interactionMode, { taskId });
+                await sendGrokPrompt(sessionId, effectivePrompt, [], [], shouldQueue, interactionMode, clientPromptId, { taskId });
                 if (!shouldQueue) {
                     const info = await getGrokSessionInfo(sessionId).catch(() => null);
                     if (info) updateTask(taskId, (value) => ({
@@ -2876,13 +2937,13 @@ export const useArkDesktopRuntime = () => {
                 }
             }
             if (task.engine === 'headless' || !shouldQueue) {
-                finishForegroundPrompt(taskId, 'completed');
+                finishForegroundPrompt(taskId, 'completed', undefined, clientPromptId);
             }
         } catch (error) {
             if (!cancelledTaskIdsRef.current.has(taskId)) {
                 const providerId = modelKeyAuthorizationProviderId(error);
                 if (providerId) {
-                    activePromptCountsRef.current.delete(taskId);
+                    activePromptRequestsRef.current.delete(taskId);
                     updateTask(taskId, (value) => {
                         const lastMessage = value.messages[value.messages.length - 1];
                         const messages = task.engine === 'headless' && lastMessage?.role === 'user' && lastMessage.content === displayPrompt
@@ -2905,7 +2966,7 @@ export const useArkDesktopRuntime = () => {
                     });
                 } else {
                     const message = redactRuntimeText(runtimeErrorText(error));
-                    finishForegroundPrompt(taskId, 'failed', message);
+                    finishForegroundPrompt(taskId, 'failed', message, clientPromptId);
                 }
             }
             throw error;
@@ -3280,23 +3341,42 @@ export const useArkDesktopRuntime = () => {
     }, [compactTask, ensureTaskSessionMounted, flushTaskMemory, refreshTaskSessionInfo, sendFollowUp, startTask, updateTask]);
 
     const cancelTask = useCallback(async (taskId: string) => {
+        const pendingCancellation = pendingTaskCancellationsRef.current.get(taskId);
+        if (pendingCancellation) return pendingCancellation;
         const task = snapshotRef.current.tasks.find((item) => item.id === taskId);
         if (!task) return;
         cancelledTaskIdsRef.current.add(taskId);
-        activePromptCountsRef.current.delete(taskId);
-        if (task.engine === 'headless' && task.cliServiceId) {
-            await stopGrokCliService(task.cliServiceId);
-        } else if (task.sessionId) {
-            await cancelGrokPrompt(task.sessionId, { taskId });
-        }
+        activePromptRequestsRef.current.delete(taskId);
         updateTask(taskId, (value) => ({
             ...settleForegroundActivities(value, 'cancelled'),
             error: undefined,
             modelKeyAuthorization: undefined,
+            runtimeProcessId: undefined,
         }));
         setPermissions((current) => current.filter((item) => item.taskId !== taskId));
         setUserQuestions((current) => current.filter((item) => item.taskId !== taskId));
         setPlanApprovals((current) => current.filter((item) => item.taskId !== taskId));
+        const cancellation = (async () => {
+            if (task.engine === 'headless' && task.cliServiceId) {
+                await stopGrokCliService(task.cliServiceId).catch(() => undefined);
+                return;
+            }
+            if (!task.sessionId) return;
+            await cancelGrokPrompt(task.sessionId, { taskId }).catch(() => undefined);
+            mountedSessionIdsRef.current.delete(task.sessionId);
+            forceLoadSessionIdsRef.current.add(task.sessionId);
+            if (task.runtimeProcessId) taskByProcessIdRef.current.delete(task.runtimeProcessId);
+            processByTaskIdRef.current.delete(taskId);
+            await releaseGrokSession(task.sessionId).catch(() => undefined);
+        })();
+        pendingTaskCancellationsRef.current.set(taskId, cancellation);
+        try {
+            await cancellation;
+        } finally {
+            if (pendingTaskCancellationsRef.current.get(taskId) === cancellation) {
+                pendingTaskCancellationsRef.current.delete(taskId);
+            }
+        }
     }, [updateTask]);
 
     const rewindTaskFiles = useCallback(async (taskId: string, promptIndex: number, force = false) => {
@@ -3553,6 +3633,7 @@ export const useArkDesktopRuntime = () => {
             );
             mountedSessionIdsRef.current.add(session.sessionId);
             taskByProcessIdRef.current.set(session.processId, taskId);
+            processByTaskIdRef.current.set(taskId, session.processId);
             taskBySessionIdRef.current.set(session.sessionId, taskId);
             await setGrokSessionModel(task.sessionId, modelId, { taskId });
             updateTask(taskId, (value) => ({
@@ -3640,9 +3721,11 @@ export const useArkDesktopRuntime = () => {
             );
             if (task.runtimeProcessId && task.runtimeProcessId !== session.processId) {
                 taskByProcessIdRef.current.delete(task.runtimeProcessId);
+                if (processByTaskIdRef.current.get(taskId) === task.runtimeProcessId) processByTaskIdRef.current.delete(taskId);
             }
             mountedSessionIdsRef.current.add(session.sessionId);
             taskByProcessIdRef.current.set(session.processId, taskId);
+            processByTaskIdRef.current.set(taskId, session.processId);
             taskBySessionIdRef.current.set(session.sessionId, taskId);
             updateTask(taskId, (value) => ({
                 ...value,
@@ -3796,6 +3879,7 @@ export const useArkDesktopRuntime = () => {
         setUserQuestions((current) => current.filter((item) => item.taskId !== taskId));
         setPlanApprovals((current) => current.filter((item) => item.taskId !== taskId));
         if (task.runtimeProcessId) taskByProcessIdRef.current.delete(task.runtimeProcessId);
+        processByTaskIdRef.current.delete(taskId);
         if (task.sessionId) {
             mountedSessionIdsRef.current.delete(task.sessionId);
             taskBySessionIdRef.current.delete(task.sessionId);
