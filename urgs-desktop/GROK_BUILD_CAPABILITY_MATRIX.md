@@ -1,16 +1,26 @@
 # Grok Build Desktop 能力矩阵
 
-更新时间：2026-08-10
+更新时间：2026-08-12
 
 ## 结论
 
 本矩阵以 URGS 随包二进制、真实 ACP 握手、同提交 Grok Build 用户指南和源码为准，不再把 Pager/TUI 命令误认为 ACP 会自动下发的 Slash Command。
 
-- 本轮二进制：`grok 1.0.0 (ddbc5c3)`，目标 `aarch64-apple-darwin`
-- SHA-256：`9a8581dad0182be548ec01e12f27a6f4152b00c24e254fd6c9db79c3196e3790`
+- 本轮 macOS 二进制：`grok 1.0.1 (3cf1991)`，目标 `aarch64-apple-darwin`
+- 官方基线：`be713136d2a69080743a3f6b3c72077057e5948f`；URGS 保留 `goal_classifier` 子进程与文本模型图片兼容补丁
+- SHA-256：`9edc7f75f0a8cce4a986f339e7c149b0dd590e84b8af539e3ffefe35fc4fa21f`
 - 随包清单：`src-tauri/binaries/grok-sidecar-manifest.json`
 - 实际 ACP `initialize`：协议版本 1；支持 session list/resume/close、HTTP/SSE MCP、Hooks、文件通知、Recap、Cancel Rewind、Voice Mode；prompt 支持 embedded context，不支持 image/audio
-- 实际 `session/new`：动态返回 33 个 Agent/Skill/Hook/Workflow 命令，但不返回 `/plan`、`/view-plan`、`/fork`，因为三者属于 Pager 客户端命令
+- 实际 `session/new`：动态返回 Agent/Skill/Hook/Workflow 命令，但不返回 `/plan`、`/view-plan`、`/fork`，因为三者属于 Pager 客户端命令
+- Windows 正式发布仍锁定已验证的 `1.0.0`；当前网络无法取得官方 `1.0.1` Windows 工件并校验 SHA-256，因此未修改发布锁和 CI 版本
+
+## 1.0.1 变化与适配结论
+
+- `/rewind` 的上游语义改为默认只截断会话历史，不再同时回退文件；URGS 继续通过独立的 `x.ai/rewind/execute` 文件回退入口提供显式文件恢复，避免把两种动作混为一谈。
+- Managed MCP 改为仅通过 Gateway Catalog 提供。URGS 内网继续使用项目/用户本地 MCP 配置与 ACP HTTP/SSE，不创建不可用的在线目录入口。
+- 工具只读标记、子 Agent 并发边界、模型目录刷新、会话恢复、Worktree 状态和 Git 大仓性能均由 1.0.1 sidecar 承担；URGS 现有工具时间线、模型状态和会话桥接可直接兼容。
+- Presence 和 Automations 工具卡属于上游 Gateway/Pager 展示能力，当前 ACP 没有独立可操作契约；URGS 保持未知事件可观测，不制造无协议支撑的 UI。
+- 上游新增 `invalid_image` 错误码，但内网文本模型仍可能只返回兼容文案且关闭普通重试；URGS 保留一次性图片剥离补丁，避免历史图片卡死文本模型会话。
 
 ## 为什么此前没有 `/plan`
 
@@ -40,7 +50,7 @@ URGS 之前只展示 `availableCommands`，虽然已经处理退出计划模式�
 | 权限 | ACP permission reverse request | 权限弹窗、请求批准/完全访问 | 原生 UI | 会话归属与参数单测 |
 | 模型与推理强度 | model config/state | 模型选择、执行设置 | 原生 UI | 模型目录、系统凭据库与切换链路 |
 | Recap | `sessionRecap=true`、`session_recap` | 会话详情“最近会话 Recap” | 原生 UI | 事件处理与异步完成保护 |
-| Rewind | `cancelRewind=true`、`x.ai/rewind/points`、`execute` | 每轮变更摘要“回退文件” | 原生 UI | Rust 回退模型选择测试；需真实有改动会话人工确认 |
+| Rewind | `cancelRewind=true`、`x.ai/rewind/points`、`execute` | 每轮变更摘要“回退文件” | 原生 UI | 1.0.1 的 `/rewind` 只截断历史；URGS 文件回退保持独立显式动作 |
 | 附件上下文 | `embeddedContext=true` | 原生附件选择 | 原生 UI | 文本/二进制、一次授权、路径和大小门禁单测 |
 | MCP | ACP HTTP/SSE + `grok mcp *` | MCP 管理器、运行时重载 | 原生 UI + 受控 CLI | 服务状态、启停、重载和诊断链路 |
 | Hooks | `x.ai/hooks`、动态 Hook 命令 | Slash 菜单、配置、诊断面板 | 原生 UI | 动态命令与 `hooks_changed` 诊断事件 |
@@ -61,7 +71,7 @@ URGS 之前只展示 `availableCommands`，虽然已经处理退出计划模式�
 | `/resume`、`/dashboard`、`/history` | 工作区会话侧栏、搜索、筛选 | 原生等价 |
 | `/compact`、`/context`、`/session-info` | 会话能力菜单、上下文菜单 | ACP 动态/原生 |
 | `/fork` | Slash + 会话菜单 | 本轮原生接入 |
-| `/rewind`、`/undo`、`/edit-prompt` | 每轮变更摘要回退；继续输入可修订 | 原生等价；不伪造 Pager 编辑器 |
+| `/rewind`、`/undo`、`/edit-prompt` | 每轮变更摘要可显式回退文件；继续输入可修订 | 1.0.1 Pager `/rewind` 只截断历史；URGS 不把它伪装成文件回退 |
 | `/copy` | 消息复制按钮 | 原生等价 |
 | `/export`、`/transcript` | CLI 中心 `sessions export` / `export` | 受控 CLI |
 | `/quit` | 关闭桌面窗口 | 平台等价 |
@@ -108,4 +118,6 @@ URGS 之前只展示 `availableCommands`，虽然已经处理退出计划模式�
 - 图片和音频输入不是遗漏，当前二进制明确宣告不支持。
 - 在线 Marketplace、xAI 登录、遥测隐私切换和 Grok 自更新按内网策略保持禁用。
 - Voice Mode 虽已宣告，但没有 ACP 音频输入能力，暂不创建不可用入口。
-- Plan、Ask、计划审批、计划预览和 Fork 已完成代码链路与自动化验证；`/Applications/URGS.app` 已真实启动并确认任务中心显示“正常执行 / 计划模式 / 询问模式”。
+- Presence 和 Automations 工具卡暂无独立 ACP 契约，保持诊断可观测，不创建假入口。
+- Windows `1.0.1` 正式工件尚未完成 SHA-256 取证，发布锁暂留 `1.0.0`。
+- Plan、Ask、计划审批、计划预览和 Fork 已完成代码链路与自动化验证；本轮安装 App 验收结果以交付记录为准。

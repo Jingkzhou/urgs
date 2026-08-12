@@ -56,6 +56,7 @@ ENABLE_EXECUTOR=false
 ENABLE_FRONTEND=false
 ENABLE_DESKTOP=false
 ENABLE_PRESENTATION=false
+DESKTOP_INSTALLED=false
 
 NODE_BIN=""
 NPM_BIN=""
@@ -228,6 +229,9 @@ configure_java_opts() {
 }
 
 cleanup() {
+  if [ ${#pids[@]} -eq 0 ] && [ "$AGENT_COMPOSE_DEPS_STARTED" != true ]; then
+    return
+  fi
   echo "Stopping services..."
   for pid in "${pids[@]:-}"; do
     kill "$pid" 2>/dev/null || true
@@ -280,13 +284,11 @@ start_frontend() {
 }
 
 start_desktop() {
-  echo "Starting desktop client ($ENVIRONMENT)..."
+  echo "Building desktop client and installing it to /Applications/URGS.app ($ENVIRONMENT)..."
   cd "$DESKTOP_DIR"
-  kill_port_if_exists 3000
-  kill_port_if_exists 3001
 
   if ! command -v cargo >/dev/null 2>&1; then
-    echo "Rust/Cargo not found. Install the Rust toolchain before starting urgs-desktop."
+    echo "Rust/Cargo not found. Install the Rust toolchain before building urgs-desktop."
     exit 1
   fi
   ensure_pnpm_dependencies "$WEB_DIR"
@@ -304,8 +306,90 @@ start_desktop() {
     CI=true "${pnpm_cmd[@]}" install --frozen-lockfile
   fi
 
-  "${pnpm_cmd[@]}" dev &
-  pids+=($!)
+  local desktop_build_env
+  case "$ENVIRONMENT" in
+    local|dev) desktop_build_env="local" ;;
+    sit|pre) desktop_build_env="sit" ;;
+    prod) desktop_build_env="prod" ;;
+  esac
+
+  echo "Building macOS Debug App (Desktop environment: $desktop_build_env)..."
+  DEPLOY_ENV="$desktop_build_env" "${pnpm_cmd[@]}" run prepare:grok
+  DEPLOY_ENV="$desktop_build_env" "${pnpm_cmd[@]}" exec tauri build --debug --bundles app --no-sign
+
+  local product_name
+  local built_app
+  local installed_app="/Applications/URGS.app"
+  local staging_dir
+  local staged_app
+  local backup_app
+  local built_executable
+  local installed_executable
+  local built_sha
+  local installed_sha
+
+  product_name="$("$NODE_BIN" -e 'const fs = require("fs"); const config = JSON.parse(fs.readFileSync(process.argv[1], "utf8")); process.stdout.write(config.productName);' "$DESKTOP_DIR/src-tauri/tauri.conf.json")"
+  built_app="$DESKTOP_DIR/src-tauri/target/debug/bundle/macos/${product_name}.app"
+  built_executable="$built_app/Contents/MacOS/urgs-desktop"
+  installed_executable="$installed_app/Contents/MacOS/urgs-desktop"
+
+  if [ ! -x "$built_executable" ]; then
+    echo "Built desktop App is missing its executable: $built_executable"
+    exit 1
+  fi
+
+  staging_dir="$(mktemp -d "${TMPDIR:-/tmp}/urgs-app-install.XXXXXX")"
+  staged_app="$staging_dir/URGS.app"
+  backup_app="$staging_dir/previous-URGS.app"
+  ditto "$built_app" "$staged_app"
+
+  local running_desktop_pids
+  running_desktop_pids="$(pgrep -f "^${installed_executable}$" || true)"
+  if [ -n "$running_desktop_pids" ]; then
+    echo "Stopping the installed desktop client before replacement..."
+    kill $running_desktop_pids 2>/dev/null || true
+    for _ in $(seq 1 40); do
+      if ! pgrep -f "^${installed_executable}$" >/dev/null 2>&1; then
+        break
+      fi
+      sleep 0.25
+    done
+    if pgrep -f "^${installed_executable}$" >/dev/null 2>&1; then
+      echo "The installed desktop client did not exit; installation was cancelled."
+      rm -rf "$staging_dir"
+      exit 1
+    fi
+  fi
+
+  if [ -e "$installed_app" ] || [ -L "$installed_app" ]; then
+    mv "$installed_app" "$backup_app"
+  fi
+  if ! mv "$staged_app" "$installed_app"; then
+    echo "Failed to install $installed_app; restoring the previous App."
+    if [ -e "$backup_app" ] || [ -L "$backup_app" ]; then
+      mv "$backup_app" "$installed_app"
+    fi
+    rm -rf "$staging_dir"
+    exit 1
+  fi
+
+  built_sha="$(shasum -a 256 "$built_executable" | awk '{print $1}')"
+  installed_sha="$(shasum -a 256 "$installed_executable" | awk '{print $1}')"
+  if [ "$built_sha" != "$installed_sha" ]; then
+    echo "Installed App SHA-256 mismatch; restoring the previous App."
+    rm -rf "$installed_app"
+    if [ -e "$backup_app" ] || [ -L "$backup_app" ]; then
+      mv "$backup_app" "$installed_app"
+    fi
+    rm -rf "$staging_dir"
+    exit 1
+  fi
+
+  rm -rf "$staging_dir"
+  DESKTOP_INSTALLED=true
+  echo "Desktop App installed: $installed_app"
+  echo "Executable SHA-256: $installed_sha"
+  echo "The desktop client was not launched automatically."
 }
 
 start_executor() {
@@ -399,7 +483,7 @@ echo "  [3] Executor (urgs-executor)"
 echo "  [4] Frontend (urgs-web)"
 echo "  [5] Presentation (urgs-presentation)"
 echo "  [6] Agent (urgs-agent)"
-echo "  [7] Desktop Client (urgs-desktop, includes frontend)"
+echo "  [7] Desktop Client (build and install to /Applications/URGS.app; does not launch)"
 echo ""
 echo "Enter your choice (e.g., '1' for all, or '2 3 7' for Backend+Executor+Desktop):"
 read -r -a choices
@@ -447,6 +531,10 @@ if [ "$ENABLE_PRESENTATION" = true ]; then start_presentation; fi
 if [ "$ENABLE_AGENT" = true ]; then start_agent; fi
 
 if [ ${#pids[@]} -eq 0 ]; then
+  if [ "$DESKTOP_INSTALLED" = true ]; then
+    echo "Desktop installation completed. Launch /Applications/URGS.app when needed."
+    exit 0
+  fi
   echo "No services selected. Exiting."
   exit 0
 fi
