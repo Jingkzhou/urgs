@@ -789,6 +789,7 @@ export const useArkDesktopRuntime = () => {
     const processByTaskIdRef = useRef(new Map<string, string>());
     const taskBySessionIdRef = useRef(new Map<string, string>());
     const mountedSessionIdsRef = useRef(new Set<string>());
+    const mountingSessionPromisesRef = useRef(new Map<string, Promise<void>>());
     const forceLoadSessionIdsRef = useRef(new Set<string>());
     const subagentBySessionIdRef = useRef(new Map<string, string>());
     const activePromptRequestsRef = useRef(new Map<string, string[]>());
@@ -2594,61 +2595,73 @@ export const useArkDesktopRuntime = () => {
     const ensureTaskSessionMounted = useCallback(async (taskId: string) => {
         const task = snapshotRef.current.tasks.find((item) => item.id === taskId);
         if (!task?.sessionId || task.engine === 'headless' || mountedSessionIdsRef.current.has(task.sessionId)) return;
-        const current = snapshotRef.current;
-        const agent = current.agents.find((item) => item.id === task.agentId && item.enabled)
-            || current.agents.find((item) => item.enabled);
-        if (!agent) throw new Error('该历史任务使用的 Agent 已不存在');
-        const skills = current.skills.filter((skill) => task.skillIds.includes(skill.id) && skill.enabled);
-        const execution = {
-            ...current.settings.execution,
-            reasoningEffort: task.reasoningEffort ?? current.settings.execution.reasoningEffort,
-            permissionMode: task.permissionMode || current.settings.execution.permissionMode,
-            alwaysApprove: false,
-        };
-        const modelProvider = resolveModelProvider(current, task.model || current.settings.grokModel);
-        if (!modelProvider) throw new Error(`历史会话使用的模型连接“${task.model || current.settings.grokModel}”不存在，请在设置中配置对应连接`);
-        if (!modelProvider.enabled) throw new Error(`模型连接“${modelProvider.name}”已停用`);
-        const sessionRules = buildSessionRules(agent, skills, task.workspace);
-        const acpOptions = buildAcpOptions(execution);
-        const attachMode = forceLoadSessionIdsRef.current.delete(task.sessionId)
-            ? 'load'
-            : task.messages.length > 0 ? 'resume' : 'load';
-        let recoveredFromMissingWorkspace = false;
-        let session: Awaited<ReturnType<typeof loadGrokSession>>;
+        const pendingMount = mountingSessionPromisesRef.current.get(task.sessionId);
+        if (pendingMount) return pendingMount;
+        const mountPromise = (async () => {
+            const current = snapshotRef.current;
+            const agent = current.agents.find((item) => item.id === task.agentId && item.enabled)
+                || current.agents.find((item) => item.enabled);
+            if (!agent) throw new Error('该历史任务使用的 Agent 已不存在');
+            const skills = current.skills.filter((skill) => task.skillIds.includes(skill.id) && skill.enabled);
+            const execution = {
+                ...current.settings.execution,
+                reasoningEffort: task.reasoningEffort ?? current.settings.execution.reasoningEffort,
+                permissionMode: task.permissionMode || current.settings.execution.permissionMode,
+                alwaysApprove: false,
+            };
+            const modelProvider = resolveModelProvider(current, task.model || current.settings.grokModel);
+            if (!modelProvider) throw new Error(`历史会话使用的模型连接“${task.model || current.settings.grokModel}”不存在，请在设置中配置对应连接`);
+            if (!modelProvider.enabled) throw new Error(`模型连接“${modelProvider.name}”已停用`);
+            const sessionRules = buildSessionRules(agent, skills, task.workspace);
+            const acpOptions = buildAcpOptions(execution);
+            const attachMode = forceLoadSessionIdsRef.current.delete(task.sessionId)
+                ? 'load'
+                : task.messages.length > 0 ? 'resume' : 'load';
+            let recoveredFromMissingWorkspace = false;
+            let session: Awaited<ReturnType<typeof loadGrokSession>>;
+            try {
+                session = await loadGrokSession(task.sessionId, taskRuntimeWorkspace(task), sessionRules, modelProvider.id, acpOptions, attachMode, { taskId });
+            } catch (error) {
+                const fallbackWorkspace = taskFallbackWorkspace(task);
+                if (!fallbackWorkspace || !isWorkspacePathUnavailable(error)) throw error;
+                session = await loadGrokSession(task.sessionId, fallbackWorkspace, sessionRules, modelProvider.id, acpOptions, attachMode, { taskId });
+                recoveredFromMissingWorkspace = true;
+            }
+            mountedSessionIdsRef.current.add(session.sessionId);
+            taskByProcessIdRef.current.set(session.processId, taskId);
+            processByTaskIdRef.current.set(taskId, session.processId);
+            taskBySessionIdRef.current.set(session.sessionId, taskId);
+            updateTask(taskId, (value) => ({
+                ...value,
+                workspace: task.workspace ? session.workspace : '',
+                ...(recoveredFromMissingWorkspace ? { sourceWorkspace: session.workspace, gitContext: undefined, error: undefined } : {}),
+                runtimeProcessId: session.processId,
+                availableCommands: session.availableCommands,
+                ...reasoningCapabilityFromCatalog(session.modelCatalog, modelProvider.id),
+                mcpServers: session.mcpServers.map((server) => ({
+                    name: server.name,
+                    transport: server.transport,
+                    health: server.health,
+                    tools: server.tools,
+                })),
+                updatedAt: Date.now(),
+            }));
+            if (task.interactionMode && task.interactionMode !== 'default') {
+                await setGrokSessionMode(session.sessionId, task.interactionMode, { taskId });
+            }
+            session.replayedEvents.forEach((replayed) => handleGrokEvent({
+                eventType: 'session_update',
+                payload: { ...replayed, processId: session.processId },
+            }));
+        })();
+        mountingSessionPromisesRef.current.set(task.sessionId, mountPromise);
         try {
-            session = await loadGrokSession(task.sessionId, taskRuntimeWorkspace(task), sessionRules, modelProvider.id, acpOptions, attachMode, { taskId });
-        } catch (error) {
-            const fallbackWorkspace = taskFallbackWorkspace(task);
-            if (!fallbackWorkspace || !isWorkspacePathUnavailable(error)) throw error;
-            session = await loadGrokSession(task.sessionId, fallbackWorkspace, sessionRules, modelProvider.id, acpOptions, attachMode, { taskId });
-            recoveredFromMissingWorkspace = true;
+            await mountPromise;
+        } finally {
+            if (mountingSessionPromisesRef.current.get(task.sessionId) === mountPromise) {
+                mountingSessionPromisesRef.current.delete(task.sessionId);
+            }
         }
-        mountedSessionIdsRef.current.add(session.sessionId);
-        taskByProcessIdRef.current.set(session.processId, taskId);
-        processByTaskIdRef.current.set(taskId, session.processId);
-        taskBySessionIdRef.current.set(session.sessionId, taskId);
-        updateTask(taskId, (value) => ({
-            ...value,
-            workspace: task.workspace ? session.workspace : '',
-            ...(recoveredFromMissingWorkspace ? { sourceWorkspace: session.workspace, gitContext: undefined, error: undefined } : {}),
-            runtimeProcessId: session.processId,
-            availableCommands: session.availableCommands,
-            ...reasoningCapabilityFromCatalog(session.modelCatalog, modelProvider.id),
-            mcpServers: session.mcpServers.map((server) => ({
-                name: server.name,
-                transport: server.transport,
-                health: server.health,
-                tools: server.tools,
-            })),
-            updatedAt: Date.now(),
-        }));
-        if (task.interactionMode && task.interactionMode !== 'default') {
-            await setGrokSessionMode(session.sessionId, task.interactionMode, { taskId });
-        }
-        session.replayedEvents.forEach((replayed) => handleGrokEvent({
-            eventType: 'session_update',
-            payload: { ...replayed, processId: session.processId },
-        }));
     }, [handleGrokEvent, loadGrokSession, updateTask]);
 
     const forkTask = useCallback(async (taskId: string) => {
@@ -2831,34 +2844,7 @@ export const useArkDesktopRuntime = () => {
                         updatedAt: Date.now(),
                     }));
                 } else if (!mountedSessionIdsRef.current.has(sessionId)) {
-                    const sessionRules = buildSessionRules(agent, skills, task.workspace);
-                    const acpOptions = buildAcpOptions(execution);
-                    const attachMode = forceLoadSessionIdsRef.current.delete(sessionId)
-                        ? 'load'
-                        : task.messages.length > 0 ? 'resume' : 'load';
-                    let recoveredFromMissingWorkspace = false;
-                    let session: Awaited<ReturnType<typeof loadGrokSession>>;
-                    try {
-                        session = await loadGrokSession(sessionId, taskRuntimeWorkspace(task), sessionRules, modelProvider.id, acpOptions, attachMode, { taskId });
-                    } catch (error) {
-                        const fallbackWorkspace = taskFallbackWorkspace(task);
-                        if (!fallbackWorkspace || !isWorkspacePathUnavailable(error)) throw error;
-                        session = await loadGrokSession(sessionId, fallbackWorkspace, sessionRules, modelProvider.id, acpOptions, attachMode, { taskId });
-                        recoveredFromMissingWorkspace = true;
-                    }
-                    mountedSessionIdsRef.current.add(session.sessionId);
-                    taskByProcessIdRef.current.set(session.processId, taskId);
-                    processByTaskIdRef.current.set(taskId, session.processId);
-                    taskBySessionIdRef.current.set(session.sessionId, taskId);
-                    updateTask(taskId, (value) => ({
-                        ...value,
-                        workspace: task.workspace ? session.workspace : '',
-                        ...(recoveredFromMissingWorkspace ? { sourceWorkspace: session.workspace, gitContext: undefined, error: undefined } : {}),
-                        runtimeProcessId: session.processId,
-                        availableCommands: session.availableCommands,
-                        ...reasoningCapabilityFromCatalog(session.modelCatalog, modelProvider.id),
-                        updatedAt: Date.now(),
-                    }));
+                    await ensureTaskSessionMounted(taskId);
                 }
             }
             if (startsNewPrompt) {
