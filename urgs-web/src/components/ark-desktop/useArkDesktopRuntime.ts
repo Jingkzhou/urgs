@@ -20,6 +20,9 @@ import {
     discardGrokGit,
     commitGrokGit,
     fetchGrokGit,
+    pullGrokGit,
+    listGrokGitBranches,
+    switchGrokGitBranch,
     syncGrokGitBase,
     abortGrokGitOperation,
     pushGrokGit,
@@ -93,6 +96,7 @@ import {
     type GrokGitStatus,
     type GrokGitMutationResult,
     type GrokGitRemote,
+    type GrokGitBranch,
 } from '@/services/grokDesktop';
 import { loadArkDesktopSnapshot, resetArkDesktopSnapshot, saveArkDesktopSnapshot } from './storage';
 import { extractFileChanges } from './fileChanges';
@@ -2467,6 +2471,27 @@ export const useArkDesktopRuntime = () => {
         return applyTaskGitMutation(taskId, () => fetchGrokGit(task.workspace, taskId));
     }, [applyTaskGitMutation, taskForGit]);
 
+    const pullTaskGit = useCallback((taskId: string) => {
+        const task = taskForGit(taskId);
+        return applyTaskGitMutation(taskId, () => pullGrokGit(task.workspace, {
+            expectedBranch: task.gitContext?.branch || undefined,
+            taskId,
+        }));
+    }, [applyTaskGitMutation, taskForGit]);
+
+    const listTaskGitBranches = useCallback((taskId: string): Promise<GrokGitBranch[]> => {
+        const task = taskForGit(taskId);
+        return listGrokGitBranches(task.workspace);
+    }, [taskForGit]);
+
+    const switchTaskGitBranch = useCallback((taskId: string, branch: string) => {
+        const task = taskForGit(taskId);
+        return applyTaskGitMutation(taskId, () => switchGrokGitBranch(task.workspace, branch, {
+            expectedBranch: task.gitContext?.branch || undefined,
+            taskId,
+        }));
+    }, [applyTaskGitMutation, taskForGit]);
+
     const listTaskGitRemotes = useCallback((taskId: string): Promise<GrokGitRemote[]> => {
         const task = taskForGit(taskId);
         return listGrokGitRemotes(task.workspace);
@@ -3954,6 +3979,9 @@ export const useArkDesktopRuntime = () => {
         addTaskGitToIgnore,
         commitTaskGit,
         fetchTaskGit,
+        pullTaskGit,
+        listTaskGitBranches,
+        switchTaskGitBranch,
         listTaskGitRemotes,
         syncTaskGitBase,
         abortTaskGitOperation,

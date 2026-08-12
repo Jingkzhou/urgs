@@ -100,6 +100,15 @@ pub struct GrokGitMutationResult {
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
 #[serde(rename_all = "camelCase")]
+pub struct GrokGitBranch {
+    pub name: String,
+    pub current: bool,
+    pub remote: bool,
+    pub upstream: Option<String>,
+}
+
+#[derive(Debug, Clone, Serialize, Deserialize)]
+#[serde(rename_all = "camelCase")]
 pub struct GrokGitWorktree {
     pub path: String,
     pub head_commit: Option<String>,
@@ -196,7 +205,7 @@ fn git_command_timeout(args: &[String]) -> Duration {
     if args.iter().any(|argument| {
         matches!(
             argument.as_str(),
-            "fetch" | "push" | "rebase" | "merge" | "worktree" | "stash" | "commit"
+            "fetch" | "pull" | "push" | "rebase" | "merge" | "worktree" | "stash" | "commit"
         )
     }) {
         LONG_GIT_TIMEOUT
@@ -215,6 +224,7 @@ fn git_command_name(args: &[String]) -> &str {
                     | "commit"
                     | "diff"
                     | "fetch"
+                    | "pull"
                     | "merge"
                     | "push"
                     | "rebase"
@@ -506,6 +516,50 @@ fn branch_name(workspace: &Path) -> Option<String> {
         .ok()
         .map(|result| result.stdout.trim().to_string())
         .filter(|value| !value.is_empty())
+}
+
+fn validate_branch_name(workspace: &Path, branch: &str) -> Result<String, String> {
+    let branch = branch.trim();
+    if branch.is_empty() || branch.starts_with('-') || branch.contains("..") {
+        return Err("请选择有效的 Git 分支".to_string());
+    }
+    run_git(
+        workspace,
+        &[
+            "check-ref-format".to_string(),
+            "--branch".to_string(),
+            branch.to_string(),
+        ],
+    )?;
+    Ok(branch.to_string())
+}
+
+fn parse_branches(value: &str) -> Vec<GrokGitBranch> {
+    value
+        .lines()
+        .filter_map(|line| {
+            let mut fields = line.split('\t');
+            let ref_name = fields.next()?.trim();
+            let head = fields.next().unwrap_or_default().trim();
+            let upstream = fields.next().unwrap_or_default().trim();
+            if ref_name.is_empty() || ref_name.ends_with("/HEAD") {
+                return None;
+            }
+            let (name, remote) = if let Some(name) = ref_name.strip_prefix("refs/heads/") {
+                (name.to_string(), false)
+            } else if let Some(name) = ref_name.strip_prefix("refs/remotes/") {
+                (name.to_string(), true)
+            } else {
+                return None;
+            };
+            Some(GrokGitBranch {
+                name,
+                current: head == "*",
+                remote,
+                upstream: (!upstream.is_empty()).then(|| upstream.to_string()),
+            })
+        })
+        .collect()
 }
 
 fn relative_path(value: &str) -> Result<String, String> {
@@ -1553,6 +1607,136 @@ pub fn grok_git_fetch(
 }
 
 #[tauri::command(async)]
+pub fn grok_git_pull(
+    app: AppHandle,
+    workspace: String,
+    expected_branch: Option<String>,
+    task_id: Option<String>,
+) -> Result<GrokGitMutationResult, String> {
+    let workspace = canonical_directory(&workspace)?;
+    git_root(&workspace)?;
+    validate_expected_branch(&workspace, expected_branch.as_deref())?;
+    let branch = branch_name(&workspace).ok_or_else(|| "当前不是可拉取的本地分支".to_string())?;
+    if git_status_at(&workspace)?.is_dirty {
+        return Err("拉取前请先提交当前变更".to_string());
+    }
+    let result = run_git(&workspace, &["pull".to_string(), "--ff-only".to_string()])?;
+    mutation_result(
+        &app,
+        task_id.as_deref(),
+        "git.pull",
+        &workspace,
+        Some(&branch),
+        format!("已拉取分支 {branch}"),
+        Some(result.stdout),
+        true,
+    )
+}
+
+#[tauri::command(async)]
+pub fn grok_git_branch_list(workspace: String) -> Result<Vec<GrokGitBranch>, String> {
+    let workspace = canonical_directory(&workspace)?;
+    git_root(&workspace)?;
+    let result = run_git(
+        &workspace,
+        &[
+            "for-each-ref".to_string(),
+            "--format=%(refname)\t%(HEAD)\t%(upstream:short)".to_string(),
+            "refs/heads".to_string(),
+            "refs/remotes".to_string(),
+        ],
+    )?;
+    Ok(parse_branches(&result.stdout))
+}
+
+#[tauri::command(async)]
+pub fn grok_git_branch_switch(
+    app: AppHandle,
+    workspace: String,
+    branch: String,
+    expected_branch: Option<String>,
+    task_id: Option<String>,
+) -> Result<GrokGitMutationResult, String> {
+    let workspace = canonical_directory(&workspace)?;
+    git_root(&workspace)?;
+    validate_expected_branch(&workspace, expected_branch.as_deref())?;
+    let branch = validate_branch_name(&workspace, &branch)?;
+    if branch_name(&workspace).as_deref() == Some(branch.as_str()) {
+        return mutation_result(
+            &app,
+            task_id.as_deref(),
+            "git.branch-switch",
+            &workspace,
+            Some(&branch),
+            format!("当前已在分支 {branch}"),
+            None,
+            true,
+        );
+    }
+    if git_status_at(&workspace)?.is_dirty {
+        return Err("切换分支前请先提交当前变更".to_string());
+    }
+
+    let local_ref = format!("refs/heads/{branch}");
+    let local_exists = run_git_allow_failure(
+        &workspace,
+        &[
+            "show-ref".to_string(),
+            "--verify".to_string(),
+            "--quiet".to_string(),
+            local_ref,
+        ],
+    )?
+    .success;
+    let args = if local_exists {
+        vec!["switch".to_string(), branch.clone()]
+    } else if branch.contains('/') {
+        let local_branch = validate_branch_name(
+            &workspace,
+            branch
+                .split_once('/')
+                .map(|(_, name)| name)
+                .unwrap_or_default(),
+        )?;
+        let local_branch_exists = run_git_allow_failure(
+            &workspace,
+            &[
+                "show-ref".to_string(),
+                "--verify".to_string(),
+                "--quiet".to_string(),
+                format!("refs/heads/{local_branch}"),
+            ],
+        )?
+        .success;
+        if local_branch_exists {
+            vec!["switch".to_string(), local_branch]
+        } else {
+            vec![
+                "switch".to_string(),
+                "--track".to_string(),
+                "-c".to_string(),
+                local_branch,
+                branch.clone(),
+            ]
+        }
+    } else {
+        return Err(format!("本地分支不存在：{branch}"));
+    };
+    let result = run_git(&workspace, &args)?;
+    let current = branch_name(&workspace).unwrap_or(branch);
+    mutation_result(
+        &app,
+        task_id.as_deref(),
+        "git.branch-switch",
+        &workspace,
+        Some(&current),
+        format!("已切换到分支 {current}"),
+        Some(result.stdout),
+        true,
+    )
+}
+
+#[tauri::command(async)]
 pub fn grok_git_sync_base(
     app: AppHandle,
     workspace: String,
@@ -2086,8 +2270,9 @@ pub fn grok_git_audit_list(
 #[cfg(test)]
 mod tests {
     use super::{
-        git_command_timeout, git_diff_args, is_git_unavailable_error, parse_remotes,
-        parse_tracking, parse_worktrees, relative_path, LOCAL_GIT_TIMEOUT, LONG_GIT_TIMEOUT,
+        git_command_timeout, git_diff_args, is_git_unavailable_error, parse_branches,
+        parse_remotes, parse_tracking, parse_worktrees, relative_path, LOCAL_GIT_TIMEOUT,
+        LONG_GIT_TIMEOUT,
     };
 
     #[test]
@@ -2126,6 +2311,20 @@ mod tests {
         assert_eq!(tracking.as_deref(), Some("main...origin/main"));
         assert_eq!(ahead, 2);
         assert_eq!(behind, 1);
+    }
+
+    #[test]
+    fn parses_local_and_remote_branches() {
+        let branches = parse_branches(
+            "refs/heads/main\t*\torigin/main\nrefs/heads/feature/demo\t\t\nrefs/remotes/origin/HEAD\t\t\nrefs/remotes/origin/feature/demo\t\t\n",
+        );
+        assert_eq!(branches.len(), 3);
+        assert_eq!(branches[0].name, "main");
+        assert!(branches[0].current);
+        assert!(!branches[0].remote);
+        assert_eq!(branches[0].upstream.as_deref(), Some("origin/main"));
+        assert_eq!(branches[2].name, "origin/feature/demo");
+        assert!(branches[2].remote);
     }
 
     #[test]

@@ -279,6 +279,13 @@ export interface GrokGitMutationResult {
     status: GrokGitStatus;
 }
 
+export interface GrokGitBranch {
+    name: string;
+    current: boolean;
+    remote: boolean;
+    upstream?: string | null;
+}
+
 export interface GrokGitWorktree {
     path: string;
     headCommit?: string | null;
@@ -946,6 +953,29 @@ export const commitGrokGit = (
 
 export const fetchGrokGit = (workspace: string, taskId?: string) =>
     invokeGrokGit<GrokGitMutationResult>('grok_git_fetch', { workspace, taskId: taskId || null });
+
+export const pullGrokGit = (
+    workspace: string,
+    options: { expectedBranch?: string; taskId?: string } = {},
+) => invokeGrokGit<GrokGitMutationResult>('grok_git_pull', {
+    workspace,
+    expectedBranch: options.expectedBranch || null,
+    taskId: options.taskId || null,
+});
+
+export const listGrokGitBranches = (workspace: string) =>
+    invokeGrokGit<GrokGitBranch[]>('grok_git_branch_list', { workspace });
+
+export const switchGrokGitBranch = (
+    workspace: string,
+    branch: string,
+    options: { expectedBranch?: string; taskId?: string } = {},
+) => invokeGrokGit<GrokGitMutationResult>('grok_git_branch_switch', {
+    workspace,
+    branch,
+    expectedBranch: options.expectedBranch || null,
+    taskId: options.taskId || null,
+});
 
 export const syncGrokGitBase = (
     workspace: string,
