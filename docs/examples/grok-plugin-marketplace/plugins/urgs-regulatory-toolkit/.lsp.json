@@ -1,0 +1,11 @@
+{
+  "lspServers": {
+    "sql-language-server": {
+      "command": "sql-language-server",
+      "args": ["up", "--method", "stdio"],
+      "extensionToLanguage": {
+        ".sql": "sql"
+      }
+    }
+  }
+}

@@ -903,7 +903,26 @@ export const useArkDesktopRuntime = () => {
         const workspace = resolveWorkspaceOverride(workspaceOverride, snapshotRef.current.settings.workspace);
         try {
             const servers = await listGrokMcpServers(workspace);
-            setMcpServers(servers);
+            setMcpServers((current) => {
+                const configuredNames = new Set(servers.map((server) => server.name));
+                const runtimeStates = new Map(current
+                    .filter((server) => !/^(configured|disabled)$/i.test(server.health))
+                    .map((server) => [server.name, server]));
+                const merged = servers.map((server) => {
+                    const runtime = runtimeStates.get(server.name);
+                    if (!server.enabled || !runtime) return server;
+                    return {
+                        ...server,
+                        health: runtime.health,
+                        tools: runtime.tools || [],
+                    };
+                });
+                return [
+                    ...merged,
+                    ...current.filter((server) => !configuredNames.has(server.name)
+                        && !/^(configured|disabled)$/i.test(server.health)),
+                ];
+            });
             return servers;
         } catch {
             setMcpServers([]);
@@ -1064,7 +1083,15 @@ export const useArkDesktopRuntime = () => {
             const servers = Array.isArray(event.payload?.mcpServers)
                 ? event.payload.mcpServers as GrokMcpServerState[]
                 : [];
-            setMcpServers(servers);
+            setMcpServers((current) => {
+                const runtimeByName = new Map(servers.map((server) => [server.name, server]));
+                const merged = current.map((server) => {
+                    const runtime = runtimeByName.get(server.name);
+                    return runtime ? { ...server, ...runtime, enabled: server.enabled } : server;
+                });
+                const currentNames = new Set(current.map((server) => server.name));
+                return [...merged, ...servers.filter((server) => !currentNames.has(server.name))];
+            });
             if (taskId) {
                 updateTask(taskId, (task) => ({
                     ...task,
@@ -3155,13 +3182,8 @@ export const useArkDesktopRuntime = () => {
         if (!task?.sessionId) throw new Error('当前任务还没有本地会话');
         const runtimeWorkspace = taskRuntimeWorkspace(task);
         await reloadGrokMcpServers(runtimeWorkspace);
-        const servers = await refreshMcpServers(runtimeWorkspace);
-        updateTask(taskId, (value) => ({
-            ...value,
-            mcpServers: servers.map((server) => ({ name: server.name, transport: server.transport, health: server.health, tools: server.tools })),
-            updatedAt: Date.now(),
-        }));
-    }, [refreshMcpServers, updateTask]);
+        await refreshMcpServers(runtimeWorkspace);
+    }, [refreshMcpServers]);
 
     const reloadMcpServers = useCallback(async (workspaceOverride?: string) => {
         const workspace = workspaceOverride?.trim() || snapshotRef.current.settings.workspace;

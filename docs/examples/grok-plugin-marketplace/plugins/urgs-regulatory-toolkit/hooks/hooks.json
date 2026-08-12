@@ -1,0 +1,15 @@
+{
+  "hooks": {
+    "PreToolUse": [
+      {
+        "matcher": "urgs-regulatory:write_*",
+        "hooks": [
+          {
+            "type": "command",
+            "command": "urgs-plugin-approval-check"
+          }
+        ]
+      }
+    ]
+  }
+}

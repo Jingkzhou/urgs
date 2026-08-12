@@ -1,0 +1,5 @@
+/.grok-plugin/ @ai-platform-maintainers @security-reviewers
+/plugins/*/hooks/ @ai-platform-maintainers @security-reviewers
+/plugins/*/.mcp.json @ai-platform-maintainers @security-reviewers
+/plugins/*/.lsp.json @ai-platform-maintainers @security-reviewers
+/plugins/ @ai-plugin-maintainers

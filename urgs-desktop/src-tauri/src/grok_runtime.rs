@@ -1773,6 +1773,46 @@ fn serialize_grok_toml(config: &toml::Value) -> Result<String, String> {
     toml::to_string(config).map_err(|error| format!("序列化本地智能引擎配置失败: {error}"))
 }
 
+fn write_grok_user_config(app: &AppHandle, config: &toml::Value) -> Result<(), String> {
+    let path = grok_config_path(app, "user", "config", None)?;
+    if let Some(parent) = path.parent() {
+        fs::create_dir_all(parent).map_err(|error| format!("创建 Grok 配置目录失败: {error}"))?;
+    }
+    if path.is_file() {
+        fs::copy(&path, path.with_extension("toml.urgs-backup"))
+            .map_err(|error| format!("备份 Grok 配置失败: {error}"))?;
+    }
+    fs::write(&path, serialize_grok_toml(config)?)
+        .map_err(|error| format!("保存 Grok 配置失败: {error}"))
+}
+
+fn update_grok_string_list(
+    config: &mut toml::Value,
+    section_name: &str,
+    key: &str,
+    value: &str,
+    included: bool,
+) -> Result<(), String> {
+    let root = config
+        .as_table_mut()
+        .ok_or_else(|| "Grok 配置根节点必须是对象".to_string())?;
+    let section = root
+        .entry(section_name.to_string())
+        .or_insert_with(|| toml::Value::Table(toml::map::Map::new()))
+        .as_table_mut()
+        .ok_or_else(|| "Grok 扩展配置必须是对象".to_string())?;
+    let values = section
+        .entry(key.to_string())
+        .or_insert_with(|| toml::Value::Array(Vec::new()))
+        .as_array_mut()
+        .ok_or_else(|| format!("Grok 扩展配置 {section_name}.{key} 必须是数组"))?;
+    values.retain(|item| item.as_str() != Some(value));
+    if included {
+        values.push(toml::Value::String(value.to_string()));
+    }
+    Ok(())
+}
+
 fn apply_offline_config(config: &mut toml::Value) -> Result<(), String> {
     let root = config
         .as_table_mut()
@@ -4149,30 +4189,54 @@ pub async fn grok_cli_run(
     enforce_offline_config(&app)?;
     let model = model_from_arguments(&arguments);
     ensure_model_provider_ready(&app, model)?;
-    let current_dir = match workspace.filter(|value| !value.trim().is_empty()) {
-        Some(workspace) => resolve_task_workspace(&app, &workspace)?,
-        None => general_task_workspace(&app)?,
+    let is_extension_management = matches!(
+        arguments.first().map(String::as_str),
+        Some("plugin" | "inspect")
+    );
+    let current_dir = if is_extension_management {
+        // Plugin installation and inspection operate on GROK_HOME. Keeping
+        // these commands in the app-owned directory avoids macOS GUI children
+        // blocking in getcwd() on privacy-managed Documents workspaces.
+        general_task_workspace(&app)?
+    } else {
+        match workspace.filter(|value| !value.trim().is_empty()) {
+            Some(workspace) => resolve_task_workspace(&app, &workspace)?,
+            None => general_task_workspace(&app)?,
+        }
     };
-    let mut command_arguments = vec![
-        "--no-auto-update".to_string(),
-        "--cwd".to_string(),
-        current_dir.to_string_lossy().to_string(),
-    ];
+    let mut command_arguments = vec!["--no-auto-update".to_string()];
     command_arguments.extend(arguments.iter().cloned());
     let home = grok_home(&app)?;
     let mut process_envs = offline_runtime_envs(&home);
     process_envs.extend(model_provider_envs(&app, model)?);
-    let command = app
-        .shell()
-        .sidecar("grok")
-        .map_err(|error| format!("无法定位内置 Grok Build: {error}"))?
+    let executable =
+        std::env::current_exe().map_err(|error| format!("无法定位 Desktop 可执行文件: {error}"))?;
+    let executable_dir = executable
+        .parent()
+        .ok_or_else(|| "无法定位 Desktop 可执行文件目录".to_string())?;
+    #[cfg(windows)]
+    let grok_executable = executable_dir.join("grok.exe");
+    #[cfg(not(windows))]
+    let grok_executable = executable_dir.join("grok");
+    if !grok_executable.is_file() {
+        return Err(format!(
+            "无法定位内置 Grok Build: {}",
+            grok_executable.display()
+        ));
+    }
+    let mut command = TokioCommand::new(grok_executable);
+    command
         .args(command_arguments)
-        // Grok resolves its launch directory before dispatching the
-        // subcommand. Passing --cwd keeps Tauri's sidecar in the stable app
-        // directory while still giving Grok the selected workspace.
+        // One-shot management commands can start in the validated workspace
+        // directly. This avoids Grok's post-launch --cwd transition getting
+        // stuck in getcwd() when spawned by a macOS GUI app.
+        .current_dir(&current_dir)
         .env_clear()
         .env("GROK_HOME", &home)
-        .envs(process_envs);
+        .envs(process_envs)
+        // Dropping a timed-out output future must also stop the sidecar;
+        // otherwise repeated plugin refreshes leave orphaned CLI processes.
+        .kill_on_drop(true);
     let timeout = Duration::from_secs(timeout_seconds.unwrap_or(120).clamp(5, 600));
     let output = tokio::time::timeout(timeout, command.output())
         .await
@@ -4564,6 +4628,125 @@ pub fn grok_config_save(
         exists: true,
         content,
     })
+}
+
+#[tauri::command]
+pub fn grok_skill_set_enabled(app: AppHandle, name: String, enabled: bool) -> Result<(), String> {
+    let name = name.trim();
+    if name.is_empty()
+        || name.len() > 256
+        || name
+            .chars()
+            .any(|value| matches!(value, '\n' | '\r' | '\0'))
+    {
+        return Err("Skill 名称不合法".to_string());
+    }
+    let path = grok_config_path(&app, "user", "config", None)?;
+    let content = if path.is_file() {
+        fs::read_to_string(&path).map_err(|error| format!("读取 Grok 配置失败: {error}"))?
+    } else {
+        String::new()
+    };
+    let mut config = parse_grok_toml(&content)?;
+    update_grok_string_list(&mut config, "skills", "disabled", name, !enabled)?;
+    write_grok_user_config(&app, &config)
+}
+
+#[tauri::command]
+pub fn grok_skill_remove(app: AppHandle, name: String, source_path: String) -> Result<(), String> {
+    let name = name.trim();
+    let source_path = source_path.trim();
+    let path = PathBuf::from(source_path);
+    if name.is_empty()
+        || source_path.is_empty()
+        || source_path.len() > 8_192
+        || source_path.contains('\0')
+        || !path.is_absolute()
+        || path.file_name().and_then(|value| value.to_str()) != Some("SKILL.md")
+    {
+        return Err("Skill 来源路径不合法".to_string());
+    }
+    let config_path = grok_config_path(&app, "user", "config", None)?;
+    let content = if config_path.is_file() {
+        fs::read_to_string(&config_path).map_err(|error| format!("读取 Grok 配置失败: {error}"))?
+    } else {
+        String::new()
+    };
+    let mut config = parse_grok_toml(&content)?;
+    update_grok_string_list(&mut config, "skills", "ignore", source_path, true)?;
+    update_grok_string_list(&mut config, "skills", "disabled", name, false)?;
+    write_grok_user_config(&app, &config)
+}
+
+#[tauri::command]
+pub fn grok_compat_mcp_remove(
+    app: AppHandle,
+    workspace: Option<String>,
+    name: String,
+    source_type: String,
+    source_path: String,
+) -> Result<(), String> {
+    let name = name.trim();
+    let source_path = PathBuf::from(source_path.trim());
+    if name.is_empty()
+        || name.len() > 256
+        || name
+            .chars()
+            .any(|value| matches!(value, '\n' | '\r' | '\0'))
+    {
+        return Err("MCP 服务名称不合法".to_string());
+    }
+    if !matches!(source_type.as_str(), "claudeJson" | "mcpJson") || !source_path.is_absolute() {
+        return Err("仅支持移除 Claude JSON 或 .mcp.json 导入的 MCP 服务".to_string());
+    }
+    if source_type == "claudeJson" {
+        let expected = std::env::var_os("HOME")
+            .or_else(|| std::env::var_os("USERPROFILE"))
+            .map(PathBuf::from)
+            .ok_or_else(|| "无法定位用户目录".to_string())?
+            .join(".claude.json");
+        if source_path != expected {
+            return Err("Claude MCP 来源路径不在允许范围内".to_string());
+        }
+    } else {
+        let workspace = workspace
+            .as_deref()
+            .filter(|value| !value.trim().is_empty())
+            .map(validate_workspace)
+            .transpose()?
+            .unwrap_or(general_task_workspace(&app)?);
+        let canonical_workspace = workspace
+            .canonicalize()
+            .map_err(|error| format!("无法访问工作区: {error}"))?;
+        let parent = source_path
+            .parent()
+            .ok_or_else(|| "MCP 来源路径无效".to_string())?
+            .canonicalize()
+            .map_err(|error| format!("无法访问 MCP 来源目录: {error}"))?;
+        if source_path.file_name().and_then(|value| value.to_str()) != Some(".mcp.json")
+            || !(canonical_workspace.starts_with(&parent)
+                || parent.starts_with(&canonical_workspace))
+        {
+            return Err(".mcp.json 来源路径不在当前工作区层级内".to_string());
+        }
+    }
+    let content = fs::read_to_string(&source_path)
+        .map_err(|error| format!("读取 MCP 来源配置失败: {error}"))?;
+    let mut root: Value = serde_json::from_str(&content)
+        .map_err(|error| format!("MCP 来源配置不是有效 JSON: {error}"))?;
+    let servers = root
+        .get_mut("mcpServers")
+        .and_then(Value::as_object_mut)
+        .ok_or_else(|| "MCP 来源配置中不存在 mcpServers".to_string())?;
+    if servers.remove(name).is_none() {
+        return Err(format!("MCP 来源配置中不存在“{name}”"));
+    }
+    fs::copy(&source_path, source_path.with_extension("json.urgs-backup"))
+        .map_err(|error| format!("备份 MCP 来源配置失败: {error}"))?;
+    let output = serde_json::to_string_pretty(&root)
+        .map_err(|error| format!("序列化 MCP 来源配置失败: {error}"))?;
+    fs::write(&source_path, format!("{output}\n"))
+        .map_err(|error| format!("保存 MCP 来源配置失败: {error}"))
 }
 
 fn normalize_model_id(model: &str) -> Result<String, String> {
@@ -6089,10 +6272,10 @@ mod tests {
         plan_approval_params, process_launch_key, read_provider_api_key, request_timeout,
         rewind_model_provider, scheduled_prompt_injection, select_auth_method, serialize_grok_toml,
         session_attach_method, session_request_meta, sync_provider_reasoning_capability,
-        user_question_params, validate_cli_arguments, validate_persisted_session_id,
-        validate_service_arguments, validate_session_mode, workflow_listings_from_response,
-        GrokAcpOptions, GrokCliService, GrokModelProvider, GrokModelProviderInput,
-        GrokRuntimeState, PromptAttachmentGrant, AUTHENTICATE_TIMEOUT,
+        update_grok_string_list, user_question_params, validate_cli_arguments,
+        validate_persisted_session_id, validate_service_arguments, validate_session_mode,
+        workflow_listings_from_response, GrokAcpOptions, GrokCliService, GrokModelProvider,
+        GrokModelProviderInput, GrokRuntimeState, PromptAttachmentGrant, AUTHENTICATE_TIMEOUT,
         CUSTOM_MODEL_DEFAULT_REASONING_EFFORT, CUSTOM_MODEL_REASONING_EFFORTS,
         GROK_INTERJECT_METHOD, GROK_RECAP_METHOD, INITIALIZE_TIMEOUT, MAX_PROMPT_ATTACHMENT_BYTES,
         REQUEST_TIMEOUT, SESSION_CLOSE_TIMEOUT, SESSION_START_TIMEOUT,
@@ -6101,6 +6284,45 @@ mod tests {
     use std::fs;
     use std::path::{Path, PathBuf};
     use std::sync::Mutex;
+
+    #[test]
+    fn updates_skill_disabled_and_ignore_lists_without_duplicates() {
+        let mut config = parse_grok_toml(
+            r#"[skills]
+disabled = ["review"]
+ignore = []
+"#,
+        )
+        .unwrap();
+
+        update_grok_string_list(&mut config, "skills", "disabled", "review", true).unwrap();
+        update_grok_string_list(
+            &mut config,
+            "skills",
+            "ignore",
+            "/tmp/review/SKILL.md",
+            true,
+        )
+        .unwrap();
+        update_grok_string_list(&mut config, "skills", "disabled", "review", false).unwrap();
+
+        let skills = config
+            .get("skills")
+            .and_then(toml::Value::as_table)
+            .unwrap();
+        assert!(skills
+            .get("disabled")
+            .and_then(toml::Value::as_array)
+            .unwrap()
+            .is_empty());
+        assert_eq!(
+            skills
+                .get("ignore")
+                .and_then(toml::Value::as_array)
+                .unwrap(),
+            &[toml::Value::String("/tmp/review/SKILL.md".to_string())]
+        );
+    }
 
     #[test]
     fn validates_supported_session_modes() {

@@ -1,0 +1,45 @@
+{
+  "version": 1,
+  "plugins": {
+    "urgs-regulatory-toolkit": {
+      "components": {
+        "skills": [
+          {
+            "name": "regulatory-query",
+            "description": "查询监管表、监管元素和业务口径"
+          }
+        ],
+        "commands": [
+          {
+            "name": "regulatory-health",
+            "description": "检查监管资产和 MCP 连接状态"
+          }
+        ],
+        "agents": [
+          {
+            "name": "regulatory-reviewer",
+            "description": "监管口径和数据使用审核"
+          }
+        ],
+        "mcpServers": [
+          {
+            "name": "urgs-regulatory",
+            "description": "stdio"
+          }
+        ],
+        "hooks": [
+          {
+            "name": "PreToolUse",
+            "description": "监管数据写操作审批"
+          }
+        ],
+        "lspServers": [
+          {
+            "name": "sql-language-server",
+            "description": "SQL"
+          }
+        ]
+      }
+    }
+  }
+}

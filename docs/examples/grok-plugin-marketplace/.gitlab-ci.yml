@@ -1,0 +1,14 @@
+stages:
+  - validate
+
+validate-marketplace:
+  stage: validate
+  image: registry.example.intra/devops/grok-build:1.0.0
+  script:
+    - jq empty .grok-plugin/marketplace.json
+    - jq empty .grok-plugin/plugin-index.json
+    - test "$(jq -r '.version' .grok-plugin/plugin-index.json)" = "1"
+    - test "$(jq -r '.plugins[].name' .grok-plugin/marketplace.json | sort)" = "$(jq -r '.plugins | keys[]' .grok-plugin/plugin-index.json | sort)"
+    - jq -e '(.plugins | length) > 0 and all(.plugins[]; (.components | type) == "object" and ([.components[]? | length] | add // 0) > 0)' .grok-plugin/plugin-index.json
+    - for plugin in plugins/*; do grok plugin validate "$plugin"; done
+    - test -z "$(git grep -nE '(glpat-|PRIVATE-TOKEN|password[[:space:]]*=|api[_-]?key[[:space:]]*=)' -- . ':!README.md')"

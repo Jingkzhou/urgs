@@ -1,0 +1,26 @@
+{
+  "name": "grok-plugin-marketplace",
+  "description": "URGS 内网 Grok 插件市场",
+  "owner": {
+    "name": "监管科技团队",
+    "email": "ai-platform@example.intra"
+  },
+  "plugins": [
+    {
+      "name": "urgs-regulatory-toolkit",
+      "version": "1.0.0",
+      "description": "监管资产查询、口径解释和报表辅助能力",
+      "category": "regulatory",
+      "author": {
+        "name": "监管科技团队"
+      },
+      "source": {
+        "type": "local",
+        "path": "./plugins/urgs-regulatory-toolkit"
+      },
+      "tags": ["URGS", "监管", "数据资产"],
+      "keywords": ["监管查询", "报表口径", "监管元素"],
+      "domains": ["urgs.intra"]
+    }
+  ]
+}

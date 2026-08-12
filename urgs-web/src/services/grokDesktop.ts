@@ -371,6 +371,15 @@ export interface GrokDiscoveredPlugin {
     path: string;
     source: string;
     enabled: boolean;
+    scope?: string;
+    provides?: GrokPluginProvides;
+}
+
+export interface GrokPluginProvides {
+    skills: number;
+    agents: number;
+    hooks: boolean;
+    mcpServers: number;
 }
 
 export interface GrokPluginComponents {
@@ -391,6 +400,8 @@ export interface GrokInstalledPlugin {
     source: string;
     marketplace: string;
     enabled: boolean;
+    scope?: string;
+    provides?: GrokPluginProvides;
 }
 
 export interface GrokPluginValidation {
@@ -411,6 +422,88 @@ export interface GrokMarketplaceSource {
     kind: string;
     url: string;
     branch?: string | null;
+}
+
+export interface GrokPluginComponentItem {
+    name: string;
+    description?: string;
+}
+
+export interface GrokPluginCatalogComponents {
+    skills: GrokPluginComponentItem[];
+    commands: GrokPluginComponentItem[];
+    agents: GrokPluginComponentItem[];
+    mcpServers: GrokPluginComponentItem[];
+    hooks: GrokPluginComponentItem[];
+    lspServers: GrokPluginComponentItem[];
+}
+
+export interface GrokMarketplacePlugin {
+    status: string;
+    name: string;
+    version?: string;
+    description?: string;
+    marketplace: string;
+    category?: string;
+    author?: string;
+    homepage?: string;
+    tags: string[];
+    keywords: string[];
+    domains: string[];
+    components: GrokPluginCatalogComponents;
+}
+
+export interface GrokExtensionSource {
+    type: string;
+    path?: string;
+    pluginName?: string;
+    label: string;
+}
+
+export interface GrokInspectedHook {
+    event: string;
+    hookType: string;
+    target: string;
+    matcher?: string;
+    disabled: boolean;
+    source: GrokExtensionSource;
+}
+
+export interface GrokInspectedSkill {
+    name: string;
+    description: string;
+    userInvocable: boolean;
+    disabled: boolean;
+    source: GrokExtensionSource;
+    collidesWith?: string;
+    invocableAs?: string;
+}
+
+export interface GrokInspectedMcpServer {
+    name: string;
+    transport: string;
+    target: string;
+    disabled: boolean;
+    source: GrokExtensionSource;
+}
+
+export interface GrokInspectedLspServer {
+    name: string;
+    command: string;
+    args: string[];
+    extensions: string[];
+    untrusted: boolean;
+    source: GrokExtensionSource;
+}
+
+export interface GrokExtensionInventory {
+    grokVersion: string;
+    projectTrusted: boolean;
+    hooks: GrokInspectedHook[];
+    skills: GrokInspectedSkill[];
+    plugins: GrokDiscoveredPlugin[];
+    mcpServers: GrokInspectedMcpServer[];
+    lspServers: GrokInspectedLspServer[];
 }
 
 export interface GrokCliServiceInfo {
@@ -949,6 +1042,73 @@ const readGrokPluginState = async (workspace?: string) => {
     return parseGrokPluginState(config.content);
 };
 
+const stringValue = (value: unknown) => typeof value === 'string' ? value.trim() : '';
+
+const stringArray = (value: unknown) => Array.isArray(value)
+    ? value.map(stringValue).filter(Boolean)
+    : [];
+
+const normalizeGrokExtensionSource = (value: unknown): GrokExtensionSource => {
+    if (typeof value === 'string') {
+        const label = value.trim() || '未知来源';
+        return { type: 'unknown', label };
+    }
+    if (!value || typeof value !== 'object') return { type: 'unknown', label: '未知来源' };
+    const source = value as Record<string, unknown>;
+    const type = stringValue(source.type) || 'unknown';
+    const path = stringValue(source.path) || undefined;
+    const pluginName = stringValue(source.pluginName) || stringValue(source.plugin_name)
+        || stringValue(source.plugin) || undefined;
+    return {
+        type,
+        path,
+        pluginName,
+        label: pluginName ? `plugin: ${pluginName}` : path || type,
+    };
+};
+
+const normalizePluginProvides = (value: unknown): GrokPluginProvides => {
+    const provides = value && typeof value === 'object' ? value as Record<string, unknown> : {};
+    return {
+        skills: Number(provides.skills) || 0,
+        agents: Number(provides.agents) || 0,
+        hooks: provides.hooks === true,
+        mcpServers: Number(provides.mcpServers ?? provides.mcp_servers) || 0,
+    };
+};
+
+const normalizeInspectedPlugins = (
+    value: unknown,
+    pluginState?: { enabled: Set<string>; disabled: Set<string> },
+): GrokDiscoveredPlugin[] => {
+    if (!Array.isArray(value)) return [];
+    return value.flatMap((item) => {
+        if (!item || typeof item !== 'object') return [];
+        const plugin = item as Record<string, unknown>;
+        const name = stringValue(plugin.name);
+        const scope = stringValue(plugin.scope);
+        const id = stringValue(plugin.id) || [scope, name].filter(Boolean).join(':');
+        if (!id && !name) return [];
+        const identifiers = [id, name].filter(Boolean);
+        const explicitlyDisabled = pluginState
+            ? identifiers.some((identifier) => pluginState.disabled.has(identifier))
+            : false;
+        const explicitlyEnabled = pluginState
+            ? identifiers.some((identifier) => pluginState.enabled.has(identifier))
+            : false;
+        return [{
+            id: id || name,
+            name: name || id,
+            version: stringValue(plugin.version),
+            path: stringValue(plugin.path) || stringValue(plugin.root),
+            source: stringValue(plugin.source) || scope,
+            enabled: explicitlyDisabled ? false : explicitlyEnabled || plugin.enabled === true,
+            scope: scope || undefined,
+            provides: normalizePluginProvides(plugin.provides),
+        }];
+    });
+};
+
 export const inspectGrokPlugins = async (workspace?: string): Promise<GrokDiscoveredPlugin[]> => {
     const [result, pluginState] = await Promise.all([
         runGrokCli(['inspect', '--json'], workspace, 30),
@@ -956,27 +1116,78 @@ export const inspectGrokPlugins = async (workspace?: string): Promise<GrokDiscov
     ]);
     if (!result.success) throw new Error(result.stderr.trim() || '无法读取 Grok 插件');
     const payload = JSON.parse(result.stdout) as { plugins?: unknown };
-    if (!Array.isArray(payload.plugins)) return [];
-    return payload.plugins.flatMap((item) => {
+    return normalizeInspectedPlugins(payload.plugins, pluginState);
+};
+
+export const inspectGrokExtensions = async (workspace?: string): Promise<GrokExtensionInventory> => {
+    const result = await runGrokCli(['inspect', '--json'], workspace, 60);
+    if (!result.success) throw new Error(result.stderr.trim() || '无法读取 Grok 扩展能力');
+    const payload = JSON.parse(result.stdout) as Record<string, unknown>;
+    const hooks = Array.isArray(payload.hooks) ? payload.hooks.flatMap((item) => {
         if (!item || typeof item !== 'object') return [];
-        const plugin = item as Record<string, unknown>;
-        const id = typeof plugin.id === 'string' ? plugin.id.trim() : '';
-        const name = typeof plugin.name === 'string' ? plugin.name.trim() : '';
-        if (!id && !name) return [];
-        const identifiers = [id, name].filter(Boolean);
-        const explicitlyDisabled = identifiers.some((identifier) => pluginState.disabled.has(identifier));
-        const explicitlyEnabled = identifiers.some((identifier) => pluginState.enabled.has(identifier));
+        const hook = item as Record<string, unknown>;
+        const event = stringValue(hook.event);
+        if (!event) return [];
         return [{
-            id: id || name,
-            name: name || id,
-            version: typeof plugin.version === 'string' ? plugin.version.trim() : '',
-            path: typeof plugin.path === 'string' ? plugin.path.trim() : '',
-            source: typeof plugin.source === 'string' ? plugin.source.trim() : '',
-            enabled: explicitlyDisabled
-                ? false
-                : explicitlyEnabled || plugin.enabled === true,
+            event,
+            hookType: stringValue(hook.hookType) || 'command',
+            target: stringValue(hook.target),
+            matcher: stringValue(hook.matcher) || undefined,
+            disabled: hook.disabled === true,
+            source: normalizeGrokExtensionSource(hook.source),
         }];
-    });
+    }) : [];
+    const skills = Array.isArray(payload.skills) ? payload.skills.flatMap((item) => {
+        if (!item || typeof item !== 'object') return [];
+        const skill = item as Record<string, unknown>;
+        const name = stringValue(skill.name);
+        if (!name) return [];
+        return [{
+            name,
+            description: stringValue(skill.description),
+            userInvocable: skill.userInvocable === true,
+            disabled: skill.disabled === true,
+            source: normalizeGrokExtensionSource(skill.source),
+            collidesWith: stringValue(skill.collidesWith) || undefined,
+            invocableAs: stringValue(skill.invocableAs) || undefined,
+        }];
+    }) : [];
+    const mcpServers = Array.isArray(payload.mcpServers) ? payload.mcpServers.flatMap((item) => {
+        if (!item || typeof item !== 'object') return [];
+        const server = item as Record<string, unknown>;
+        const name = stringValue(server.name);
+        if (!name) return [];
+        return [{
+            name,
+            transport: stringValue(server.transport) || 'unknown',
+            target: stringValue(server.target),
+            disabled: server.disabled === true,
+            source: normalizeGrokExtensionSource(server.source),
+        }];
+    }) : [];
+    const lspServers = Array.isArray(payload.lspServers) ? payload.lspServers.flatMap((item) => {
+        if (!item || typeof item !== 'object') return [];
+        const server = item as Record<string, unknown>;
+        const name = stringValue(server.name);
+        if (!name) return [];
+        return [{
+            name,
+            command: stringValue(server.command),
+            args: stringArray(server.args),
+            extensions: stringArray(server.extensions),
+            untrusted: server.untrusted === true,
+            source: normalizeGrokExtensionSource(server.source),
+        }];
+    }) : [];
+    return {
+        grokVersion: stringValue(payload.grokVersion),
+        projectTrusted: payload.projectTrusted !== false,
+        hooks,
+        skills,
+        plugins: normalizeInspectedPlugins(payload.plugins),
+        mcpServers,
+        lspServers,
+    };
 };
 
 const emptyPluginComponents = (): GrokPluginComponents => ({
@@ -1062,6 +1273,8 @@ export const listGrokInstalledPlugins = async (workspace?: string): Promise<Grok
             source: typeof plugin.source === 'string' ? plugin.source.trim() : inspected?.source || '',
             marketplace: typeof plugin.marketplace === 'string' ? plugin.marketplace.trim() : '',
             enabled: inspected?.enabled === true,
+            scope: inspected?.scope,
+            provides: inspected?.provides,
         }];
     });
 };
@@ -1097,6 +1310,59 @@ export const uninstallGrokPlugin = async (name: string, workspace?: string) => {
     );
 };
 
+const assertExtensionName = (name: string, label: string) => {
+    const normalized = name.trim();
+    if (!normalized || normalized.length > 256 || /[\0\r\n]/.test(normalized)) {
+        throw new Error(`${label}名称不合法`);
+    }
+    return normalized;
+};
+
+export const setGrokSkillEnabled = (name: string, enabled: boolean) => invokeGrok<void>(
+    'grok_skill_set_enabled',
+    { name: assertExtensionName(name, 'Skill '), enabled },
+);
+
+export const removeGrokSkill = (name: string, sourcePath: string) => invokeGrok<void>(
+    'grok_skill_remove',
+    {
+        name: assertExtensionName(name, 'Skill '),
+        sourcePath,
+    },
+);
+
+export const setGrokInspectedMcpEnabled = async (name: string, enabled: boolean, workspace?: string) => {
+    const serverName = assertExtensionName(name, 'MCP 服务');
+    return assertSuccessfulPluginCommand(
+        await runGrokCli(['mcp', enabled ? 'enable' : 'disable', serverName], workspace, 30),
+        `MCP 服务${enabled ? '启用' : '禁用'}失败`,
+    );
+};
+
+export const removeGrokInspectedMcp = async (
+    name: string,
+    source: GrokExtensionSource,
+    workspace?: string,
+) => {
+    const serverName = assertExtensionName(name, 'MCP 服务');
+    if (source.type === 'configToml') {
+        const projectConfig = Boolean(workspace && source.path && /[\\/]\.grok[\\/]config\.toml$/i.test(source.path));
+        return assertSuccessfulPluginCommand(
+            await runGrokCli(['mcp', 'remove', serverName, '--scope', projectConfig ? 'project' : 'user'], workspace, 30),
+            'MCP 服务卸载失败',
+        );
+    }
+    if ((source.type === 'claudeJson' || source.type === 'mcpJson') && source.path) {
+        return invokeGrok<void>('grok_compat_mcp_remove', {
+            workspace: workspace || null,
+            name: serverName,
+            sourceType: source.type,
+            sourcePath: source.path,
+        });
+    }
+    throw new Error('该 MCP 由所属插件或受管来源提供，请卸载所属插件或联系管理员移除');
+};
+
 export const updateGrokPlugin = async (name?: string, workspace?: string) => {
     const arguments_ = ['plugin', 'update'];
     if (name?.trim()) arguments_.push(assertPluginName(name));
@@ -1106,13 +1372,61 @@ export const updateGrokPlugin = async (name?: string, workspace?: string) => {
     );
 };
 
-export const listGrokPluginMarketplace = async (workspace?: string) => {
+const normalizeComponentItems = (value: unknown): GrokPluginComponentItem[] => Array.isArray(value)
+    ? value.flatMap((item) => {
+        if (typeof item === 'string') {
+            const name = item.trim();
+            return name ? [{ name }] : [];
+        }
+        if (!item || typeof item !== 'object') return [];
+        const component = item as Record<string, unknown>;
+        const name = stringValue(component.name);
+        if (!name) return [];
+        const description = stringValue(component.description);
+        return [{ name, description: description || undefined }];
+    })
+    : [];
+
+const normalizeCatalogComponents = (value: unknown): GrokPluginCatalogComponents => {
+    const components = value && typeof value === 'object' ? value as Record<string, unknown> : {};
+    return {
+        skills: normalizeComponentItems(components.skills),
+        commands: normalizeComponentItems(components.commands),
+        agents: normalizeComponentItems(components.agents),
+        mcpServers: normalizeComponentItems(components.mcpServers ?? components.mcp_servers),
+        hooks: normalizeComponentItems(components.hooks),
+        lspServers: normalizeComponentItems(components.lspServers ?? components.lsp_servers),
+    };
+};
+
+export const listGrokPluginMarketplace = async (workspace?: string): Promise<GrokMarketplacePlugin[]> => {
     const result = assertSuccessfulPluginCommand(
         await runGrokCli(['plugin', 'list', '--available', '--json'], workspace, 120),
         '无法读取可用市场插件',
     );
     try {
-        return JSON.parse(result.stdout) as unknown;
+        const payload = JSON.parse(result.stdout) as unknown;
+        if (!Array.isArray(payload)) return [];
+        return payload.flatMap((item) => {
+            if (!item || typeof item !== 'object') return [];
+            const plugin = item as Record<string, unknown>;
+            const name = stringValue(plugin.name);
+            if (!name) return [];
+            return [{
+                status: stringValue(plugin.status) || 'available',
+                name,
+                version: stringValue(plugin.version) || undefined,
+                description: stringValue(plugin.description) || undefined,
+                marketplace: stringValue(plugin.marketplace) || '未命名市场',
+                category: stringValue(plugin.category) || undefined,
+                author: stringValue(plugin.author) || undefined,
+                homepage: stringValue(plugin.homepage) || undefined,
+                tags: stringArray(plugin.tags),
+                keywords: stringArray(plugin.keywords),
+                domains: stringArray(plugin.domains),
+                components: normalizeCatalogComponents(plugin.components),
+            }];
+        });
     } catch {
         throw new Error('可用市场插件返回了无法解析的数据');
     }
@@ -1169,10 +1483,12 @@ export const updateGrokMarketplaceSource = async (source?: string, workspace?: s
     );
 };
 
-export const installGrokMarketplacePlugin = async (name: string, workspace?: string) => {
+export const installGrokMarketplacePlugin = async (name: string, marketplace?: string, workspace?: string) => {
     const pluginName = assertPluginName(name);
+    const source = marketplace?.trim();
+    const installRef = source ? `${pluginName}@${assertMarketplaceSource(source)}` : pluginName;
     return assertSuccessfulPluginCommand(
-        await runGrokCli(['plugin', 'install', pluginName, '--trust'], workspace, 300),
+        await runGrokCli(['plugin', 'install', installRef, '--trust'], workspace, 300),
         '市场插件安装失败',
     );
 };

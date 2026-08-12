@@ -1,0 +1,12 @@
+{
+  "mcpServers": {
+    "urgs-regulatory": {
+      "command": "urgs-regulatory-mcp",
+      "args": ["serve"],
+      "env": {
+        "URGS_API_BASE_URL": "${URGS_API_BASE_URL}",
+        "URGS_ACCESS_TOKEN": "${URGS_ACCESS_TOKEN}"
+      }
+    }
+  }
+}

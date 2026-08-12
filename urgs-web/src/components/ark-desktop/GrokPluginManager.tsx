@@ -1,129 +1,155 @@
-import React, { useCallback, useEffect, useState } from 'react';
+import React, { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import {
-    CheckCircle2, ChevronDown, ChevronUp, FolderPlus, GitBranch, LoaderCircle,
-    Plug, Plus, RefreshCw, ShieldAlert, Trash2,
+    LoaderCircle,
+    PackageCheck,
+    PackageSearch,
+    Plug,
+    RefreshCw,
+    ShieldAlert,
 } from 'lucide-react';
 import {
-    chooseGrokPluginDirectory,
     addGrokMarketplaceSource,
+    chooseGrokPluginDirectory,
     getGrokPluginDetails,
+    inspectGrokExtensions,
     installGrokMarketplacePlugin,
     installTrustedLocalGrokPlugin,
-    listGrokPluginMarketplace,
-    listGrokMarketplaceSources,
     listGrokInstalledPlugins,
-    setGrokPluginEnabled,
+    listGrokMarketplaceSources,
+    listGrokPluginMarketplace,
     removeGrokMarketplaceSource,
+    removeGrokInspectedMcp,
+    removeGrokSkill,
+    setGrokPluginEnabled,
+    setGrokInspectedMcpEnabled,
+    setGrokSkillEnabled,
     uninstallGrokPlugin,
-    updateGrokPlugin,
     updateGrokMarketplaceSource,
+    updateGrokPlugin,
     validateGrokPluginDirectory,
+    type GrokExtensionInventory,
     type GrokInstalledPlugin,
-    type GrokPluginComponents,
-    type GrokPluginDetails,
+    type GrokInspectedMcpServer,
+    type GrokInspectedSkill,
+    type GrokMarketplacePlugin,
     type GrokMarketplaceSource,
+    type GrokMcpServerState,
+    type GrokPluginDetails,
 } from '@/services/grokDesktop';
+import GrokInstalledPluginsTab from './GrokInstalledPluginsTab';
+import GrokPluginMarketplaceTab from './GrokPluginMarketplaceTab';
+
+type ExtensionTab = 'plugins' | 'marketplace';
 
 interface GrokPluginManagerProps {
     workspace: string;
+    mcpServers: GrokMcpServerState[];
+    onRefreshMcp: (workspace?: string) => Promise<unknown>;
     onChanged: () => Promise<void>;
     onError: (message: string) => void;
 }
 
-const componentLabels = (components: GrokPluginComponents) => {
-    const labels: string[] = [];
-    if (components.skillDirectories) labels.push(`${components.skillDirectories} 个技能目录`);
-    if (components.commandDirectories) labels.push(`${components.commandDirectories} 个命令目录`);
-    if (components.agentDirectories) labels.push(`${components.agentDirectories} 个 Agent 目录`);
-    if (components.hasHooks) labels.push('Hooks');
-    if (components.hasMcpServers) labels.push('MCP 服务');
-    if (components.hasLspServers) labels.push('LSP 服务');
-    return labels.length ? labels.join('、') : '未声明可加载组件';
+const emptyInventory: GrokExtensionInventory = {
+    grokVersion: '',
+    projectTrusted: true,
+    hooks: [],
+    skills: [],
+    plugins: [],
+    mcpServers: [],
+    lspServers: [],
 };
 
-interface MarketplacePlugin {
-    name: string;
-    version?: string;
-    description?: string;
-    marketplace?: string;
-    installed?: boolean;
-}
+const tabDefinitions: Array<{
+    id: ExtensionTab;
+    label: string;
+    icon: React.ElementType;
+}> = [
+    { id: 'marketplace', label: 'Marketplace', icon: PackageSearch },
+    { id: 'plugins', label: 'Plugins', icon: PackageCheck },
+];
 
-const normalizeMarketplacePlugins = (value: unknown): MarketplacePlugin[] => {
-    const sources = Array.isArray(value)
-        ? value
-        : value && typeof value === 'object'
-            ? Object.values(value as Record<string, unknown>).flatMap((item) => Array.isArray(item) ? item : item && typeof item === 'object' && Array.isArray((item as Record<string, unknown>).plugins) ? (item as Record<string, unknown>).plugins as unknown[] : [])
-            : [];
-    return sources.flatMap((item) => {
-        if (!item || typeof item !== 'object') return [];
-        const plugin = item as Record<string, unknown>;
-        const name = String(plugin.name || plugin.id || plugin.plugin || '').trim();
-        if (!name) return [];
-        return [{
-            name,
-            version: typeof plugin.version === 'string' ? plugin.version : undefined,
-            description: typeof plugin.description === 'string' ? plugin.description : undefined,
-            marketplace: typeof plugin.marketplace === 'string' ? plugin.marketplace : typeof plugin.source === 'string' ? plugin.source : undefined,
-            installed: plugin.installed === true,
-        }];
-    });
-};
-
-const GrokPluginManager: React.FC<GrokPluginManagerProps> = ({ workspace, onChanged, onError }) => {
+const GrokPluginManager: React.FC<GrokPluginManagerProps> = ({
+    workspace,
+    mcpServers,
+    onRefreshMcp,
+    onChanged,
+    onError,
+}) => {
+    const [activeTab, setActiveTab] = useState<ExtensionTab>('marketplace');
     const [plugins, setPlugins] = useState<GrokInstalledPlugin[]>([]);
     const [details, setDetails] = useState<Record<string, GrokPluginDetails>>({});
-    const [expandedId, setExpandedId] = useState<string | null>(null);
-    const [loading, setLoading] = useState(true);
-    const [pendingId, setPendingId] = useState<string | null>(null);
-    const [marketplace, setMarketplace] = useState<MarketplacePlugin[]>([]);
+    const [marketplacePlugins, setMarketplacePlugins] = useState<GrokMarketplacePlugin[]>([]);
     const [marketplaceSources, setMarketplaceSources] = useState<GrokMarketplaceSource[]>([]);
-    const [marketplaceQuery, setMarketplaceQuery] = useState('');
-    const [newMarketplaceSource, setNewMarketplaceSource] = useState('');
-    const [marketplaceLoading, setMarketplaceLoading] = useState(false);
+    const [inventory, setInventory] = useState<GrokExtensionInventory>(emptyInventory);
+    const [loading, setLoading] = useState(true);
+    const [marketplaceLoading, setMarketplaceLoading] = useState(true);
+    const [inventoryLoading, setInventoryLoading] = useState(true);
+    const [pendingId, setPendingId] = useState<string | null>(null);
 
     const reportError = useCallback((error: unknown) => {
         onError(error instanceof Error ? error.message : String(error));
     }, [onError]);
 
-    const refresh = useCallback(async () => {
+    const refreshPlugins = useCallback(async () => {
         setLoading(true);
         try {
-            setPlugins(await listGrokInstalledPlugins(workspace));
+            setPlugins(await listGrokInstalledPlugins(workspace || undefined));
         } catch (error) {
             reportError(error);
         } finally {
             setLoading(false);
         }
-    }, [workspace, reportError]);
+    }, [reportError, workspace]);
 
-    useEffect(() => { void refresh(); }, [refresh]);
+    const refreshInventory = useCallback(async () => {
+        setInventoryLoading(true);
+        try {
+            setInventory(await inspectGrokExtensions(workspace || undefined));
+        } catch (error) {
+            reportError(error);
+        } finally {
+            setInventoryLoading(false);
+        }
+    }, [reportError, workspace]);
 
     const refreshMarketplace = useCallback(async () => {
         setMarketplaceLoading(true);
         try {
-            setMarketplaceSources(await listGrokMarketplaceSources(workspace));
-        } catch (error) {
-            reportError(error);
-        }
-        try {
-            setMarketplace(normalizeMarketplacePlugins(await listGrokPluginMarketplace(workspace)));
-        } catch (error) {
-            reportError(error);
+            try {
+                setMarketplaceSources(await listGrokMarketplaceSources(workspace || undefined));
+            } catch (error) {
+                reportError(error);
+            }
+            try {
+                setMarketplacePlugins(await listGrokPluginMarketplace(workspace || undefined));
+            } catch (error) {
+                reportError(error);
+            }
         } finally {
             setMarketplaceLoading(false);
         }
     }, [reportError, workspace]);
 
-    const addMarketplace = async () => {
-        const source = newMarketplaceSource.trim();
-        if (!source) return;
-        if (!window.confirm(`确认添加插件市场源“${source}”吗？添加后会读取该来源中的插件清单。`)) return;
-        setPendingId('market-source:add');
+    const refreshAll = useCallback(async () => {
+        // Grok CLI 每次调用都会创建 sidecar 管道。Desktop 首屏必须受控串行刷新，
+        // 避免同时查询插件、市场、清单和 MCP 时耗尽文件描述符。
+        await refreshPlugins();
+        await refreshInventory();
+        await refreshMarketplace();
+        await onRefreshMcp(workspace || undefined).catch(reportError);
+    }, [onRefreshMcp, refreshInventory, refreshMarketplace, refreshPlugins, reportError, workspace]);
+
+    const refreshAllRef = useRef(refreshAll);
+    refreshAllRef.current = refreshAll;
+    useEffect(() => {
+        void refreshAllRef.current();
+    }, [workspace]);
+
+    const runAction = async (id: string, action: () => Promise<void>) => {
+        if (pendingId) return;
+        setPendingId(id);
         try {
-            await addGrokMarketplaceSource(source, workspace);
-            setNewMarketplaceSource('');
-            await Promise.all([refreshMarketplace(), onChanged()]);
+            await action();
         } catch (error) {
             reportError(error);
         } finally {
@@ -131,146 +157,184 @@ const GrokPluginManager: React.FC<GrokPluginManagerProps> = ({ workspace, onChan
         }
     };
 
-    const updateMarketplace = async (source: GrokMarketplaceSource) => {
-        setPendingId(`market-source:update:${source.name}`);
-        try {
-            await updateGrokMarketplaceSource(source.url, workspace);
+    const addMarketplace = async (source: string) => {
+        if (!window.confirm(`确认连接内网插件市场“${source}”吗？连接后会读取仓库中的市场清单。`)) return;
+        await runAction('market-source:add', async () => {
+            await addGrokMarketplaceSource(source, workspace || undefined);
             await refreshMarketplace();
-        } catch (error) {
-            reportError(error);
-        } finally {
-            setPendingId(null);
-        }
+            await onChanged();
+        });
     };
+
+    const updateMarketplace = async (source: GrokMarketplaceSource) => runAction(`market-source:update:${source.name}`, async () => {
+        await updateGrokMarketplaceSource(source.url, workspace || undefined);
+        await refreshMarketplace();
+    });
 
     const removeMarketplace = async (source: GrokMarketplaceSource) => {
-        if (!window.confirm(`确认移除市场源“${source.name}”吗？这会同时卸载该来源安装的插件。`)) return;
-        setPendingId(`market-source:remove:${source.name}`);
-        try {
-            await removeGrokMarketplaceSource(source.url, workspace);
-            await Promise.all([refreshMarketplace(), onChanged()]);
-        } catch (error) {
-            reportError(error);
-        } finally {
-            setPendingId(null);
-        }
+        if (!window.confirm(`确认移除市场源“${source.name}”吗？Grok 会同时卸载从该来源安装的插件。`)) return;
+        await runAction(`market-source:remove:${source.name}`, async () => {
+            await removeGrokMarketplaceSource(source.url, workspace || undefined);
+            await refreshAll();
+            await onChanged();
+        });
+    };
+
+    const installMarketplace = async (plugin: GrokMarketplacePlugin) => {
+        const componentCount = Object.values(plugin.components).reduce((total, items) => total + items.length, 0);
+        const componentText = componentCount > 0
+            ? `市场已声明 ${componentCount} 个组件，可在卡片中展开核对。`
+            : '该市场没有发布能力清单，当前无法确认它包含 Skill、MCP 还是其他可执行组件。建议联系市场维护人补齐 plugin-index.json 后再安装。';
+        if (!window.confirm(`确认从“${plugin.marketplace}”安装“${plugin.name}”吗？\n\n${plugin.description || '该插件未提供说明。'}\n${componentText}\n\n安装即代表信任该来源中的可执行组件。`)) return;
+        await runAction(`market:${plugin.marketplace}:${plugin.name}`, async () => {
+            await installGrokMarketplacePlugin(plugin.name, plugin.marketplace, workspace || undefined);
+            await refreshAll();
+            await onChanged();
+            setActiveTab('plugins');
+        });
     };
 
     const addLocalPlugin = async () => {
         const path = await chooseGrokPluginDirectory();
         if (!path) return;
-        setPendingId('install');
-        try {
-            const validation = await validateGrokPluginDirectory(path, workspace);
-            const summary = componentLabels(validation.components);
-            const confirmed = window.confirm(
-                `确认信任并安装本地插件“${validation.name}”吗？\n\n` +
-                `${validation.description || '该插件未提供说明'}\n组件：${summary}\n\n` +
-                '插件可能在本机运行 Hooks、MCP/LSP 服务和技能。请仅安装你已审查并信任的目录。',
-            );
-            if (!confirmed) return;
-            await installTrustedLocalGrokPlugin(path, workspace);
-            await Promise.all([refresh(), onChanged()]);
-        } catch (error) {
-            reportError(error);
-        } finally {
-            setPendingId(null);
-        }
+        await runAction('install-local', async () => {
+            const validation = await validateGrokPluginDirectory(path, workspace || undefined);
+            const summary = [
+                validation.components.skillDirectories ? `${validation.components.skillDirectories} 个 Skills 目录` : '',
+                validation.components.commandDirectories ? `${validation.components.commandDirectories} 个 Commands 目录` : '',
+                validation.components.agentDirectories ? `${validation.components.agentDirectories} 个 Agents 目录` : '',
+                validation.components.hasHooks ? 'Hooks' : '',
+                validation.components.hasMcpServers ? 'MCP Servers' : '',
+                validation.components.hasLspServers ? 'LSP Servers' : '',
+            ].filter(Boolean).join('、') || '未声明可加载组件';
+            if (!window.confirm(`确认信任并安装本地插件“${validation.name}”吗？\n\n${validation.description || '该插件未提供说明。'}\n组件：${summary}`)) return;
+            await installTrustedLocalGrokPlugin(path, workspace || undefined);
+            await refreshAll();
+            await onChanged();
+        });
     };
 
-    const togglePlugin = async (plugin: GrokInstalledPlugin) => {
-        setPendingId(plugin.id);
-        try {
-            await setGrokPluginEnabled(plugin.name, !plugin.enabled, workspace);
-            await Promise.all([refresh(), onChanged()]);
-        } catch (error) {
-            reportError(error);
-        } finally {
-            setPendingId(null);
-        }
+    const loadDetails = async (plugin: GrokInstalledPlugin) => runAction(`details:${plugin.id}`, async () => {
+        const value = await getGrokPluginDetails(plugin, workspace || undefined);
+        setDetails((current) => ({ ...current, [plugin.id]: value }));
+    });
+
+    const togglePlugin = async (plugin: GrokInstalledPlugin) => runAction(`toggle:${plugin.id}`, async () => {
+        await setGrokPluginEnabled(plugin.name, !plugin.enabled, workspace || undefined);
+        await refreshPlugins();
+        await refreshInventory();
+        await onChanged();
+    });
+
+    const updatePlugin = async (plugin: GrokInstalledPlugin) => {
+        if (!window.confirm(`确认更新插件“${plugin.name}”吗？更新会替换该插件中的可执行组件。`)) return;
+        await runAction(`update:${plugin.id}`, async () => {
+            await updateGrokPlugin(plugin.name, workspace || undefined);
+            await refreshAll();
+            await onChanged();
+        });
     };
 
-    const toggleDetails = async (plugin: GrokInstalledPlugin) => {
-        if (expandedId === plugin.id) {
-            setExpandedId(null);
-            return;
-        }
-        setExpandedId(plugin.id);
-        if (details[plugin.id]) return;
-        setPendingId(`details:${plugin.id}`);
-        try {
-            const value = await getGrokPluginDetails(plugin, workspace);
-            setDetails((current) => ({ ...current, [plugin.id]: value }));
-        } catch (error) {
-            setExpandedId(null);
-            reportError(error);
-        } finally {
-            setPendingId(null);
-        }
-    };
-
-    const updatePlugin = async (plugin?: GrokInstalledPlugin) => {
-        const label = plugin ? `“${plugin.name}”` : '全部插件';
-        if (!window.confirm(`确认更新${label}吗？更新可能会替换插件中的可执行组件。`)) return;
-        setPendingId(plugin ? `update:${plugin.id}` : 'update-all');
-        try {
-            await updateGrokPlugin(plugin?.name, workspace);
-            await Promise.all([refresh(), onChanged()]);
-        } catch (error) {
-            reportError(error);
-        } finally {
-            setPendingId(null);
-        }
+    const updateAll = async () => {
+        if (!window.confirm('确认更新全部已安装插件吗？')) return;
+        await runAction('update-all', async () => {
+            await updateGrokPlugin(undefined, workspace || undefined);
+            await refreshAll();
+            await onChanged();
+        });
     };
 
     const uninstallPlugin = async (plugin: GrokInstalledPlugin) => {
-        if (!window.confirm(`确认卸载插件“${plugin.name}”吗？这会移除插件及其已加载组件。`)) return;
-        setPendingId(`uninstall:${plugin.id}`);
-        try {
-            await uninstallGrokPlugin(plugin.name, workspace);
-            await Promise.all([refresh(), onChanged()]);
-        } catch (error) {
-            reportError(error);
-        } finally {
-            setPendingId(null);
-        }
+        const skillCount = inventory.skills.filter((skill) => skill.source.pluginName === plugin.name).length;
+        const mcpCount = inventory.mcpServers.filter((server) => server.source.pluginName === plugin.name).length;
+        const hookCount = inventory.hooks.filter((hook) => hook.source.pluginName === plugin.name).length;
+        const capabilityText = [skillCount ? `${skillCount} 个 Skills` : '', mcpCount ? `${mcpCount} 个 MCP` : '', hookCount ? `${hookCount} 个 Hooks` : ''].filter(Boolean).join('、');
+        if (!window.confirm(`确认卸载插件“${plugin.name}”吗？${capabilityText ? `\n\n将同时移除：${capabilityText}。` : ''}`)) return;
+        await runAction(`uninstall:${plugin.id}`, async () => {
+            await uninstallGrokPlugin(plugin.name, workspace || undefined);
+            setDetails((current) => {
+                const next = { ...current };
+                delete next[plugin.id];
+                return next;
+            });
+            await refreshAll();
+            await onChanged();
+        });
     };
 
-    const installMarketplace = async (plugin: MarketplacePlugin) => {
-        if (!window.confirm(`确认信任并安装市场插件“${plugin.name}”吗？\n\n${plugin.description || '该插件未提供说明'}\n\n安装后它可能加载本地 Hooks、MCP 或其他可执行组件。`)) return;
-        setPendingId(`market:${plugin.name}`);
-        try {
-            await installGrokMarketplacePlugin(plugin.name, workspace);
-            await Promise.all([refresh(), refreshMarketplace(), onChanged()]);
-        } catch (error) {
-            reportError(error);
-        } finally {
-            setPendingId(null);
-        }
+    const toggleSkill = async (skill: GrokInspectedSkill) => runAction(`toggle:skill:${skill.source.label}:${skill.name}`, async () => {
+        await setGrokSkillEnabled(skill.name, skill.disabled);
+        await refreshInventory();
+        await onChanged();
+    });
+
+    const removeSkill = async (skill: GrokInspectedSkill) => {
+        if (!skill.source.path) return reportError(new Error('该 Skill 没有可移除的来源路径'));
+        if (!window.confirm(`确认从 Grok 移除 Skill“${skill.name}”吗？\n\n源文件不会被删除，Grok 会在配置中忽略该路径，后续可由管理员恢复。`)) return;
+        await runAction(`remove:skill:${skill.source.label}:${skill.name}`, async () => {
+            await removeGrokSkill(skill.name, skill.source.path!);
+            await refreshInventory();
+            await onChanged();
+        });
     };
+
+    const toggleInspectedMcp = async (server: GrokInspectedMcpServer) => runAction(`toggle:mcp:${server.source.label}:${server.name}`, async () => {
+        await setGrokInspectedMcpEnabled(server.name, server.disabled, workspace || undefined);
+        await refreshInventory();
+        await onRefreshMcp(workspace || undefined);
+        await onChanged();
+    });
+
+    const removeInspectedMcp = async (server: GrokInspectedMcpServer) => {
+        if (!window.confirm(`确认卸载 MCP 服务“${server.name}”吗？\n\n系统会先备份“${server.source.label}”，再删除该服务的配置项。`)) return;
+        await runAction(`remove:mcp:${server.source.label}:${server.name}`, async () => {
+            await removeGrokInspectedMcp(server.name, server.source, workspace || undefined);
+            await refreshInventory();
+            await onRefreshMcp(workspace || undefined);
+            await onChanged();
+        });
+    };
+
+    const tabCounts = useMemo<Record<ExtensionTab, number>>(() => ({
+        plugins: plugins.length,
+        marketplace: marketplacePlugins.length,
+    }), [marketplacePlugins.length, plugins.length]);
+
+    const enabledPluginCount = plugins.filter((plugin) => plugin.enabled).length;
+    const capabilityCount = inventory.skills.length + inventory.mcpServers.length + inventory.hooks.length;
 
     return <div className="space-y-5" role="tabpanel">
-        <div className="rounded-2xl border border-slate-200 bg-white p-5">
-            <div className="flex flex-wrap items-start justify-between gap-3">
-                <div><h2 className="text-xl font-semibold text-slate-900">插件生命周期</h2><p className="mt-1 max-w-2xl text-sm leading-6 text-slate-500">在页面内完成本地插件校验、安装、启停、更新和卸载；已配置市场的安装也保留明确的信任确认。</p></div>
-                <div className="flex items-center gap-2"><button type="button" disabled={loading || pendingId !== null} onClick={() => void refresh()} className="rounded-xl border border-slate-200 p-2.5 text-slate-500 transition hover:bg-slate-50 disabled:opacity-40" title="刷新插件"><RefreshCw size={16} className={loading ? 'animate-spin' : ''} /></button><button type="button" disabled={pendingId !== null} onClick={() => void updatePlugin()} className="rounded-xl border border-slate-200 px-3 py-2.5 text-xs font-medium text-slate-600 disabled:opacity-40">更新全部</button><button type="button" disabled={pendingId !== null} onClick={() => void addLocalPlugin()} className="flex items-center gap-2 rounded-xl bg-slate-900 px-3.5 py-2.5 text-sm font-medium text-white disabled:opacity-40">{pendingId === 'install' ? <LoaderCircle size={16} className="animate-spin" /> : <FolderPlus size={16} />}添加本地插件</button></div>
-            </div>
-            <div className="mt-4 flex items-start gap-2 rounded-xl border border-amber-200 bg-amber-50 px-3.5 py-3 text-xs leading-5 text-amber-800"><ShieldAlert size={16} className="mt-0.5 shrink-0" /><span>安装前会先运行清单校验并展示组件摘要；确认安装即代表信任该目录中的可执行组件。启用状态会同步到后续新会话，已打开会话保持原状态。</span></div>
-        </div>
-
-        {loading && plugins.length === 0 ? <div className="flex items-center justify-center rounded-2xl border border-slate-200 bg-white py-16 text-sm text-slate-400"><LoaderCircle size={18} className="mr-2 animate-spin" />正在读取插件</div> : plugins.length === 0 ? <div className="rounded-2xl border border-dashed border-slate-300 bg-white px-6 py-16 text-center"><Plug size={28} className="mx-auto text-slate-300" /><h3 className="mt-3 font-medium text-slate-700">尚未安装本地插件</h3><p className="mt-1 text-sm text-slate-400">选择包含 plugin.json 或标准组件目录的本机文件夹开始。</p></div> : <div className="space-y-3">{plugins.map((plugin) => {
-            const detail = details[plugin.id];
-            const expanded = expandedId === plugin.id;
-            const pending = pendingId === plugin.id;
-            return <div key={plugin.id} className="overflow-hidden rounded-2xl border border-slate-200 bg-white">
-                <div className="flex flex-wrap items-center justify-between gap-4 p-5">
-                    <div className="min-w-0"><div className="flex flex-wrap items-center gap-2"><span className="font-semibold text-slate-900">{plugin.name}</span>{plugin.version && <span className="rounded-md bg-slate-100 px-2 py-0.5 text-[11px] text-slate-500">v{plugin.version}</span>}<span className={`flex items-center gap-1 rounded-full px-2 py-0.5 text-[11px] ${plugin.enabled ? 'bg-emerald-50 text-emerald-700' : 'bg-slate-100 text-slate-500'}`}>{plugin.enabled && <CheckCircle2 size={11} />}{plugin.enabled ? '已启用' : '已禁用'}</span></div><p className="mt-1 max-w-2xl truncate text-xs text-slate-400" title={plugin.source || plugin.path}>{plugin.marketplace || plugin.source || plugin.path || '本地来源'}</p></div>
-                    <div className="flex items-center gap-2"><button type="button" disabled={pendingId !== null} onClick={() => void toggleDetails(plugin)} className="flex items-center gap-1 rounded-lg border border-slate-200 px-2.5 py-2 text-xs text-slate-600 disabled:opacity-40">{pendingId === `details:${plugin.id}` ? <LoaderCircle size={13} className="animate-spin" /> : expanded ? <ChevronUp size={13} /> : <ChevronDown size={13} />}详情</button><button type="button" disabled={pendingId !== null} onClick={() => void updatePlugin(plugin)} className="rounded-lg border border-slate-200 px-2.5 py-2 text-xs text-slate-600 disabled:opacity-40">{pendingId === `update:${plugin.id}` ? <LoaderCircle size={13} className="animate-spin" /> : '更新'}</button><button type="button" disabled={pendingId !== null} onClick={() => void togglePlugin(plugin)} className={`rounded-lg px-3 py-2 text-xs font-medium disabled:opacity-40 ${plugin.enabled ? 'bg-slate-100 text-slate-600' : 'bg-slate-900 text-white'}`}>{pending ? <LoaderCircle size={13} className="animate-spin" /> : plugin.enabled ? '禁用' : '启用'}</button><button type="button" disabled={pendingId !== null} onClick={() => void uninstallPlugin(plugin)} className="rounded-lg border border-red-200 px-2.5 py-2 text-xs text-red-600 disabled:opacity-40">{pendingId === `uninstall:${plugin.id}` ? <LoaderCircle size={13} className="animate-spin" /> : '卸载'}</button></div>
+        <header className="overflow-hidden rounded-2xl border border-slate-200 bg-white">
+            <div className="flex flex-col gap-5 px-5 py-5 lg:flex-row lg:items-center lg:justify-between">
+                <div className="max-w-2xl">
+                    <div className="flex items-center gap-2"><Plug size={20} className="text-blue-700" /><h2 className="text-xl font-semibold tracking-[-0.02em] text-slate-900">插件中心</h2></div>
+                    <p className="mt-2 text-sm leading-6 text-slate-500">从内网 GitLab 市场安装插件，并在“已安装”中统一管理插件及其 Skills、MCP 和 Hooks。</p>
                 </div>
-                {expanded && detail && <div className="border-t border-slate-100 bg-slate-50/70 px-5 py-4"><p className="text-sm text-slate-600">{detail.description || '该插件未提供说明。'}</p><div className="mt-3 grid gap-2 text-xs text-slate-500 sm:grid-cols-2"><div className="rounded-lg bg-white px-3 py-2"><span className="font-medium text-slate-700">组件</span><p className="mt-1 leading-5">{componentLabels(detail.components)}</p></div><div className="rounded-lg bg-white px-3 py-2"><span className="font-medium text-slate-700">安装路径</span><p className="mt-1 break-all leading-5">{detail.path || plugin.path}</p></div></div></div>}
-            </div>;
-        })}</div>}
-        <div className="rounded-2xl border border-slate-200 bg-white p-5"><div className="flex flex-wrap items-start justify-between gap-3"><div><h3 className="font-semibold text-slate-900">插件市场</h3><p className="mt-1 text-sm leading-6 text-slate-500">市场源、可用插件和安装信任分开管理；版本能力以当前 ACP 运行时实际声明为准。</p></div><button type="button" disabled={marketplaceLoading || pendingId !== null} onClick={() => void refreshMarketplace()} className="flex items-center gap-1.5 rounded-xl border border-slate-200 px-3 py-2 text-xs font-medium text-slate-600 hover:bg-slate-50 disabled:opacity-40"><RefreshCw size={14} className={marketplaceLoading ? 'animate-spin' : ''} />读取市场</button></div><div className="mt-4 rounded-xl border border-indigo-100 bg-indigo-50/60 p-3.5"><div className="flex items-center gap-2 text-xs font-medium text-indigo-800"><GitBranch size={14} />市场源</div><div className="mt-2 flex flex-wrap gap-2"><input value={newMarketplaceSource} onChange={(event) => setNewMarketplaceSource(event.target.value)} onKeyDown={(event) => { if (event.key === 'Enter') void addMarketplace(); }} placeholder="Git URL、GitHub 简写或本地路径" className="min-w-[240px] flex-1 rounded-lg border border-indigo-200 bg-white px-3 py-2 text-xs text-slate-700 outline-none placeholder:text-slate-400 focus:border-indigo-400" /><button type="button" disabled={pendingId !== null || !newMarketplaceSource.trim()} onClick={() => void addMarketplace()} className="flex items-center gap-1.5 rounded-lg bg-indigo-600 px-3 py-2 text-xs font-medium text-white disabled:opacity-40">{pendingId === 'market-source:add' ? <LoaderCircle size={13} className="animate-spin" /> : <Plus size={13} />}添加源</button></div>{marketplaceSources.length > 0 && <div className="mt-3 space-y-1.5">{marketplaceSources.map((source) => <div key={`${source.name}:${source.url}`} className="flex flex-wrap items-center gap-2 rounded-lg bg-white px-3 py-2"><div className="min-w-0 flex-1"><div className="flex items-center gap-2 text-xs font-medium text-slate-700"><span className="truncate">{source.name}</span><span className="rounded bg-slate-100 px-1.5 py-0.5 text-[10px] text-slate-500">{source.kind}</span></div><p className="mt-0.5 truncate text-[10px] text-slate-400" title={source.url}>{source.url}{source.branch ? ` · ${source.branch}` : ''}</p></div><button type="button" disabled={pendingId !== null} onClick={() => void updateMarketplace(source)} className="rounded-md px-2 py-1 text-[10px] text-slate-600 hover:bg-slate-50 disabled:opacity-40">{pendingId === `market-source:update:${source.name}` ? <LoaderCircle size={12} className="animate-spin" /> : '刷新'}</button><button type="button" disabled={pendingId !== null} onClick={() => void removeMarketplace(source)} className="rounded-md px-2 py-1 text-[10px] text-red-600 hover:bg-red-50 disabled:opacity-40">{pendingId === `market-source:remove:${source.name}` ? <LoaderCircle size={12} className="animate-spin" /> : <Trash2 size={12} />}</button></div>)}</div>}{!marketplaceLoading && marketplaceSources.length === 0 && <p className="mt-2 text-[10px] text-indigo-600/70">尚未读取市场源。</p>}</div><div className="mt-4 flex flex-wrap items-center justify-between gap-2"><div><h4 className="text-sm font-medium text-slate-800">可用插件</h4><p className="mt-0.5 text-[10px] text-slate-400">只展示前 20 个匹配项，避免大型市场索引阻塞界面。</p></div><input value={marketplaceQuery} onChange={(event) => setMarketplaceQuery(event.target.value)} placeholder="搜索插件" className="w-44 rounded-lg border border-slate-200 px-2.5 py-1.5 text-xs text-slate-600 outline-none focus:border-indigo-300" /></div>{marketplace.length > 0 && <div className="mt-3 space-y-2">{marketplace.filter((plugin) => { const query = marketplaceQuery.trim().toLowerCase(); return !query || `${plugin.name} ${plugin.description || ''} ${plugin.marketplace || ''}`.toLowerCase().includes(query); }).slice(0, 20).map((plugin) => <div key={`${plugin.marketplace || 'market'}:${plugin.name}`} className="flex flex-wrap items-center gap-3 rounded-xl border border-slate-200 px-3.5 py-3"><div className="min-w-0 flex-1"><div className="flex items-center gap-2"><span className="font-medium text-slate-800">{plugin.name}</span>{plugin.version && <span className="text-[10px] text-slate-400">v{plugin.version}</span>}</div><p className="mt-1 truncate text-xs text-slate-400">{plugin.description || plugin.marketplace || '市场插件'}</p></div><button type="button" disabled={pendingId !== null || plugin.installed} onClick={() => void installMarketplace(plugin)} className="rounded-lg bg-slate-900 px-3 py-2 text-xs font-medium text-white disabled:cursor-not-allowed disabled:opacity-40">{pendingId === `market:${plugin.name}` ? <LoaderCircle size={13} className="animate-spin" /> : plugin.installed ? '已安装' : '信任并安装'}</button></div>)}</div>}{!marketplaceLoading && marketplace.length === 0 && <p className="mt-4 text-xs text-slate-400">尚未读取市场源，或当前没有可用市场插件。</p>}</div>
+                <div className="flex flex-wrap items-center gap-x-5 gap-y-2 text-xs text-slate-500">
+                    <span><strong className="mr-1 text-base font-semibold tabular-nums text-slate-900">{marketplaceSources.length}</strong>市场源</span>
+                    <span><strong className="mr-1 text-base font-semibold tabular-nums text-slate-900">{enabledPluginCount}</strong>已启用</span>
+                    <span><strong className="mr-1 text-base font-semibold tabular-nums text-slate-900">{capabilityCount}</strong>运行时能力</span>
+                    <button type="button" disabled={loading || marketplaceLoading || inventoryLoading} onClick={() => void refreshAll()} className="flex min-h-10 items-center gap-2 rounded-xl border border-slate-200 px-3 text-xs font-medium text-slate-600 transition hover:bg-slate-50 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-indigo-500 disabled:opacity-40">
+                        <RefreshCw size={14} className={loading || marketplaceLoading || inventoryLoading ? 'animate-spin' : ''} />刷新全部
+                    </button>
+                </div>
+            </div>
+            {!inventory.projectTrusted && <div className="flex items-start gap-2 border-t border-amber-200 bg-amber-50 px-5 py-3 text-xs leading-5 text-amber-800"><ShieldAlert size={15} className="mt-0.5 shrink-0" /><span>当前工作区尚未被 Grok 信任，项目级 Hooks、Plugins 和 MCP 可能不会加载。</span></div>}
+            <nav className="overflow-x-auto border-t border-slate-100 px-2" aria-label="插件中心分类">
+                <div className="flex min-w-max gap-1 py-2" role="tablist">
+                    {tabDefinitions.map((tab) => {
+                        const Icon = tab.icon;
+                        const active = activeTab === tab.id;
+                        return <button key={tab.id} type="button" role="tab" aria-selected={active} onClick={() => setActiveTab(tab.id)} className={`flex min-h-10 items-center gap-2 rounded-xl px-3.5 text-sm font-medium transition focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-indigo-500 ${active ? 'bg-slate-900 text-white' : 'text-slate-500 hover:bg-slate-100 hover:text-slate-800'}`}>
+                            <Icon size={15} />{tab.label}<span className={`rounded-md px-1.5 py-0.5 text-[10px] tabular-nums ${active ? 'bg-white/15 text-white' : 'bg-slate-100 text-slate-500'}`}>{tabCounts[tab.id]}</span>
+                        </button>;
+                    })}
+                </div>
+            </nav>
+        </header>
+
+        {activeTab === 'plugins' && <GrokInstalledPluginsTab plugins={plugins} details={details} inventory={inventory} mcpStates={mcpServers} loading={loading} pendingId={pendingId} onAddLocal={addLocalPlugin} onUpdateAll={updateAll} onLoadDetails={loadDetails} onToggle={togglePlugin} onUpdate={updatePlugin} onUninstall={uninstallPlugin} onToggleSkill={toggleSkill} onRemoveSkill={removeSkill} onToggleMcp={toggleInspectedMcp} onRemoveMcp={removeInspectedMcp} />}
+        {activeTab === 'marketplace' && <GrokPluginMarketplaceTab plugins={marketplacePlugins} installedPlugins={plugins} sources={marketplaceSources} loading={marketplaceLoading} pendingId={pendingId} onRefresh={refreshMarketplace} onAddSource={addMarketplace} onUpdateSource={updateMarketplace} onRemoveSource={removeMarketplace} onInstall={installMarketplace} />}
     </div>;
 };
 

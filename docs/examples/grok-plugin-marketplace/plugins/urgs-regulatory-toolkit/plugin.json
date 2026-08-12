@@ -1,0 +1,17 @@
+{
+  "name": "urgs-regulatory-toolkit",
+  "version": "1.0.0",
+  "description": "监管资产查询、口径解释和报表辅助能力",
+  "author": {
+    "name": "监管科技团队",
+    "email": "ai-platform@example.intra"
+  },
+  "license": "Proprietary",
+  "keywords": ["URGS", "regulatory", "metadata"],
+  "skills": "skills",
+  "commands": "commands",
+  "agents": "agents",
+  "hooks": "hooks/hooks.json",
+  "mcpServers": ".mcp.json",
+  "lspServers": ".lsp.json"
+}
