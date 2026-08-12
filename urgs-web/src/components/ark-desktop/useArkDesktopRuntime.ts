@@ -100,6 +100,7 @@ import {
 } from '@/services/grokDesktop';
 import { loadArkDesktopSnapshot, resetArkDesktopSnapshot, saveArkDesktopSnapshot } from './storage';
 import { extractFileChanges } from './fileChanges';
+import { gitStatusSignature } from './gitReviewCache';
 import {
     activityStatusLabel,
     classifyActivityStatus,
@@ -2292,6 +2293,11 @@ export const useArkDesktopRuntime = () => {
     }, []);
 
     const updateTaskGitStatus = useCallback((taskId: string, status: GrokGitStatus, recoveredFromMissingWorkspace = false) => {
+        const existingTask = snapshotRef.current.tasks.find((task) => task.id === taskId);
+        const existingStatus = existingTask?.gitContext?.status as GrokGitStatus | undefined;
+        if (!recoveredFromMissingWorkspace && existingStatus && gitStatusSignature(existingStatus) === gitStatusSignature(status)) {
+            return status;
+        }
         updateTask(taskId, (task) => {
             const sourceWorkspace = recoveredFromMissingWorkspace
                 ? status.repoRoot

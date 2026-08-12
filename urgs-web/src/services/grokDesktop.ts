@@ -248,6 +248,12 @@ export interface GrokGitStatus {
     files: GrokGitFile[];
 }
 
+export interface GrokGitWorkspaceChangedEvent {
+    watchId: string;
+    workspace: string;
+    changedPaths: string[];
+}
+
 export interface GrokGitTaskWorkspace {
     taskId: string;
     mode: GrokGitMode;
@@ -891,6 +897,25 @@ export const prepareGrokGitTask = (
 
 export const getGrokGitStatus = (workspace: string, includeStats = false) =>
     invokeGrokGit<GrokGitStatus>('grok_git_status', { workspace, includeStats }, includeStats ? 'high' : 'normal');
+
+export const watchGrokGitWorkspace = async (workspace: string, listener: (event: GrokGitWorkspaceChangedEvent) => void) => {
+    assertDesktopRuntime();
+    const { listen } = await import('@tauri-apps/api/event');
+    let watchId = '';
+    const unlisten = await listen<GrokGitWorkspaceChangedEvent>('grok-git-workspace-changed', (event) => {
+        if (event.payload.watchId === watchId) listener(event.payload);
+    });
+    try {
+        watchId = await invokeGrokGit<string>('grok_git_watch_start', { workspace });
+    } catch (error) {
+        unlisten();
+        throw error;
+    }
+    return () => {
+        unlisten();
+        void invokeGrokGit<void>('grok_git_watch_stop', { watchId }).catch(() => undefined);
+    };
+};
 
 export const getGrokGitDiff = (workspace: string, path?: string, staged = false, includeStatus = true) =>
     invokeGrokGit<GrokGitDiff>('grok_git_diff', {

@@ -280,6 +280,7 @@ pub fn run() {
         ))
         .manage(grok_runtime::GrokRuntimeState::default())
         .manage(grok_runtime::TerminalState::default())
+        .manage(grok_git::GrokGitWatchState::default())
         .invoke_handler(tauri::generate_handler![
             load_desktop_runtime_config,
             save_desktop_runtime_config,
@@ -352,6 +353,8 @@ pub fn run() {
             grok_runtime::grok_start_login,
             grok_git::grok_git_prepare_task,
             grok_git::grok_git_status,
+            grok_git::grok_git_watch_start,
+            grok_git::grok_git_watch_stop,
             grok_git::grok_git_diff,
             grok_git::grok_git_open_file,
             grok_git::grok_git_reveal_file,

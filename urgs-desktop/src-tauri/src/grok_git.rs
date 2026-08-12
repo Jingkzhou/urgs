@@ -1,5 +1,7 @@
+use notify_debouncer_mini::{new_debouncer, notify::RecursiveMode, DebounceEventResult, Debouncer};
 use serde::{Deserialize, Serialize};
 use std::collections::hash_map::DefaultHasher;
+use std::collections::HashMap;
 use std::fs::{self, OpenOptions};
 use std::hash::{Hash, Hasher};
 use std::io::{Read, Write};
@@ -8,9 +10,10 @@ use std::os::windows::process::CommandExt;
 use std::path::{Component, Path, PathBuf};
 use std::process::{Command, ExitStatus, Stdio};
 use std::sync::mpsc::{self, Receiver};
+use std::sync::Mutex;
 use std::thread;
 use std::time::{Duration, Instant, SystemTime, UNIX_EPOCH};
-use tauri::{AppHandle, Manager};
+use tauri::{AppHandle, Emitter, Manager, State};
 use tauri_plugin_opener::OpenerExt;
 
 const WORKTREE_RECORDS_FILE: &str = "grok-git-worktrees.json";
@@ -22,6 +25,7 @@ const LONG_GIT_TIMEOUT: Duration = Duration::from_secs(120);
 const GIT_WAIT_POLL_INTERVAL: Duration = Duration::from_millis(25);
 const SLOW_GIT_COMMAND_THRESHOLD: Duration = Duration::from_millis(500);
 const PROCESS_OUTPUT_DRAIN_TIMEOUT: Duration = Duration::from_secs(2);
+const GIT_WORKSPACE_CHANGED_EVENT: &str = "grok-git-workspace-changed";
 #[cfg(windows)]
 const TASKKILL_TIMEOUT: Duration = Duration::from_secs(2);
 
@@ -59,6 +63,19 @@ pub struct GrokGitStatus {
     pub additions: u32,
     pub deletions: u32,
     pub files: Vec<GrokGitFile>,
+}
+
+#[derive(Debug, Clone, Serialize)]
+#[serde(rename_all = "camelCase")]
+struct GrokGitWorkspaceChangedEvent {
+    watch_id: String,
+    workspace: String,
+    changed_paths: Vec<String>,
+}
+
+#[derive(Default)]
+pub struct GrokGitWatchState {
+    watchers: Mutex<HashMap<String, Debouncer<notify_debouncer_mini::notify::RecommendedWatcher>>>,
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
@@ -748,14 +765,16 @@ fn git_status_at_with_stats(
     let workspace =
         fs::canonicalize(workspace).map_err(|error| format!("无法解析 Git 工作区: {error}"))?;
     let repo_root = git_common_root(&workspace)?;
-    let args = vec![
-        "-c".to_string(),
-        "color.ui=false".to_string(),
+    let mut args = vec!["-c".to_string(), "color.ui=false".to_string()];
+    #[cfg(windows)]
+    args.extend(["-c".to_string(), "core.fileMode=false".to_string()]);
+    args.extend([
         "status".to_string(),
         "--porcelain=v1".to_string(),
         "--untracked-files=all".to_string(),
+        "--ignore-submodules=dirty".to_string(),
         "-b".to_string(),
-    ];
+    ]);
     let result = run_git(&workspace, &args)?;
     let mut branch = None;
     let mut upstream = None;
@@ -1219,6 +1238,74 @@ pub fn grok_git_status(
         }
         Err(error) => Err(error),
     }
+}
+
+#[tauri::command]
+pub fn grok_git_watch_start(
+    app: AppHandle,
+    state: State<'_, GrokGitWatchState>,
+    workspace: String,
+) -> Result<String, String> {
+    let workspace = canonical_directory(&workspace)?;
+    let repo_root = git_common_root(&workspace)?;
+    let watch_id = uuid::Uuid::new_v4().to_string();
+    let event_watch_id = watch_id.clone();
+    let event_workspace = workspace.to_string_lossy().to_string();
+    let event_repo_root = repo_root.clone();
+    let event_app = app.clone();
+    let mut debouncer = new_debouncer(
+        Duration::from_millis(350),
+        move |result: DebounceEventResult| {
+            if let Ok(events) = result {
+                let mut changed_paths = events
+                    .into_iter()
+                    .filter_map(|event| {
+                        event
+                            .path
+                            .strip_prefix(&event_repo_root)
+                            .ok()
+                            .map(Path::to_path_buf)
+                    })
+                    .map(|path| path.to_string_lossy().replace('\\', "/"))
+                    .filter(|path| !path.is_empty())
+                    .collect::<Vec<_>>();
+                changed_paths.sort();
+                changed_paths.dedup();
+                let _ = event_app.emit(
+                    GIT_WORKSPACE_CHANGED_EVENT,
+                    GrokGitWorkspaceChangedEvent {
+                        watch_id: event_watch_id.clone(),
+                        workspace: event_workspace.clone(),
+                        changed_paths,
+                    },
+                );
+            }
+        },
+    )
+    .map_err(|error| format!("无法启动 Git 工作区监听: {error}"))?;
+    debouncer
+        .watcher()
+        .watch(&repo_root, RecursiveMode::Recursive)
+        .map_err(|error| format!("无法监听 Git 工作区: {error}"))?;
+    state
+        .watchers
+        .lock()
+        .map_err(|_| "Git 工作区监听状态不可用".to_string())?
+        .insert(watch_id.clone(), debouncer);
+    Ok(watch_id)
+}
+
+#[tauri::command]
+pub fn grok_git_watch_stop(
+    state: State<'_, GrokGitWatchState>,
+    watch_id: String,
+) -> Result<(), String> {
+    state
+        .watchers
+        .lock()
+        .map_err(|_| "Git 工作区监听状态不可用".to_string())?
+        .remove(&watch_id);
+    Ok(())
 }
 
 #[tauri::command(async)]

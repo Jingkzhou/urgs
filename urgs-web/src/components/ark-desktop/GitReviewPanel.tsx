@@ -1,6 +1,6 @@
 import React, { useCallback, useEffect, useRef, useState } from 'react';
 import { AlertCircle, ChevronRight, FileCode2, GitBranch, LoaderCircle, Maximize2, Minimize2, PanelLeftClose, PanelLeftOpen, RefreshCw, X } from 'lucide-react';
-import type { GrokGitDiff, GrokGitFile, GrokGitStatus } from '@/services/grokDesktop';
+import { watchGrokGitWorkspace, type GrokGitDiff, type GrokGitFile, type GrokGitStatus } from '@/services/grokDesktop';
 import type { ArkDesktopTask } from './types';
 import type { ArkDesktopRuntime } from './useArkDesktopRuntime';
 import GitDiffViewer from './GitDiffViewer';
@@ -14,16 +14,24 @@ interface GitReviewPanelProps {
     visible: boolean;
 }
 
-const STATUS_REFRESH_INTERVAL_MS = 30_000;
 const DEFAULT_PANEL_WIDTH = 620;
 const MIN_PANEL_WIDTH = 440;
 const MAX_PANEL_WIDTH = 840;
 const PANEL_WIDTH_STORAGE_KEY = 'urgs_git_review_panel_width_v2';
 const FILE_LIST_VISIBLE_STORAGE_KEY = 'urgs_git_review_file_list_visible';
+const FILE_LIST_WIDTH_PCT_STORAGE_KEY = 'urgs_git_review_file_list_width_pct';
+const FILE_LIST_MIN_PCT = 20;
+const FILE_LIST_MAX_PCT = 55;
 
 const readFileListVisible = () => {
     if (typeof window === 'undefined') return true;
     return localStorage.getItem(FILE_LIST_VISIBLE_STORAGE_KEY) !== '0';
+};
+
+const readFileListPct = () => {
+    if (typeof window === 'undefined') return undefined;
+    const stored = Number(localStorage.getItem(FILE_LIST_WIDTH_PCT_STORAGE_KEY));
+    return Number.isFinite(stored) && stored > 0 ? Math.min(Math.max(stored, FILE_LIST_MIN_PCT), FILE_LIST_MAX_PCT) : undefined;
 };
 
 const workspaceName = (value: string) => value.split(/[\\/]/).filter(Boolean).pop() || value;
@@ -77,11 +85,18 @@ const GitReviewPanel: React.FC<GitReviewPanelProps> = ({ task, runtime, onClose,
     const [panelWidth, setPanelWidth] = useState(readPanelWidth);
     const [expanded, setExpanded] = useState(false);
     const [fileListVisible, setFileListVisible] = useState(readFileListVisible);
+    const [fileListPct, setFileListPct] = useState<number | undefined>(readFileListPct);
+    const [syncMode, setSyncMode] = useState<'connecting' | 'live' | 'manual'>('connecting');
+    const panelRef = useRef<HTMLElement | null>(null);
+    const fileListRef = useRef<HTMLElement | null>(null);
     const resizeStartRef = useRef<{ x: number; width: number } | null>(null);
+    const fileListResizeStartRef = useRef<{ x: number; width: number } | null>(null);
     const statusRequestRef = useRef<Promise<GrokGitStatus> | null>(null);
     const diffRequestIdRef = useRef(0);
     const selectedPathRef = useRef(selectedPath);
     selectedPathRef.current = selectedPath;
+    const activeViewRef = useRef(activeView);
+    activeViewRef.current = activeView;
 
     const { refreshTaskGitStatus, loadTaskGitDiff } = runtime;
     const files = status?.files || [];
@@ -92,7 +107,9 @@ const GitReviewPanel: React.FC<GitReviewPanelProps> = ({ task, runtime, onClose,
     const applyStatus = useCallback((nextStatus: GrokGitStatus, options: { clearDiffs?: boolean; clearBranches?: boolean } = {}) => {
         const cache = gitReviewCacheFor(workspaceKey);
         const nextSignature = gitStatusSignature(nextStatus);
-        if (options.clearDiffs || cache.statusSignature && cache.statusSignature !== nextSignature) cache.diffs.clear();
+        const currentSignature = cache.statusSignature || (cache.status ? gitStatusSignature(cache.status) : '');
+        const statusChanged = currentSignature !== nextSignature;
+        if (options.clearDiffs || statusChanged) cache.diffs.clear();
         if (options.clearBranches) {
             cache.branches = undefined;
             cache.branchesUpdatedAt = undefined;
@@ -100,13 +117,17 @@ const GitReviewPanel: React.FC<GitReviewPanelProps> = ({ task, runtime, onClose,
         cache.status = nextStatus;
         cache.statusSignature = nextSignature;
         cache.updatedAt = Date.now();
+        if (!statusChanged && !options.clearDiffs) return false;
         const nextSelectedPath = cache.selectedPath && nextStatus.files.some((file) => file.path === cache.selectedPath)
             ? cache.selectedPath
             : nextStatus.files[0]?.path || '';
         cache.selectedPath = nextSelectedPath;
         setStatus(nextStatus);
         setSelectedPath(nextSelectedPath);
-        setDiff(nextSelectedPath ? cache.diffs.get(nextSelectedPath) || null : null);
+        if (nextSelectedPath !== selectedPathRef.current) {
+            setDiff(nextSelectedPath ? cache.diffs.get(nextSelectedPath) || null : null);
+        }
+        return true;
     }, [workspaceKey]);
 
     const refreshStatus = useCallback(async (foreground = false) => {
@@ -129,7 +150,7 @@ const GitReviewPanel: React.FC<GitReviewPanelProps> = ({ task, runtime, onClose,
         }
     }, [applyStatus, refreshTaskGitStatus, task.id, workspace, workspaceKey]);
 
-    const loadDiff = useCallback(async (path: string, force = false) => {
+    const loadDiff = useCallback(async (path: string, force = false, silent = false) => {
         if (!path) {
             setDiff(null);
             return;
@@ -144,22 +165,26 @@ const GitReviewPanel: React.FC<GitReviewPanelProps> = ({ task, runtime, onClose,
         }
         const requestId = diffRequestIdRef.current + 1;
         diffRequestIdRef.current = requestId;
-        setDiffLoading(true);
+        if (!silent) setDiffLoading(true);
         setError('');
         try {
             let nextDiff = await loadTaskGitDiff(task.id, path, false);
-            if (!nextDiff.patch.trim() && selectedFile?.staged) {
+            const currentFile = cache.status?.files.find((file) => file.path === path);
+            if (!nextDiff.patch.trim() && currentFile?.staged) {
                 nextDiff = await loadTaskGitDiff(task.id, path, true);
             }
             if (diffRequestIdRef.current !== requestId) return;
+            const currentDiff = cache.diffs.get(path);
             cache.diffs.set(path, nextDiff);
-            setDiff(nextDiff);
+            if (!currentDiff || currentDiff.patch !== nextDiff.patch || currentDiff.truncated !== nextDiff.truncated) {
+                setDiff(nextDiff);
+            }
         } catch (cause) {
             if (diffRequestIdRef.current === requestId) setError(cause instanceof Error ? cause.message : String(cause));
         } finally {
-            if (diffRequestIdRef.current === requestId) setDiffLoading(false);
+            if (!silent && diffRequestIdRef.current === requestId) setDiffLoading(false);
         }
-    }, [loadTaskGitDiff, selectedFile?.staged, task.id, workspaceKey]);
+    }, [loadTaskGitDiff, task.id, workspaceKey]);
 
     useEffect(() => {
         const cache = gitReviewCacheFor(workspaceKey);
@@ -173,27 +198,46 @@ const GitReviewPanel: React.FC<GitReviewPanelProps> = ({ task, runtime, onClose,
         setError('');
         setActiveView('diff');
         setStatusLoading(!nextStatus);
+        setSyncMode('connecting');
         diffRequestIdRef.current += 1;
     }, [task.id, workspaceKey]);
 
     useEffect(() => {
         if (!visible || !workspace) return undefined;
-        const refreshVisibleData = async () => {
+        let disposed = false;
+        let stopWatching: (() => void) | undefined;
+        const refreshVisibleData = async (changedPaths: string[] = []) => {
+            const previousSignature = gitReviewCacheFor(workspaceKey).statusSignature;
             const nextStatus = await refreshStatus(false);
-            if (activeView !== 'diff') return;
+            if (!nextStatus || activeViewRef.current !== 'diff') return;
             const path = nextStatus?.files.some((file) => file.path === selectedPathRef.current)
                 ? selectedPathRef.current
                 : nextStatus?.files[0]?.path || '';
-            if (path) await loadDiff(path, true);
+            const statusChanged = previousSignature !== gitStatusSignature(nextStatus);
+            if (path && (statusChanged || changedPaths.includes(path))) await loadDiff(path, true, true);
         };
-        const cache = gitReviewCacheFor(workspaceKey);
-        const cacheIsFresh = Boolean(cache.status && cache.updatedAt && Date.now() - cache.updatedAt < STATUS_REFRESH_INTERVAL_MS);
-        if (!cacheIsFresh) void refreshVisibleData().catch(() => undefined);
-        const timer = window.setInterval(() => {
+        const handleVisibilityChange = () => {
             if (document.visibilityState === 'visible') void refreshVisibleData().catch(() => undefined);
-        }, STATUS_REFRESH_INTERVAL_MS);
-        return () => window.clearInterval(timer);
-    }, [activeView, loadDiff, refreshStatus, visible, workspace, workspaceKey]);
+        };
+        void refreshVisibleData().catch(() => undefined);
+        void watchGrokGitWorkspace(workspace, (event) => {
+            if (document.visibilityState === 'visible') void refreshVisibleData(event.changedPaths).catch(() => undefined);
+        }).then((stop) => {
+            if (disposed) stop();
+            else {
+                stopWatching = stop;
+                setSyncMode('live');
+            }
+        }).catch(() => {
+            if (!disposed) setSyncMode('manual');
+        });
+        document.addEventListener('visibilitychange', handleVisibilityChange);
+        return () => {
+            disposed = true;
+            stopWatching?.();
+            document.removeEventListener('visibilitychange', handleVisibilityChange);
+        };
+    }, [loadDiff, refreshStatus, visible, workspace, workspaceKey]);
 
     useEffect(() => {
         if (!visible || activeView !== 'diff' || !selectedPath || !isRepository) return;
@@ -207,6 +251,30 @@ const GitReviewPanel: React.FC<GitReviewPanelProps> = ({ task, runtime, onClose,
     useEffect(() => {
         localStorage.setItem(FILE_LIST_VISIBLE_STORAGE_KEY, fileListVisible ? '1' : '0');
     }, [fileListVisible]);
+
+    useEffect(() => {
+        if (fileListPct === undefined) return;
+        localStorage.setItem(FILE_LIST_WIDTH_PCT_STORAGE_KEY, String(fileListPct));
+    }, [fileListPct]);
+
+    useEffect(() => {
+        const move = (event: PointerEvent) => {
+            if (!fileListResizeStartRef.current || !panelRef.current) return;
+            const panelWidthPx = panelRef.current.getBoundingClientRect().width;
+            if (panelWidthPx <= 0) return;
+            const width = fileListResizeStartRef.current.width + (event.clientX - fileListResizeStartRef.current.x);
+            setFileListPct(Math.min(Math.max((width / panelWidthPx) * 100, FILE_LIST_MIN_PCT), FILE_LIST_MAX_PCT));
+        };
+        const stop = () => { fileListResizeStartRef.current = null; };
+        window.addEventListener('pointermove', move);
+        window.addEventListener('pointerup', stop);
+        window.addEventListener('pointercancel', stop);
+        return () => {
+            window.removeEventListener('pointermove', move);
+            window.removeEventListener('pointerup', stop);
+            window.removeEventListener('pointercancel', stop);
+        };
+    }, []);
 
     useEffect(() => {
         const move = (event: PointerEvent) => {
@@ -241,6 +309,7 @@ const GitReviewPanel: React.FC<GitReviewPanelProps> = ({ task, runtime, onClose,
     const repositoryTitle = status?.repoRoot ? workspaceName(status.repoRoot) : workspaceName(workspace);
 
     return <aside
+        ref={panelRef}
         aria-hidden={!visible}
         className={`absolute flex min-h-0 flex-col bg-white shadow-[-16px_0_36px_rgba(15,23,42,0.08)] transition-transform duration-200 ${expanded
             ? 'inset-0 z-50 w-full max-w-none'
@@ -264,7 +333,11 @@ const GitReviewPanel: React.FC<GitReviewPanelProps> = ({ task, runtime, onClose,
         <div className="flex shrink-0 items-center gap-3 border-b border-slate-100 px-5 py-2.5 text-[11px] text-slate-500">
             <span>{files.length} 个变更文件</span>
             {status && <><span>{status.stagedCount} 已暂存</span><span>{status.untrackedCount} 新增</span><span>{status.conflictCount} 冲突</span></>}
-            <span className="ml-auto">更新于 {formatRefreshTime(updatedAt)} · 每 30 秒检查状态</span>
+            <span className="ml-auto flex items-center gap-2">
+                <span className={`h-1.5 w-1.5 rounded-full ${syncMode === 'live' ? 'bg-emerald-500' : syncMode === 'connecting' ? 'animate-pulse bg-amber-400' : 'bg-slate-300'}`} />
+                <span>{syncMode === 'live' ? '实时同步' : syncMode === 'connecting' ? '正在连接' : '手动刷新'}</span>
+                {updatedAt && <span className="text-slate-400">· {formatRefreshTime(updatedAt)} 更新</span>}
+            </span>
         </div>
 
         {error && <div className="mx-5 mt-3 flex shrink-0 items-start gap-2 rounded-xl bg-red-50 px-3 py-2.5 text-xs leading-5 text-red-700"><AlertCircle size={15} className="mt-0.5 shrink-0" /><span className="min-w-0 flex-1 break-words">{error}</span></div>}
@@ -274,8 +347,9 @@ const GitReviewPanel: React.FC<GitReviewPanelProps> = ({ task, runtime, onClose,
             <button type="button" role="tab" aria-selected={activeView === 'operations'} onClick={() => setActiveView('operations')} className={`h-10 border-b-2 px-3 text-xs font-semibold transition ${activeView === 'operations' ? 'border-indigo-600 text-indigo-600' : 'border-transparent text-slate-500 hover:text-slate-700'}`}>Git 操作</button>
         </div>
 
-        {activeView === 'diff' ? <div className={`grid min-h-0 flex-1 ${fileListVisible ? (expanded ? 'grid-cols-[minmax(200px,28%)_minmax(0,1fr)]' : 'grid-cols-[minmax(180px,34%)_minmax(0,1fr)]') : 'grid-cols-1'}`}>
-            {fileListVisible && <nav className="min-h-0 overflow-y-auto border-r border-slate-100 bg-slate-50/60 p-2" aria-label="变更文件">
+        {activeView === 'diff' ? <div className="flex min-h-0 flex-1">
+            {fileListVisible && <>
+                <nav ref={fileListRef} className="min-h-0 shrink-0 overflow-y-auto border-r border-slate-100 bg-slate-50/60 p-2" style={{ width: `${fileListPct ?? (expanded ? 28 : 34)}%` }} aria-label="变更文件">
                 {statusLoading && !status ? <div className="flex h-28 items-center justify-center gap-2 text-xs text-slate-400"><LoaderCircle size={15} className="animate-spin" />正在检查工作区</div>
                     : !isRepository ? <div className="px-3 py-8 text-center text-xs leading-5 text-slate-400">当前文件夹不是 Git 仓库</div>
                         : isClean ? <div className="px-3 py-8 text-center text-xs leading-5 text-slate-400">当前文件夹没有未提交变更</div>
@@ -286,9 +360,14 @@ const GitReviewPanel: React.FC<GitReviewPanelProps> = ({ task, runtime, onClose,
                                     <span className="flex items-start gap-2"><FileCode2 size={14} className={`mt-0.5 shrink-0 ${selected ? 'text-indigo-600' : 'text-slate-400'}`} /><span className="min-w-0 flex-1"><span className="block truncate text-xs font-medium text-slate-700" title={file.path}>{file.path}</span><span className="mt-1 flex items-center gap-2"><span className={`rounded-md px-1.5 py-0.5 text-[9px] font-medium ${presentation.className}`}>{presentation.label}</span>{file.additions > 0 && <span className="text-[10px] text-emerald-600">+{file.additions}</span>}{file.deletions > 0 && <span className="text-[10px] text-red-500">-{file.deletions}</span>}</span></span><ChevronRight size={13} className={`mt-0.5 shrink-0 ${selected ? 'text-indigo-500' : 'text-slate-300'}`} /></span>
                                 </button>;
                             })}
-            </nav>}
+            </nav>
+                <div role="separator" aria-label="调整变更文件栏宽度" aria-orientation="vertical" tabIndex={0} onPointerDown={(event) => {
+                    fileListResizeStartRef.current = { x: event.clientX, width: fileListRef.current?.getBoundingClientRect().width || 0 };
+                    event.preventDefault();
+                }} className="relative z-10 flex w-1.5 shrink-0 cursor-col-resize items-center justify-center focus-visible:bg-indigo-300 hover:bg-indigo-100"><span className="h-full w-px bg-slate-200" /></div>
+            </>}
 
-            <section className="min-h-0 overflow-y-auto bg-[#181818] p-2">
+            <section className="min-h-0 flex-1 overflow-y-auto bg-[#181818] p-2">
                 {diffLoading ? <div className="flex h-40 items-center justify-center gap-2 text-xs text-slate-400"><LoaderCircle size={15} className="animate-spin" />正在读取 {selectedPath}</div>
                     : diff?.patch.trim() ? <GitDiffViewer patch={diff.patch} filePath={selectedPath} truncated={diff.truncated} />
                         : selectedFile ? <div className="flex h-40 items-center justify-center px-6 text-center text-xs leading-5 text-slate-400">该文件没有可显示的文本 Diff，可能是二进制文件、空文件或仅包含 Git 元数据变更。</div>
