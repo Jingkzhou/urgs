@@ -8,10 +8,9 @@ import {
     AlertCircle, BrainCircuit, BriefcaseBusiness, Check, CheckCircle2, CheckSquare,
     ChevronDown, ChevronUp, CircleStop, Code2, Copy, Cpu, FileText, Folder, FolderOpen,
     Hand, Info, KeyRound, Lightbulb, ListTree, LoaderCircle, MessageSquare, Paperclip, PanelBottom, PanelRight, Pencil, Plus, RefreshCw,
-    Puzzle, Search, Send, Settings, ShieldAlert, Trash2, Workflow, Wrench, X,
+    Puzzle, Search, Send, Settings, ShieldAlert, Trash2, UserRound, Workflow, Wrench, X,
 } from 'lucide-react';
 import { copyToClipboard } from '@/utils/clipboard';
-import { getAvatarUrl } from '@/utils/avatarUtils';
 import { useArkDesktopRuntime } from './useArkDesktopRuntime';
 import GrokCliCenter from './GrokCliCenter';
 import GrokPluginManager from './GrokPluginManager';
@@ -57,30 +56,7 @@ const sectionItems: Array<{ id: ArkDesktopSection; label: string; icon: React.El
 
 type SettingsTab = 'general' | 'execution' | 'configuration' | 'plugins' | 'diagnostics';
 
-type AuthUser = {
-    name?: string;
-    empId?: string;
-    avatarUrl?: string;
-};
-
-const readAuthUser = (): AuthUser | null => {
-    if (typeof window === 'undefined') return null;
-    const storedUser = window.localStorage.getItem('auth_user');
-    if (!storedUser || storedUser === 'undefined') return null;
-    try {
-        return JSON.parse(storedUser) as AuthUser;
-    } catch {
-        return null;
-    }
-};
-
-const getUserInitials = (name: string) => {
-    const normalizedName = name.trim();
-    if (!normalizedName) return 'U';
-    const words = normalizedName.split(/\s+/);
-    if (words.length > 1) return words.slice(0, 2).map((word) => word[0]).join('').toUpperCase();
-    return /^[A-Za-z]/.test(normalizedName) ? normalizedName.slice(0, 2).toUpperCase() : normalizedName.slice(0, 1);
-};
+const SIDEBAR_TEST_USER = { displayName: '游客' } as const;
 
 const taskStatus: Record<ArkDesktopTaskStatus, { label: string; className: string }> = {
     running: { label: '执行中', className: 'bg-blue-50 text-blue-600' },
@@ -174,7 +150,6 @@ const inputClass = 'w-full rounded-xl border border-slate-200 bg-white px-3 py-2
 
 const ArkDesktopPage: React.FC = () => {
     const runtime = useArkDesktopRuntime();
-    const [authUser, setAuthUser] = useState<AuthUser | null>(readAuthUser);
     const [section, setSection] = useState<ArkDesktopSection>('new-task');
     const [newTaskComposerId, setNewTaskComposerId] = useState(0);
     const composerDraftsRef = useRef<Record<string, string>>({});
@@ -198,7 +173,7 @@ const ArkDesktopPage: React.FC = () => {
     const draftWorkspaceFollowsDefaultRef = useRef(true);
     const conversationScrollRef = useRef<HTMLDivElement>(null);
     const clearLatestMessageLocation = useCallback(() => setLatestMessageTaskId(null), []);
-    const userName = authUser?.name || authUser?.empId || '用户';
+    const userName = SIDEBAR_TEST_USER.displayName;
     const toggleTerminalPanel = () => {
         setTerminalPanelMounted(true);
         setTerminalPanelOpen((current) => !current);
@@ -210,13 +185,6 @@ const ArkDesktopPage: React.FC = () => {
         if (next) setSessionSummaryOpen(false);
     };
 
-    useEffect(() => {
-        const syncAuthUser = (event: StorageEvent) => {
-            if (event.key === 'auth_user') setAuthUser(readAuthUser());
-        };
-        window.addEventListener('storage', syncAuthUser);
-        return () => window.removeEventListener('storage', syncAuthUser);
-    }, []);
     const toggleSessionSummaryPanel = () => {
         const next = !sessionSummaryOpen;
         setSessionSummaryOpen(next);
@@ -512,11 +480,7 @@ const ArkDesktopPage: React.FC = () => {
                 />
                 <div className="mt-3 border-t border-[#e5e5e7] pt-3">
                     <div className="flex h-12 min-w-0 items-center gap-3 rounded-xl px-2.5 text-[#303136] transition-colors hover:bg-[#eeeeef]" title={userName}>
-                        {authUser?.avatarUrl ? (
-                            <img src={getAvatarUrl(authUser.avatarUrl, userName)} alt={`${userName}头像`} className="h-8 w-8 shrink-0 rounded-full object-cover" />
-                        ) : (
-                            <span className="flex h-8 w-8 shrink-0 items-center justify-center rounded-full bg-[#c94f47] text-[11px] font-medium text-white">{getUserInitials(userName)}</span>
-                        )}
+                        <span className="flex h-8 w-8 shrink-0 items-center justify-center rounded-full bg-[#c94f47] text-white" aria-hidden="true"><UserRound size={17} strokeWidth={2} /></span>
                         <span className="min-w-0 flex-1 truncate text-[14px] font-medium">{userName}</span>
                     </div>
                 </div>

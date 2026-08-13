@@ -1,0 +1,2 @@
+[console_scripts]
+urgs-mcp-server = urgs_mcp_server.main:main
