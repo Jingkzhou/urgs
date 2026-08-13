@@ -659,6 +659,10 @@ fn parse_numstat(workspace: &Path) -> std::collections::HashMap<String, (u32, u3
 
 fn git_diff_args(path: Option<&str>, staged: bool, has_head: bool) -> Vec<String> {
     let mut args = vec![
+        "-c".to_string(),
+        "color.ui=false".to_string(),
+        "-c".to_string(),
+        "core.quotePath=false".to_string(),
         "diff".to_string(),
         "--no-ext-diff".to_string(),
         "--no-textconv".to_string(),
@@ -675,6 +679,13 @@ fn git_diff_args(path: Option<&str>, staged: bool, has_head: bool) -> Vec<String
         args.push(path.to_string());
     }
     args
+}
+
+fn is_missing_head_error(message: &str) -> bool {
+    let normalized = message.to_ascii_lowercase();
+    normalized.contains("bad revision 'head'")
+        || normalized.contains("unknown revision or path not in the working tree")
+        || normalized.contains("ambiguous argument 'head'")
 }
 
 fn git_null_device() -> &'static str {
@@ -1314,42 +1325,78 @@ pub fn grok_git_diff(
     path: Option<String>,
     staged: bool,
     include_status: Option<bool>,
+    untracked: Option<bool>,
+    untracked_paths: Option<Vec<String>>,
 ) -> Result<GrokGitDiff, String> {
     let workspace = canonical_directory(&workspace)?;
     let relative = path.map(|value| relative_path(&value)).transpose()?;
-    let args = git_diff_args(relative.as_deref(), staged, git_head(&workspace).is_some());
-    let result = match run_git(&workspace, &args) {
-        Ok(result) => result,
-        Err(error) if is_not_git_repository_error(&error) || is_git_unavailable_error(&error) => {
-            return Ok(GrokGitDiff {
-                workspace_path: workspace.to_string_lossy().to_string(),
-                path: relative,
-                staged,
-                patch: String::new(),
-                truncated: false,
-                files: Vec::new(),
-            });
+    let args = git_diff_args(relative.as_deref(), staged, true);
+    let verified_untracked = if !staged && untracked == Some(true) {
+        match relative.as_deref() {
+            Some(path) => is_untracked_path(&workspace, path)?,
+            None => false,
         }
-        Err(error) => return Err(error),
+    } else {
+        false
+    };
+    let result = if verified_untracked {
+        CommandResult {
+            stdout: String::new(),
+            stderr: String::new(),
+            success: true,
+        }
+    } else {
+        match run_git(&workspace, &args) {
+            Ok(result) => result,
+            Err(error) if !staged && is_missing_head_error(&error) => run_git(
+                &workspace,
+                &git_diff_args(relative.as_deref(), false, false),
+            )?,
+            Err(error)
+                if is_not_git_repository_error(&error) || is_git_unavailable_error(&error) =>
+            {
+                return Ok(GrokGitDiff {
+                    workspace_path: workspace.to_string_lossy().to_string(),
+                    path: relative,
+                    staged,
+                    patch: String::new(),
+                    truncated: false,
+                    files: Vec::new(),
+                });
+            }
+            Err(error) => return Err(error),
+        }
     };
     let mut patch = result.stdout;
     if !staged {
         if let Some(path) = relative.as_deref() {
-            if is_untracked_path(&workspace, path)? {
+            // Renderer metadata is only a performance hint. Git remains the authority before
+            // a no-index diff is allowed to return the file's complete contents.
+            let is_untracked = verified_untracked
+                || (untracked != Some(false) && is_untracked_path(&workspace, path)?);
+            if is_untracked {
                 if let Some(untracked_patch) = git_untracked_patch(&workspace, path) {
                     append_patch(&mut patch, &untracked_patch);
                 }
             }
         } else {
-            let status = git_status_at_with_stats(&workspace, false)?;
-            for path in status
-                .files
-                .iter()
-                .filter(|file| file.untracked)
-                .map(|file| file.path.as_str())
-            {
-                if let Some(untracked_patch) = git_untracked_patch(&workspace, path) {
-                    append_patch(&mut patch, &untracked_patch);
+            let paths = match untracked_paths {
+                Some(paths) => paths
+                    .into_iter()
+                    .map(|path| relative_path(&path))
+                    .collect::<Result<Vec<_>, _>>()?,
+                None => git_status_at_with_stats(&workspace, false)?
+                    .files
+                    .into_iter()
+                    .filter(|file| file.untracked)
+                    .map(|file| file.path)
+                    .collect(),
+            };
+            for path in paths {
+                if is_untracked_path(&workspace, &path)? {
+                    if let Some(untracked_patch) = git_untracked_patch(&workspace, &path) {
+                        append_patch(&mut patch, &untracked_patch);
+                    }
                 }
             }
         }
@@ -2381,8 +2428,8 @@ pub fn grok_git_audit_list(
 mod tests {
     use super::{
         git_command_timeout, git_diff_args, git_untracked_status_args, is_git_unavailable_error,
-        parse_branches, parse_remotes, parse_tracking, parse_worktrees, relative_path,
-        LOCAL_GIT_TIMEOUT, LONG_GIT_TIMEOUT,
+        is_missing_head_error, parse_branches, parse_remotes, parse_tracking, parse_worktrees,
+        relative_path, LOCAL_GIT_TIMEOUT, LONG_GIT_TIMEOUT,
     };
 
     #[test]
@@ -2404,6 +2451,12 @@ mod tests {
     #[test]
     fn builds_bounded_diff_without_external_drivers() {
         let all_changes = git_diff_args(Some("src/main.rs"), false, true);
+        assert!(all_changes
+            .windows(2)
+            .any(|args| args == ["-c", "color.ui=false"]));
+        assert!(all_changes
+            .windows(2)
+            .any(|args| args == ["-c", "core.quotePath=false"]));
         assert!(all_changes.contains(&"--no-ext-diff".to_string()));
         assert!(all_changes.contains(&"--no-textconv".to_string()));
         assert!(all_changes.contains(&"--no-renames".to_string()));
@@ -2422,6 +2475,15 @@ mod tests {
         assert!(args.contains(&"--untracked-files=all".to_string()));
         assert_eq!(args[args.len() - 2], "--");
         assert_eq!(args.last().map(String::as_str), Some("src/main.rs"));
+    }
+
+    #[test]
+    fn retries_without_head_only_for_an_unborn_repository() {
+        assert!(is_missing_head_error("fatal: bad revision 'HEAD'"));
+        assert!(is_missing_head_error(
+            "fatal: ambiguous argument 'HEAD': unknown revision or path not in the working tree"
+        ));
+        assert!(!is_missing_head_error("fatal: unable to read object"));
     }
 
     #[test]

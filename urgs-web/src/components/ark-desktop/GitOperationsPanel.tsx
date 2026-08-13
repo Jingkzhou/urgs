@@ -6,7 +6,12 @@ import {
 import type { GrokGitStatus } from '@/services/grokDesktop';
 import type { ArkDesktopTask } from './types';
 import type { ArkDesktopRuntime } from './useArkDesktopRuntime';
-import { gitReviewCacheFor } from './gitReviewCache';
+import {
+    cacheGitDiffSnapshot,
+    cachedGitDiffSnapshot,
+    gitReviewCacheFor,
+    gitStatusSignature,
+} from './gitReviewCache';
 
 interface GitOperationsPanelProps {
     task: ArkDesktopTask | null;
@@ -32,9 +37,9 @@ const GitOperationsPanel: React.FC<GitOperationsPanelProps> = ({
 
     const {
         listTaskGitBranches, switchTaskGitBranch, pullTaskGit,
-        generateTaskGitCommitMessage, commitTaskGit, pushTaskGit,
+        generateTaskGitCommitMessage, loadTaskGitDiff, commitTaskGit, pushTaskGit,
         listWorkspaceGitBranches, switchWorkspaceGitBranch, pullWorkspaceGit,
-        generateWorkspaceGitCommitMessage, commitWorkspaceGit, pushWorkspaceGit,
+        generateWorkspaceGitCommitMessage, loadWorkspaceGitDiff, commitWorkspaceGit, pushWorkspaceGit,
     } = runtime;
 
     const runAction = async <T,>(name: GitAction, operation: () => Promise<T>) => {
@@ -84,9 +89,26 @@ const GitOperationsPanel: React.FC<GitOperationsPanelProps> = ({
     };
 
     const generateMessage = async () => {
-        const message = await runAction('generate', () => task
-            ? generateTaskGitCommitMessage(task.id)
-            : generateWorkspaceGitCommitMessage(workspace));
+        const message = await runAction('generate', async () => {
+            const currentCache = gitReviewCacheFor(workspaceKey);
+            let preparedDiff = status ? cachedGitDiffSnapshot(currentCache, status) : undefined;
+            if (!preparedDiff) {
+                const context = {
+                    untrackedPaths: status?.files.filter((file) => file.untracked).map((file) => file.path),
+                };
+                const snapshot = task
+                    ? await loadTaskGitDiff(task.id, undefined, false, context)
+                    : await loadWorkspaceGitDiff(workspace, undefined, false, context);
+                preparedDiff = status ? { ...snapshot, files: status.files } : snapshot;
+                if (status && !snapshot.truncated) {
+                    cacheGitDiffSnapshot(currentCache, preparedDiff, status.files);
+                    currentCache.snapshotSignature = gitStatusSignature(status);
+                }
+            }
+            return task
+                ? generateTaskGitCommitMessage(task.id, preparedDiff)
+                : generateWorkspaceGitCommitMessage(workspace, preparedDiff);
+        });
         if (!message) return;
         updateCommitMessage(message);
         setNotice('已生成提交说明，可直接修改后提交。');

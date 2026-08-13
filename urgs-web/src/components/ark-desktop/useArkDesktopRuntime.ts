@@ -93,6 +93,7 @@ import {
     type GrokWorkflowFile,
     type GrokWorkflowListing,
     type GrokGitDiff,
+    type GrokGitDiffContext,
     type GrokGitStatus,
     type GrokGitMutationResult,
     type GrokGitRemote,
@@ -2370,12 +2371,12 @@ export const useArkDesktopRuntime = () => {
         }
     }, [taskForGit, updateTaskGitStatus]);
 
-    const loadTaskGitDiff = useCallback((taskId: string, path?: string, staged = false) => {
+    const loadTaskGitDiff = useCallback((taskId: string, path?: string, staged = false, context: GrokGitDiffContext = {}) => {
         const task = taskForGit(taskId);
-        const requestKey = `${task.workspace}\u0000${path || ''}\u0000${staged ? 'staged' : 'working'}`;
+        const requestKey = `${task.workspace}\u0000${path || ''}\u0000${staged ? 'staged' : 'working'}\u0000${JSON.stringify(context)}`;
         let request = gitDiffRequestsRef.current.get(requestKey);
         if (!request) {
-            request = getGrokGitDiff(task.workspace, path, staged, false);
+            request = getGrokGitDiff(task.workspace, path, staged, false, context);
             gitDiffRequestsRef.current.set(requestKey, request);
             void request.finally(() => {
                 if (gitDiffRequestsRef.current.get(requestKey) === request) {
@@ -2404,13 +2405,13 @@ export const useArkDesktopRuntime = () => {
         return request;
     }, []);
 
-    const loadWorkspaceGitDiff = useCallback((workspace: string, path?: string, staged = false) => {
+    const loadWorkspaceGitDiff = useCallback((workspace: string, path?: string, staged = false, context: GrokGitDiffContext = {}) => {
         const target = workspace.trim();
         if (!target) throw new Error('未选择工作空间');
-        const requestKey = `${target}\u0000${path || ''}\u0000${staged ? 'staged' : 'working'}`;
+        const requestKey = `${target}\u0000${path || ''}\u0000${staged ? 'staged' : 'working'}\u0000${JSON.stringify(context)}`;
         let request = gitDiffRequestsRef.current.get(requestKey);
         if (!request) {
-            request = getGrokGitDiff(target, path, staged, false);
+            request = getGrokGitDiff(target, path, staged, false, context);
             gitDiffRequestsRef.current.set(requestKey, request);
             void request.finally(() => {
                 if (gitDiffRequestsRef.current.get(requestKey) === request) {
@@ -2499,18 +2500,18 @@ export const useArkDesktopRuntime = () => {
         return message;
     }, []);
 
-    const generateWorkspaceGitCommitMessage = useCallback(async (workspace: string) => {
+    const generateWorkspaceGitCommitMessage = useCallback(async (workspace: string, preparedDiff?: GrokGitDiff) => {
         const current = snapshotRef.current;
         const selectedModel = current.settings.grokModel.trim();
-        const diff = await getGrokGitDiff(requireWorkspace(workspace));
+        const diff = preparedDiff || await getGrokGitDiff(requireWorkspace(workspace));
         return generateCommitMessageText(diff, selectedModel);
     }, [generateCommitMessageText, requireWorkspace]);
 
-    const generateTaskGitCommitMessage = useCallback(async (taskId: string) => {
+    const generateTaskGitCommitMessage = useCallback(async (taskId: string, preparedDiff?: GrokGitDiff) => {
         const task = taskForGit(taskId);
         const current = snapshotRef.current;
         const selectedModel = task.model?.trim() || current.settings.grokModel.trim();
-        const diff = await getGrokGitDiff(task.workspace);
+        const diff = preparedDiff || await getGrokGitDiff(task.workspace);
         return generateCommitMessageText(diff, selectedModel);
     }, [generateCommitMessageText, taskForGit]);
 

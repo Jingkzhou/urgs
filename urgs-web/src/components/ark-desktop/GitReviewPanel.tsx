@@ -1,11 +1,11 @@
 import React, { useCallback, useEffect, useRef, useState } from 'react';
 import { AlertCircle, ChevronRight, FileCode2, GitBranch, LoaderCircle, Maximize2, Minimize2, PanelLeftClose, PanelLeftOpen, RefreshCw, X } from 'lucide-react';
-import { watchGrokGitWorkspace, type GrokGitDiff, type GrokGitFile, type GrokGitStatus } from '@/services/grokDesktop';
+import { watchGrokGitWorkspace, type GrokGitDiff, type GrokGitFile, type GrokGitStatus, type GrokGitWorkspaceChangedEvent } from '@/services/grokDesktop';
 import type { ArkDesktopTask } from './types';
 import type { ArkDesktopRuntime } from './useArkDesktopRuntime';
 import GitDiffViewer from './GitDiffViewer';
 import GitOperationsPanel from './GitOperationsPanel';
-import { gitReviewCacheFor, gitStatusSignature, normalizeGitWorkspaceKey } from './gitReviewCache';
+import { cacheGitDiffSnapshot, gitReviewCacheFor, gitStatusSignature, invalidateGitDiffPaths, normalizeGitWorkspaceKey } from './gitReviewCache';
 
 interface GitReviewPanelProps {
     task: ArkDesktopTask | null;
@@ -80,7 +80,7 @@ const GitReviewPanel: React.FC<GitReviewPanelProps> = ({ task, workspace: worksp
     const [selectedPath, setSelectedPath] = useState(initialCache.selectedPath || initialCache.status?.files[0]?.path || persistedStatus?.files[0]?.path || '');
     const [diff, setDiff] = useState<GrokGitDiff | null>(() => initialCache.selectedPath ? initialCache.diffs.get(initialCache.selectedPath) || null : null);
     const [statusLoading, setStatusLoading] = useState(!initialCache.status && !persistedStatus);
-    const [diffLoading, setDiffLoading] = useState(false);
+    const [loadingPath, setLoadingPath] = useState('');
     const [error, setError] = useState('');
     const [activeView, setActiveView] = useState<'diff' | 'operations'>('diff');
     const [panelWidth, setPanelWidth] = useState(readPanelWidth);
@@ -93,7 +93,12 @@ const GitReviewPanel: React.FC<GitReviewPanelProps> = ({ task, workspace: worksp
     const resizeStartRef = useRef<{ x: number; width: number } | null>(null);
     const fileListResizeStartRef = useRef<{ x: number; width: number } | null>(null);
     const statusRequestRef = useRef<Promise<GrokGitStatus> | null>(null);
+    const snapshotRequestRef = useRef<Promise<void> | null>(null);
     const diffRequestIdRef = useRef(0);
+    const diffGenerationRef = useRef(0);
+    const diffPathGenerationRef = useRef(new Map<string, number>());
+    const snapshotGenerationRef = useRef(0);
+    const initializingWorkspaceRef = useRef(false);
     const selectedPathRef = useRef(selectedPath);
     selectedPathRef.current = selectedPath;
     const activeViewRef = useRef(activeView);
@@ -107,12 +112,22 @@ const GitReviewPanel: React.FC<GitReviewPanelProps> = ({ task, workspace: worksp
     const isRepository = status?.isRepository !== false;
     const isClean = Boolean(status && files.length === 0);
 
-    const applyStatus = useCallback((nextStatus: GrokGitStatus, options: { clearDiffs?: boolean; clearBranches?: boolean } = {}) => {
+    const applyStatus = useCallback((nextStatus: GrokGitStatus, options: { clearDiffs?: boolean; clearBranches?: boolean; changedPaths?: string[] } = {}) => {
         const cache = gitReviewCacheFor(workspaceKey);
         const nextSignature = gitStatusSignature(nextStatus);
         const currentSignature = cache.statusSignature || (cache.status ? gitStatusSignature(cache.status) : '');
         const statusChanged = currentSignature !== nextSignature;
-        if (options.clearDiffs || statusChanged) cache.diffs.clear();
+        if (options.clearDiffs || statusChanged) {
+            cache.diffs.clear();
+            cache.snapshotSignature = undefined;
+        } else if (options.changedPaths?.length) {
+            invalidateGitDiffPaths(cache, options.changedPaths);
+        }
+        if (options.clearDiffs || statusChanged) {
+            diffGenerationRef.current += 1;
+            snapshotGenerationRef.current += 1;
+            snapshotRequestRef.current = null;
+        }
         if (options.clearBranches) {
             cache.branches = undefined;
             cache.branchesUpdatedAt = undefined;
@@ -133,7 +148,7 @@ const GitReviewPanel: React.FC<GitReviewPanelProps> = ({ task, workspace: worksp
         return true;
     }, [workspaceKey]);
 
-    const refreshStatus = useCallback(async (foreground = false) => {
+    const refreshStatus = useCallback(async (foreground = false, changedPaths: string[] = []) => {
         if (!workspace || statusRequestRef.current) return statusRequestRef.current;
         if (foreground || !gitReviewCacheFor(workspaceKey).status) setStatusLoading(true);
         setError('');
@@ -141,7 +156,7 @@ const GitReviewPanel: React.FC<GitReviewPanelProps> = ({ task, workspace: worksp
         statusRequestRef.current = request;
         try {
             const nextStatus = await request;
-            applyStatus(nextStatus);
+            applyStatus(nextStatus, { changedPaths });
             return nextStatus;
         } catch (cause) {
             const message = cause instanceof Error ? cause.message : String(cause);
@@ -159,39 +174,136 @@ const GitReviewPanel: React.FC<GitReviewPanelProps> = ({ task, workspace: worksp
             return;
         }
         const cache = gitReviewCacheFor(workspaceKey);
-        cache.selectedPath = path;
-        setSelectedPath(path);
-        const cached = cache.diffs.get(path);
+        let cached = cache.diffs.get(path);
         if (cached && !force) {
-            setDiff(cached);
+            if (selectedPathRef.current === path) {
+                setDiff(cached);
+                setLoadingPath('');
+            }
             return;
         }
+        if (!force && snapshotRequestRef.current) {
+            await snapshotRequestRef.current;
+            cached = cache.diffs.get(path);
+            if (cached) {
+                if (selectedPathRef.current === path) {
+                    setDiff(cached);
+                    setLoadingPath('');
+                }
+                return;
+            }
+        }
+        // The persisted file list can render before the latest repository status is ready.
+        // Avoid starting status, diff and watcher Git processes at the same time: this is
+        // especially expensive on Windows workspaces scanned by endpoint security software.
+        const pendingStatus = statusRequestRef.current;
+        if (pendingStatus) {
+            try {
+                await pendingStatus;
+            } catch {
+                return;
+            }
+            cached = cache.diffs.get(path);
+            if (cached && !force) {
+                if (selectedPathRef.current === path) {
+                    setDiff(cached);
+                    setLoadingPath('');
+                }
+                return;
+            }
+        }
         const requestId = diffRequestIdRef.current + 1;
+        const generation = diffGenerationRef.current;
+        const pathGeneration = diffPathGenerationRef.current.get(path) || 0;
         diffRequestIdRef.current = requestId;
-        if (!silent) setDiffLoading(true);
+        if (!silent && selectedPathRef.current === path) setLoadingPath(path);
         setError('');
         try {
-            let nextDiff = task
-                ? await loadTaskGitDiff(task.id, path, false)
-                : await loadWorkspaceGitDiff(workspace, path, false);
             const currentFile = cache.status?.files.find((file) => file.path === path);
+            const context = { untracked: Boolean(currentFile?.untracked) };
+            let nextDiff = task
+                ? await loadTaskGitDiff(task.id, path, false, context)
+                : await loadWorkspaceGitDiff(workspace, path, false, context);
             if (!nextDiff.patch.trim() && currentFile?.staged) {
                 nextDiff = task
-                    ? await loadTaskGitDiff(task.id, path, true)
-                    : await loadWorkspaceGitDiff(workspace, path, true);
+                    ? await loadTaskGitDiff(task.id, path, true, context)
+                    : await loadWorkspaceGitDiff(workspace, path, true, context);
             }
-            if (diffRequestIdRef.current !== requestId) return;
+            if (diffGenerationRef.current !== generation
+                || (diffPathGenerationRef.current.get(path) || 0) !== pathGeneration) return;
             const currentDiff = cache.diffs.get(path);
             cache.diffs.set(path, nextDiff);
-            if (!currentDiff || currentDiff.patch !== nextDiff.patch || currentDiff.truncated !== nextDiff.truncated) {
+            if (diffRequestIdRef.current === requestId
+                && selectedPathRef.current === path
+                && (!currentDiff || currentDiff.patch !== nextDiff.patch || currentDiff.truncated !== nextDiff.truncated)) {
                 setDiff(nextDiff);
             }
         } catch (cause) {
             if (diffRequestIdRef.current === requestId) setError(cause instanceof Error ? cause.message : String(cause));
         } finally {
-            if (!silent && diffRequestIdRef.current === requestId) setDiffLoading(false);
+            if (!silent && diffRequestIdRef.current === requestId) setLoadingPath('');
         }
     }, [loadTaskGitDiff, loadWorkspaceGitDiff, task?.id, workspace, workspaceKey]);
+
+    const primeDiffCache = useCallback((currentStatus: GrokGitStatus) => {
+        const statusSignature = gitStatusSignature(currentStatus);
+        const currentCache = gitReviewCacheFor(workspaceKey);
+        if (currentCache.snapshotSignature === statusSignature) return null;
+        if (snapshotRequestRef.current || currentStatus.files.length < 2) return snapshotRequestRef.current;
+        const generation = diffGenerationRef.current;
+        const snapshotGeneration = snapshotGenerationRef.current;
+        const context = {
+            // VS Code also keeps untracked content as a working-tree model. Avoid spawning one
+            // git --no-index process per untracked file while priming the tracked snapshot.
+            untrackedPaths: [] as string[],
+        };
+        const request = (task
+            ? loadTaskGitDiff(task.id, undefined, false, context)
+            : loadWorkspaceGitDiff(workspace, undefined, false, context))
+            .then((snapshot) => {
+                const cache = gitReviewCacheFor(workspaceKey);
+                if (cache.statusSignature !== statusSignature
+                    || diffGenerationRef.current !== generation
+                    || snapshotGenerationRef.current !== snapshotGeneration) return;
+                cacheGitDiffSnapshot(cache, snapshot, currentStatus.files);
+                cache.snapshotSignature = statusSignature;
+                const currentPath = selectedPathRef.current;
+                const cached = cache.diffs.get(currentPath);
+                if (cached) {
+                    diffRequestIdRef.current += 1;
+                    setDiff(cached);
+                    setLoadingPath('');
+                }
+            })
+            .catch(() => undefined)
+            .finally(() => {
+                if (snapshotRequestRef.current === request) snapshotRequestRef.current = null;
+            });
+        snapshotRequestRef.current = request;
+        return request;
+    }, [loadTaskGitDiff, loadWorkspaceGitDiff, task?.id, workspace, workspaceKey]);
+
+    const selectDiff = useCallback((path: string) => {
+        const cache = gitReviewCacheFor(workspaceKey);
+        if (selectedPathRef.current === path) {
+            const cached = cache.diffs.get(path);
+            if (cached) {
+                setDiff(cached);
+                setLoadingPath('');
+            }
+            return;
+        }
+        cache.selectedPath = path;
+        selectedPathRef.current = path;
+        diffRequestIdRef.current += 1;
+        setSelectedPath(path);
+        setDiff(cache.diffs.get(path) || null);
+        setLoadingPath(cache.diffs.has(path) ? '' : path);
+        setError('');
+        if (initializingWorkspaceRef.current && !cache.diffs.has(path)) {
+            void loadDiff(path);
+        }
+    }, [loadDiff, workspaceKey]);
 
     useEffect(() => {
         const cache = gitReviewCacheFor(workspaceKey);
@@ -205,9 +317,20 @@ const GitReviewPanel: React.FC<GitReviewPanelProps> = ({ task, workspace: worksp
         setError('');
         setActiveView('diff');
         setStatusLoading(!nextStatus);
+        setLoadingPath('');
         setSyncMode('connecting');
         diffRequestIdRef.current += 1;
+        diffGenerationRef.current += 1;
+        diffPathGenerationRef.current.clear();
+        snapshotGenerationRef.current += 1;
+        snapshotRequestRef.current = null;
     }, [task?.id, workspaceKey]);
+
+    useEffect(() => {
+        if (!visible || !status || !isRepository || status.files.length === 0) return;
+        if (selectedPath && !gitReviewCacheFor(workspaceKey).diffs.has(selectedPath)) return;
+        void primeDiffCache(status);
+    }, [diff, isRepository, primeDiffCache, selectedPath, status, visible, workspaceKey]);
 
     // 点击面板外部任意区域时关闭代码变更窗口
     useEffect(() => {
@@ -222,46 +345,91 @@ const GitReviewPanel: React.FC<GitReviewPanelProps> = ({ task, workspace: worksp
     }, [visible]);
 
     useEffect(() => {
-        if (!visible || !workspace) return undefined;
+        if (!workspace) return undefined;
         let disposed = false;
         let stopWatching: (() => void) | undefined;
         const refreshVisibleData = async (changedPaths: string[] = []) => {
+            if (changedPaths.length > 0) {
+                changedPaths.forEach((path) => diffPathGenerationRef.current.set(
+                    path,
+                    (diffPathGenerationRef.current.get(path) || 0) + 1,
+                ));
+                snapshotGenerationRef.current += 1;
+                snapshotRequestRef.current = null;
+                invalidateGitDiffPaths(gitReviewCacheFor(workspaceKey), changedPaths);
+            }
             const previousSignature = gitReviewCacheFor(workspaceKey).statusSignature;
-            const nextStatus = await refreshStatus(false);
-            if (!nextStatus || activeViewRef.current !== 'diff') return;
+            const nextStatus = await refreshStatus(false, changedPaths);
+            if (!nextStatus || activeViewRef.current !== 'diff') return nextStatus;
             const path = nextStatus?.files.some((file) => file.path === selectedPathRef.current)
                 ? selectedPathRef.current
                 : nextStatus?.files[0]?.path || '';
             const statusChanged = previousSignature !== gitStatusSignature(nextStatus);
             if (path && (statusChanged || changedPaths.includes(path))) await loadDiff(path, true, true);
+            return nextStatus;
         };
         const handleVisibilityChange = () => {
             if (document.visibilityState === 'visible') void refreshVisibleData().catch(() => undefined);
         };
-        void refreshVisibleData().catch(() => undefined);
-        void watchGrokGitWorkspace(workspace, (event) => {
-            if (document.visibilityState === 'visible') void refreshVisibleData(event.changedPaths).catch(() => undefined);
-        }).then((stop) => {
-            if (disposed) stop();
-            else {
-                stopWatching = stop;
-                setSyncMode('live');
+        const handleWorkspaceChanged = (event: GrokGitWorkspaceChangedEvent) => {
+            if (!visible || document.visibilityState !== 'visible') {
+                event.changedPaths.forEach((path) => diffPathGenerationRef.current.set(
+                    path,
+                    (diffPathGenerationRef.current.get(path) || 0) + 1,
+                ));
+                snapshotGenerationRef.current += 1;
+                snapshotRequestRef.current = null;
+                invalidateGitDiffPaths(gitReviewCacheFor(workspaceKey), event.changedPaths);
+                return;
             }
-        }).catch(() => {
-            if (!disposed) setSyncMode('manual');
+            void refreshVisibleData(event.changedPaths).catch(() => undefined);
+        };
+        const initialize = async () => {
+            initializingWorkspaceRef.current = visible;
+            const nextStatus = visible
+                ? await refreshVisibleData()
+                : gitReviewCacheFor(workspaceKey).status;
+            if (visible && nextStatus && activeViewRef.current === 'diff') {
+                const path = nextStatus.files.some((file) => file.path === selectedPathRef.current)
+                    ? selectedPathRef.current
+                    : nextStatus.files[0]?.path || '';
+                if (path) await loadDiff(path);
+            }
+            if (disposed) return;
+            try {
+                const stop = await watchGrokGitWorkspace(workspace, handleWorkspaceChanged);
+                if (disposed) stop();
+                else {
+                    stopWatching = stop;
+                    initializingWorkspaceRef.current = false;
+                    setSyncMode('live');
+                }
+            } catch {
+                if (!disposed) {
+                    initializingWorkspaceRef.current = false;
+                    setSyncMode('manual');
+                }
+            }
+        };
+        void initialize().catch(() => {
+            if (!disposed) {
+                initializingWorkspaceRef.current = false;
+                setSyncMode('manual');
+            }
         });
         document.addEventListener('visibilitychange', handleVisibilityChange);
         return () => {
             disposed = true;
+            initializingWorkspaceRef.current = false;
             stopWatching?.();
             document.removeEventListener('visibilitychange', handleVisibilityChange);
         };
     }, [loadDiff, refreshStatus, visible, workspace, workspaceKey]);
 
     useEffect(() => {
-        if (!visible || activeView !== 'diff' || !selectedPath || !isRepository) return;
+        if (!visible || activeView !== 'diff' || !selectedPath || !isRepository || initializingWorkspaceRef.current) return;
         void loadDiff(selectedPath);
-    }, [activeView, isRepository, loadDiff, selectedPath, visible]);
+    }, [activeView, isRepository, loadDiff, selectedPath, syncMode, visible]);
 
     useEffect(() => {
         localStorage.setItem(PANEL_WIDTH_STORAGE_KEY, String(panelWidth));
@@ -375,7 +543,7 @@ const GitReviewPanel: React.FC<GitReviewPanelProps> = ({ task, workspace: worksp
                             : files.map((file) => {
                                 const presentation = fileStatus(file);
                                 const selected = selectedPath === file.path;
-                                return <button key={file.path} type="button" onClick={() => void loadDiff(file.path)} className={`mb-1 w-full rounded-xl px-3 py-2.5 text-left transition focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-indigo-300 ${selected ? 'bg-white shadow-sm ring-1 ring-slate-200' : 'hover:bg-white/80'}`}>
+                                return <button key={file.path} type="button" onClick={() => selectDiff(file.path)} className={`mb-1 w-full rounded-xl px-3 py-2.5 text-left transition focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-indigo-300 ${selected ? 'bg-white shadow-sm ring-1 ring-slate-200' : 'hover:bg-white/80'}`}>
                                     <span className="flex items-start gap-2"><FileCode2 size={14} className={`mt-0.5 shrink-0 ${selected ? 'text-indigo-600' : 'text-slate-400'}`} /><span className="min-w-0 flex-1"><span className="block truncate text-xs font-medium text-slate-700" title={file.path}>{file.path}</span><span className="mt-1 flex items-center gap-2"><span className={`rounded-md px-1.5 py-0.5 text-[9px] font-medium ${presentation.className}`}>{presentation.label}</span>{file.additions > 0 && <span className="text-[10px] text-emerald-600">+{file.additions}</span>}{file.deletions > 0 && <span className="text-[10px] text-red-500">-{file.deletions}</span>}</span></span><ChevronRight size={13} className={`mt-0.5 shrink-0 ${selected ? 'text-indigo-500' : 'text-slate-300'}`} /></span>
                                 </button>;
                             })}
@@ -387,7 +555,7 @@ const GitReviewPanel: React.FC<GitReviewPanelProps> = ({ task, workspace: worksp
             </>}
 
             <section className="min-h-0 flex-1 overflow-y-auto bg-[#181818] p-2">
-                {diffLoading ? <div className="flex h-40 items-center justify-center gap-2 text-xs text-slate-400"><LoaderCircle size={15} className="animate-spin" />正在读取 {selectedPath}</div>
+                {loadingPath === selectedPath ? <div className="flex h-40 items-center justify-center gap-2 text-xs text-slate-400"><LoaderCircle size={15} className="animate-spin" />正在读取 {selectedPath}</div>
                     : diff?.patch.trim() ? <GitDiffViewer patch={diff.patch} filePath={selectedPath} truncated={diff.truncated} />
                         : selectedFile ? <div className="flex h-40 items-center justify-center px-6 text-center text-xs leading-5 text-slate-400">该文件没有可显示的文本 Diff，可能是二进制文件、空文件或仅包含 Git 元数据变更。</div>
                             : <div className="flex h-40 items-center justify-center text-xs text-slate-500">从左侧选择变更文件</div>}

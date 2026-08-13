@@ -917,12 +917,25 @@ export const watchGrokGitWorkspace = async (workspace: string, listener: (event:
     };
 };
 
-export const getGrokGitDiff = (workspace: string, path?: string, staged = false, includeStatus = true) =>
+export interface GrokGitDiffContext {
+    untracked?: boolean;
+    untrackedPaths?: string[];
+}
+
+export const getGrokGitDiff = (
+    workspace: string,
+    path?: string,
+    staged = false,
+    includeStatus = true,
+    context: GrokGitDiffContext = {},
+) =>
     invokeGrokGit<GrokGitDiff>('grok_git_diff', {
         workspace,
         path: path || null,
         staged,
         includeStatus,
+        untracked: context.untracked ?? null,
+        untrackedPaths: context.untrackedPaths ?? null,
     }, 'high');
 
 export const openGrokGitFile = (workspace: string, path: string, revision?: 'HEAD') =>
