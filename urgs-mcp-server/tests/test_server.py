@@ -3,6 +3,7 @@ from __future__ import annotations
 from typing import Any
 
 import pytest
+from mcp.server.mcpserver.exceptions import ToolError
 
 from urgs_mcp_server.server import create_server
 
@@ -42,10 +43,10 @@ async def test_rejects_invalid_system_code_before_calling_urgs() -> None:
     client = FakeUrgsApiClient()
     server = create_server(client)
 
-    result = await server.call_tool(
-        "search_regulatory_assets",
-        {"keyword": "贷款", "system_code": "../EAST5", "limit": 5},
-    )
+    with pytest.raises(ToolError, match="system_code 格式不正确"):
+        await server.call_tool(
+            "search_regulatory_assets",
+            {"keyword": "贷款", "system_code": "../EAST5", "limit": 5},
+        )
 
-    assert result.is_error is True
     assert client.arguments is None
