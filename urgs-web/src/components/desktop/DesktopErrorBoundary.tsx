@@ -1,5 +1,5 @@
 import React from 'react';
-import { describeDesktopError, writeDesktopLog } from '@/services/grokDesktop';
+import { describeDesktopError, writeDesktopLog } from '@/services/desktopBridge';
 
 interface DesktopErrorBoundaryProps {
     children: React.ReactNode;

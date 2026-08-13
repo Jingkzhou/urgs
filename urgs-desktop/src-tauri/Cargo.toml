@@ -14,7 +14,7 @@ crate-type = ["staticlib", "cdylib", "rlib"]
 tauri-build = { version = "2.6.3", features = [] }
 
 [dependencies]
-base64 = "0.22"
+chrono = "0.4"
 serde = { version = "1.0", features = ["derive"] }
 serde_json = "1.0"
 tauri = { version = "2.11.3", features = ["tray-icon"] }
@@ -25,14 +25,4 @@ tauri-plugin-opener = "2.5.4"
 tauri-plugin-process = "2"
 tauri-plugin-shell = "2"
 tauri-plugin-updater = "2"
-tokio = { version = "1", features = ["process", "sync", "time"] }
-toml = "0.8"
-portable-pty = "0.9.0"
 url = "2.5"
-uuid = { version = "1", features = ["v4"] }
-keyring = { version = "3", default-features = false, features = ["apple-native", "windows-native", "linux-native"] }
-reqwest = { version = "0.13.4", default-features = false, features = ["json", "rustls"] }
-notify-debouncer-mini = "0.6"
-
-[target.'cfg(target_os = "macos")'.dependencies]
-security-framework = "3.7"

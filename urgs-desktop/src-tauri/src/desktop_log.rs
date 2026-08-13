@@ -1,9 +1,9 @@
+use chrono::Local;
 use serde::Serialize;
 use std::fs::{self, OpenOptions};
 use std::io::Write;
-use std::path::PathBuf;
+use std::path::{Path, PathBuf};
 use std::sync::{Mutex, OnceLock};
-use std::time::{SystemTime, UNIX_EPOCH};
 use tauri::{AppHandle, Manager};
 
 const LOG_DIRECTORY_NAME: &str = "logs";
@@ -83,10 +83,7 @@ fn current_log_path() -> Option<PathBuf> {
 }
 
 fn timestamp() -> String {
-    let duration = SystemTime::now()
-        .duration_since(UNIX_EPOCH)
-        .unwrap_or_default();
-    format!("{}.{:03}", duration.as_secs(), duration.subsec_millis())
+    Local::now().format("%Y-%m-%d %H:%M:%S%.3f %:z").to_string()
 }
 
 fn strip_ansi_codes(message: &str) -> String {
@@ -218,14 +215,6 @@ pub(crate) fn info(component: &str, message: &str) {
     log("INFO", component, message);
 }
 
-pub(crate) fn debug(component: &str, message: &str) {
-    log("DEBUG", component, message);
-}
-
-pub(crate) fn warn(component: &str, message: &str) {
-    log("WARN", component, message);
-}
-
 pub(crate) fn error(component: &str, message: &str) {
     log("ERROR", component, message);
 }
@@ -256,9 +245,80 @@ pub(crate) fn read_tail(
     })
 }
 
+fn clear_path(path: &Path) -> Result<(), String> {
+    let parent = path
+        .parent()
+        .ok_or_else(|| "客户端日志目录无效".to_string())?;
+    fs::create_dir_all(parent).map_err(|error| format!("创建客户端日志目录失败: {error}"))?;
+    let _guard = write_lock()
+        .lock()
+        .map_err(|_| "客户端日志写入锁不可用".to_string())?;
+    let backup = parent.join(LOG_BACKUP_FILE_NAME);
+    match fs::remove_file(&backup) {
+        Ok(()) => {}
+        Err(error) if error.kind() == std::io::ErrorKind::NotFound => {}
+        Err(error) => return Err(format!("清理客户端历史日志失败: {error}")),
+    }
+    OpenOptions::new()
+        .create(true)
+        .write(true)
+        .truncate(true)
+        .open(path)
+        .map_err(|error| format!("清空客户端日志失败: {error}"))?;
+    Ok(())
+}
+
+pub(crate) fn clear(app: &AppHandle) -> Result<DesktopLogSnapshot, String> {
+    let path = configure(app)?;
+    clear_path(&path)?;
+    Ok(DesktopLogSnapshot {
+        path: path.to_string_lossy().to_string(),
+        lines: Vec::new(),
+    })
+}
+
 #[cfg(test)]
 mod tests {
-    use super::redact_message;
+    use super::{clear_path, redact_message, timestamp, LOG_BACKUP_FILE_NAME};
+    use std::fs;
+    use std::time::{SystemTime, UNIX_EPOCH};
+
+    #[test]
+    fn timestamp_contains_local_date_time_milliseconds_and_offset() {
+        let value = timestamp();
+
+        assert_eq!(value.len(), 30);
+        assert_eq!(&value[4..5], "-");
+        assert_eq!(&value[7..8], "-");
+        assert_eq!(&value[10..11], " ");
+        assert_eq!(&value[19..20], ".");
+        assert_eq!(&value[23..24], " ");
+        assert!(matches!(&value[24..25], "+" | "-"));
+        assert_eq!(&value[27..28], ":");
+    }
+
+    #[test]
+    fn clear_path_truncates_current_log_and_removes_backup() {
+        let unique = SystemTime::now()
+            .duration_since(UNIX_EPOCH)
+            .unwrap_or_default()
+            .as_nanos();
+        let directory = std::env::temp_dir().join(format!(
+            "urgs-desktop-log-clear-{}-{unique}",
+            std::process::id()
+        ));
+        let path = directory.join("desktop.log");
+        let backup = directory.join(LOG_BACKUP_FILE_NAME);
+        fs::create_dir_all(&directory).expect("create temp log directory");
+        fs::write(&path, "current log").expect("write current log");
+        fs::write(&backup, "backup log").expect("write backup log");
+
+        clear_path(&path).expect("clear desktop logs");
+
+        assert_eq!(fs::read_to_string(&path).expect("read current log"), "");
+        assert!(!backup.exists());
+        fs::remove_dir_all(directory).expect("remove temp log directory");
+    }
 
     #[test]
     fn redacts_common_credentials_and_flattens_multiline_messages() {

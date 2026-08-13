@@ -3,7 +3,7 @@ import {
     isDesktopRuntime,
     type RuntimeConfig,
 } from '@/config';
-import { invokeDesktop } from '@/services/grokDesktop';
+import { invokeDesktop } from '@/services/desktopBridge';
 
 export const initializeDesktopRuntimeConfig = async () => {
     if (!isDesktopRuntime()) {

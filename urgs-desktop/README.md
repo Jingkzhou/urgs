@@ -35,25 +35,12 @@ pnpm verify:windows
 
 `pnpm verify:windows` 同时检查以下交付门禁：
 
-- `grok-sidecar.lock.json` 锁定的 Windows x64 Grok Build 版本和 SHA-256；
-- Tauri `bundle.externalBin` 确实声明了 `grok`；
 - Windows WebView2 使用离线安装模式；
 - MSI 和 NSIS 安装包均存在、非空且版本一致。
 
-验收结果会写入 `src-tauri/target/release/bundle/windows-build-manifest.json` 和 `SHA256SUMS.txt`，清单中会记录 sidecar 的版本、大小和 SHA-256。
+验收结果会写入 `src-tauri/target/release/bundle/windows-build-manifest.json` 和 `SHA256SUMS.txt`。
 
-在 Windows 构建机上还必须执行一次安装后验证。它会静默安装 NSIS 包，从安装目录找到 `grok*.exe`，并运行 `grok.exe --no-auto-update --version`：
-
-```powershell
-$setup = Get-ChildItem "src-tauri/target/release/bundle/nsis/*-setup.exe" | Select-Object -First 1
-pnpm verify:windows:install -- -InstallerPath $setup.FullName -ExpectedVersion 1.0.0
-```
-
-因此正式客户端不需要用户另行安装 Grok Build；安装 URGS 客户端后，Grok 运行时随客户端一起部署。Windows 构建流水线使用官方安装源只是在构建机准备 sidecar，最终安装包内包含的是已锁定并验收过的 `grok.exe`。
-
-> 平台版本说明（2026-08-12）：macOS 本地 Debug App 已使用 Grok Build `1.0.1`；Windows 正式发布仍锁定已完成版本、大小和 SHA-256 验证的 `1.0.0`。取得并校验官方 `1.0.1` Windows x64 工件后，需同时更新 `grok-sidecar.lock.json`、工作流 `GROK_BUILD_VERSION` 和上方安装后验证版本，禁止只改版本字符串。
-
-这里的“自包含”指 Grok Build 运行时和 WebView2 离线安装资源随客户端分发，不代表把大模型权重打进客户端。当前内网模式会关闭 xAI 登录、在线市场、自动更新和远程搜索；首次使用仍需在“设置 → 模型连接”配置一个内网可访问的模型服务地址和 API Key，密钥只保存到 Windows 系统凭据库。
+智能任务中心及 Grok Build 运行时已经迁移到独立的 `jl-intelligent-center/` App，URGS 仅保留启动和用户快照交接入口，不再随包分发 Grok sidecar。
 
 也可以在 GitHub Actions 中手动运行“URGS Windows 客户端”工作流，或提交包含桌面端相关变更的 Pull Request 触发验证构建。生成的 MSI、`setup.exe` 和 SHA-256 清单会作为流水线产物保留 14 天。
 

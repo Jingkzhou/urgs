@@ -3,7 +3,7 @@ import { v4 as uuidv4 } from 'uuid';
 import { RobotOutlined } from '@ant-design/icons';
 import { Sparkles, Database, Cpu, Layers, PenTool, ArrowDown, PanelLeftClose, PanelLeftOpen, SquarePen, Bot } from 'lucide-react';
 import { motion, AnimatePresence } from 'framer-motion';
-import { WebviewWindow } from '@tauri-apps/api/webviewWindow';
+import { invoke } from '@tauri-apps/api/core';
 import Sidebar from './Sidebar';
 import ChatMessage from './ChatMessage';
 import ChatInput from './ChatInput';
@@ -16,6 +16,7 @@ const STREAM_THROTTLE_MS = 80;
 const ESTIMATED_MESSAGE_HEIGHT = 140;
 const OVERSCAN_COUNT = 8;
 const SCROLL_IDLE_MS = 120;
+const TASK_CENTER_SNAPSHOT_KEY = 'urgs_ark_desktop_grok_snapshot_v4';
 
 interface SessionState {
     scrollTop: number;
@@ -76,21 +77,8 @@ const ArkPage: React.FC<ArkPageProps> = ({ launchTask, onLaunchTaskHandled }) =>
     const [viewportHeight, setViewportHeight] = useState(0);
     const openingGrokTaskCenterRef = useRef<Promise<void> | null>(null);
 
-    const focusGrokTaskCenter = async (window: WebviewWindow) => {
-        await window.unminimize();
-        await window.show();
-        try {
-            await window.setFullscreen(false);
-        } catch (error) {
-            console.warn('无法退出智能任务中心全屏状态，继续使用最大化窗口', error);
-        }
-        await window.maximize();
-        await window.setFocus();
-    };
-
     const openGrokTaskCenter = async () => {
         if (!isDesktopRuntime()) {
-            window.open('#/grok-task-center', '_blank', 'noopener,noreferrer');
             return;
         }
 
@@ -99,47 +87,17 @@ const ArkPage: React.FC<ArkPageProps> = ({ launchTask, onLaunchTaskHandled }) =>
             return;
         }
 
-        const opening = (async () => {
-            const existingWindow = await WebviewWindow.getByLabel('grok-task-center');
-            if (existingWindow) {
-                await focusGrokTaskCenter(existingWindow);
-                return;
-            }
-
-            const taskCenterWindow = new WebviewWindow('grok-task-center', {
-                url: '/#/grok-task-center',
-                title: 'URGS 智能任务中心',
-                width: 1440,
-                height: 900,
-                minWidth: 1100,
-                minHeight: 700,
-                maximized: true,
-                decorations: true,
-                resizable: true,
-                visible: true,
-                focus: true,
-            });
-
-            await new Promise<void>((resolve, reject) => {
-                taskCenterWindow.once('tauri://created', async () => {
-                    try {
-                        await focusGrokTaskCenter(taskCenterWindow);
-                        resolve();
-                    } catch (error) {
-                        reject(error);
-                    }
-                });
-                taskCenterWindow.once('tauri://error', (event) => {
-                    reject(new Error(`无法打开 URGS 智能任务中心窗口：${String(event.payload)}`));
-                });
-            });
-        })();
+        const opening = invoke<void>('launch_jl_intelligent_center', {
+            snapshot: localStorage.getItem(TASK_CENTER_SNAPSHOT_KEY),
+            authUser: localStorage.getItem('auth_user'),
+        });
 
         openingGrokTaskCenterRef.current = opening;
         try {
             await opening;
         } catch (error) {
-            console.error('无法打开 URGS 智能任务中心窗口', error);
+            console.error('无法打开吉林银行智能任务中心', error);
+            window.alert(error instanceof Error ? error.message : `无法打开吉林银行智能任务中心：${String(error)}`);
         } finally {
             if (openingGrokTaskCenterRef.current === opening) {
                 openingGrokTaskCenterRef.current = null;
@@ -647,7 +605,7 @@ const ArkPage: React.FC<ArkPageProps> = ({ launchTask, onLaunchTaskHandled }) =>
                         <button
                             onClick={() => void openGrokTaskCenter()}
                             className="flex h-9 items-center gap-1.5 rounded-lg px-2.5 text-sm font-medium text-slate-500 transition-colors hover:bg-[#f4f4f4] hover:text-slate-900"
-                            title="打开独立的 URGS 智能任务中心"
+                            title="打开吉林银行智能任务中心"
                         >
                             <Bot size={17} />
                             <span className="hidden sm:inline">Agents</span>

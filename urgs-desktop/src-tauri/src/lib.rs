@@ -1,6 +1,4 @@
 mod desktop_log;
-mod grok_git;
-mod grok_runtime;
 
 use serde::{Deserialize, Serialize};
 use std::fs;
@@ -10,6 +8,7 @@ use tauri::{
     tray::{MouseButton, MouseButtonState, TrayIconBuilder, TrayIconEvent},
     AppHandle, Manager, WebviewUrl, WebviewWindowBuilder, WindowEvent,
 };
+use tauri_plugin_opener::OpenerExt;
 use url::Url;
 
 const CONFIG_FILE_NAME: &str = "desktop-config.json";
@@ -17,6 +16,9 @@ const PREFERENCES_FILE_NAME: &str = "desktop-preferences.json";
 const SHOW_MAIN_WINDOW_MENU_ID: &str = "show-main-window";
 const QUIT_APPLICATION_MENU_ID: &str = "quit-application";
 const SPLASH_WINDOW_LABEL: &str = "startup-splash";
+const TASK_CENTER_HANDOFF_FILE: &str = "task-center/handoff-v1.json";
+const TASK_CENTER_SNAPSHOT_LIMIT_BYTES: usize = 4_000_000;
+const TASK_CENTER_USER_LIMIT_BYTES: usize = 64_000;
 
 fn write_startup_log(message: &str) {
     desktop_log::info("startup", message);
@@ -234,6 +236,11 @@ fn desktop_log_read(
     desktop_log::read_tail(&app, max_lines)
 }
 
+#[tauri::command]
+fn desktop_log_clear(app: AppHandle) -> Result<desktop_log::DesktopLogSnapshot, String> {
+    desktop_log::clear(&app)
+}
+
 #[derive(Debug, Deserialize)]
 #[serde(rename_all = "camelCase")]
 struct DesktopLogWriteRequest {
@@ -260,6 +267,64 @@ fn desktop_log_write(request: DesktopLogWriteRequest) -> Result<(), String> {
     Ok(())
 }
 
+#[derive(Debug, Serialize)]
+#[serde(rename_all = "camelCase")]
+struct TaskCenterHandoff<'a> {
+    snapshot: Option<&'a str>,
+    auth_user: Option<&'a str>,
+}
+
+fn validate_handoff_json(value: Option<&str>, limit: usize, field_name: &str) -> Result<(), String> {
+    let Some(value) = value else {
+        return Ok(());
+    };
+    if value.len() > limit {
+        return Err(format!("{field_name}超过迁移大小限制"));
+    }
+    serde_json::from_str::<serde_json::Value>(value)
+        .map(|_| ())
+        .map_err(|error| format!("{field_name}不是有效 JSON: {error}"))
+}
+
+#[tauri::command]
+fn launch_jl_intelligent_center(
+    app: AppHandle,
+    snapshot: Option<String>,
+    auth_user: Option<String>,
+) -> Result<(), String> {
+    validate_handoff_json(
+        snapshot.as_deref(),
+        TASK_CENTER_SNAPSHOT_LIMIT_BYTES,
+        "智能任务中心快照",
+    )?;
+    validate_handoff_json(
+        auth_user.as_deref(),
+        TASK_CENTER_USER_LIMIT_BYTES,
+        "当前登录用户",
+    )?;
+
+    let data_dir = app
+        .path()
+        .app_data_dir()
+        .map_err(|error| format!("无法定位 URGS 数据目录: {error}"))?;
+    let handoff_path = data_dir.join(TASK_CENTER_HANDOFF_FILE);
+    let parent = handoff_path
+        .parent()
+        .ok_or_else(|| "智能任务中心交接目录无效".to_string())?;
+    fs::create_dir_all(parent).map_err(|error| format!("创建智能任务中心交接目录失败: {error}"))?;
+    let content = serde_json::to_string_pretty(&TaskCenterHandoff {
+        snapshot: snapshot.as_deref(),
+        auth_user: auth_user.as_deref(),
+    })
+    .map_err(|error| format!("生成智能任务中心交接数据失败: {error}"))?;
+    fs::write(&handoff_path, content)
+        .map_err(|error| format!("保存智能任务中心交接数据失败: {error}"))?;
+
+    app.opener()
+        .open_url("jlintelligentcenter://open", None::<&str>)
+        .map_err(|error| format!("无法启动吉林银行智能任务中心，请先安装独立 App: {error}"))
+}
+
 #[cfg_attr(mobile, tauri::mobile_entry_point)]
 pub fn run() {
     std::panic::set_hook(Box::new(|panic_info| {
@@ -278,105 +343,16 @@ pub fn run() {
             tauri_plugin_autostart::MacosLauncher::LaunchAgent,
             None,
         ))
-        .manage(grok_runtime::GrokRuntimeState::default())
-        .manage(grok_runtime::TerminalState::default())
-        .manage(grok_git::GrokGitWatchState::default())
         .invoke_handler(tauri::generate_handler![
             load_desktop_runtime_config,
             save_desktop_runtime_config,
             load_desktop_auto_start_enabled,
             save_desktop_auto_start_enabled,
             desktop_log_read,
+            desktop_log_clear,
             desktop_log_write,
-            complete_desktop_startup,
-            grok_runtime::grok_runtime_status,
-            grok_runtime::grok_available_commands,
-            grok_runtime::grok_workflow_list,
-            grok_runtime::grok_workflow_read,
-            grok_runtime::grok_model_catalog,
-            grok_runtime::grok_session_search,
-            grok_runtime::grok_session_info,
-            grok_runtime::grok_compact_session,
-            grok_runtime::grok_recap_session,
-            grok_runtime::grok_session_rename,
-            grok_runtime::grok_session_delete,
-            grok_runtime::grok_list_background_tasks,
-            grok_runtime::grok_kill_background_task,
-            grok_runtime::grok_get_subagent,
-            grok_runtime::grok_cancel_subagent,
-            grok_runtime::grok_session_update_mcp_servers,
-            grok_runtime::grok_mcp_list,
-            grok_runtime::grok_mcp_set_enabled,
-            grok_runtime::grok_reload_mcp_servers,
-            grok_runtime::grok_memory_flush,
-            grok_runtime::grok_runtime_diagnostics,
-            grok_runtime::grok_runtime_prepare,
-            grok_runtime::grok_cli_run,
-            grok_runtime::terminal_run_command,
-            grok_runtime::terminal_create_session,
-            grok_runtime::terminal_write,
-            grok_runtime::terminal_resize,
-            grok_runtime::terminal_close,
-            grok_runtime::grok_cli_service_start,
-            grok_runtime::grok_cli_service_list,
-            grok_runtime::grok_cli_service_stop,
-            grok_runtime::grok_config_read,
-            grok_runtime::grok_config_save,
-            grok_runtime::grok_skill_set_enabled,
-            grok_runtime::grok_skill_remove,
-            grok_runtime::grok_compat_mcp_remove,
-            grok_runtime::grok_model_apply,
-            grok_runtime::grok_model_provider_list,
-            grok_runtime::grok_model_provider_authorize,
-            grok_runtime::grok_model_provider_save,
-            grok_runtime::grok_model_provider_delete,
-            grok_runtime::llm_generate_text,
-            grok_runtime::grok_create_session,
-            grok_runtime::grok_load_session,
-            grok_runtime::grok_pick_prompt_attachments,
-            grok_runtime::grok_send_prompt,
-            grok_runtime::grok_session_set_mode,
-            grok_runtime::grok_session_plan,
-            grok_runtime::grok_session_fork,
-            grok_runtime::grok_queue_action,
-            grok_runtime::grok_session_set_model,
-            grok_runtime::grok_rewind_points,
-            grok_runtime::grok_rewind_files,
-            grok_runtime::grok_scheduled_task_delete,
-            grok_runtime::grok_cancel,
-            grok_runtime::grok_release_session,
-            grok_runtime::grok_respond_permission,
-            grok_runtime::grok_respond_user_question,
-            grok_runtime::grok_respond_plan_approval,
-            grok_runtime::grok_runtime_invalidate_prepared,
-            grok_runtime::grok_shutdown,
-            grok_runtime::grok_start_login,
-            grok_git::grok_git_prepare_task,
-            grok_git::grok_git_status,
-            grok_git::grok_git_watch_start,
-            grok_git::grok_git_watch_stop,
-            grok_git::grok_git_diff,
-            grok_git::grok_git_open_file,
-            grok_git::grok_git_reveal_file,
-            grok_git::grok_git_add_to_ignore,
-            grok_git::grok_git_stage,
-            grok_git::grok_git_unstage,
-            grok_git::grok_git_stash,
-            grok_git::grok_git_discard,
-            grok_git::grok_git_commit,
-            grok_git::grok_git_fetch,
-            grok_git::grok_git_pull,
-            grok_git::grok_git_branch_list,
-            grok_git::grok_git_branch_switch,
-            grok_git::grok_git_sync_base,
-            grok_git::grok_git_abort_operation,
-            grok_git::grok_git_push,
-            grok_git::grok_git_remote_list,
-            grok_git::grok_git_worktree_list,
-            grok_git::grok_git_worktree_remove,
-            grok_git::grok_git_worktree_gc,
-            grok_git::grok_git_apply_worktree,
-            grok_git::grok_git_audit_list
+            launch_jl_intelligent_center,
+            complete_desktop_startup
         ])
         .setup(|app| {
             if let Err(error) = desktop_log::configure(app.handle()) {
@@ -406,15 +382,6 @@ pub fn run() {
             Ok(())
         })
         .on_window_event(|window, event| {
-            if window.label() == "grok-task-center"
-                && matches!(
-                    event,
-                    WindowEvent::CloseRequested { .. } | WindowEvent::Destroyed
-                )
-            {
-                desktop_log::info("window", "Grok task center window closed.");
-                let _ = window.state::<grok_runtime::TerminalState>().close_all();
-            }
             if window.label() == "main" {
                 if let WindowEvent::CloseRequested { api, .. } = event {
                     desktop_log::info("window", "Main window close requested; hiding instead.");

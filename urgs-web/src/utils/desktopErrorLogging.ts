@@ -1,5 +1,5 @@
 import { isDesktopRuntime } from '@/config';
-import { describeDesktopError, writeDesktopLog } from '@/services/grokDesktop';
+import { describeDesktopError, writeDesktopLog } from '@/services/desktopBridge';
 
 let installed = false;
 

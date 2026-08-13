@@ -14,7 +14,6 @@ import ChangePasswordModal from './components/ChangePasswordModal';
 import ChatWidget from './components/home/ChatWidget';
 import BasicInfo from './components/BasicInfo';
 import ArkPage from './components/ark/ArkPage';
-import ArkDesktopPage from './components/ark-desktop/ArkDesktopPage';
 import KnowledgeCenter from './components/knowledge/KnowledgeCenter';
 import MarketplacePage from './components/marketplace/MarketplacePage';
 import ToolsPage from './components/tools/ToolsPage';
@@ -45,12 +44,6 @@ const dashboardViewIcons: Record<DashboardViewKey, React.ReactNode> = {
 };
 
 const App: React.FC = () => {
-    const isGrokTaskCenterWindow = window.location.hash.split('?')[0] === '#/grok-task-center';
-
-    if (isGrokTaskCenterWindow) {
-        return <ArkDesktopPage />;
-    }
-
     const initialToken = typeof localStorage !== 'undefined' ? localStorage.getItem('auth_token') : null;
     const initialUser = (() => {
         const storedUser = typeof localStorage !== 'undefined' ? localStorage.getItem('auth_user') : null;

@@ -43,7 +43,6 @@
   },
   "bundle": {
     "active": true,
-    "externalBin": ["binaries/grok"],
     "targets": ["msi", "nsis"],
     "createUpdaterArtifacts": true,
     "category": "Business",

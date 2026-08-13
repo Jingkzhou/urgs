@@ -314,7 +314,6 @@ start_desktop() {
   esac
 
   echo "Building macOS Debug App (Desktop environment: $desktop_build_env)..."
-  DEPLOY_ENV="$desktop_build_env" "${pnpm_cmd[@]}" run prepare:grok
   DEPLOY_ENV="$desktop_build_env" "${pnpm_cmd[@]}" exec tauri build --debug --bundles app --no-sign
 
   local product_name

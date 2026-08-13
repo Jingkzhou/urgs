@@ -24,11 +24,6 @@ jobs:
     name: 构建 Windows 安装包
     runs-on: windows-latest
     timeout-minutes: 60
-    env:
-      GROK_BUILD_VERSION: "1.0.0"
-      GROK_SIDECAR_TARGET: "x86_64-pc-windows-msvc"
-      GROK_SIDECAR_LOCK_REQUIRED: "1"
-
     steps:
       - name: 检出代码
         uses: actions/checkout@v4
@@ -56,28 +51,6 @@ jobs:
         shell: pwsh
         run: pnpm --dir urgs-desktop install --frozen-lockfile
 
-      - name: 准备固定版本的 Grok Build Sidecar
-        shell: pwsh
-        run: |
-          $grokBinDir = Join-Path $env:RUNNER_TEMP "grok-build-bin"
-          New-Item -ItemType Directory -Force -Path $grokBinDir | Out-Null
-          $lock = Get-Content "urgs-desktop/grok-sidecar.lock.json" -Raw | ConvertFrom-Json
-          $artifact = $lock.targets.PSObject.Properties[$env:GROK_SIDECAR_TARGET].Value
-          if ($null -eq $artifact) {
-            throw "sidecar 锁定文件未声明目标 $env:GROK_SIDECAR_TARGET"
-          }
-          if ($artifact.version -ne $env:GROK_BUILD_VERSION) {
-            throw "sidecar 锁定版本 $($artifact.version) 与流水线版本 $env:GROK_BUILD_VERSION 不一致"
-          }
-          $grokSource = Join-Path $grokBinDir "grok.exe"
-          Invoke-WebRequest -UseBasicParsing -Uri $artifact.downloadUrl -OutFile $grokSource
-          $actualHash = (Get-FileHash -Algorithm SHA256 -LiteralPath $grokSource).Hash.ToLowerInvariant()
-          if ($actualHash -ne $artifact.sha256) {
-            throw "Grok sidecar SHA-256 校验失败：期望 $($artifact.sha256)，实际 $actualHash"
-          }
-          $env:GROK_SIDECAR_SOURCE = $grokSource
-          pnpm --dir urgs-desktop run prepare:grok -- --target x86_64-pc-windows-msvc
-
       - name: 前端类型检查
         shell: pwsh
         run: pnpm --dir urgs-web exec tsc --noEmit
@@ -98,15 +71,6 @@ jobs:
         shell: pwsh
         run: pnpm --dir urgs-desktop verify:windows
 
-      - name: 安装后验证内置 Grok sidecar
-        shell: pwsh
-        run: |
-          $setup = Get-ChildItem "urgs-desktop/src-tauri/target/release/bundle/nsis/*-setup.exe" | Sort-Object Name | Select-Object -First 1
-          if ($null -eq $setup) {
-            throw "未找到 NSIS setup.exe，无法执行安装后 Grok 验证"
-          }
-          & "$PWD/urgs-desktop/scripts/verify-windows-install.ps1" -InstallerPath $setup.FullName -ExpectedVersion $env:GROK_BUILD_VERSION
-
       - name: 上传 Windows 安装包
         uses: actions/upload-artifact@v4
         with:
@@ -118,4 +82,3 @@ jobs:
             urgs-desktop/src-tauri/target/release/bundle/nsis/*-setup.exe
             urgs-desktop/src-tauri/target/release/bundle/windows-build-manifest.json
             urgs-desktop/src-tauri/target/release/bundle/SHA256SUMS.txt
-            urgs-desktop/src-tauri/binaries/grok-sidecar-manifest.json

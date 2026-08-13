@@ -1,3 +1,0 @@
-URGS Desktop 中文路径附件验收夹具。
-verification_code=URGS-ATTACHMENT-ZH-4B9D
-本文件不包含用户数据或生产数据。

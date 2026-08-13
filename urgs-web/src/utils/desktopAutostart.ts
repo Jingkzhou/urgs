@@ -1,5 +1,5 @@
 import { isDesktopRuntime } from '@/config';
-import { invokeDesktop } from '@/services/grokDesktop';
+import { invokeDesktop } from '@/services/desktopBridge';
 
 const getAutostartApi = async () => import('@tauri-apps/plugin-autostart');
 

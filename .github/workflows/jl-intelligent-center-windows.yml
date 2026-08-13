@@ -1,0 +1,100 @@
+name: 吉林银行智能任务中心 Windows 客户端
+
+on:
+  workflow_dispatch:
+  push:
+    branches:
+      - "codex/jl-intelligent-center"
+    paths:
+      - ".github/workflows/jl-intelligent-center-windows.yml"
+      - ".github/workflows/jl-intelligent-center-release.yml"
+      - "jl-intelligent-center/**"
+  pull_request:
+    paths:
+      - ".github/workflows/jl-intelligent-center-windows.yml"
+      - ".github/workflows/jl-intelligent-center-release.yml"
+      - "jl-intelligent-center/**"
+permissions:
+  contents: read
+
+jobs:
+  build-windows:
+    name: 构建 Windows 安装包
+    runs-on: windows-latest
+    timeout-minutes: 60
+    env:
+      GROK_BUILD_VERSION: "1.0.0"
+      GROK_SIDECAR_TARGET: "x86_64-pc-windows-msvc"
+      GROK_SIDECAR_LOCK_REQUIRED: "1"
+    steps:
+      - name: 检出代码
+        uses: actions/checkout@v4
+
+      - name: 配置 Node.js
+        uses: actions/setup-node@v4
+        with:
+          node-version: "22"
+
+      - name: 配置 pnpm
+        shell: pwsh
+        run: npm install --global pnpm@11.9.0
+
+      - name: 配置 Rust
+        shell: pwsh
+        run: |
+          rustup update stable
+          rustup default stable
+
+      - name: 安装 App 依赖
+        shell: pwsh
+        run: pnpm --dir jl-intelligent-center install --frozen-lockfile
+
+      - name: 准备固定版本的 Grok Build Sidecar
+        shell: pwsh
+        run: |
+          $lock = Get-Content "jl-intelligent-center/grok-sidecar.lock.json" -Raw | ConvertFrom-Json
+          $artifact = $lock.targets.PSObject.Properties[$env:GROK_SIDECAR_TARGET].Value
+          if ($null -eq $artifact -or $artifact.version -ne $env:GROK_BUILD_VERSION) {
+            throw "sidecar 锁定文件未声明目标或版本不匹配"
+          }
+          $grokSource = Join-Path $env:RUNNER_TEMP "grok.exe"
+          Invoke-WebRequest -UseBasicParsing -Uri $artifact.downloadUrl -OutFile $grokSource
+          $actualHash = (Get-FileHash -Algorithm SHA256 -LiteralPath $grokSource).Hash.ToLowerInvariant()
+          if ($actualHash -ne $artifact.sha256) {
+            throw "Grok sidecar SHA-256 校验失败"
+          }
+          $env:GROK_SIDECAR_SOURCE = $grokSource
+          pnpm --dir jl-intelligent-center run prepare:grok -- --target x86_64-pc-windows-msvc
+
+      - name: 前端类型检查
+        shell: pwsh
+        run: pnpm --dir jl-intelligent-center exec tsc --noEmit
+
+      - name: Rust 单元测试
+        shell: pwsh
+        run: cargo test --manifest-path jl-intelligent-center/src-tauri/Cargo.toml
+
+      - name: 安装包验收器单元测试
+        shell: pwsh
+        run: pnpm --dir jl-intelligent-center test
+
+      - name: 构建 MSI 和 Setup.exe
+        shell: pwsh
+        run: pnpm --dir jl-intelligent-center build:unsigned
+
+      - name: 验收安装包并生成 SHA-256 清单
+        shell: pwsh
+        run: pnpm --dir jl-intelligent-center verify:windows
+
+      - name: 上传 Windows 安装包
+        uses: actions/upload-artifact@v4
+        with:
+          name: jl-intelligent-center-windows-${{ github.run_id }}-${{ github.run_attempt }}
+          if-no-files-found: error
+          retention-days: 14
+          path: |
+            jl-intelligent-center/src-tauri/target/release/bundle/msi/*.msi
+            jl-intelligent-center/src-tauri/target/release/bundle/nsis/*-setup.exe
+            jl-intelligent-center/src-tauri/target/release/bundle/windows-build-manifest.json
+            jl-intelligent-center/src-tauri/target/release/bundle/SHA256SUMS.txt
+            jl-intelligent-center/src-tauri/binaries/grok-sidecar-manifest.json

@@ -8,48 +8,6 @@
       "count": 1
     },
     {
-      "file": "src/components/ark-desktop/ArkDesktopPage.tsx",
-      "rule": "nested-viewport-height",
-      "source": "<div className=\"relative flex h-screen min-h-[680px] overflow-hidden bg-white pt-[52px] text-[#292a2e]\">",
-      "count": 1
-    },
-    {
-      "file": "src/components/ark-desktop/GitDiffViewer.tsx",
-      "rule": "nested-viewport-height",
-      "source": "{!isCollapsed && <div id={fileId} className=\"max-h-[calc(100vh-330px)] overflow-auto py-1\">",
-      "count": 1
-    },
-    {
-      "file": "src/components/ark-desktop/GrokCliCenter.tsx",
-      "rule": "browser-only-api",
-      "source": "{result && <div className={`rounded-2xl border p-5 ${result.success ? 'border-emerald-200 bg-emerald-50/40' : 'border-red-200 bg-red-50/40'}`}><div className=\"mb-3 flex items-center justify-between gap-3\"><div className={`flex items-center gap-2 text-sm font-semibold ${result.success ? 'text-emerald-700' : 'text-red-700'}`}>{result.success ? <CheckCircle2 size={17} /> : <XCircle size={17} />}{result.success ? '执行成功' : `执行失败（${result.exitCode ?? '未知'}）`}</div><div className=\"flex gap-1\"><button type=\"button\" onClick={() => void navigator.clipboard.writeText(formatOutput(result))} className=\"rounded-lg p-2 text-slate-500 hover:bg-white\" title=\"复制输出\"><Clipboard size={15} /></button><button type=\"button\" onClick={() => setResult(null)} className=\"rounded-lg p-2 text-slate-500 hover:bg-white\"><RefreshCw size={15} /></button></div></div><div className=\"mb-2 overflow-x-auto rounded-lg bg-slate-900 px-3 py-2 font-mono text-xs text-slate-300\">内置命令 {result.arguments.join(' ')}</div><pre className=\"max-h-[420px] overflow-auto whitespace-pre-wrap break-words rounded-xl bg-white p-4 text-xs leading-6 text-slate-700\">{formatOutput(result)}</pre>{result.stderr && result.stdout && <details className=\"mt-3\"><summary className=\"cursor-pointer text-xs text-amber-700\"><AlertTriangle size={13} className=\"mr-1 inline\" />查看错误输出</summary><pre className=\"mt-2 whitespace-pre-wrap rounded-lg bg-amber-50 p-3 text-xs text-amber-800\">{redactVendorText(result.stderr)}</pre></details>}</div>}",
-      "count": 1
-    },
-    {
-      "file": "src/components/ark-desktop/SessionCommandBar.tsx",
-      "rule": "nested-viewport-height",
-      "source": "<div className=\"custom-scrollbar max-h-[min(420px,calc(100vh-240px))] overflow-y-auto pr-1\">",
-      "count": 1
-    },
-    {
-      "file": "src/components/ark-desktop/SlashCommandMenu.tsx",
-      "rule": "nested-viewport-height",
-      "source": "{filteredCommands.length > 0 ? <div className=\"custom-scrollbar max-h-[min(440px,calc(100vh-220px))] overflow-y-auto\">",
-      "count": 1
-    },
-    {
-      "file": "src/components/ark-desktop/TaskTerminalPanel.css",
-      "rule": "hidden-horizontal-overflow",
-      "source": "overflow-x: hidden;",
-      "count": 1
-    },
-    {
-      "file": "src/components/ark/ArkPage.tsx",
-      "rule": "browser-only-api",
-      "source": "window.open('#/grok-task-center', '_blank', 'noopener,noreferrer');",
-      "count": 1
-    },
-    {
       "file": "src/components/DataSourceManager.tsx",
       "rule": "unsafe-fixed-width",
       "source": "width={640}",

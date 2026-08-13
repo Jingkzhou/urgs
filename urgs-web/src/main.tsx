@@ -25,7 +25,7 @@ import DesktopAutoUpdater from './components/desktop/DesktopAutoUpdater';
 import DesktopErrorBoundary from './components/desktop/DesktopErrorBoundary';
 import { getCurrentWebviewWindow } from '@tauri-apps/api/webviewWindow';
 import { getApiBaseUrl, installServiceRequestAdapters, isDesktopRuntime } from './config';
-import { invokeDesktop, writeDesktopLog } from './services/grokDesktop';
+import { invokeDesktop, writeDesktopLog } from './services/desktopBridge';
 import { installDesktopDownloadAdapter } from './utils/desktopDownload';
 import { initializeDesktopAutostart } from './utils/desktopAutostart';
 import { initializeDesktopRuntimeConfig } from './utils/desktopRuntime';
