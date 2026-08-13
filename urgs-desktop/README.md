@@ -40,7 +40,7 @@ pnpm verify:windows
 
 验收结果会写入 `src-tauri/target/release/bundle/windows-build-manifest.json` 和 `SHA256SUMS.txt`。
 
-智能任务中心及 Grok Build 运行时已经迁移到独立的 `jl-intelligent-center/` App，URGS 仅保留启动和用户快照交接入口，不再随包分发 Grok sidecar。
+智能任务中心及 Grok Build 运行时已经迁移到独立仓库 [Jingkzhou/jl-intelligent-center](https://github.com/Jingkzhou/jl-intelligent-center)，URGS 仅保留启动和用户快照交接入口，不再随包分发 Grok sidecar。
 
 也可以在 GitHub Actions 中手动运行“URGS Windows 客户端”工作流，或提交包含桌面端相关变更的 Pull Request 触发验证构建。生成的 MSI、`setup.exe` 和 SHA-256 清单会作为流水线产物保留 14 天。
 

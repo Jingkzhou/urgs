@@ -2,7 +2,7 @@
 
 ## 拆分结果
 
-智能任务中心已经从 URGS Web 与 URGS Desktop 的内嵌窗口中拆出，形成独立目录 `jl-intelligent-center/`，应用名为“吉林银行智能任务中心”，技术名为 `JLIntelligentCenter`。
+智能任务中心已经从 URGS Web 与 URGS Desktop 的内嵌窗口中拆出，形成独立仓库 [Jingkzhou/jl-intelligent-center](https://github.com/Jingkzhou/jl-intelligent-center)，应用名为“吉林银行智能任务中心”，技术名为 `JLIntelligentCenter`。
 
 职责边界如下：
 

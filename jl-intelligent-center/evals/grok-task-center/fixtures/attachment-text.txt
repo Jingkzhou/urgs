@@ -1,3 +1,0 @@
-Synthetic JLIntelligentCenter attachment evaluation fixture.
-verification_code=URGS-ATTACHMENT-TEXT-7C21
-This file contains no user or production data.
